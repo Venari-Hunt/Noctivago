@@ -15,24 +15,6 @@ function pickTickStep(duration, width) {
   return steps.find((s) => s >= rawStep) ?? steps[steps.length - 1]
 }
 
-export function computePeaksFromChannelData(channelData, targetWidth) {
-  const samplesPerPixel = Math.max(1, Math.floor(channelData.length / targetWidth))
-  const peaks = []
-  for (let i = 0; i < targetWidth; i++) {
-    const start = i * samplesPerPixel
-    const end = Math.min(start + samplesPerPixel, channelData.length)
-    let min = 0
-    let max = 0
-    for (let j = start; j < end; j++) {
-      const v = channelData[j]
-      if (v < min) min = v
-      if (v > max) max = v
-    }
-    peaks.push([min, max])
-  }
-  return peaks
-}
-
 export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks }) {
   const ctx = canvas.getContext('2d')
   const width = canvas.width

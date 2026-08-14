@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { getLoopClipPath, deleteLoopClip } from './ffmpeg/loopClip.js'
 
 const store = new Store({
   name: 'library',
@@ -78,6 +79,9 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     durationSeconds: null,
     loopStart: 0,
     loopEnd: null,
+    loopClipReady: false,
+    loopClipStart: null,
+    loopClipEnd: null,
     status: 'ok'
   }
 
@@ -108,6 +112,14 @@ export function updateLoopPoints(id, { loopStart, loopEnd }) {
   return updateEntry(id, { loopStart, loopEnd })
 }
 
+export function setLoopClipReady(id, { loopStart, loopEnd }) {
+  return updateEntry(id, { loopClipReady: true, loopClipStart: loopStart, loopClipEnd: loopEnd })
+}
+
+export function setLoopClipStale(id) {
+  return updateEntry(id, { loopClipReady: false, loopClipStart: null, loopClipEnd: null })
+}
+
 export async function relink(id) {
   const result = await dialog.showOpenDialog({
     title: 'Locate sound file',
@@ -115,7 +127,14 @@ export async function relink(id) {
     filters: [{ name: 'Audio files', extensions: AUDIO_EXTENSIONS }]
   })
   if (result.canceled || result.filePaths.length === 0) return null
-  return updateEntry(id, { originalPath: result.filePaths[0], status: 'ok' })
+  deleteLoopClip(id)
+  return updateEntry(id, {
+    originalPath: result.filePaths[0],
+    status: 'ok',
+    loopClipReady: false,
+    loopClipStart: null,
+    loopClipEnd: null
+  })
 }
 
 export function remove(id) {
@@ -125,6 +144,7 @@ export function remove(id) {
     const filePath = path.join(soundsDir(), entry.storedFileName)
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
   }
+  deleteLoopClip(id)
   store.set('sounds', sounds.filter((s) => s.id !== id))
 }
 
@@ -134,4 +154,15 @@ export function getPlaybackPathForId(id) {
   if (!entry) return null
   const filePath = resolvePlaybackPath(entry)
   return fs.existsSync(filePath) ? filePath : null
+}
+
+export function getLoopClipPathForId(id) {
+  const sounds = store.get('sounds')
+  const entry = sounds.find((s) => s.id === id)
+  if (!entry) return null
+  const eligible =
+    entry.loopClipReady && entry.loopClipStart === entry.loopStart && entry.loopClipEnd === entry.loopEnd
+  if (!eligible) return null
+  const clipPath = getLoopClipPath(id)
+  return fs.existsSync(clipPath) ? clipPath : null
 }

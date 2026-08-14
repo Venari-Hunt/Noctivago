@@ -5,6 +5,8 @@ directories:
   buildResources: resources
 files:
   - out/**/*
+asarUnpack:
+  - node_modules/ffmpeg-static/**
 win:
   target: nsis
 nsis:

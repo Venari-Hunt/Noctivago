@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers } from './ipc.js'
-import { getPlaybackPathForId } from './library.js'
+import { getPlaybackPathForId, getLoopClipPathForId } from './library.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -25,8 +25,10 @@ protocol.registerSchemesAsPrivileged([
 
 function registerSoundProtocol() {
   protocol.handle('sound', async (request) => {
-    const id = new URL(request.url).hostname
-    const filePath = getPlaybackPathForId(id)
+    const url = new URL(request.url)
+    const id = url.hostname
+    const variant = url.searchParams.get('variant')
+    const filePath = variant === 'clip' ? getLoopClipPathForId(id) : getPlaybackPathForId(id)
     if (!filePath) return new Response('Not found', { status: 404 })
 
     const stat = await fs.promises.stat(filePath)

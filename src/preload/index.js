@@ -14,6 +14,10 @@ const api = {
     list: () => ipcRenderer.invoke('presets:list'),
     save: (payload) => ipcRenderer.invoke('presets:save', payload),
     delete: (id) => ipcRenderer.invoke('presets:delete', id)
+  },
+  audio: {
+    renderLoopClip: (id, points) => ipcRenderer.invoke('audio:renderLoopClip', id, points),
+    getWaveformPeaks: (id, targetWidth) => ipcRenderer.invoke('audio:getWaveformPeaks', id, targetWidth)
   }
 }
 

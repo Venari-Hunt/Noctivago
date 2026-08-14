@@ -1,19 +1,15 @@
 import { AudioEngine } from './audio/AudioEngine.js'
 import { LocalFileSoundSource } from './audio/SoundSource.js'
+import { BufferSoundSource } from './audio/BufferSoundSource.js'
 import { renderSoundList } from './ui/SoundList.js'
 import { renderPresetList } from './ui/PresetsModal.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
-import { computePeaksFromChannelData } from './audio/waveform.js'
 import { formatDuration, parseDuration } from './util/time.js'
+import { MAX_BUFFER_CLIP_SECONDS } from '../shared/constants.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
 
-// Real waveform peaks require decoding the whole file into memory, which is
-// exactly what breaks on very long files (see AudioEngine/SoundSource — the
-// rest of playback deliberately avoids this). Only attempt it below this
-// duration, where decode is fast and the memory footprint is reasonable.
-const WAVEFORM_MAX_DURATION_SECONDS = 30 * 60
 const waveformPeaksCache = new Map()
 
 const state = {
@@ -92,29 +88,56 @@ async function refreshList() {
   render()
 }
 
+function loopClipEligible(entry) {
+  return entry.loopClipReady === true && entry.loopClipStart === entry.loopStart && entry.loopClipEnd === entry.loopEnd
+}
+
+// Tries the small pre-rendered loop clip (native, sample-accurate looping).
+// Returns null on any failure so the caller falls back to streaming the
+// original file — this is what keeps the feature safe even if ffmpeg is
+// missing or the clip is corrupt.
+async function tryCreateBufferSource(entry) {
+  try {
+    const response = await fetch(`sound://${entry.id}?variant=clip`)
+    if (!response.ok) return null
+    const arrayBuffer = await response.arrayBuffer()
+    const audioBuffer = await engine.context.decodeAudioData(arrayBuffer)
+    return new BufferSoundSource(engine, { audioBuffer, volume: state.volumes.get(entry.id) ?? 0.7 })
+  } catch (err) {
+    console.error('Failed to decode loop clip, falling back to streaming', entry.name, err)
+    return null
+  }
+}
+
 async function getOrCreateSource(entry) {
   let source = state.sources.get(entry.id)
   if (source) return source
 
-  source = new LocalFileSoundSource(engine, {
-    soundId: entry.id,
-    loopStart: entry.loopStart,
-    loopEnd: entry.loopEnd,
-    volume: state.volumes.get(entry.id) ?? 0.7
-  })
-
-  const duration = await source.waitForMetadata()
-  if (!Number.isFinite(duration)) {
-    source.dispose()
-    throw new Error('Unable to read audio metadata')
+  if (loopClipEligible(entry)) {
+    source = await tryCreateBufferSource(entry)
   }
 
-  if (entry.durationSeconds == null) {
-    await api.library.updateMeta(entry.id, { durationSeconds: duration })
-    entry.durationSeconds = duration
-    if (entry.loopEnd == null) {
-      entry.loopEnd = duration
-      source.setLoopPoints(entry.loopStart, duration)
+  if (!source) {
+    source = new LocalFileSoundSource(engine, {
+      soundId: entry.id,
+      loopStart: entry.loopStart,
+      loopEnd: entry.loopEnd,
+      volume: state.volumes.get(entry.id) ?? 0.7
+    })
+
+    const duration = await source.waitForMetadata()
+    if (!Number.isFinite(duration)) {
+      source.dispose()
+      throw new Error('Unable to read audio metadata')
+    }
+
+    if (entry.durationSeconds == null) {
+      await api.library.updateMeta(entry.id, { durationSeconds: duration })
+      entry.durationSeconds = duration
+      if (entry.loopEnd == null) {
+        entry.loopEnd = duration
+        source.setLoopPoints(entry.loopStart, duration)
+      }
     }
   }
 
@@ -319,27 +342,14 @@ function updateLoopTimeInputs(loopStart, loopEnd) {
   els.loopEditorEndInput.value = formatDuration(loopEnd)
 }
 
-// Returns real amplitude peaks for the waveform display, or null if the file
-// is too long to safely decode in full (multi-hour files can be several GB
-// once decoded to raw PCM). Cached per sound so reopening the editor is instant.
-async function getWaveformPeaks(id, duration) {
+// Real amplitude peaks, computed in the main process via ffmpeg (streams
+// through the file rather than decoding it whole, so this works regardless
+// of length). Cached per sound so reopening the editor is instant.
+async function getWaveformPeaks(id) {
   if (waveformPeaksCache.has(id)) return waveformPeaksCache.get(id)
-  if (duration > WAVEFORM_MAX_DURATION_SECONDS) {
-    waveformPeaksCache.set(id, null)
-    return null
-  }
-  try {
-    const response = await fetch(`sound://${id}`)
-    const arrayBuffer = await response.arrayBuffer()
-    const buffer = await engine.context.decodeAudioData(arrayBuffer)
-    const peaks = computePeaksFromChannelData(buffer.getChannelData(0), els.loopEditorCanvas.width)
-    waveformPeaksCache.set(id, peaks)
-    return peaks
-  } catch (err) {
-    console.error('Failed to decode waveform', err)
-    waveformPeaksCache.set(id, null)
-    return null
-  }
+  const peaks = await api.audio.getWaveformPeaks(id, els.loopEditorCanvas.width)
+  waveformPeaksCache.set(id, peaks)
+  return peaks
 }
 
 async function openLoopEditor(id) {
@@ -381,16 +391,11 @@ async function openLoopEditor(id) {
   await preparePreviewSource(loopStart, loopEnd)
   showModal(els.loopEditorModal)
 
-  if (duration > WAVEFORM_MAX_DURATION_SECONDS && !waveformPeaksCache.has(id)) {
-    els.loopEditorWaveformStatus.textContent =
-      'Waveform preview isn’t available for files this long — use the numeric fields or drag the needle to trim precisely.'
-  } else {
-    els.loopEditorWaveformStatus.textContent = waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
-    const peaks = await getWaveformPeaks(id, duration)
-    if (loopEditorSoundId !== id) return // a different sound's editor was opened meanwhile
-    loopEditorController.setPeaks(peaks)
-    els.loopEditorWaveformStatus.textContent = ''
-  }
+  els.loopEditorWaveformStatus.textContent = waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
+  const peaks = await getWaveformPeaks(id)
+  if (loopEditorSoundId !== id) return // a different sound's editor was opened meanwhile
+  loopEditorController.setPeaks(peaks)
+  els.loopEditorWaveformStatus.textContent = peaks ? '' : 'Waveform preview unavailable for this file.'
 }
 
 function applyManualLoopPoints() {
@@ -470,15 +475,50 @@ els.loopEditorCancel.addEventListener('click', () => {
 
 els.loopEditorSave.addEventListener('click', async () => {
   if (!loopEditorController || !loopEditorSoundId) return
+  const id = loopEditorSoundId
   const { loopStart, loopEnd } = loopEditorController.getLoopPoints()
-  await api.library.updateLoopPoints(loopEditorSoundId, { loopStart, loopEnd })
-  disposePreview()
+  await api.library.updateLoopPoints(id, { loopStart, loopEnd })
 
-  const entry = state.library.find((s) => s.id === loopEditorSoundId)
+  const entry = state.library.find((s) => s.id === id)
   if (entry) {
     entry.loopStart = loopStart
     entry.loopEnd = loopEnd
-    state.sources.get(loopEditorSoundId)?.setLoopPoints(loopStart, loopEnd)
+  }
+
+  // Best-effort: render a small clip for native gapless looping. Only within
+  // the eligibility cap — a longer trimmed region keeps streaming exactly as
+  // before, since fully decoding it client-side would risk the same
+  // memory/crash problem long files hit before this app streamed instead.
+  if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
+    els.loopEditorSave.disabled = true
+    els.loopEditorSave.textContent = 'Saving…'
+    const result = await api.audio.renderLoopClip(id, { loopStart, loopEnd })
+    if (entry) {
+      if (result.ok) {
+        entry.loopClipReady = true
+        entry.loopClipStart = loopStart
+        entry.loopClipEnd = loopEnd
+      } else {
+        entry.loopClipReady = false
+        entry.loopClipStart = null
+        entry.loopClipEnd = null
+      }
+    }
+    els.loopEditorSave.disabled = false
+    els.loopEditorSave.textContent = 'Save'
+  }
+
+  disposePreview()
+
+  // Drop any live cached source so the next play re-evaluates buffer vs
+  // stream mode against the freshly (re)rendered clip; restart immediately
+  // if it was audibly playing so saving a trim doesn't silently cut it out.
+  const wasPlaying = state.playing.has(id)
+  state.sources.get(id)?.dispose()
+  state.sources.delete(id)
+  if (wasPlaying) {
+    state.playing.delete(id)
+    if (entry) await startPlayback(id, entry)
   }
 
   hideModal(els.loopEditorModal)
