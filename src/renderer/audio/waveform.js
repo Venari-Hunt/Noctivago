@@ -15,7 +15,25 @@ function pickTickStep(duration, width) {
   return steps.find((s) => s >= rawStep) ?? steps[steps.length - 1]
 }
 
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead }) {
+export function computePeaksFromChannelData(channelData, targetWidth) {
+  const samplesPerPixel = Math.max(1, Math.floor(channelData.length / targetWidth))
+  const peaks = []
+  for (let i = 0; i < targetWidth; i++) {
+    const start = i * samplesPerPixel
+    const end = Math.min(start + samplesPerPixel, channelData.length)
+    let min = 0
+    let max = 0
+    for (let j = start; j < end; j++) {
+      const v = channelData[j]
+      if (v < min) min = v
+      if (v > max) max = v
+    }
+    peaks.push([min, max])
+  }
+  return peaks
+}
+
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks }) {
   const ctx = canvas.getContext('2d')
   const width = canvas.width
   const height = canvas.height
@@ -31,12 +49,23 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead })
   ctx.fillStyle = 'rgba(122, 162, 247, 0.18)'
   ctx.fillRect(startX, 0, endX - startX, height)
 
-  ctx.strokeStyle = '#3b3f58'
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.moveTo(0, mid)
-  ctx.lineTo(width, mid)
-  ctx.stroke()
+  if (peaks && peaks.length > 0) {
+    ctx.strokeStyle = '#7aa2f7'
+    ctx.beginPath()
+    for (let x = 0; x < peaks.length && x < width; x++) {
+      const [min, max] = peaks[x]
+      ctx.moveTo(x + 0.5, mid + min * mid * 0.9)
+      ctx.lineTo(x + 0.5, mid + max * mid * 0.9)
+    }
+    ctx.stroke()
+  } else {
+    ctx.strokeStyle = '#3b3f58'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(0, mid)
+    ctx.lineTo(width, mid)
+    ctx.stroke()
+  }
 
   ctx.fillStyle = '#8892b0'
   ctx.font = '11px sans-serif'
@@ -45,12 +74,12 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead })
   const step = pickTickStep(duration, width)
   for (let t = 0; t <= duration; t += step) {
     const x = (t / duration) * width
-    ctx.strokeStyle = '#3b3f58'
+    ctx.strokeStyle = 'rgba(59, 63, 88, 0.7)'
     ctx.beginPath()
     ctx.moveTo(x + 0.5, mid - 6)
     ctx.lineTo(x + 0.5, mid + 6)
     ctx.stroke()
-    ctx.fillText(formatTick(t, showHours), x + 3, mid + 10)
+    ctx.fillText(formatTick(t, showHours), x + 3, height - 14)
   }
 
   ctx.strokeStyle = '#f7768e'

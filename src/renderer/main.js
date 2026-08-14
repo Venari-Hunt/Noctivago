@@ -3,10 +3,18 @@ import { LocalFileSoundSource } from './audio/SoundSource.js'
 import { renderSoundList } from './ui/SoundList.js'
 import { renderPresetList } from './ui/PresetsModal.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
+import { computePeaksFromChannelData } from './audio/waveform.js'
 import { formatDuration, parseDuration } from './util/time.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
+
+// Real waveform peaks require decoding the whole file into memory, which is
+// exactly what breaks on very long files (see AudioEngine/SoundSource — the
+// rest of playback deliberately avoids this). Only attempt it below this
+// duration, where decode is fast and the memory footprint is reasonable.
+const WAVEFORM_MAX_DURATION_SECONDS = 30 * 60
+const waveformPeaksCache = new Map()
 
 const state = {
   library: [],
@@ -42,6 +50,7 @@ const els = {
   loopEditorModal: document.getElementById('loop-editor-modal'),
   loopEditorTitle: document.getElementById('loop-editor-title'),
   loopEditorCanvas: document.getElementById('loop-editor-canvas'),
+  loopEditorWaveformStatus: document.getElementById('loop-editor-waveform-status'),
   loopEditorStartInput: document.getElementById('loop-editor-start-input'),
   loopEditorEndInput: document.getElementById('loop-editor-end-input'),
   loopEditorPlayPause: document.getElementById('loop-editor-play-pause'),
@@ -310,6 +319,29 @@ function updateLoopTimeInputs(loopStart, loopEnd) {
   els.loopEditorEndInput.value = formatDuration(loopEnd)
 }
 
+// Returns real amplitude peaks for the waveform display, or null if the file
+// is too long to safely decode in full (multi-hour files can be several GB
+// once decoded to raw PCM). Cached per sound so reopening the editor is instant.
+async function getWaveformPeaks(id, duration) {
+  if (waveformPeaksCache.has(id)) return waveformPeaksCache.get(id)
+  if (duration > WAVEFORM_MAX_DURATION_SECONDS) {
+    waveformPeaksCache.set(id, null)
+    return null
+  }
+  try {
+    const response = await fetch(`sound://${id}`)
+    const arrayBuffer = await response.arrayBuffer()
+    const buffer = await engine.context.decodeAudioData(arrayBuffer)
+    const peaks = computePeaksFromChannelData(buffer.getChannelData(0), els.loopEditorCanvas.width)
+    waveformPeaksCache.set(id, peaks)
+    return peaks
+  } catch (err) {
+    console.error('Failed to decode waveform', err)
+    waveformPeaksCache.set(id, null)
+    return null
+  }
+}
+
 async function openLoopEditor(id) {
   const entry = state.library.find((s) => s.id === id)
   if (!entry || entry.status === 'missing' || state.loading.has(id)) return
@@ -348,6 +380,17 @@ async function openLoopEditor(id) {
   updateLoopTimeInputs(loopStart, loopEnd)
   await preparePreviewSource(loopStart, loopEnd)
   showModal(els.loopEditorModal)
+
+  if (duration > WAVEFORM_MAX_DURATION_SECONDS && !waveformPeaksCache.has(id)) {
+    els.loopEditorWaveformStatus.textContent =
+      'Waveform preview isn’t available for files this long — use the numeric fields or drag the needle to trim precisely.'
+  } else {
+    els.loopEditorWaveformStatus.textContent = waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
+    const peaks = await getWaveformPeaks(id, duration)
+    if (loopEditorSoundId !== id) return // a different sound's editor was opened meanwhile
+    loopEditorController.setPeaks(peaks)
+    els.loopEditorWaveformStatus.textContent = ''
+  }
 }
 
 function applyManualLoopPoints() {

@@ -285,6 +285,13 @@ main {
   cursor: ew-resize;
 }
 
+.loop-editor-waveform-status {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  min-height: 14px;
+}
+
 .loop-editor-times {
   display: flex;
   gap: 16px;

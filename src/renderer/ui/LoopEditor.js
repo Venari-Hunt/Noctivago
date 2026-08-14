@@ -9,6 +9,7 @@ export function createLoopEditorController(canvas) {
   let loopStart = 0
   let loopEnd = 0
   let playhead = null
+  let peaks = null
   let dragging = null
   let onChange = () => {}
   let onScrub = () => {}
@@ -23,7 +24,7 @@ export function createLoopEditorController(canvas) {
   }
 
   function redraw() {
-    drawWaveform(canvas, duration, { loopStart, loopEnd, playhead })
+    drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks })
   }
 
   // If a dragged start/end handle ends up within SNAP_PX of the playhead,
@@ -82,6 +83,11 @@ export function createLoopEditorController(canvas) {
       loopStart = initialLoopStart ?? 0
       loopEnd = initialLoopEnd ?? totalDuration
       playhead = null
+      peaks = null
+      redraw()
+    },
+    setPeaks(newPeaks) {
+      peaks = newPeaks
       redraw()
     },
     getLoopPoints() {
