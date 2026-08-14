@@ -1,8 +1,4 @@
-function formatDuration(seconds) {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
+import { formatDuration } from '../util/time.js'
 
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -16,7 +12,7 @@ function formatMeta(entry) {
   return parts.join(' · ')
 }
 
-export function createSoundRow(entry, { playing, loading, error, volume }, callbacks) {
+export function createSoundRow(entry, { included, loading, error, volume }, callbacks) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
@@ -56,13 +52,13 @@ export function createSoundRow(entry, { playing, loading, error, volume }, callb
     relinkBtn.addEventListener('click', () => callbacks.onRelink(entry.id))
     li.appendChild(relinkBtn)
   } else {
-    const playBtn = document.createElement('button')
-    playBtn.className = 'btn btn-small' + (playing ? ' btn-active' : '')
-    playBtn.type = 'button'
-    playBtn.disabled = loading
-    playBtn.textContent = loading ? 'Loading…' : playing ? 'Pause' : 'Play'
-    playBtn.addEventListener('click', () => callbacks.onTogglePlay(entry.id))
-    li.appendChild(playBtn)
+    const includeBtn = document.createElement('button')
+    includeBtn.className = 'btn btn-small' + (included ? ' btn-active' : '')
+    includeBtn.type = 'button'
+    includeBtn.disabled = loading
+    includeBtn.textContent = loading ? 'Loading…' : included ? 'In Mix' : 'Add'
+    includeBtn.addEventListener('click', () => callbacks.onToggleIncluded(entry.id))
+    li.appendChild(includeBtn)
 
     const volumeSlider = document.createElement('input')
     volumeSlider.type = 'range'

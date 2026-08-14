@@ -2,10 +2,10 @@ import { createSoundRow } from './SoundRow.js'
 
 export function sortEntries(entries, playbackState) {
   return [...entries].sort((a, b) => {
-    const aPlaying = playbackState.playing.has(a.id)
-    const bPlaying = playbackState.playing.has(b.id)
-    if (aPlaying !== bPlaying) return aPlaying ? -1 : 1
-    if (aPlaying && bPlaying) {
+    const aIncluded = playbackState.included.has(a.id)
+    const bIncluded = playbackState.included.has(b.id)
+    if (aIncluded !== bIncluded) return aIncluded ? -1 : 1
+    if (aIncluded && bIncluded) {
       const av = playbackState.volumes.get(a.id) ?? 0
       const bv = playbackState.volumes.get(b.id) ?? 0
       if (av !== bv) return bv - av
@@ -27,10 +27,10 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, ca
   listEl.classList.remove('hidden')
 
   for (const entry of sortEntries(entries, playbackState)) {
-    const playing = playbackState.playing.has(entry.id)
+    const included = playbackState.included.has(entry.id)
     const loading = playbackState.loading.has(entry.id)
     const error = playbackState.errors.get(entry.id) ?? null
     const volume = playbackState.volumes.get(entry.id) ?? 0.7
-    listEl.appendChild(createSoundRow(entry, { playing, loading, error, volume }, callbacks))
+    listEl.appendChild(createSoundRow(entry, { included, loading, error, volume }, callbacks))
   }
 }

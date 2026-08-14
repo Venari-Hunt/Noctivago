@@ -8,8 +8,4 @@ export class AudioEngine {
   async resume() {
     if (this.context.state === 'suspended') await this.context.resume()
   }
-
-  async suspendAll() {
-    if (this.context.state === 'running') await this.context.suspend()
-  }
 }

@@ -144,6 +144,18 @@ main {
   width: 100px;
 }
 
+.global-volume-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.global-volume {
+  width: 100px;
+}
+
 .empty-state {
   color: var(--text-dim);
   text-align: center;
@@ -271,4 +283,28 @@ main {
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: ew-resize;
+}
+
+.loop-editor-times {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.loop-editor-times label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loop-editor-times input[type='text'] {
+  width: 80px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 12px;
 }

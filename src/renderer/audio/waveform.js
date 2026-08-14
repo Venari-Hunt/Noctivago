@@ -1,6 +1,10 @@
-function formatTick(seconds) {
-  const m = Math.floor(seconds / 60)
+function formatTick(seconds, showHours) {
   const s = Math.floor(seconds % 60)
+  const m = Math.floor(seconds / 60) % 60
+  if (showHours) {
+    const h = Math.floor(seconds / 3600)
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
@@ -11,7 +15,7 @@ function pickTickStep(duration, width) {
   return steps.find((s) => s >= rawStep) ?? steps[steps.length - 1]
 }
 
-export function drawWaveform(canvas, duration, { loopStart, loopEnd }) {
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead }) {
   const ctx = canvas.getContext('2d')
   const width = canvas.width
   const height = canvas.height
@@ -37,6 +41,7 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd }) {
   ctx.fillStyle = '#8892b0'
   ctx.font = '11px sans-serif'
   ctx.textBaseline = 'top'
+  const showHours = duration >= 3600
   const step = pickTickStep(duration, width)
   for (let t = 0; t <= duration; t += step) {
     const x = (t / duration) * width
@@ -45,7 +50,7 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd }) {
     ctx.moveTo(x + 0.5, mid - 6)
     ctx.lineTo(x + 0.5, mid + 6)
     ctx.stroke()
-    ctx.fillText(formatTick(t), x + 3, mid + 10)
+    ctx.fillText(formatTick(t, showHours), x + 3, mid + 10)
   }
 
   ctx.strokeStyle = '#f7768e'
@@ -56,4 +61,14 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd }) {
   ctx.moveTo(endX, 0)
   ctx.lineTo(endX, height)
   ctx.stroke()
+
+  if (Number.isFinite(playhead)) {
+    const playX = (Math.min(Math.max(playhead, 0), duration) / duration) * width
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(playX, 0)
+    ctx.lineTo(playX, height)
+    ctx.stroke()
+  }
 }

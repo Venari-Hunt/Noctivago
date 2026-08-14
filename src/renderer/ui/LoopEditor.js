@@ -7,6 +7,7 @@ export function createLoopEditorController(canvas) {
   let duration = 0
   let loopStart = 0
   let loopEnd = 0
+  let playhead = null
   let dragging = null
   let onChange = () => {}
 
@@ -20,7 +21,7 @@ export function createLoopEditorController(canvas) {
   }
 
   function redraw() {
-    drawWaveform(canvas, duration, { loopStart, loopEnd })
+    drawWaveform(canvas, duration, { loopStart, loopEnd, playhead })
   }
 
   function pointerDown(evt) {
@@ -55,10 +56,25 @@ export function createLoopEditorController(canvas) {
       duration = totalDuration
       loopStart = initialLoopStart ?? 0
       loopEnd = initialLoopEnd ?? totalDuration
+      playhead = null
       redraw()
     },
     getLoopPoints() {
       return { loopStart, loopEnd }
+    },
+    setLoopPoints(newStart, newEnd) {
+      loopStart = Math.min(Math.max(newStart, 0), duration)
+      loopEnd = Math.min(Math.max(newEnd, loopStart + MIN_LOOP_SECONDS), duration)
+      redraw()
+      onChange({ loopStart, loopEnd })
+    },
+    setPlayhead(t) {
+      playhead = t
+      redraw()
+    },
+    clearPlayhead() {
+      playhead = null
+      redraw()
     },
     onLoopChange(fn) {
       onChange = fn

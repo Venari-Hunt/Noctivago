@@ -9,6 +9,11 @@
     <div id="app">
       <header class="toolbar">
         <button id="global-play-pause" class="btn btn-primary" type="button">Play all</button>
+        <label class="global-volume-label">
+          Volume
+          <input id="global-volume" type="range" min="0" max="100" value="100" class="global-volume" />
+        </label>
+        <span class="spacer"></span>
         <button id="open-presets" class="btn" type="button">Presets</button>
         <button id="add-sound" class="btn" type="button">Add Sound</button>
       </header>
@@ -54,6 +59,14 @@
       <div class="modal-card modal-card-wide">
         <h2 id="loop-editor-title">Trim loop</h2>
         <canvas id="loop-editor-canvas" width="640" height="160"></canvas>
+        <div class="loop-editor-times">
+          <label>Start
+            <input id="loop-editor-start-input" type="text" inputmode="numeric" placeholder="0:00" />
+          </label>
+          <label>End
+            <input id="loop-editor-end-input" type="text" inputmode="numeric" placeholder="0:00" />
+          </label>
+        </div>
         <div class="modal-actions">
           <button id="loop-editor-preview" class="btn" type="button">Preview loop</button>
           <button id="loop-editor-stop-preview" class="btn" type="button">Stop preview</button>

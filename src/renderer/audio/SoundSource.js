@@ -9,6 +9,7 @@ export class LocalFileSoundSource {
     this.volume = volume
     this.playing = false
     this._rafId = null
+    this._pauseTimeoutId = null
 
     this.audioEl = new Audio()
     this.audioEl.crossOrigin = 'anonymous'
@@ -49,6 +50,10 @@ export class LocalFileSoundSource {
 
   async play() {
     if (this.playing) return
+    if (this._pauseTimeoutId) {
+      clearTimeout(this._pauseTimeoutId)
+      this._pauseTimeoutId = null
+    }
     const end = this._loopEnd()
     if (this.audioEl.currentTime < this.loopStart || (Number.isFinite(end) && this.audioEl.currentTime >= end)) {
       this.audioEl.currentTime = this.loopStart
@@ -70,7 +75,11 @@ export class LocalFileSoundSource {
     this.gainNode.gain.linearRampToValueAtTime(0, now + RAMP_SECONDS)
     this.playing = false
     if (this._rafId) cancelAnimationFrame(this._rafId)
-    setTimeout(() => this.audioEl.pause(), RAMP_SECONDS * 1000 + 20)
+    if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
+    this._pauseTimeoutId = setTimeout(() => {
+      this._pauseTimeoutId = null
+      this.audioEl.pause()
+    }, RAMP_SECONDS * 1000 + 20)
   }
 
   setVolume(volume) {
@@ -85,6 +94,7 @@ export class LocalFileSoundSource {
   dispose() {
     this.playing = false
     if (this._rafId) cancelAnimationFrame(this._rafId)
+    if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     this.audioEl.pause()
     this.audioEl.removeAttribute('src')
     this.audioEl.load()
