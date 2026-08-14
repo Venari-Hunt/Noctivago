@@ -10,13 +10,13 @@ export function createLoopEditorController(canvas) {
   let dragging = null
   let onChange = () => {}
 
-  function xToTime(x) {
-    const t = (x / canvas.width) * duration
+  function xToTime(x, displayWidth) {
+    const t = (x / displayWidth) * duration
     return Math.min(Math.max(t, 0), duration)
   }
 
-  function timeToX(t) {
-    return (t / duration) * canvas.width
+  function timeToX(t, displayWidth) {
+    return (t / duration) * displayWidth
   }
 
   function redraw() {
@@ -26,8 +26,8 @@ export function createLoopEditorController(canvas) {
   function pointerDown(evt) {
     const rect = canvas.getBoundingClientRect()
     const x = evt.clientX - rect.left
-    const startX = timeToX(loopStart)
-    const endX = timeToX(loopEnd)
+    const startX = timeToX(loopStart, rect.width)
+    const endX = timeToX(loopEnd, rect.width)
     if (Math.abs(x - startX) <= HANDLE_HIT_PX) dragging = 'start'
     else if (Math.abs(x - endX) <= HANDLE_HIT_PX) dragging = 'end'
   }
@@ -35,7 +35,7 @@ export function createLoopEditorController(canvas) {
   function pointerMove(evt) {
     if (!dragging || !duration) return
     const rect = canvas.getBoundingClientRect()
-    const t = xToTime(evt.clientX - rect.left)
+    const t = xToTime(evt.clientX - rect.left, rect.width)
     if (dragging === 'start') loopStart = Math.min(t, loopEnd - MIN_LOOP_SECONDS)
     else loopEnd = Math.max(t, loopStart + MIN_LOOP_SECONDS)
     redraw()

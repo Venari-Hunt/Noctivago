@@ -1,10 +1,20 @@
-import { app, BrowserWindow, shell, protocol, net } from 'electron'
+import { app, BrowserWindow, shell, protocol } from 'electron'
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import fs from 'node:fs'
+import { Readable } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers } from './ipc.js'
 import { getPlaybackPathForId } from './library.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+const MIME_TYPES = {
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
+  '.m4a': 'audio/mp4'
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -19,12 +29,39 @@ function registerSoundProtocol() {
     const filePath = getPlaybackPathForId(id)
     if (!filePath) return new Response('Not found', { status: 404 })
 
-    const response = await net.fetch(pathToFileURL(filePath).toString(), {
-      headers: request.headers
+    const stat = await fs.promises.stat(filePath)
+    const fileSize = stat.size
+    const mimeType = MIME_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+
+    let start = 0
+    let end = fileSize - 1
+    let status = 200
+    const headers = new Headers({
+      'Content-Type': mimeType,
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*'
     })
-    const headers = new Headers(response.headers)
-    headers.set('Access-Control-Allow-Origin', '*')
-    return new Response(response.body, { status: response.status, headers })
+
+    const range = request.headers.get('range')
+    if (range) {
+      const match = /bytes=(\d*)-(\d*)/.exec(range)
+      if (match && (match[1] || match[2])) {
+        if (match[1]) start = parseInt(match[1], 10)
+        if (match[2]) end = parseInt(match[2], 10)
+        end = Math.min(end, fileSize - 1)
+        status = 206
+        headers.set('Content-Range', `bytes ${start}-${end}/${fileSize}`)
+      }
+    }
+
+    headers.set('Content-Length', String(end - start + 1))
+
+    if (request.method === 'HEAD') {
+      return new Response(null, { status, headers })
+    }
+
+    const nodeStream = fs.createReadStream(filePath, { start, end })
+    return new Response(Readable.toWeb(nodeStream), { status, headers })
   })
 }
 
