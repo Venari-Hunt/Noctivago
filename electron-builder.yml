@@ -1,0 +1,12 @@
+appId: com.jltmdesign.noctivago
+productName: Noctívago
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

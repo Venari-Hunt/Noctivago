@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Noctívago</title>
+    <link rel="stylesheet" href="./styles/main.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="toolbar">
+        <button id="global-play-pause" class="btn btn-primary" type="button">Play all</button>
+        <button id="open-presets" class="btn" type="button">Presets</button>
+        <button id="add-sound" class="btn" type="button">Add Sound</button>
+      </header>
+      <main>
+        <ul id="sound-list" class="sound-list"></ul>
+        <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
+      </main>
+    </div>
+
+    <div id="add-sound-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Add sound</h2>
+        <label class="field-label">Name
+          <input id="add-sound-name" type="text" />
+        </label>
+        <label class="checkbox-row">
+          <input id="add-sound-keep-copy" type="checkbox" />
+          Keep a copy in the app (safe if you move/delete the original — uses extra disk space)
+        </label>
+        <div class="modal-actions">
+          <button id="add-sound-cancel" class="btn" type="button">Cancel</button>
+          <button id="add-sound-confirm" class="btn btn-primary" type="button">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="presets-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Presets</h2>
+        <div class="preset-save-row">
+          <input id="new-preset-name" type="text" placeholder="Preset name" />
+          <button id="save-preset" class="btn btn-primary" type="button">Save current mix</button>
+        </div>
+        <p id="preset-save-hint" class="preset-save-hint"></p>
+        <ul id="preset-list" class="preset-list"></ul>
+        <div class="modal-actions">
+          <button id="presets-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="loop-editor-modal" class="modal hidden">
+      <div class="modal-card modal-card-wide">
+        <h2 id="loop-editor-title">Trim loop</h2>
+        <canvas id="loop-editor-canvas" width="640" height="160"></canvas>
+        <div class="modal-actions">
+          <button id="loop-editor-preview" class="btn" type="button">Preview loop</button>
+          <button id="loop-editor-stop-preview" class="btn" type="button">Stop preview</button>
+          <span class="spacer"></span>
+          <button id="loop-editor-cancel" class="btn" type="button">Cancel</button>
+          <button id="loop-editor-save" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
