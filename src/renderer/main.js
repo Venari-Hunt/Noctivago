@@ -44,8 +44,7 @@ const els = {
   loopEditorCanvas: document.getElementById('loop-editor-canvas'),
   loopEditorStartInput: document.getElementById('loop-editor-start-input'),
   loopEditorEndInput: document.getElementById('loop-editor-end-input'),
-  loopEditorPreview: document.getElementById('loop-editor-preview'),
-  loopEditorStopPreview: document.getElementById('loop-editor-stop-preview'),
+  loopEditorPlayPause: document.getElementById('loop-editor-play-pause'),
   loopEditorCancel: document.getElementById('loop-editor-cancel'),
   loopEditorSave: document.getElementById('loop-editor-save')
 }
@@ -335,12 +334,19 @@ async function openLoopEditor(id) {
 
   if (!loopEditorController) {
     loopEditorController = createLoopEditorController(els.loopEditorCanvas)
-    loopEditorController.onLoopChange(({ loopStart, loopEnd }) => updateLoopTimeInputs(loopStart, loopEnd))
+    loopEditorController.onLoopChange(({ loopStart, loopEnd }) => {
+      updateLoopTimeInputs(loopStart, loopEnd)
+      previewSource?.setLoopPoints(loopStart, loopEnd)
+    })
+    loopEditorController.onScrub((t) => {
+      if (previewSource) previewSource.audioEl.currentTime = t
+    })
   }
   const loopStart = entry.loopStart
   const loopEnd = entry.loopEnd ?? duration
   loopEditorController.load(duration, loopStart, loopEnd)
   updateLoopTimeInputs(loopStart, loopEnd)
+  await preparePreviewSource(loopStart, loopEnd)
   showModal(els.loopEditorModal)
 }
 
@@ -357,15 +363,11 @@ function applyManualLoopPoints() {
 els.loopEditorStartInput.addEventListener('change', applyManualLoopPoints)
 els.loopEditorEndInput.addEventListener('change', applyManualLoopPoints)
 
-function stopPreview() {
+function stopPreviewTicking() {
   if (previewRafId) {
     cancelAnimationFrame(previewRafId)
     previewRafId = null
   }
-  if (!previewSource) return
-  previewSource.dispose()
-  previewSource = null
-  loopEditorController?.clearPlayhead()
 }
 
 function tickPreviewPlayhead() {
@@ -374,11 +376,11 @@ function tickPreviewPlayhead() {
   previewRafId = requestAnimationFrame(tickPreviewPlayhead)
 }
 
-els.loopEditorPreview.addEventListener('click', async () => {
-  if (!loopEditorController || !loopEditorSoundId) return
-  stopPreview()
-  const { loopStart, loopEnd } = loopEditorController.getLoopPoints()
-
+// Creates a paused preview source positioned at loopStart as soon as the
+// editor opens, so the needle is draggable/scrubbable even before pressing
+// Play. Play/Pause then just plays or pauses this same source in place.
+async function preparePreviewSource(loopStart, loopEnd) {
+  disposePreview()
   await engine.resume()
   previewSource = new LocalFileSoundSource(engine, {
     soundId: loopEditorSoundId,
@@ -386,19 +388,40 @@ els.loopEditorPreview.addEventListener('click', async () => {
     loopEnd,
     volume: 0.7
   })
-  try {
-    await previewSource.play()
-    tickPreviewPlayhead()
-  } catch (err) {
-    console.error('Failed to preview loop', err)
-    stopPreview()
+  await previewSource.waitForMetadata()
+  previewSource.audioEl.currentTime = loopStart
+  loopEditorController?.setPlayhead(loopStart)
+  els.loopEditorPlayPause.textContent = 'Play'
+}
+
+function disposePreview() {
+  stopPreviewTicking()
+  if (!previewSource) return
+  previewSource.dispose()
+  previewSource = null
+  loopEditorController?.clearPlayhead()
+}
+
+els.loopEditorPlayPause.addEventListener('click', async () => {
+  if (!previewSource) return
+  if (previewSource.playing) {
+    previewSource.pause()
+    stopPreviewTicking()
+    els.loopEditorPlayPause.textContent = 'Play'
+  } else {
+    try {
+      await engine.resume()
+      await previewSource.play()
+      els.loopEditorPlayPause.textContent = 'Pause'
+      tickPreviewPlayhead()
+    } catch (err) {
+      console.error('Failed to preview loop', err)
+    }
   }
 })
 
-els.loopEditorStopPreview.addEventListener('click', stopPreview)
-
 els.loopEditorCancel.addEventListener('click', () => {
-  stopPreview()
+  disposePreview()
   hideModal(els.loopEditorModal)
 })
 
@@ -406,7 +429,7 @@ els.loopEditorSave.addEventListener('click', async () => {
   if (!loopEditorController || !loopEditorSoundId) return
   const { loopStart, loopEnd } = loopEditorController.getLoopPoints()
   await api.library.updateLoopPoints(loopEditorSoundId, { loopStart, loopEnd })
-  stopPreview()
+  disposePreview()
 
   const entry = state.library.find((s) => s.id === loopEditorSoundId)
   if (entry) {

@@ -1,6 +1,7 @@
 import { drawWaveform } from '../audio/waveform.js'
 
 const HANDLE_HIT_PX = 8
+const SNAP_PX = 12
 const MIN_LOOP_SECONDS = 0.05
 
 export function createLoopEditorController(canvas) {
@@ -10,6 +11,7 @@ export function createLoopEditorController(canvas) {
   let playhead = null
   let dragging = null
   let onChange = () => {}
+  let onScrub = () => {}
 
   function xToTime(x, displayWidth) {
     const t = (x / displayWidth) * duration
@@ -24,23 +26,46 @@ export function createLoopEditorController(canvas) {
     drawWaveform(canvas, duration, { loopStart, loopEnd, playhead })
   }
 
+  // If a dragged start/end handle ends up within SNAP_PX of the playhead,
+  // snap it exactly onto the playhead's time instead of the raw drag position.
+  function snapToPlayhead(t, rect) {
+    if (playhead == null) return t
+    const dist = Math.abs(timeToX(t, rect.width) - timeToX(playhead, rect.width))
+    return dist <= SNAP_PX ? playhead : t
+  }
+
   function pointerDown(evt) {
     const rect = canvas.getBoundingClientRect()
     const x = evt.clientX - rect.left
-    const startX = timeToX(loopStart, rect.width)
-    const endX = timeToX(loopEnd, rect.width)
-    if (Math.abs(x - startX) <= HANDLE_HIT_PX) dragging = 'start'
-    else if (Math.abs(x - endX) <= HANDLE_HIT_PX) dragging = 'end'
+    const candidates = [
+      { type: 'start', dist: Math.abs(x - timeToX(loopStart, rect.width)) },
+      { type: 'end', dist: Math.abs(x - timeToX(loopEnd, rect.width)) }
+    ]
+    if (playhead != null) {
+      candidates.push({ type: 'playhead', dist: Math.abs(x - timeToX(playhead, rect.width)) })
+    }
+    const closest = candidates.reduce((a, b) => (a.dist <= b.dist ? a : b))
+    if (closest.dist <= HANDLE_HIT_PX) dragging = closest.type
   }
 
   function pointerMove(evt) {
     if (!dragging || !duration) return
     const rect = canvas.getBoundingClientRect()
     const t = xToTime(evt.clientX - rect.left, rect.width)
-    if (dragging === 'start') loopStart = Math.min(t, loopEnd - MIN_LOOP_SECONDS)
-    else loopEnd = Math.max(t, loopStart + MIN_LOOP_SECONDS)
-    redraw()
-    onChange({ loopStart, loopEnd })
+
+    if (dragging === 'start') {
+      loopStart = Math.min(snapToPlayhead(t, rect), loopEnd - MIN_LOOP_SECONDS)
+      redraw()
+      onChange({ loopStart, loopEnd })
+    } else if (dragging === 'end') {
+      loopEnd = Math.max(snapToPlayhead(t, rect), loopStart + MIN_LOOP_SECONDS)
+      redraw()
+      onChange({ loopStart, loopEnd })
+    } else if (dragging === 'playhead') {
+      playhead = t
+      redraw()
+      onScrub(t)
+    }
   }
 
   function pointerUp() {
@@ -78,6 +103,9 @@ export function createLoopEditorController(canvas) {
     },
     onLoopChange(fn) {
       onChange = fn
+    },
+    onScrub(fn) {
+      onScrub = fn
     },
     destroy() {
       canvas.removeEventListener('mousedown', pointerDown)
