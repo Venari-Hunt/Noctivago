@@ -15,7 +15,8 @@ const MIME_TYPES = {
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
   '.flac': 'audio/flac',
-  '.m4a': 'audio/mp4'
+  '.m4a': 'audio/mp4',
+  '.opus': 'audio/opus'
 }
 
 protocol.registerSchemesAsPrivileged([

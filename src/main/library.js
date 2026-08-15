@@ -10,7 +10,7 @@ const store = new Store({
   defaults: { sounds: [], lastAddFolder: null }
 })
 
-const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'm4a']
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'opus']
 
 function soundsDir() {
   const dir = path.join(app.getPath('userData'), 'sounds')
