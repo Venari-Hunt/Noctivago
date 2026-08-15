@@ -13,20 +13,33 @@ export function getLoopClipPath(id) {
   return path.join(clipsDir(), `${id}.wav`)
 }
 
-// Renders just [loopStart, loopEnd) of inputPath into its own small WAV file,
-// so it can be fully decoded client-side for native, sample-accurate looping
-// instead of streaming the (possibly huge) original with an approximate
-// seek-back loop. Never throws — callers get {ok:false, error} instead, so a
-// failed render can't block saving the loop points themselves.
-export function renderLoopClip({ id, inputPath, loopStart, loopEnd }) {
+// Builds an ffmpeg -af chain from a {highpassHz, lowpassHz, gainDb} filter
+// set, skipping any band left at its neutral/no-op value. Returns null if
+// every band is neutral (nothing to apply).
+function buildFilterChain(filters) {
+  if (!filters) return null
+  const parts = []
+  if (filters.highpassHz > 0) parts.push(`highpass=f=${filters.highpassHz}`)
+  if (filters.lowpassHz > 0 && filters.lowpassHz < 20000) parts.push(`lowpass=f=${filters.lowpassHz}`)
+  if (filters.gainDb) parts.push(`volume=${filters.gainDb}dB`)
+  return parts.length > 0 ? parts.join(',') : null
+}
+
+// Renders just [loopStart, loopEnd) of inputPath — with any filters baked
+// in — into its own small WAV file, so it can be fully decoded client-side
+// for native, sample-accurate looping instead of streaming the (possibly
+// huge) original with an approximate seek-back loop. Never throws — callers
+// get {ok:false, error} instead, so a failed render can't block saving the
+// loop points/filters themselves.
+export function renderLoopClip({ id, inputPath, loopStart, loopEnd, filters }) {
   if (pending.has(id)) return pending.get(id)
 
-  const promise = doRender({ id, inputPath, loopStart, loopEnd }).finally(() => pending.delete(id))
+  const promise = doRender({ id, inputPath, loopStart, loopEnd, filters }).finally(() => pending.delete(id))
   pending.set(id, promise)
   return promise
 }
 
-async function doRender({ id, inputPath, loopStart, loopEnd }) {
+async function doRender({ id, inputPath, loopStart, loopEnd, filters }) {
   const outputPath = getLoopClipPath(id)
   const tmpPath = `${outputPath}.tmp`
   fs.mkdirSync(clipsDir(), { recursive: true })
@@ -38,12 +51,13 @@ async function doRender({ id, inputPath, loopStart, loopEnd }) {
     '-i', inputPath,
     '-t', duration.toFixed(3),
     '-map', '0:a:0',
-    '-vn',
-    '-c:a', 'pcm_s16le',
-    '-ar', '44100',
-    '-f', 'wav',
-    tmpPath
+    '-vn'
   ]
+
+  const filterChain = buildFilterChain(filters)
+  if (filterChain) args.push('-af', filterChain)
+
+  args.push('-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath)
 
   try {
     await runFfmpegToFile(args)

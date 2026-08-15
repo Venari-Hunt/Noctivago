@@ -3,14 +3,9 @@ import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { renderSoundList } from '../../ui/SoundList.js'
 import { renderPresetList } from '../../ui/PresetsModal.js'
-import { createLoopEditorController } from '../../ui/LoopEditor.js'
-import { formatDuration, parseDuration } from '../../util/time.js'
-import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
-
-const waveformPeaksCache = new Map()
 
 const state = {
   library: [],
@@ -41,24 +36,10 @@ const els = {
   savePresetBtn: document.getElementById('save-preset'),
   presetSaveHint: document.getElementById('preset-save-hint'),
   presetList: document.getElementById('preset-list'),
-  presetsClose: document.getElementById('presets-close'),
-
-  loopEditorModal: document.getElementById('loop-editor-modal'),
-  loopEditorTitle: document.getElementById('loop-editor-title'),
-  loopEditorCanvas: document.getElementById('loop-editor-canvas'),
-  loopEditorWaveformStatus: document.getElementById('loop-editor-waveform-status'),
-  loopEditorStartInput: document.getElementById('loop-editor-start-input'),
-  loopEditorEndInput: document.getElementById('loop-editor-end-input'),
-  loopEditorPlayPause: document.getElementById('loop-editor-play-pause'),
-  loopEditorCancel: document.getElementById('loop-editor-cancel'),
-  loopEditorSave: document.getElementById('loop-editor-save')
+  presetsClose: document.getElementById('presets-close')
 }
 
 let pickedFile = null
-let loopEditorSoundId = null
-let loopEditorController = null
-let previewSource = null
-let previewRafId = null
 
 function showModal(el) {
   el.classList.remove('hidden')
@@ -76,7 +57,6 @@ function render() {
   renderSoundList(els.soundList, els.emptyState, state.library, state, {
     onToggleIncluded: toggleIncluded,
     onVolumeChange: changeVolume,
-    onOpenLoopEditor: openLoopEditor,
     onRemove: removeSound,
     onRelink: relinkSound
   })
@@ -89,13 +69,19 @@ async function refreshList() {
 }
 
 function loopClipEligible(entry) {
-  return entry.loopClipReady === true && entry.loopClipStart === entry.loopStart && entry.loopClipEnd === entry.loopEnd
+  return (
+    entry.loopClipReady === true &&
+    entry.loopClipStart === entry.loopStart &&
+    entry.loopClipEnd === entry.loopEnd &&
+    JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters)
+  )
 }
 
-// Tries the small pre-rendered loop clip (native, sample-accurate looping).
-// Returns null on any failure so the caller falls back to streaming the
-// original file — this is what keeps the feature safe even if ffmpeg is
-// missing or the clip is corrupt.
+// Tries the small pre-rendered loop clip (native, sample-accurate looping;
+// trimmed and filtered by the Remix plugin, see plugins/editor/). Returns
+// null on any failure so the caller falls back to streaming the original
+// file — this is what keeps the feature safe even if ffmpeg is missing or
+// the clip is corrupt.
 async function tryCreateBufferSource(entry) {
   try {
     const response = await fetch(`sound://${entry.id}?variant=clip`)
@@ -329,201 +315,6 @@ async function deletePreset(id) {
   await api.presets.delete(id)
   await refreshPresetList()
 }
-
-async function getDuration(entry) {
-  if (entry.durationSeconds != null) return entry.durationSeconds
-  await getOrCreateSource(entry)
-  if (entry.durationSeconds == null) throw new Error('Unable to read audio metadata')
-  return entry.durationSeconds
-}
-
-function updateLoopTimeInputs(loopStart, loopEnd) {
-  els.loopEditorStartInput.value = formatDuration(loopStart)
-  els.loopEditorEndInput.value = formatDuration(loopEnd)
-}
-
-// Real amplitude peaks, computed in the main process via ffmpeg (streams
-// through the file rather than decoding it whole, so this works regardless
-// of length). Cached per sound so reopening the editor is instant.
-async function getWaveformPeaks(id) {
-  if (waveformPeaksCache.has(id)) return waveformPeaksCache.get(id)
-  const peaks = await api.audio.getWaveformPeaks(id, els.loopEditorCanvas.width)
-  waveformPeaksCache.set(id, peaks)
-  return peaks
-}
-
-async function openLoopEditor(id) {
-  const entry = state.library.find((s) => s.id === id)
-  if (!entry || entry.status === 'missing' || state.loading.has(id)) return
-  loopEditorSoundId = id
-
-  state.errors.delete(id)
-  state.loading.add(id)
-  render()
-  let duration
-  try {
-    duration = await getDuration(entry)
-  } catch (err) {
-    console.error('Failed to read metadata for loop editor', entry.name, err)
-    state.errors.set(id, 'Could not read this audio file.')
-    return
-  } finally {
-    state.loading.delete(id)
-    render()
-  }
-
-  els.loopEditorTitle.textContent = `Trim loop — ${entry.name}`
-
-  if (!loopEditorController) {
-    loopEditorController = createLoopEditorController(els.loopEditorCanvas)
-    loopEditorController.onLoopChange(({ loopStart, loopEnd }) => {
-      updateLoopTimeInputs(loopStart, loopEnd)
-      previewSource?.setLoopPoints(loopStart, loopEnd)
-    })
-    loopEditorController.onScrub((t) => {
-      if (previewSource) previewSource.audioEl.currentTime = t
-    })
-  }
-  const loopStart = entry.loopStart
-  const loopEnd = entry.loopEnd ?? duration
-  loopEditorController.load(duration, loopStart, loopEnd)
-  updateLoopTimeInputs(loopStart, loopEnd)
-  await preparePreviewSource(loopStart, loopEnd)
-  showModal(els.loopEditorModal)
-
-  els.loopEditorWaveformStatus.textContent = waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
-  const peaks = await getWaveformPeaks(id)
-  if (loopEditorSoundId !== id) return // a different sound's editor was opened meanwhile
-  loopEditorController.setPeaks(peaks)
-  els.loopEditorWaveformStatus.textContent = peaks ? '' : 'Waveform preview unavailable for this file.'
-}
-
-function applyManualLoopPoints() {
-  if (!loopEditorController) return
-  const start = parseDuration(els.loopEditorStartInput.value)
-  const end = parseDuration(els.loopEditorEndInput.value)
-  if (start == null || end == null) return
-  loopEditorController.setLoopPoints(start, end)
-  const { loopStart, loopEnd } = loopEditorController.getLoopPoints()
-  updateLoopTimeInputs(loopStart, loopEnd)
-}
-
-els.loopEditorStartInput.addEventListener('change', applyManualLoopPoints)
-els.loopEditorEndInput.addEventListener('change', applyManualLoopPoints)
-
-function stopPreviewTicking() {
-  if (previewRafId) {
-    cancelAnimationFrame(previewRafId)
-    previewRafId = null
-  }
-}
-
-function tickPreviewPlayhead() {
-  if (!previewSource || !loopEditorController) return
-  loopEditorController.setPlayhead(previewSource.audioEl.currentTime)
-  previewRafId = requestAnimationFrame(tickPreviewPlayhead)
-}
-
-// Creates a paused preview source positioned at loopStart as soon as the
-// editor opens, so the needle is draggable/scrubbable even before pressing
-// Play. Play/Pause then just plays or pauses this same source in place.
-async function preparePreviewSource(loopStart, loopEnd) {
-  disposePreview()
-  await engine.resume()
-  previewSource = new LocalFileSoundSource(engine, {
-    soundId: loopEditorSoundId,
-    loopStart,
-    loopEnd,
-    volume: 0.7
-  })
-  await previewSource.waitForMetadata()
-  previewSource.audioEl.currentTime = loopStart
-  loopEditorController?.setPlayhead(loopStart)
-  els.loopEditorPlayPause.textContent = 'Play'
-}
-
-function disposePreview() {
-  stopPreviewTicking()
-  if (!previewSource) return
-  previewSource.dispose()
-  previewSource = null
-  loopEditorController?.clearPlayhead()
-}
-
-els.loopEditorPlayPause.addEventListener('click', async () => {
-  if (!previewSource) return
-  if (previewSource.playing) {
-    previewSource.pause()
-    stopPreviewTicking()
-    els.loopEditorPlayPause.textContent = 'Play'
-  } else {
-    try {
-      await engine.resume()
-      await previewSource.play()
-      els.loopEditorPlayPause.textContent = 'Pause'
-      tickPreviewPlayhead()
-    } catch (err) {
-      console.error('Failed to preview loop', err)
-    }
-  }
-})
-
-els.loopEditorCancel.addEventListener('click', () => {
-  disposePreview()
-  hideModal(els.loopEditorModal)
-})
-
-els.loopEditorSave.addEventListener('click', async () => {
-  if (!loopEditorController || !loopEditorSoundId) return
-  const id = loopEditorSoundId
-  const { loopStart, loopEnd } = loopEditorController.getLoopPoints()
-  await api.library.updateLoopPoints(id, { loopStart, loopEnd })
-
-  const entry = state.library.find((s) => s.id === id)
-  if (entry) {
-    entry.loopStart = loopStart
-    entry.loopEnd = loopEnd
-  }
-
-  // Best-effort: render a small clip for native gapless looping. Only within
-  // the eligibility cap — a longer trimmed region keeps streaming exactly as
-  // before, since fully decoding it client-side would risk the same
-  // memory/crash problem long files hit before this app streamed instead.
-  if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
-    els.loopEditorSave.disabled = true
-    els.loopEditorSave.textContent = 'Saving…'
-    const result = await api.audio.renderLoopClip(id, { loopStart, loopEnd })
-    if (entry) {
-      if (result.ok) {
-        entry.loopClipReady = true
-        entry.loopClipStart = loopStart
-        entry.loopClipEnd = loopEnd
-      } else {
-        entry.loopClipReady = false
-        entry.loopClipStart = null
-        entry.loopClipEnd = null
-      }
-    }
-    els.loopEditorSave.disabled = false
-    els.loopEditorSave.textContent = 'Save'
-  }
-
-  disposePreview()
-
-  // Drop any live cached source so the next play re-evaluates buffer vs
-  // stream mode against the freshly (re)rendered clip; restart immediately
-  // if it was audibly playing so saving a trim doesn't silently cut it out.
-  const wasPlaying = state.playing.has(id)
-  state.sources.get(id)?.dispose()
-  state.sources.delete(id)
-  if (wasPlaying) {
-    state.playing.delete(id)
-    if (entry) await startPlayback(id, entry)
-  }
-
-  hideModal(els.loopEditorModal)
-  render()
-})
 
 export function mount(container) {
   container.innerHTML = `

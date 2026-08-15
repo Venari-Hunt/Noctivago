@@ -70,13 +70,6 @@ export function createSoundRow(entry, { included, loading, error, volume }, call
       callbacks.onVolumeChange(entry.id, Number(volumeSlider.value) / 100)
     })
     li.appendChild(volumeSlider)
-
-    const trimBtn = document.createElement('button')
-    trimBtn.className = 'btn btn-small'
-    trimBtn.type = 'button'
-    trimBtn.textContent = 'Trim'
-    trimBtn.addEventListener('click', () => callbacks.onOpenLoopEditor(entry.id))
-    li.appendChild(trimBtn)
   }
 
   const removeBtn = document.createElement('button')

@@ -7,6 +7,7 @@ const api = {
     addSound: (payload) => ipcRenderer.invoke('library:addSound', payload),
     updateMeta: (id, meta) => ipcRenderer.invoke('library:updateMeta', id, meta),
     updateLoopPoints: (id, points) => ipcRenderer.invoke('library:updateLoopPoints', id, points),
+    updateFilters: (id, filters) => ipcRenderer.invoke('library:updateFilters', id, filters),
     relink: (id) => ipcRenderer.invoke('library:relink', id),
     remove: (id) => ipcRenderer.invoke('library:remove', id)
   },

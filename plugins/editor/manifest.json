@@ -1,0 +1,10 @@
+{
+  "id": "remix",
+  "name": "Remix",
+  "version": "0.1.0",
+  "minAppVersion": "0.2.0",
+  "description": "Trim loop points and apply filters (high-pass, low-pass, gain) to your sounds, with live preview.",
+  "author": "Noctívago",
+  "main": "index.js",
+  "styles": "styles.css"
+}

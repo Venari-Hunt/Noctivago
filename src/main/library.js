@@ -79,9 +79,11 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     durationSeconds: null,
     loopStart: 0,
     loopEnd: null,
+    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0 },
     loopClipReady: false,
     loopClipStart: null,
     loopClipEnd: null,
+    loopClipFilters: null,
     status: 'ok'
   }
 
@@ -112,12 +114,21 @@ export function updateLoopPoints(id, { loopStart, loopEnd }) {
   return updateEntry(id, { loopStart, loopEnd })
 }
 
-export function setLoopClipReady(id, { loopStart, loopEnd }) {
-  return updateEntry(id, { loopClipReady: true, loopClipStart: loopStart, loopClipEnd: loopEnd })
+export function updateFilters(id, filters) {
+  return updateEntry(id, { filters })
+}
+
+export function setLoopClipReady(id, { loopStart, loopEnd, filters }) {
+  return updateEntry(id, {
+    loopClipReady: true,
+    loopClipStart: loopStart,
+    loopClipEnd: loopEnd,
+    loopClipFilters: filters
+  })
 }
 
 export function setLoopClipStale(id) {
-  return updateEntry(id, { loopClipReady: false, loopClipStart: null, loopClipEnd: null })
+  return updateEntry(id, { loopClipReady: false, loopClipStart: null, loopClipEnd: null, loopClipFilters: null })
 }
 
 export async function relink(id) {
@@ -133,7 +144,8 @@ export async function relink(id) {
     status: 'ok',
     loopClipReady: false,
     loopClipStart: null,
-    loopClipEnd: null
+    loopClipEnd: null,
+    loopClipFilters: null
   })
 }
 
@@ -161,7 +173,10 @@ export function getLoopClipPathForId(id) {
   const entry = sounds.find((s) => s.id === id)
   if (!entry) return null
   const eligible =
-    entry.loopClipReady && entry.loopClipStart === entry.loopStart && entry.loopClipEnd === entry.loopEnd
+    entry.loopClipReady &&
+    entry.loopClipStart === entry.loopStart &&
+    entry.loopClipEnd === entry.loopEnd &&
+    JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters)
   if (!eligible) return null
   const clipPath = getLoopClipPath(id)
   return fs.existsSync(clipPath) ? clipPath : null

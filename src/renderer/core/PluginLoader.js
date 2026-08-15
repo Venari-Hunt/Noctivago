@@ -14,6 +14,13 @@ export async function loadPlugins(tabHost) {
 
   for (const { id, manifest } of plugins) {
     try {
+      if (manifest.styles) {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = `plugin://${id}/${manifest.styles}`
+        document.head.appendChild(link)
+      }
+
       const url = `plugin://${id}/${manifest.main}`
       const module = await import(/* @vite-ignore */ url)
       const PluginClass = module.default
