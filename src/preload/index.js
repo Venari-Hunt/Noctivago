@@ -8,6 +8,7 @@ const api = {
     updateMeta: (id, meta) => ipcRenderer.invoke('library:updateMeta', id, meta),
     updateLoopPoints: (id, points) => ipcRenderer.invoke('library:updateLoopPoints', id, points),
     updateFilters: (id, filters) => ipcRenderer.invoke('library:updateFilters', id, filters),
+    rename: (id, name) => ipcRenderer.invoke('library:rename', id, name),
     relink: (id) => ipcRenderer.invoke('library:relink', id),
     remove: (id) => ipcRenderer.invoke('library:remove', id)
   },

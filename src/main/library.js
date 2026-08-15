@@ -118,6 +118,12 @@ export function updateFilters(id, filters) {
   return updateEntry(id, { filters })
 }
 
+export function rename(id, name) {
+  const trimmed = name.trim()
+  if (!trimmed) return null
+  return updateEntry(id, { name: trimmed })
+}
+
 export function setLoopClipReady(id, { loopStart, loopEnd, filters }) {
   return updateEntry(id, {
     loopClipReady: true,

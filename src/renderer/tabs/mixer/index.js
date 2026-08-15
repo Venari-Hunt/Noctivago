@@ -58,9 +58,15 @@ function render() {
     onToggleIncluded: toggleIncluded,
     onVolumeChange: changeVolume,
     onRemove: removeSound,
-    onRelink: relinkSound
+    onRelink: relinkSound,
+    onRename: renameSound
   })
   refreshGlobalButton()
+}
+
+async function renameSound(id, name) {
+  await api.library.rename(id, name)
+  await refreshList()
 }
 
 async function refreshList() {

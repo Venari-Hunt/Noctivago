@@ -153,6 +153,19 @@ main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: text;
+}
+
+.sound-row-name-input {
+  font: inherit;
+  font-weight: 600;
+  width: 100%;
+  max-width: 260px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
 .sound-row-meta {

@@ -13,6 +13,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:updateMeta', (_event, id, meta) => library.updateMeta(id, meta))
   ipcMain.handle('library:updateLoopPoints', (_event, id, points) => library.updateLoopPoints(id, points))
   ipcMain.handle('library:updateFilters', (_event, id, filters) => library.updateFilters(id, filters))
+  ipcMain.handle('library:rename', (_event, id, name) => library.rename(id, name))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))
 

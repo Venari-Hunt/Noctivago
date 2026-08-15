@@ -23,6 +23,36 @@ export function createSoundRow(entry, { included, loading, error, volume }, call
   const name = document.createElement('span')
   name.className = 'sound-row-name'
   name.textContent = entry.name
+  name.title = 'Double-click to rename'
+  name.addEventListener('dblclick', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'sound-row-name-input'
+    input.value = entry.name
+    name.replaceWith(input)
+    input.focus()
+    input.select()
+
+    let settled = false
+    const commit = () => {
+      if (settled) return
+      settled = true
+      const value = input.value.trim()
+      if (value && value !== entry.name) callbacks.onRename(entry.id, value)
+      else input.replaceWith(name)
+    }
+    const cancel = () => {
+      if (settled) return
+      settled = true
+      input.replaceWith(name)
+    }
+
+    input.addEventListener('blur', commit)
+    input.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Enter') input.blur()
+      else if (evt.key === 'Escape') cancel()
+    })
+  })
   info.appendChild(name)
 
   const meta = document.createElement('span')
