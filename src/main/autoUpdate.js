@@ -21,9 +21,10 @@ if (__UPDATE_TOKEN__) process.env.GH_TOKEN = __UPDATE_TOKEN__
 log.transports.file.level = 'info'
 autoUpdater.logger = log
 
-// Never silent: downloads and installs only happen after the user says yes,
-// at each step, matching what was asked for (a prompt, not a background
-// auto-install).
+// Never downloads without asking first - but once the user has said yes to
+// that one prompt, the actual install-and-restart happens on its own with
+// no second confirmation, per an explicit user request that this shouldn't
+// need two separate "are you sure"s.
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
 
@@ -43,22 +44,17 @@ export function initAutoUpdate() {
       cancelId: 1,
       title: 'Update available',
       message: `Noctívago ${info.version} is available (you have ${app.getVersion()}).`,
-      detail: 'Download it now? It will install the next time you restart the app.'
+      detail: 'Download it now? It will install automatically and restart the app once the download finishes.'
     })
     if (response === 0) autoUpdater.downloadUpdate()
   })
 
-  autoUpdater.on('update-downloaded', async (info) => {
-    const { response } = await dialog.showMessageBox({
-      type: 'info',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Update ready',
-      message: `Noctívago ${info.version} has been downloaded.`,
-      detail: 'Restart now to install it?'
-    })
-    if (response === 0) autoUpdater.quitAndInstall()
+  // No second confirmation here on purpose - the one Download? prompt above
+  // is the only consent needed; once that's given, install-and-restart just
+  // happens.
+  autoUpdater.on('update-downloaded', (info) => {
+    log.info(`Auto-update: ${info.version} downloaded, installing and restarting now`)
+    autoUpdater.quitAndInstall()
   })
 
   autoUpdater.on('update-not-available', (info) => {
