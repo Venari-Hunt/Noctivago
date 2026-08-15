@@ -31,6 +31,12 @@ export default class EditorPlugin {
       id: 'remix',
       title: 'Remix',
       mount: (container) => this.mount(container),
+      onShow: () => {
+        // Picks up sounds added/removed elsewhere (e.g. the Mixer) since
+        // this tab last mounted — mount() only runs once per tab lifetime,
+        // so without this the picker would silently go stale.
+        if (this.els.select) this.refreshLibrary().catch((err) => console.error('Editor: failed to refresh library', err))
+      },
       onHide: () => {
         this.previewSource?.pause()
         this.stopPreviewTicking()
@@ -87,6 +93,7 @@ export default class EditorPlugin {
             <span class="spacer"></span>
             <button id="editor-save" class="btn btn-primary" type="button">Save</button>
           </div>
+          <p id="editor-save-status" class="editor-save-status"></p>
         </div>
         <p id="editor-empty" class="editor-empty">Select a sound above to trim and apply filters.</p>
       </div>
@@ -109,7 +116,8 @@ export default class EditorPlugin {
       gainValue: container.querySelector('#editor-gain-value'),
       playPause: container.querySelector('#editor-play-pause'),
       resetFilters: container.querySelector('#editor-reset-filters'),
-      save: container.querySelector('#editor-save')
+      save: container.querySelector('#editor-save'),
+      saveStatus: container.querySelector('#editor-save-status')
     }
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
@@ -265,6 +273,7 @@ export default class EditorPlugin {
     this.els.playPause.textContent = 'Play'
     this.els.save.disabled = false
     this.els.save.textContent = 'Save'
+    this.els.saveStatus.textContent = ''
 
     const filters = entry.filters ?? { ...NEUTRAL_FILTERS }
     this.els.highpass.value = String(filters.highpassHz)
@@ -316,11 +325,14 @@ export default class EditorPlugin {
     this.currentEntry.loopEnd = loopEnd
     this.currentEntry.filters = filters
 
-    // Best-effort: bake trim+filters into a small clip for native gapless
-    // playback in the Mixer. Only within the eligibility cap — a longer
-    // trimmed region keeps the Mixer streaming exactly as before, since
-    // fully decoding it client-side would risk the same memory/crash
-    // problem long files hit before this app streamed instead of decoding.
+    // This never touches the original audio file: trim points and filters
+    // are stored as metadata, applied live whenever the Mixer streams the
+    // sound. Best-effort on top of that: bake trim+filters into a small
+    // clip for native gapless looping. Only within the eligibility cap — a
+    // longer trimmed region keeps the Mixer streaming (still filtered, just
+    // with a small loop seam) instead of fully decoding it client-side,
+    // which would risk the same memory/crash problem long files hit before
+    // this app streamed instead of decoding.
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
       this.els.save.disabled = true
       this.els.save.textContent = 'Saving…'
@@ -330,14 +342,18 @@ export default class EditorPlugin {
         this.currentEntry.loopClipStart = loopStart
         this.currentEntry.loopClipEnd = loopEnd
         this.currentEntry.loopClipFilters = filters
+        this.els.saveStatus.textContent = 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
       } else {
         this.currentEntry.loopClipReady = false
         this.currentEntry.loopClipStart = null
         this.currentEntry.loopClipEnd = null
         this.currentEntry.loopClipFilters = null
+        this.els.saveStatus.textContent = 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
       }
       this.els.save.disabled = false
       this.els.save.textContent = 'Save'
+    } else {
+      this.els.saveStatus.textContent = 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
     }
   }
 }

@@ -108,7 +108,8 @@ async function getOrCreateSource(entry) {
       soundId: entry.id,
       loopStart: entry.loopStart,
       loopEnd: entry.loopEnd,
-      volume: state.volumes.get(entry.id) ?? 0.7
+      volume: state.volumes.get(entry.id) ?? 0.7,
+      filters: entry.filters
     })
 
     const duration = await source.waitForMetadata()
@@ -314,6 +315,15 @@ async function loadPreset(preset) {
 async function deletePreset(id) {
   await api.presets.delete(id)
   await refreshPresetList()
+}
+
+// Re-reads the library on every return to this tab, so edits made in
+// another tab (e.g. trim/filters saved in the Remix plugin) take effect
+// without requiring an unrelated action like adding or removing a sound to
+// trigger a refresh. Cheap (one IPC call) and non-disruptive — it only
+// replaces `state.library`, never touches already-playing sources.
+export function onShow() {
+  refreshList()
 }
 
 export function mount(container) {

@@ -101,6 +101,13 @@
   align-items: center;
 }
 
+.editor-save-status {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  min-height: 14px;
+}
+
 .editor-empty {
   color: var(--text-dim);
   text-align: center;

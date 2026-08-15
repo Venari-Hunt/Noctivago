@@ -2,7 +2,7 @@ const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
 
 export class LocalFileSoundSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, filters }) {
     this.engine = engine
     this.loopStart = loopStart ?? 0
     this.loopEnd = loopEnd ?? null
@@ -17,9 +17,30 @@ export class LocalFileSoundSource {
     this.audioEl.src = `sound://${soundId}`
 
     this.sourceNode = engine.context.createMediaElementSource(this.audioEl)
+
+    // Same highpass -> lowpass -> gain chain as the Remix plugin's preview
+    // (plugins/editor/audio/PreviewSource.js), so saved filters are audible
+    // in the Mixer even for sounds too long to qualify for a baked buffer
+    // clip. Loop-clip eligibility only affects seam smoothness, never
+    // whether filters apply.
+    this.highpassNode = engine.context.createBiquadFilter()
+    this.highpassNode.type = 'highpass'
+    this.highpassNode.frequency.value = filters?.highpassHz ?? 0
+
+    this.lowpassNode = engine.context.createBiquadFilter()
+    this.lowpassNode.type = 'lowpass'
+    this.lowpassNode.frequency.value = filters?.lowpassHz ?? 20000
+
+    this.filterGainNode = engine.context.createGain()
+    this.filterGainNode.gain.value = filters?.gainDb ? Math.pow(10, filters.gainDb / 20) : 1
+
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
-    this.sourceNode.connect(this.gainNode)
+
+    this.sourceNode.connect(this.highpassNode)
+    this.highpassNode.connect(this.lowpassNode)
+    this.lowpassNode.connect(this.filterGainNode)
+    this.filterGainNode.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -99,6 +120,9 @@ export class LocalFileSoundSource {
     this.audioEl.removeAttribute('src')
     this.audioEl.load()
     this.sourceNode.disconnect()
+    this.highpassNode.disconnect()
+    this.lowpassNode.disconnect()
+    this.filterGainNode.disconnect()
     this.gainNode.disconnect()
   }
 }
