@@ -95,6 +95,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+.editor-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: -4px 0 16px;
+}
+
+.editor-presets-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-right: 2px;
+}
+
 .editor-actions {
   display: flex;
   gap: 8px;

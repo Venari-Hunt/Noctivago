@@ -11,6 +11,19 @@ const MAX_BUFFER_CLIP_SECONDS = 600
 
 const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0 }
 
+// Curated highpass/lowpass/gain combos for the one-click preset buttons.
+// All achievable with the existing 3 controls — no new audio engine work.
+// "Underwater" needs the lowpass slider's range extended below its old
+// 500Hz floor (see the HTML below) to sound convincing; everything else
+// fits the controls' original range.
+const FILTER_PRESETS = {
+  muffled: { label: 'Muffled', highpassHz: 0, lowpassHz: 700, gainDb: 0 },
+  phone: { label: 'Over the Phone', highpassHz: 300, lowpassHz: 3400, gainDb: 0 },
+  radio: { label: 'On the Radio', highpassHz: 150, lowpassHz: 6000, gainDb: 0 },
+  distant: { label: 'Distant', highpassHz: 0, lowpassHz: 2500, gainDb: -8 },
+  underwater: { label: 'Underwater', highpassHz: 0, lowpassHz: 250, gainDb: -3 }
+}
+
 export default class EditorPlugin {
   constructor(app) {
     this.app = app
@@ -78,7 +91,7 @@ export default class EditorPlugin {
             </label>
             <label>
               <span>Low-pass</span>
-              <input id="editor-lowpass" type="range" min="500" max="20000" value="20000" step="100" />
+              <input id="editor-lowpass" type="range" min="150" max="20000" value="20000" step="50" />
               <span id="editor-lowpass-value" class="editor-filter-value">Off</span>
             </label>
             <label>
@@ -86,6 +99,14 @@ export default class EditorPlugin {
               <input id="editor-gain" type="range" min="-24" max="24" value="0" step="0.5" />
               <span id="editor-gain-value" class="editor-filter-value">0 dB</span>
             </label>
+          </div>
+          <div class="editor-presets">
+            <span class="editor-presets-label">Presets</span>
+            <button class="btn btn-small" type="button" data-preset="muffled">Muffled</button>
+            <button class="btn btn-small" type="button" data-preset="phone">Over the Phone</button>
+            <button class="btn btn-small" type="button" data-preset="radio">On the Radio</button>
+            <button class="btn btn-small" type="button" data-preset="distant">Distant</button>
+            <button class="btn btn-small" type="button" data-preset="underwater">Underwater</button>
           </div>
           <div class="editor-actions">
             <button id="editor-play-pause" class="btn" type="button">Play</button>
@@ -116,6 +137,7 @@ export default class EditorPlugin {
       gainValue: container.querySelector('#editor-gain-value'),
       playPause: container.querySelector('#editor-play-pause'),
       resetFilters: container.querySelector('#editor-reset-filters'),
+      presetButtons: container.querySelectorAll('[data-preset]'),
       save: container.querySelector('#editor-save'),
       saveStatus: container.querySelector('#editor-save-status')
     }
@@ -153,6 +175,17 @@ export default class EditorPlugin {
       this.els.gain.value = String(NEUTRAL_FILTERS.gainDb)
       this.applyFilterControls()
     })
+
+    for (const button of this.els.presetButtons) {
+      button.addEventListener('click', () => {
+        const preset = FILTER_PRESETS[button.dataset.preset]
+        if (!preset) return
+        this.els.highpass.value = String(preset.highpassHz)
+        this.els.lowpass.value = String(preset.lowpassHz)
+        this.els.gain.value = String(preset.gainDb)
+        this.applyFilterControls()
+      })
+    }
 
     this.els.playPause.addEventListener('click', async () => {
       if (!this.previewSource) return
