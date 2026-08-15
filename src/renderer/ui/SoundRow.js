@@ -1,5 +1,10 @@
 import { formatDuration } from '../util/time.js'
 
+// Matches the default new sounds get in tabs/mixer/index.js's state.volumes
+// fallback (state.volumes.get(id) ?? 0.7) — a double-click reset should land
+// a sound back at its untampered default, not silence (0).
+const DEFAULT_VOLUME = 0.7
+
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -94,6 +99,12 @@ export function createSoundRow(entry, { included, loading, error, volume }, call
     volumeSlider.type = 'range'
     volumeSlider.min = '0'
     volumeSlider.max = '100'
+    // defaultValue (the fixed reset target for the app-wide double-click-
+    // resets-a-slider behavior, see main.js) is set separately from value
+    // (this render's live volume) since this element is rebuilt from
+    // scratch on every render — value alone wouldn't preserve "what the
+    // untampered default is" across re-renders.
+    volumeSlider.defaultValue = String(DEFAULT_VOLUME * 100)
     volumeSlider.value = String(Math.round(volume * 100))
     volumeSlider.className = 'sound-row-volume'
     volumeSlider.addEventListener('input', () => {

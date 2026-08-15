@@ -1,6 +1,9 @@
 import { createTabHost } from './core/TabHost.js'
 import { loadPlugins } from './core/PluginLoader.js'
+import { installSliderDoubleClickReset } from './core/sliderReset.js'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
+
+installSliderDoubleClickReset()
 
 const tabHost = createTabHost(document.getElementById('tab-bar'), document.getElementById('tab-content'))
 
