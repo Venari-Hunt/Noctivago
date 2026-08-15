@@ -1,0 +1,34 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run release:win
+        env:
+          # Auto-provided by GitHub Actions, scoped to this repo only via the
+          # `permissions` block above - used solely to create the release and
+          # upload the installer. Never embedded in the shipped app; that's a
+          # separate token (NOCTIVAGO_UPDATE_TOKEN, see electron.vite.config.js).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Repo secret the user creates once (see CLAUDE.md) - a narrowly
+          # scoped, read-only PAT baked into the app at build time so
+          # electron-updater can check this private repo's releases from an
+          # installed user's machine.
+          NOCTIVAGO_UPDATE_TOKEN: ${{ secrets.NOCTIVAGO_UPDATE_TOKEN }}

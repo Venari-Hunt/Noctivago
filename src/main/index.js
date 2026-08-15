@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers } from './ipc.js'
 import { getPlaybackPathForId, getLoopClipPathForId } from './library.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
+import { initAutoUpdate } from './autoUpdate.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -104,6 +105,7 @@ app.whenReady().then(() => {
   registerPluginProtocol()
   registerIpcHandlers()
   createWindow()
+  initAutoUpdate()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
