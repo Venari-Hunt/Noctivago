@@ -1,20 +1,38 @@
+import log from 'electron-log/renderer'
+
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
+
+// How long a 'waiting'/stalled <audio> element gets before this treats it as
+// a real problem rather than normal, brief re-buffering. See the 'waiting'
+// listener below for why this exists at all: the sound:// stream (hand-
+// rolled HTTP Range serving over fs.createReadStream, see src/main/index.js)
+// had zero error handling, and the <audio> element had zero stall/error
+// listeners - so a transient I/O hiccup on a long streaming session could
+// silently stop a sound with nothing in the app ever noticing, matching a
+// user report of playback going quiet then sometimes recovering on its own
+// (accidental browser retry behavior, not anything this app did on purpose).
+const STALL_RECOVERY_DELAY_MS = 8000
+const MAX_RECOVERY_ATTEMPTS = 3
 
 export class LocalFileSoundSource {
   constructor(engine, { soundId, loopStart, loopEnd, volume, filters }) {
     this.engine = engine
+    this.soundId = soundId
     this.loopStart = loopStart ?? 0
     this.loopEnd = loopEnd ?? null
     this.volume = volume
     this.playing = false
     this._rafId = null
     this._pauseTimeoutId = null
+    this._stallTimeoutId = null
+    this._recoveryAttempts = 0
 
     this.audioEl = new Audio()
     this.audioEl.crossOrigin = 'anonymous'
     this.audioEl.preload = 'auto'
     this.audioEl.src = `sound://${soundId}`
+    this._bindRecoveryListeners()
 
     this.sourceNode = engine.context.createMediaElementSource(this.audioEl)
 
@@ -42,6 +60,58 @@ export class LocalFileSoundSource {
     this.lowpassNode.connect(this.filterGainNode)
     this.filterGainNode.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
+  }
+
+  // 'waiting' fires whenever playback runs out of buffered data - this is
+  // completely normal for a second or two while streaming catches up, so
+  // this only acts if it's still stalled after STALL_RECOVERY_DELAY_MS with
+  // no 'playing' event cancelling the timer in between. 'error' recovers
+  // immediately, no delay - a real media error isn't going to resolve itself
+  // by waiting.
+  _bindRecoveryListeners() {
+    this.audioEl.addEventListener('waiting', () => {
+      if (!this.playing || this._stallTimeoutId) return
+      this._stallTimeoutId = setTimeout(() => {
+        this._stallTimeoutId = null
+        log.warn(`Sound ${this.soundId} stalled for ${STALL_RECOVERY_DELAY_MS}ms, attempting recovery`)
+        this._recover()
+      }, STALL_RECOVERY_DELAY_MS)
+    })
+
+    this.audioEl.addEventListener('playing', () => {
+      if (this._stallTimeoutId) {
+        clearTimeout(this._stallTimeoutId)
+        this._stallTimeoutId = null
+      }
+      // A sustained resume is a good sign the stream is healthy again -
+      // don't let one bad patch permanently eat into the retry budget for
+      // an otherwise long, mostly-fine listening session.
+      this._recoveryAttempts = 0
+    })
+
+    this.audioEl.addEventListener('error', () => {
+      log.error(`Sound ${this.soundId} audio element error`, this.audioEl.error)
+      if (this.playing) this._recover()
+    })
+  }
+
+  async _recover() {
+    if (!this.playing) return
+    if (this._recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
+      log.error(`Sound ${this.soundId} gave up after ${MAX_RECOVERY_ATTEMPTS} recovery attempts`)
+      return
+    }
+    this._recoveryAttempts += 1
+    const resumeAt = this.audioEl.currentTime
+    log.info(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts}, resuming at ${resumeAt.toFixed(2)}s`)
+    try {
+      this.audioEl.load()
+      this.audioEl.currentTime = resumeAt
+      await this.audioEl.play()
+      log.info(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts} succeeded`)
+    } catch (err) {
+      log.error(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts} failed`, err)
+    }
   }
 
   waitForMetadata() {
@@ -97,6 +167,10 @@ export class LocalFileSoundSource {
     this.playing = false
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
+    if (this._stallTimeoutId) {
+      clearTimeout(this._stallTimeoutId)
+      this._stallTimeoutId = null
+    }
     this._pauseTimeoutId = setTimeout(() => {
       this._pauseTimeoutId = null
       this.audioEl.pause()
@@ -116,6 +190,7 @@ export class LocalFileSoundSource {
     this.playing = false
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
+    if (this._stallTimeoutId) clearTimeout(this._stallTimeoutId)
     this.audioEl.pause()
     this.audioEl.removeAttribute('src')
     this.audioEl.load()

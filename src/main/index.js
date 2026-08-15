@@ -1,12 +1,16 @@
 import { app, BrowserWindow, shell, protocol } from 'electron'
+import './devMode.js' // must stay the first local import - see devMode.js
 import path from 'node:path'
 import fs from 'node:fs'
 import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
+import log from 'electron-log/main'
 import { registerIpcHandlers } from './ipc.js'
 import { getPlaybackPathForId, getLoopClipPathForId } from './library.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
+
+log.initialize()
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -70,6 +74,16 @@ function registerSoundProtocol() {
     }
 
     const nodeStream = fs.createReadStream(filePath, { start, end })
+    // Readable.toWeb propagates a source stream error into the resulting
+    // ReadableStream (erroring it, which surfaces as a network/media error
+    // to the <audio> element consuming it) - but without this listener too,
+    // an unhandled 'error' event on a Node stream is a much noisier failure
+    // mode, and we'd have zero visibility into transient I/O errors on long
+    // streaming sessions. Logged, not thrown - toWeb already handles the
+    // actual propagation.
+    nodeStream.on('error', (err) => {
+      log.error(`sound:// stream error for ${id} (${filePath}, bytes ${start}-${end})`, err)
+    })
     return new Response(Readable.toWeb(nodeStream), { status, headers })
   })
 }
@@ -80,7 +94,11 @@ function createWindow() {
     height: 720,
     minWidth: 380,
     minHeight: 520,
-    title: 'Noctívago',
+    // Visually distinct from an installed build at a glance - the window
+    // title bar is the one thing always visible regardless of what's on
+    // screen, and it was too easy to lose track of which instance (a dev
+    // session vs. the real installed app) was actually being looked at.
+    title: app.isPackaged ? 'Noctívago' : 'Noctívago (Dev)',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),

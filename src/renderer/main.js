@@ -5,6 +5,16 @@ import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/i
 
 installSliderDoubleClickReset()
 
+// The BrowserWindow's initial title option gets overwritten by the loaded
+// page's own <title> tag once the page finishes loading (standard Electron/
+// Chromium behavior) - so the dev-vs-installed distinction has to be set
+// here too, not just in src/main/index.js's createWindow(), or it would
+// flip back to the plain title moments after launch.
+window.noctivago.isPackaged().then((isPackaged) => {
+  document.title = isPackaged ? 'Noctívago' : 'Noctívago (Dev)'
+  if (!isPackaged) document.getElementById('dev-badge').classList.remove('hidden')
+})
+
 const tabHost = createTabHost(document.getElementById('tab-bar'), document.getElementById('tab-content'))
 
 // Registered synchronously, before any plugin loads, so the Mixer tab is

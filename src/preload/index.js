@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 const api = {
+  // app.isPackaged is a main-process-only property - preload can't reach it
+  // directly through a plain `electron` import (that surface only exposes
+  // ipcRenderer/contextBridge/etc. here), so this goes through IPC instead.
+  isPackaged: () => ipcRenderer.invoke('app:isPackaged'),
   library: {
     list: () => ipcRenderer.invoke('library:list'),
     pickFile: () => ipcRenderer.invoke('library:pickFile'),

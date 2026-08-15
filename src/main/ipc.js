@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import * as library from './library.js'
 import * as presets from './presets.js'
 import { renderLoopClip } from './ffmpeg/loopClip.js'
@@ -7,6 +7,8 @@ import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 
 export function registerIpcHandlers() {
+  ipcMain.handle('app:isPackaged', () => app.isPackaged)
+
   ipcMain.handle('library:list', () => library.listSounds())
   ipcMain.handle('library:pickFile', () => library.pickFile())
   ipcMain.handle('library:pickFolder', () => library.pickFolder())
