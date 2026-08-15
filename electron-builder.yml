@@ -20,3 +20,10 @@ publish:
   owner: joaovenari
   repo: Noctivago
   private: true
+  # electron-builder defaults to leaving published releases as GitHub
+  # drafts, which GitHub's own /releases/latest API (what electron-updater
+  # calls to check for updates) silently excludes - the release and its
+  # assets are visible on the web UI to the owner, but the update check
+  # gets back a 404 as if nothing existed at all. releaseType: release
+  # auto-publishes instead of drafting, so update checks can actually see it.
+  releaseType: release
