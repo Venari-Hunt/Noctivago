@@ -15,7 +15,13 @@
         </label>
         <span class="spacer"></span>
         <button id="open-presets" class="btn" type="button">Presets</button>
-        <button id="add-sound" class="btn" type="button">Add Sound</button>
+        <div class="add-sound-menu-wrapper">
+          <button id="add-sound" class="btn btn-icon" type="button" title="Add sound" aria-haspopup="true" aria-expanded="false">+</button>
+          <div id="add-sound-menu" class="dropdown-menu hidden">
+            <button id="add-sound-file" class="dropdown-item" type="button">Add file…</button>
+            <button id="add-sound-folder-preset" class="dropdown-item" type="button">Add folder as preset…</button>
+          </div>
+        </div>
       </header>
       <nav id="tab-bar" class="tab-bar"></nav>
       <main id="tab-content"></main>
@@ -34,6 +40,25 @@
         <div class="modal-actions">
           <button id="add-sound-cancel" class="btn" type="button">Cancel</button>
           <button id="add-sound-confirm" class="btn btn-primary" type="button">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-folder-preset-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Add folder as preset</h2>
+        <p class="modal-hint">Every audio file directly inside this folder will be added to your library and included together in a new preset.</p>
+        <label class="field-label">Preset name
+          <input id="add-folder-preset-name" type="text" />
+        </label>
+        <label class="checkbox-row">
+          <input id="add-folder-preset-keep-copy" type="checkbox" />
+          Keep copies in the app (safe if you move/delete the originals — uses extra disk space)
+        </label>
+        <p id="add-folder-preset-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="add-folder-preset-cancel" class="btn" type="button">Cancel</button>
+          <button id="add-folder-preset-confirm" class="btn btn-primary" type="button">Add</button>
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { getLoopClipPath, deleteLoopClip } from './ffmpeg/loopClip.js'
 
 const store = new Store({
   name: 'library',
-  defaults: { sounds: [] }
+  defaults: { sounds: [], lastAddFolder: null }
 })
 
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'm4a']
@@ -16,6 +16,18 @@ function soundsDir() {
   const dir = path.join(app.getPath('userData'), 'sounds')
   fs.mkdirSync(dir, { recursive: true })
   return dir
+}
+
+// undefined (not null) when unset/stale, since that's what dialog.showOpenDialog's
+// defaultPath expects to mean "use the OS default" rather than erroring on a
+// missing path.
+function getLastAddFolder() {
+  const folder = store.get('lastAddFolder')
+  return folder && fs.existsSync(folder) ? folder : undefined
+}
+
+function setLastAddFolder(folderPath) {
+  store.set('lastAddFolder', folderPath)
 }
 
 function resolvePlaybackPath(entry) {
@@ -44,17 +56,46 @@ export function listSounds() {
 export async function pickFile() {
   const result = await dialog.showOpenDialog({
     title: 'Add sound',
+    defaultPath: getLastAddFolder(),
     properties: ['openFile'],
     filters: [{ name: 'Audio files', extensions: AUDIO_EXTENSIONS }]
   })
   if (result.canceled || result.filePaths.length === 0) return null
   const filePath = result.filePaths[0]
+  setLastAddFolder(path.dirname(filePath))
   const stats = fs.statSync(filePath)
   return {
     path: filePath,
     name: path.parse(filePath).name,
     sizeBytes: stats.size
   }
+}
+
+export async function pickFolder() {
+  const result = await dialog.showOpenDialog({
+    title: 'Add folder as preset',
+    defaultPath: getLastAddFolder(),
+    properties: ['openDirectory']
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  const folderPath = result.filePaths[0]
+  setLastAddFolder(folderPath)
+  return folderPath
+}
+
+// Adds every audio file directly inside folderPath (non-recursive) to the
+// library via the same addSound() every single-file add goes through.
+// Returns the added entries so the caller can build a preset from them -
+// this function only touches the library, never presets.js, so it stays
+// reusable for a plain "add several files at once" case too if that's ever
+// wanted without the preset step.
+export function addFolderSounds(folderPath, { keepCopy }) {
+  const files = fs
+    .readdirSync(folderPath, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && AUDIO_EXTENSIONS.includes(path.extname(entry.name).slice(1).toLowerCase()))
+    .map((entry) => path.join(folderPath, entry.name))
+
+  return files.map((filePath) => addSound({ path: filePath, name: path.parse(filePath).name, keepCopy }))
 }
 
 export function addSound({ path: sourcePath, name, keepCopy }) {

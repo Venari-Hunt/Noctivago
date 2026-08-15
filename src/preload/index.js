@@ -4,7 +4,9 @@ const api = {
   library: {
     list: () => ipcRenderer.invoke('library:list'),
     pickFile: () => ipcRenderer.invoke('library:pickFile'),
+    pickFolder: () => ipcRenderer.invoke('library:pickFolder'),
     addSound: (payload) => ipcRenderer.invoke('library:addSound', payload),
+    addFolderSounds: (folderPath, options) => ipcRenderer.invoke('library:addFolderSounds', folderPath, options),
     updateMeta: (id, meta) => ipcRenderer.invoke('library:updateMeta', id, meta),
     updateLoopPoints: (id, points) => ipcRenderer.invoke('library:updateLoopPoints', id, points),
     updateFilters: (id, filters) => ipcRenderer.invoke('library:updateFilters', id, filters),

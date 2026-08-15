@@ -23,6 +23,9 @@ const els = {
   globalPlayPause: document.getElementById('global-play-pause'),
   globalVolume: document.getElementById('global-volume'),
   addSoundBtn: document.getElementById('add-sound'),
+  addSoundMenu: document.getElementById('add-sound-menu'),
+  addSoundFileItem: document.getElementById('add-sound-file'),
+  addSoundFolderPresetItem: document.getElementById('add-sound-folder-preset'),
   openPresetsBtn: document.getElementById('open-presets'),
 
   addSoundDialog: document.getElementById('add-sound-dialog'),
@@ -30,6 +33,13 @@ const els = {
   addSoundKeepCopy: document.getElementById('add-sound-keep-copy'),
   addSoundCancel: document.getElementById('add-sound-cancel'),
   addSoundConfirm: document.getElementById('add-sound-confirm'),
+
+  addFolderPresetDialog: document.getElementById('add-folder-preset-dialog'),
+  addFolderPresetName: document.getElementById('add-folder-preset-name'),
+  addFolderPresetKeepCopy: document.getElementById('add-folder-preset-keep-copy'),
+  addFolderPresetStatus: document.getElementById('add-folder-preset-status'),
+  addFolderPresetCancel: document.getElementById('add-folder-preset-cancel'),
+  addFolderPresetConfirm: document.getElementById('add-folder-preset-confirm'),
 
   presetsModal: document.getElementById('presets-modal'),
   newPresetName: document.getElementById('new-preset-name'),
@@ -40,6 +50,7 @@ const els = {
 }
 
 let pickedFile = null
+let pickedFolder = null
 
 function showModal(el) {
   el.classList.remove('hidden')
@@ -224,7 +235,31 @@ els.globalVolume.addEventListener('input', () => {
   engine.masterGain.gain.linearRampToValueAtTime(volume, now + 0.05)
 })
 
-els.addSoundBtn.addEventListener('click', async () => {
+function closeAddSoundMenu() {
+  els.addSoundMenu.classList.add('hidden')
+  els.addSoundBtn.setAttribute('aria-expanded', 'false')
+}
+
+els.addSoundBtn.addEventListener('click', (evt) => {
+  evt.stopPropagation()
+  const isOpen = !els.addSoundMenu.classList.contains('hidden')
+  if (isOpen) closeAddSoundMenu()
+  else {
+    els.addSoundMenu.classList.remove('hidden')
+    els.addSoundBtn.setAttribute('aria-expanded', 'true')
+  }
+})
+
+document.addEventListener('click', (evt) => {
+  if (!els.addSoundMenu.contains(evt.target) && evt.target !== els.addSoundBtn) closeAddSoundMenu()
+})
+
+document.addEventListener('keydown', (evt) => {
+  if (evt.key === 'Escape') closeAddSoundMenu()
+})
+
+els.addSoundFileItem.addEventListener('click', async () => {
+  closeAddSoundMenu()
   const file = await api.library.pickFile()
   if (!file) return
   pickedFile = file
@@ -248,6 +283,52 @@ els.addSoundConfirm.addEventListener('click', async () => {
   })
   pickedFile = null
   hideModal(els.addSoundDialog)
+  await refreshList()
+})
+
+els.addSoundFolderPresetItem.addEventListener('click', async () => {
+  closeAddSoundMenu()
+  const folder = await api.library.pickFolder()
+  if (!folder) return
+  pickedFolder = folder
+  const folderName = folder.split(/[\\/]/).filter(Boolean).pop() ?? 'New preset'
+  els.addFolderPresetName.value = folderName
+  els.addFolderPresetKeepCopy.checked = false
+  els.addFolderPresetStatus.textContent = ''
+  showModal(els.addFolderPresetDialog)
+})
+
+els.addFolderPresetCancel.addEventListener('click', () => {
+  pickedFolder = null
+  hideModal(els.addFolderPresetDialog)
+})
+
+els.addFolderPresetConfirm.addEventListener('click', async () => {
+  if (!pickedFolder) return
+  const name = els.addFolderPresetName.value.trim()
+  if (!name) {
+    els.addFolderPresetStatus.textContent = 'Enter a preset name first.'
+    return
+  }
+
+  els.addFolderPresetConfirm.disabled = true
+  els.addFolderPresetStatus.textContent = 'Adding sounds…'
+
+  const added = await api.library.addFolderSounds(pickedFolder, { keepCopy: els.addFolderPresetKeepCopy.checked })
+  if (added.length === 0) {
+    els.addFolderPresetConfirm.disabled = false
+    els.addFolderPresetStatus.textContent = 'No audio files found directly inside that folder.'
+    return
+  }
+
+  await api.presets.save({
+    name,
+    sounds: added.map((entry) => ({ soundId: entry.id, volume: 0.7 }))
+  })
+
+  els.addFolderPresetConfirm.disabled = false
+  pickedFolder = null
+  hideModal(els.addFolderPresetDialog)
   await refreshList()
 })
 
