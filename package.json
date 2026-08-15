@@ -1,6 +1,6 @@
 {
   "name": "noctivago",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Offline ambient sound mixer",
   "main": "./out/main/index.js",
   "author": "jltmdesign",
@@ -12,6 +12,7 @@
     "release:win": "electron-vite build && electron-builder --win --publish always"
   },
   "dependencies": {
+    "electron-log": "^5.4.4",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.3.9",
     "ffmpeg-static": "^5.3.0"
