@@ -5,6 +5,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers } from './ipc.js'
 import { getPlaybackPathForId, getLoopClipPathForId } from './library.js'
+import { registerPluginProtocol } from './plugins/protocol.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -20,6 +21,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'sound',
     privileges: { standard: true, stream: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true }
+  },
+  {
+    scheme: 'plugin',
+    privileges: { standard: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true }
   }
 ])
 
@@ -96,6 +101,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerSoundProtocol()
+  registerPluginProtocol()
   registerIpcHandlers()
   createWindow()
 

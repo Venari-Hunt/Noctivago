@@ -3,6 +3,8 @@ import * as library from './library.js'
 import * as presets from './presets.js'
 import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
+import { getPlugins } from './plugins/registry.js'
+import { invokePlugin } from './plugins/invoke.js'
 
 export function registerIpcHandlers() {
   ipcMain.handle('library:list', () => library.listSounds())
@@ -37,4 +39,8 @@ export function registerIpcHandlers() {
       return null
     }
   })
+
+  ipcMain.handle('plugins:list', () => getPlugins().map((p) => ({ id: p.id, manifest: p.manifest })))
+
+  ipcMain.handle('plugin:invoke', (_event, pluginId, method, args) => invokePlugin(pluginId, method, args))
 }

@@ -1,0 +1,9 @@
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "version": "0.1.0",
+  "minAppVersion": "0.2.0",
+  "description": "Example plugin proving the plugin pipeline works end-to-end.",
+  "author": "Noctívago",
+  "main": "index.js"
+}

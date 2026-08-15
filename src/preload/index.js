@@ -18,6 +18,10 @@ const api = {
   audio: {
     renderLoopClip: (id, points) => ipcRenderer.invoke('audio:renderLoopClip', id, points),
     getWaveformPeaks: (id, targetWidth) => ipcRenderer.invoke('audio:getWaveformPeaks', id, targetWidth)
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+    invoke: (pluginId, method, ...args) => ipcRenderer.invoke('plugin:invoke', pluginId, method, args)
   }
 }
 

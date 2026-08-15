@@ -1,0 +1,9 @@
+{
+  "id": "broken-plugin-example",
+  "name": "Broken Plugin (test fixture)",
+  "version": "0.1.0",
+  "minAppVersion": "0.2.0",
+  "description": "Deliberately throws in onload() to prove a broken plugin can't take down the rest of the app. Kept as a regression-test fixture, not a real feature.",
+  "author": "Noctívago",
+  "main": "index.js"
+}
