@@ -10,6 +10,7 @@ const engine = new AudioEngine()
 
 const state = {
   library: [],
+  searchQuery: '',
   sources: new Map(),
   volumes: new Map(),
   included: new Set(),
@@ -66,8 +67,19 @@ function refreshGlobalButton() {
   els.globalPlayPause.textContent = state.playing.size > 0 ? 'Pause all' : 'Play all'
 }
 
+const EMPTY_LIBRARY_TEXT = 'No sounds yet. Click "Add Sound" to import one.'
+const NO_SEARCH_MATCHES_TEXT = 'No sounds match your search.'
+
+function visibleLibrary() {
+  const query = state.searchQuery.trim().toLowerCase()
+  if (!query) return state.library
+  return state.library.filter((entry) => entry.name.toLowerCase().includes(query))
+}
+
 function render() {
-  renderSoundList(els.soundList, els.emptyState, state.library, state, {
+  const visible = visibleLibrary()
+  els.emptyState.textContent = state.searchQuery.trim() && state.library.length > 0 ? NO_SEARCH_MATCHES_TEXT : EMPTY_LIBRARY_TEXT
+  renderSoundList(els.soundList, els.emptyState, visible, state, {
     onToggleIncluded: toggleIncluded,
     onVolumeChange: changeVolume,
     onRemove: removeSound,
@@ -468,11 +480,17 @@ export function onShow() {
 
 export function mount(container) {
   container.innerHTML = `
+    <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
     <ul id="sound-list" class="sound-list"></ul>
     <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
   `
+  els.soundSearch = container.querySelector('#sound-search')
   els.soundList = container.querySelector('#sound-list')
   els.emptyState = container.querySelector('#empty-state')
+  els.soundSearch.addEventListener('input', () => {
+    state.searchQuery = els.soundSearch.value
+    render()
+  })
   refreshList()
   // mount() only ever runs once (TabHost lazily mounts each tab a single
   // time), so this is a one-time listener registration, not a per-mount leak.
