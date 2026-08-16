@@ -10,6 +10,13 @@ import { formatDuration, parseDuration } from './util/time.js'
 // core if that value ever changes.
 const MAX_BUFFER_CLIP_SECONDS = 600
 
+// Mirrors src/main/ffmpeg/loopClip.js's DEFAULT_CROSSFADE_SECONDS (0.2s),
+// in ms since the slider works in ms - same cross-directory duplication
+// reason as MAX_BUFFER_CLIP_SECONDS above. Shown on the crossfade slider for
+// any sound that's never had it explicitly overridden (entry.
+// crossfadeSeconds is null).
+const DEFAULT_CROSSFADE_MS = 200
+
 const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 }
 
 // Curated highpass/lowpass/gain/echo combos for the one-click preset
@@ -108,6 +115,14 @@ export default class EditorPlugin {
             <label>Start <input id="editor-start-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
             <label>End <input id="editor-end-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
           </div>
+          <div class="editor-crossfade">
+            <label>
+              <span>Loop crossfade</span>
+              <input id="editor-crossfade" type="range" min="0" max="2000" value="200" step="10" />
+              <span id="editor-crossfade-value" class="editor-filter-value">200 ms</span>
+            </label>
+            <p class="editor-crossfade-hint">Blends the seam so the loop isn't audible. Longer helps busy, textured audio (rain, crowds) — 0 disables blending. Automatically capped for very short loops.</p>
+          </div>
           <div class="editor-filters">
             <label>
               <span>High-pass</span>
@@ -169,6 +184,8 @@ export default class EditorPlugin {
       loopToggle: container.querySelector('#editor-loop-toggle'),
       startInput: container.querySelector('#editor-start-input'),
       endInput: container.querySelector('#editor-end-input'),
+      crossfade: container.querySelector('#editor-crossfade'),
+      crossfadeValue: container.querySelector('#editor-crossfade-value'),
       highpass: container.querySelector('#editor-highpass'),
       highpassValue: container.querySelector('#editor-highpass-value'),
       lowpass: container.querySelector('#editor-lowpass'),
@@ -193,7 +210,7 @@ export default class EditorPlugin {
       this.updateSaveButtonState()
     })
     this.loopEditorController.onScrub((t) => {
-      if (this.previewSource) this.previewSource.audioEl.currentTime = t
+      this.previewSource?.scrubTo(t)
     })
 
     this.waveformScrollbar = createWaveformScrollbar(this.els.scrollbarTrack, this.els.scrollbarThumb)
@@ -245,6 +262,8 @@ export default class EditorPlugin {
 
     this.els.startInput.addEventListener('change', () => this.applyManualLoopPoints())
     this.els.endInput.addEventListener('change', () => this.applyManualLoopPoints())
+
+    this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
 
     this.els.highpass.addEventListener('input', () => this.applyFilterControls())
     this.els.lowpass.addEventListener('input', () => this.applyFilterControls())
@@ -441,13 +460,30 @@ export default class EditorPlugin {
     this.updateSaveButtonState()
   }
 
+  currentCrossfadeMs() {
+    return Number(this.els.crossfade.value)
+  }
+
+  updateCrossfadeLabel(ms) {
+    this.els.crossfadeValue.textContent = ms > 0 ? `${ms} ms` : 'Off'
+  }
+
+  applyCrossfadeControl() {
+    const ms = this.currentCrossfadeMs()
+    this.updateCrossfadeLabel(ms)
+    this.previewSource?.setCrossfadeSeconds(ms / 1000)
+    this.updateSaveButtonState()
+  }
+
   // Builds a comparable snapshot of "what's currently saved" vs. "what's
   // live in the controls" - explicit key order/defaults on both sides
   // (rather than relying on entry.filters' own possibly-partial shape, e.g.
   // older entries saved before echoDelayMs/echoDecay existed) so the two
   // JSON strings only differ when something the user could actually change
-  // has changed.
-  snapshotOf(loopStart, loopEnd, filters) {
+  // has changed. crossfadeMs is compared as the rounded integer the slider
+  // itself produces, not the seconds value it's persisted as, so float
+  // round-tripping (ms -> seconds -> ms) can't cause a false "dirty" flag.
+  snapshotOf(loopStart, loopEnd, filters, crossfadeMs) {
     return JSON.stringify({
       loopStart,
       loopEnd,
@@ -457,14 +493,15 @@ export default class EditorPlugin {
         gainDb: filters.gainDb ?? 0,
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0
-      }
+      },
+      crossfadeMs
     })
   }
 
   hasUnsavedChanges() {
     if (!this.currentEntry || !this.loopEditorController || !this.savedSnapshot) return false
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
-    return this.snapshotOf(loopStart, loopEnd, this.currentFilters()) !== this.savedSnapshot
+    return this.snapshotOf(loopStart, loopEnd, this.currentFilters(), this.currentCrossfadeMs()) !== this.savedSnapshot
   }
 
   updateSaveButtonState() {
@@ -517,13 +554,18 @@ export default class EditorPlugin {
     this.setFilterSliders(filters)
     this.updateFilterLabels(filters)
 
+    const crossfadeMs = entry.crossfadeSeconds != null ? Math.round(entry.crossfadeSeconds * 1000) : DEFAULT_CROSSFADE_MS
+    this.els.crossfade.value = String(crossfadeMs)
+    this.updateCrossfadeLabel(crossfadeMs)
+
     await this.engine.resume()
     this.previewSource = new PreviewSource(this.engine, {
       soundId: entry.id,
       loopStart: entry.loopStart,
       loopEnd: entry.loopEnd,
       volume: 0.7,
-      looping: this.looping
+      looping: this.looping,
+      crossfadeSeconds: crossfadeMs / 1000
     })
     // Only fires when Loop preview is off and playback runs off the end on
     // its own - the button/playhead-tracking RAF otherwise only stop via
@@ -549,7 +591,7 @@ export default class EditorPlugin {
     this.loopEditorController.load(duration, loopStart, loopEnd)
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters)
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs)
     this.updateSaveButtonState()
 
     this.els.waveformStatus.textContent = this.waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
@@ -564,13 +606,17 @@ export default class EditorPlugin {
     const id = this.currentEntry.id
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     const filters = this.currentFilters()
+    const crossfadeMs = this.currentCrossfadeMs()
+    const crossfadeSeconds = crossfadeMs / 1000
 
     await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
     await this.api.library.updateFilters(id, filters)
+    await this.api.library.updateCrossfade(id, crossfadeSeconds)
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd
     this.currentEntry.filters = filters
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters)
+    this.currentEntry.crossfadeSeconds = crossfadeSeconds
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs)
 
     // This never touches the original audio file: trim points and filters
     // are stored as metadata, applied live whenever the Mixer streams the
@@ -583,18 +629,20 @@ export default class EditorPlugin {
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
       this.els.save.disabled = true
       this.els.save.textContent = 'Saving…'
-      const result = await this.api.audio.renderLoopClip(id, { loopStart, loopEnd, filters })
+      const result = await this.api.audio.renderLoopClip(id, { loopStart, loopEnd, filters, crossfadeSeconds })
       if (result.ok) {
         this.currentEntry.loopClipReady = true
         this.currentEntry.loopClipStart = loopStart
         this.currentEntry.loopClipEnd = loopEnd
         this.currentEntry.loopClipFilters = filters
+        this.currentEntry.loopClipCrossfadeSeconds = crossfadeSeconds
         this.els.saveStatus.textContent = 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
       } else {
         this.currentEntry.loopClipReady = false
         this.currentEntry.loopClipStart = null
         this.currentEntry.loopClipEnd = null
         this.currentEntry.loopClipFilters = null
+        this.currentEntry.loopClipCrossfadeSeconds = null
         this.els.saveStatus.textContent = 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
       }
       this.updateSaveButtonState()

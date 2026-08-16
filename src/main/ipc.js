@@ -34,6 +34,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:updateFilters', (_event, id, filters) => library.updateFilters(id, filters))
   ipcMain.handle('library:updateVolume', (_event, id, volume) => library.updateVolume(id, volume))
   ipcMain.handle('library:updateIncluded', (_event, id, included) => library.updateIncluded(id, included))
+  ipcMain.handle('library:updateCrossfade', (_event, id, crossfadeSeconds) => library.updateCrossfade(id, crossfadeSeconds))
   ipcMain.handle('library:rename', (_event, id, name) => library.rename(id, name))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))
@@ -53,11 +54,11 @@ export function registerIpcHandlers() {
   ipcMain.handle('presets:save', (_event, payload) => presets.savePreset(payload))
   ipcMain.handle('presets:delete', (_event, id) => presets.deletePreset(id))
 
-  ipcMain.handle('audio:renderLoopClip', async (_event, id, { loopStart, loopEnd, filters }) => {
+  ipcMain.handle('audio:renderLoopClip', async (_event, id, { loopStart, loopEnd, filters, crossfadeSeconds }) => {
     const inputPath = library.getPlaybackPathForId(id)
     if (!inputPath) return { ok: false, error: 'Source file not found' }
-    const result = await renderLoopClip({ id, inputPath, loopStart, loopEnd, filters })
-    if (result.ok) library.setLoopClipReady(id, { loopStart, loopEnd, filters })
+    const result = await renderLoopClip({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds })
+    if (result.ok) library.setLoopClipReady(id, { loopStart, loopEnd, filters, crossfadeSeconds })
     else library.setLoopClipStale(id)
     return result
   })

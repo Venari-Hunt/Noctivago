@@ -38,6 +38,7 @@ const api = {
     updateFilters: (id, filters) => ipcRenderer.invoke('library:updateFilters', id, filters),
     updateVolume: (id, volume) => ipcRenderer.invoke('library:updateVolume', id, volume),
     updateIncluded: (id, included) => ipcRenderer.invoke('library:updateIncluded', id, included),
+    updateCrossfade: (id, crossfadeSeconds) => ipcRenderer.invoke('library:updateCrossfade', id, crossfadeSeconds),
     rename: (id, name) => ipcRenderer.invoke('library:rename', id, name),
     relink: (id) => ipcRenderer.invoke('library:relink', id),
     remove: (id) => ipcRenderer.invoke('library:remove', id),

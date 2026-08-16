@@ -109,7 +109,12 @@ async function renameSound(id, name) {
 // stale, and kept playing the *previous* bake indefinitely. Matches
 // loopClipEligible's own comparison fields.
 function bufferBakeSnapshot(entry) {
-  return JSON.stringify({ loopStart: entry.loopStart, loopEnd: entry.loopEnd, filters: entry.filters })
+  return JSON.stringify({
+    loopStart: entry.loopStart,
+    loopEnd: entry.loopEnd,
+    filters: entry.filters,
+    crossfadeSeconds: entry.crossfadeSeconds
+  })
 }
 
 // BUG FIX (2026-08-16): saving new filters or a new trim in the Remix plugin
@@ -174,7 +179,8 @@ function loopClipEligible(entry) {
     entry.loopClipReady === true &&
     entry.loopClipStart === entry.loopStart &&
     entry.loopClipEnd === entry.loopEnd &&
-    JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters)
+    JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
+    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds
   )
 }
 
@@ -202,7 +208,7 @@ function maybeAutoBake(entry) {
 
   autoBaking.add(entry.id)
   api.audio
-    .renderLoopClip(entry.id, { loopStart: entry.loopStart, loopEnd, filters: entry.filters })
+    .renderLoopClip(entry.id, { loopStart: entry.loopStart, loopEnd, filters: entry.filters, crossfadeSeconds: entry.crossfadeSeconds })
     .then((result) => {
       if (result.ok) refreshList()
     })

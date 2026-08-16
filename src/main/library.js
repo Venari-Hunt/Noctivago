@@ -207,10 +207,12 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     loopStart: 0,
     loopEnd: null,
     filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+    crossfadeSeconds: null,
     loopClipReady: false,
     loopClipStart: null,
     loopClipEnd: null,
     loopClipFilters: null,
+    loopClipCrossfadeSeconds: null,
     status: 'ok'
   }
 
@@ -260,23 +262,37 @@ export function updateFilters(id, filters) {
   return updateEntry(id, { filters })
 }
 
+// Nullable - null means "use the app default" (see loopClip.js's
+// DEFAULT_CROSSFADE_SECONDS), a sound only gets a concrete override once
+// the Remix plugin's crossfade slider is actually touched and saved.
+export function updateCrossfade(id, crossfadeSeconds) {
+  return updateEntry(id, { crossfadeSeconds })
+}
+
 export function rename(id, name) {
   const trimmed = name.trim()
   if (!trimmed) return null
   return updateEntry(id, { name: trimmed })
 }
 
-export function setLoopClipReady(id, { loopStart, loopEnd, filters }) {
+export function setLoopClipReady(id, { loopStart, loopEnd, filters, crossfadeSeconds }) {
   return updateEntry(id, {
     loopClipReady: true,
     loopClipStart: loopStart,
     loopClipEnd: loopEnd,
-    loopClipFilters: filters
+    loopClipFilters: filters,
+    loopClipCrossfadeSeconds: crossfadeSeconds ?? null
   })
 }
 
 export function setLoopClipStale(id) {
-  return updateEntry(id, { loopClipReady: false, loopClipStart: null, loopClipEnd: null, loopClipFilters: null })
+  return updateEntry(id, {
+    loopClipReady: false,
+    loopClipStart: null,
+    loopClipEnd: null,
+    loopClipFilters: null,
+    loopClipCrossfadeSeconds: null
+  })
 }
 
 export async function relink(id) {
@@ -293,7 +309,8 @@ export async function relink(id) {
     loopClipReady: false,
     loopClipStart: null,
     loopClipEnd: null,
-    loopClipFilters: null
+    loopClipFilters: null,
+    loopClipCrossfadeSeconds: null
   })
 }
 
@@ -324,7 +341,8 @@ export function getLoopClipPathForId(id) {
     entry.loopClipReady &&
     entry.loopClipStart === entry.loopStart &&
     entry.loopClipEnd === entry.loopEnd &&
-    JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters)
+    JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
+    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds
   if (!eligible) return null
   const clipPath = getLoopClipPath(id)
   return fs.existsSync(clipPath) ? clipPath : null
