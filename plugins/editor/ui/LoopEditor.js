@@ -30,6 +30,12 @@ export function createLoopEditorController(canvas) {
   let lastPointerClientX = 0
   let edgeScrollDirection = 0
   let edgeScrollRafId = null
+  // Held while Ctrl is down, disabling snapToPlayhead below - synced from
+  // real mouse events (evt.ctrlKey, the most reliable source) and backed up
+  // by window keydown/keyup so pressing/releasing Ctrl while the cursor
+  // sits still during an edge-scroll (see tickEdgeScroll, which has no real
+  // mouse event to read a modifier from) still takes effect immediately.
+  let ctrlHeld = false
   let onChange = () => {}
   let onScrub = () => {}
   let onViewportChange = () => {}
@@ -79,9 +85,13 @@ export function createLoopEditorController(canvas) {
   }
 
   // If a dragged start/end handle ends up within SNAP_PX of the playhead,
-  // snap it exactly onto the playhead's time instead of the raw drag position.
+  // snap it exactly onto the playhead's time instead of the raw drag
+  // position - unless Ctrl is held, which disables snapping entirely (an
+  // app-wide convention for any drag of this nature, per the owner's own
+  // framing, even though this waveform is currently the only place with a
+  // real snap target to disable).
   function snapToPlayhead(t, rect) {
-    if (playhead == null) return t
+    if (ctrlHeld || playhead == null) return t
     const dist = Math.abs(timeToX(t, rect.width) - timeToX(playhead, rect.width))
     return dist <= SNAP_PX ? playhead : t
   }
@@ -168,7 +178,13 @@ export function createLoopEditorController(canvas) {
     }
   }
 
+  function handleCtrlKeyChange(evt) {
+    if (evt.key !== 'Control') return
+    ctrlHeld = evt.type === 'keydown'
+  }
+
   function pointerMove(evt) {
+    ctrlHeld = evt.ctrlKey
     if (!dragging || !duration) return
     const rect = canvas.getBoundingClientRect()
 
@@ -222,6 +238,8 @@ export function createLoopEditorController(canvas) {
   window.addEventListener('mousemove', pointerMove)
   window.addEventListener('mouseup', pointerUp)
   canvas.addEventListener('wheel', handleWheel, { passive: false })
+  window.addEventListener('keydown', handleCtrlKeyChange)
+  window.addEventListener('keyup', handleCtrlKeyChange)
 
   return {
     load(totalDuration, initialLoopStart, initialLoopEnd) {
@@ -277,6 +295,8 @@ export function createLoopEditorController(canvas) {
       window.removeEventListener('mousemove', pointerMove)
       window.removeEventListener('mouseup', pointerUp)
       canvas.removeEventListener('wheel', handleWheel)
+      window.removeEventListener('keydown', handleCtrlKeyChange)
+      window.removeEventListener('keyup', handleCtrlKeyChange)
     }
   }
 }
