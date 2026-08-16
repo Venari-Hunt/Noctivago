@@ -16,6 +16,14 @@ log.initialize()
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Same dev/packaged path split as tray.js's ICON_PATH - electron-builder
+// embeds this into the .exe for the installer/taskbar automatically, but an
+// explicit icon here is what makes the *dev-mode* window/taskbar show the
+// app's own icon instead of the bare Electron default.
+const APP_ICON_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'icon.png')
+  : path.join(__dirname, '../../resources/icon.png')
+
 const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
@@ -101,6 +109,7 @@ function createWindow() {
     // screen, and it was too easy to lose track of which instance (a dev
     // session vs. the real installed app) was actually being looked at.
     title: app.isPackaged ? 'Noctívago' : 'Noctívago (Dev)',
+    icon: APP_ICON_PATH,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
