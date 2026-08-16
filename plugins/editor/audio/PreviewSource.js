@@ -68,6 +68,27 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
   voice.echoFeedbackGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
 }
 
+// Speed previews accurately via playbackRate alone (the browser's own
+// default preservesPitch=true keeps a pure tempo change from also shifting
+// pitch). Pitch has no equivalent native "shift pitch only" lever on
+// <audio> - approximated by disabling preservesPitch and folding the
+// desired pitch ratio into the SAME playbackRate value, which necessarily
+// also nudges the apparent tempo away from the requested speed for as long
+// as a nonzero pitch shift is active. This is a known, accepted trade-off
+// (matches the note this feature was scoped from) - the saved clip renders
+// speed and pitch independently and accurately via ffmpeg's rubberband
+// filter (see src/main/ffmpeg/loopClip.js); this preview is only meant to
+// give an immediate, rough sense of direction while dragging, not a
+// faithful stand-in for the bake. Reverse has no live preview at all - it
+// only takes effect once saved.
+function applySpeedPitchToVoice(voice, speedPitch) {
+  const speed = speedPitch?.speed ?? 1
+  const pitchSemitones = speedPitch?.pitchSemitones ?? 0
+  const pitchRatio = Math.pow(2, pitchSemitones / 12)
+  voice.audioEl.preservesPitch = pitchSemitones === 0
+  voice.audioEl.playbackRate = speed * pitchRatio
+}
+
 function disposeVoice(voice) {
   voice.audioEl.pause()
   voice.audioEl.removeAttribute('src')
@@ -101,7 +122,7 @@ function disposeVoice(voice) {
 // playback has everywhere else in this app) - good enough to judge "does
 // this duration sound right," not a substitute for the real bake.
 export class PreviewSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume, looping = true, crossfadeSeconds = 0 }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, looping = true, crossfadeSeconds = 0, speedPitch = null }) {
     this.engine = engine
     this.loopStart = loopStart ?? 0
     this.loopEnd = loopEnd ?? null
@@ -116,6 +137,7 @@ export class PreviewSource {
     this.voices = [createVoice(engine, soundId), createVoice(engine, soundId)]
     this.activeIndex = 0
     this.voices[0].crossfadeGain.gain.value = 1
+    for (const voice of this.voices) applySpeedPitchToVoice(voice, speedPitch)
 
     this.outputGainNode = engine.context.createGain()
     this.outputGainNode.gain.value = 0
@@ -160,6 +182,10 @@ export class PreviewSource {
 
   setFilters(filters) {
     for (const voice of this.voices) applyFiltersToVoice(voice, this.engine.context, filters)
+  }
+
+  setSpeedPitch(speedPitch) {
+    for (const voice of this.voices) applySpeedPitchToVoice(voice, speedPitch)
   }
 
   // Cancels any in-progress crossfade and collapses back to a single active

@@ -223,11 +223,13 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     loopEnd: null,
     filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
     crossfadeSeconds: null,
+    speedPitch: { speed: 1, pitchSemitones: 0, reversed: false },
     loopClipReady: false,
     loopClipStart: null,
     loopClipEnd: null,
     loopClipFilters: null,
     loopClipCrossfadeSeconds: null,
+    loopClipSpeedPitch: null,
     // tags: user-assignable, free-text. dateCreated reads the *source* file's
     // own filesystem birthtime (stat'd above, before any copy) - falls back
     // to "now" on filesystems/mounts that don't report a real birthtime.
@@ -288,6 +290,10 @@ export function updateFilters(id, filters) {
   return updateEntry(id, { filters })
 }
 
+export function updateSpeedPitch(id, speedPitch) {
+  return updateEntry(id, { speedPitch })
+}
+
 // Nullable - null means "use the app default" (see loopClip.js's
 // DEFAULT_CROSSFADE_SECONDS), a sound only gets a concrete override once
 // the Remix plugin's crossfade slider is actually touched and saved.
@@ -322,13 +328,14 @@ export function rename(id, name) {
   return updateEntry(id, { name: trimmed })
 }
 
-export function setLoopClipReady(id, { loopStart, loopEnd, filters, crossfadeSeconds }) {
+export function setLoopClipReady(id, { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }) {
   return updateEntry(id, {
     loopClipReady: true,
     loopClipStart: loopStart,
     loopClipEnd: loopEnd,
     loopClipFilters: filters,
-    loopClipCrossfadeSeconds: crossfadeSeconds ?? null
+    loopClipCrossfadeSeconds: crossfadeSeconds ?? null,
+    loopClipSpeedPitch: speedPitch ?? null
   })
 }
 
@@ -338,7 +345,8 @@ export function setLoopClipStale(id) {
     loopClipStart: null,
     loopClipEnd: null,
     loopClipFilters: null,
-    loopClipCrossfadeSeconds: null
+    loopClipCrossfadeSeconds: null,
+    loopClipSpeedPitch: null
   })
 }
 
@@ -357,6 +365,7 @@ export async function relink(id) {
     loopClipStart: null,
     loopClipEnd: null,
     loopClipFilters: null,
+    loopClipSpeedPitch: null,
     loopClipCrossfadeSeconds: null
   })
 }
@@ -380,6 +389,20 @@ export function getPlaybackPathForId(id) {
   return fs.existsSync(filePath) ? filePath : null
 }
 
+// Normalizes to plain defaults before comparing, since entry.speedPitch is
+// undefined on any sound that predates this field (never backfilled - see
+// listSounds' comment on why crossfadeSeconds/speedPitch are left nullable
+// rather than migrated like tags/dateAdded were) while loopClipSpeedPitch
+// is explicitly null on any bake that predates it - both mean "neutral,"
+// but undefined !== null under strict comparison.
+function normalizeSpeedPitch(speedPitch) {
+  return JSON.stringify({
+    speed: speedPitch?.speed ?? 1,
+    pitchSemitones: speedPitch?.pitchSemitones ?? 0,
+    reversed: speedPitch?.reversed ?? false
+  })
+}
+
 export function getLoopClipPathForId(id) {
   const sounds = store.get('sounds')
   const entry = sounds.find((s) => s.id === id)
@@ -389,7 +412,8 @@ export function getLoopClipPathForId(id) {
     entry.loopClipStart === entry.loopStart &&
     entry.loopClipEnd === entry.loopEnd &&
     JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
-    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds
+    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds &&
+    normalizeSpeedPitch(entry.loopClipSpeedPitch) === normalizeSpeedPitch(entry.speedPitch)
   if (!eligible) return null
   const clipPath = getLoopClipPath(id)
   return fs.existsSync(clipPath) ? clipPath : null

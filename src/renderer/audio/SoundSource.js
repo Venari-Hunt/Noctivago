@@ -24,7 +24,7 @@ const STALL_RECOVERY_DELAY_MS = 8000
 const MAX_RECOVERY_ATTEMPTS = 3
 
 export class LocalFileSoundSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume, filters }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, filters, speed }) {
     this.engine = engine
     this.soundId = soundId
     this.loopStart = loopStart ?? 0
@@ -40,6 +40,16 @@ export class LocalFileSoundSource {
     this.audioEl.crossOrigin = 'anonymous'
     this.audioEl.preload = 'auto'
     this.audioEl.src = `sound://${soundId}`
+    // Speed is the only speed/pitch/reverse control applied to stream mode -
+    // playbackRate maps to it directly, and the browser's own default
+    // preservesPitch=true keeps this a pure tempo change. Pitch and reverse
+    // need real DSP (rubberband/areverse) that only exists on the ffmpeg
+    // side (see loopClip.js), so they only take effect once a sound is
+    // baked into a buffer-mode clip - a real, documented gap for sounds too
+    // long to bake, same category as buffer mode's other seam-smoothness-
+    // only advantages over streaming.
+    this.speed = speed ?? 1
+    this.audioEl.playbackRate = this.speed
     this._bindRecoveryListeners()
 
     this.sourceNode = engine.context.createMediaElementSource(this.audioEl)
@@ -187,6 +197,15 @@ export class LocalFileSoundSource {
 
   hasFilters(filters) {
     return JSON.stringify(this.filters ?? {}) === JSON.stringify(filters ?? {})
+  }
+
+  setSpeed(speed) {
+    this.speed = speed ?? 1
+    this.audioEl.playbackRate = this.speed
+  }
+
+  hasSpeed(speed) {
+    return this.speed === (speed ?? 1)
   }
 
   _loopEnd() {

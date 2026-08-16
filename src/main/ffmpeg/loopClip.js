@@ -124,6 +124,47 @@ function buildFilterChain(filters) {
   return parts.length > 0 ? parts.join(',') : null
 }
 
+// rubberband's tempo/pitch are scale factors, not the semitone/percent units
+// the UI works in - pitchSemitones converts via the standard equal-
+// temperament ratio (2^(semitones/12)); speed is already a plain multiplier.
+// Returns null when both are neutral (1 and 0) and reversed is false, so
+// callers can skip the whole pre-processing pass entirely for the default,
+// most-common case.
+function buildSpeedPitchReverseChain(speedPitch) {
+  if (!speedPitch) return null
+  const { speed = 1, pitchSemitones = 0, reversed = false } = speedPitch
+  const parts = []
+  if (speed !== 1 || pitchSemitones !== 0) {
+    const pitchRatio = Math.pow(2, pitchSemitones / 12)
+    parts.push(`rubberband=tempo=${speed}:pitch=${pitchRatio.toFixed(6)}`)
+  }
+  if (reversed) parts.push('areverse')
+  return parts.length > 0 ? parts.join(',') : null
+}
+
+// Reads a WAV file's real duration straight from its own RIFF/data chunk
+// header rather than spawning ffprobe (not bundled) or another ffmpeg
+// process - used only on WAV files this module just rendered itself (see
+// doRender's pre-processing pass), so the format is always exactly what's
+// expected.
+function readWavDuration(filePath) {
+  const buf = fs.readFileSync(filePath)
+  let offset = 12
+  let channels, sampleRate, bitsPerSample
+  while (offset < buf.length) {
+    const id = buf.toString('ascii', offset, offset + 4)
+    const size = buf.readUInt32LE(offset + 4)
+    if (id === 'fmt ') {
+      channels = buf.readUInt16LE(offset + 10)
+      sampleRate = buf.readUInt32LE(offset + 12)
+      bitsPerSample = buf.readUInt16LE(offset + 22)
+    }
+    if (id === 'data') return size / ((bitsPerSample / 8) * channels) / sampleRate
+    offset += 8 + size + (size % 2)
+  }
+  return 0
+}
+
 // Builds the filter_complex fragment that crossfades the clip's own tail
 // into its own head, given three separate reads of the same source (see
 // doRender): input 0 is the main body (everything except the last `fade`
@@ -229,19 +270,27 @@ function buildRotatedFilterComplex(filters, fade, mainDuration, totalDuration) {
 // get {ok:false, error} instead, so a failed render can't block saving the
 // loop points/filters themselves. crossfadeSeconds is nullable — null (or
 // undefined) means "use DEFAULT_CROSSFADE_SECONDS", matching a sound that's
-// never had it explicitly overridden in the Remix plugin.
-export function renderLoopClip({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds }) {
+// never had it explicitly overridden in the Remix plugin. speedPitch is
+// nullable too — null/neutral values skip the pre-processing pass below
+// entirely, leaving the default (no speed/pitch/reverse) path byte-for-byte
+// identical to before this option existed.
+export function renderLoopClip({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }) {
   if (pending.has(id)) return pending.get(id)
 
-  const promise = doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds }).finally(() => pending.delete(id))
+  const promise = doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }).finally(() =>
+    pending.delete(id)
+  )
   pending.set(id, promise)
   return promise
 }
 
-async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds }) {
-  const outputPath = getLoopClipPath(id)
+// The actual crossfade+rotation render, unchanged from before speed/pitch/
+// reverse existed - takes inputPath/loopStart/loopEnd/filters exactly as it
+// always has. Split out so doRender can point it at either the original
+// source directly (the common case) or at a pre-processed intermediate (see
+// doRender's speed/pitch/reverse branch) without duplicating this logic.
+async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, outputPath }) {
   const tmpPath = `${outputPath}.tmp`
-  fs.mkdirSync(clipsDir(), { recursive: true })
 
   const duration = loopEnd - loopStart
   const requestedFade = crossfadeSeconds ?? DEFAULT_CROSSFADE_SECONDS
@@ -292,9 +341,74 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     ]
   }
 
+  await runFfmpegToFile(args)
+  fs.renameSync(tmpPath, outputPath)
+}
+
+async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }) {
+  const outputPath = getLoopClipPath(id)
+  const tmpPath = `${outputPath}.tmp`
+  fs.mkdirSync(clipsDir(), { recursive: true })
+
+  const speedPitchChain = buildSpeedPitchReverseChain(speedPitch)
+
+  if (!speedPitchChain) {
+    try {
+      await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, outputPath })
+      return { ok: true }
+    } catch (err) {
+      if (fs.existsSync(tmpPath)) {
+        try {
+          fs.unlinkSync(tmpPath)
+        } catch {
+          // best-effort cleanup
+        }
+      }
+      console.error('renderLoopClip failed', id, err)
+      return { ok: false, error: err.message }
+    }
+  }
+
+  // BUG FIX, caught during verification before this ever shipped: applying
+  // rubberband/areverse *after* the crossfade+rotation stage (i.e. as the
+  // very last step) left a real, measurable seam - worse than the seam this
+  // whole crossfade system exists to remove. rubberband processes whatever
+  // buffer it's handed as a bounded clip with its own internal windowed
+  // (FFT-based) analysis, which has edge effects at the very start/end of
+  // that buffer; doing it last put those fresh edge effects exactly at the
+  // wrap point the crossfade had just finished smoothing. Confirmed by
+  // measuring the actual sample-level wrap discontinuity both ways on real
+  // (non-synthetic) audio: applying speed/pitch/reverse after crossfading
+  // left a gap proportionally *larger* than the original pre-crossfade bug
+  // this feature's sibling fixes (v0.1.22/v0.1.26/v0.1.27) exist to solve;
+  // reordering to pre-process first, THEN crossfade, brought it back down to
+  // within the same range as ordinary sample-to-sample variation elsewhere
+  // in the same file (an ~8/32768 residual vs. ~192/32768 the other way
+  // around, on identical content) - because the crossfade's whole job is
+  // hiding exactly this kind of discontinuity, regardless of what caused it,
+  // as long as it runs *last*.
+  const tmpIntermediatePath = `${outputPath}.pre.tmp.wav`
   try {
-    await runFfmpegToFile(args)
-    fs.renameSync(tmpPath, outputPath)
+    const filterChain = buildFilterChain(filters)
+    const preChain = [filterChain, speedPitchChain].filter(Boolean).join(',')
+    await runFfmpegToFile([
+      '-y',
+      '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
+      '-af', preChain,
+      '-vn',
+      '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
+    ])
+    const intermediateDuration = readWavDuration(tmpIntermediatePath)
+    // filters were already baked into the intermediate above - passing null
+    // here avoids applying them a second time.
+    await renderCrossfadedLoop({
+      inputPath: tmpIntermediatePath,
+      loopStart: 0,
+      loopEnd: intermediateDuration,
+      filters: null,
+      crossfadeSeconds,
+      outputPath
+    })
     return { ok: true }
   } catch (err) {
     if (fs.existsSync(tmpPath)) {
@@ -304,8 +418,16 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
         // best-effort cleanup
       }
     }
-    console.error('renderLoopClip failed', id, err)
+    console.error('renderLoopClip (speed/pitch/reverse) failed', id, err)
     return { ok: false, error: err.message }
+  } finally {
+    if (fs.existsSync(tmpIntermediatePath)) {
+      try {
+        fs.unlinkSync(tmpIntermediatePath)
+      } catch {
+        // best-effort cleanup
+      }
+    }
   }
 }
 

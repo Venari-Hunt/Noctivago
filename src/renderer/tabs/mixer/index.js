@@ -162,12 +162,23 @@ async function renameSound(id, name) {
 // reconcileSource had no way to notice the live AudioBuffer itself had gone
 // stale, and kept playing the *previous* bake indefinitely. Matches
 // loopClipEligible's own comparison fields.
+// Mirrors library.js's normalizeSpeedPitch - undefined (predates this
+// field) and an explicit neutral object must compare equal.
+function normalizeSpeedPitch(speedPitch) {
+  return JSON.stringify({
+    speed: speedPitch?.speed ?? 1,
+    pitchSemitones: speedPitch?.pitchSemitones ?? 0,
+    reversed: speedPitch?.reversed ?? false
+  })
+}
+
 function bufferBakeSnapshot(entry) {
   return JSON.stringify({
     loopStart: entry.loopStart,
     loopEnd: entry.loopEnd,
     filters: entry.filters,
-    crossfadeSeconds: entry.crossfadeSeconds
+    crossfadeSeconds: entry.crossfadeSeconds,
+    speedPitch: normalizeSpeedPitch(entry.speedPitch)
   })
 }
 
@@ -202,6 +213,7 @@ function reconcileSource(entry) {
   if (!isBuffer) {
     if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
     if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
+    if (!source.hasSpeed(entry.speedPitch?.speed)) source.setSpeed(entry.speedPitch?.speed)
   }
 }
 
@@ -234,7 +246,8 @@ function loopClipEligible(entry) {
     entry.loopClipStart === entry.loopStart &&
     entry.loopClipEnd === entry.loopEnd &&
     JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
-    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds
+    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds &&
+    normalizeSpeedPitch(entry.loopClipSpeedPitch) === normalizeSpeedPitch(entry.speedPitch)
   )
 }
 
@@ -262,7 +275,13 @@ function maybeAutoBake(entry) {
 
   autoBaking.add(entry.id)
   api.audio
-    .renderLoopClip(entry.id, { loopStart: entry.loopStart, loopEnd, filters: entry.filters, crossfadeSeconds: entry.crossfadeSeconds })
+    .renderLoopClip(entry.id, {
+      loopStart: entry.loopStart,
+      loopEnd,
+      filters: entry.filters,
+      crossfadeSeconds: entry.crossfadeSeconds,
+      speedPitch: entry.speedPitch
+    })
     .then((result) => {
       if (result.ok) refreshList()
     })
@@ -304,7 +323,8 @@ async function getOrCreateSource(entry) {
       loopStart: entry.loopStart,
       loopEnd: entry.loopEnd,
       volume: state.volumes.get(entry.id) ?? 0.7,
-      filters: entry.filters
+      filters: entry.filters,
+      speed: entry.speedPitch?.speed
     })
 
     const duration = await source.waitForMetadata()

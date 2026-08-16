@@ -177,6 +177,44 @@
   color: var(--text-dim);
 }
 
+.editor-speed-pitch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.editor-speed-pitch label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.editor-speed-pitch label > span:first-child {
+  width: 82px;
+  flex-shrink: 0;
+}
+
+.editor-speed-pitch input[type='range'] {
+  flex: 1;
+}
+
+.editor-reverse-toggle {
+  cursor: pointer;
+}
+
+.editor-speed-pitch-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .editor-filters {
   display: flex;
   flex-direction: column;

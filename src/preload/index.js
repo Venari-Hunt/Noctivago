@@ -40,6 +40,7 @@ const api = {
     updateIncluded: (id, included) => ipcRenderer.invoke('library:updateIncluded', id, included),
     updateCrossfade: (id, crossfadeSeconds) => ipcRenderer.invoke('library:updateCrossfade', id, crossfadeSeconds),
     updateTags: (id, tags) => ipcRenderer.invoke('library:updateTags', id, tags),
+    updateSpeedPitch: (id, speedPitch) => ipcRenderer.invoke('library:updateSpeedPitch', id, speedPitch),
     reorderSounds: (orderedIds) => ipcRenderer.invoke('library:reorderSounds', orderedIds),
     rename: (id, name) => ipcRenderer.invoke('library:rename', id, name),
     relink: (id) => ipcRenderer.invoke('library:relink', id),

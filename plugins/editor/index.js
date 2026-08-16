@@ -124,6 +124,23 @@ export default class EditorPlugin {
             </label>
             <p class="editor-crossfade-hint">Blends the seam so the loop isn't audible. Longer helps busy, textured audio (rain, crowds) — 0 disables blending. Automatically capped for very short loops.</p>
           </div>
+          <div class="editor-speed-pitch">
+            <label>
+              <span>Speed</span>
+              <input id="editor-speed" type="range" min="50" max="200" value="100" step="5" />
+              <span id="editor-speed-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
+              <span>Pitch</span>
+              <input id="editor-pitch" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="editor-pitch-value" class="editor-filter-value">Off</span>
+            </label>
+            <label class="editor-reverse-toggle">
+              <input id="editor-reverse" type="checkbox" />
+              Reverse
+            </label>
+            <p class="editor-speed-pitch-hint">Speed applies live, even for sounds too long to bake into a clip. Pitch and Reverse only take effect once saved (loops under 10 minutes) — Pitch previews approximately while dragging (briefly affects tempo too); Reverse has no live preview at all.</p>
+          </div>
           <div class="editor-filters">
             <label>
               <span>High-pass</span>
@@ -188,6 +205,11 @@ export default class EditorPlugin {
       lengthInput: container.querySelector('#editor-length-input'),
       crossfade: container.querySelector('#editor-crossfade'),
       crossfadeValue: container.querySelector('#editor-crossfade-value'),
+      speed: container.querySelector('#editor-speed'),
+      speedValue: container.querySelector('#editor-speed-value'),
+      pitch: container.querySelector('#editor-pitch'),
+      pitchValue: container.querySelector('#editor-pitch-value'),
+      reverse: container.querySelector('#editor-reverse'),
       highpass: container.querySelector('#editor-highpass'),
       highpassValue: container.querySelector('#editor-highpass-value'),
       lowpass: container.querySelector('#editor-lowpass'),
@@ -267,6 +289,10 @@ export default class EditorPlugin {
     this.els.lengthInput.addEventListener('change', () => this.applyManualLength())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
+
+    this.els.speed.addEventListener('input', () => this.applySpeedPitchControls())
+    this.els.pitch.addEventListener('input', () => this.applySpeedPitchControls())
+    this.els.reverse.addEventListener('change', () => this.applySpeedPitchControls())
 
     this.els.highpass.addEventListener('input', () => this.applyFilterControls())
     this.els.lowpass.addEventListener('input', () => this.applyFilterControls())
@@ -495,6 +521,32 @@ export default class EditorPlugin {
     this.updateSaveButtonState()
   }
 
+  currentSpeedPitch() {
+    return {
+      speed: Number(this.els.speed.value) / 100,
+      pitchSemitones: Number(this.els.pitch.value),
+      reversed: this.els.reverse.checked
+    }
+  }
+
+  setSpeedPitchControls({ speed = 1, pitchSemitones = 0, reversed = false }) {
+    this.els.speed.value = String(Math.round(speed * 100))
+    this.els.pitch.value = String(pitchSemitones)
+    this.els.reverse.checked = Boolean(reversed)
+  }
+
+  updateSpeedPitchLabels({ speed = 1, pitchSemitones = 0 }) {
+    this.els.speedValue.textContent = `${Math.round(speed * 100)}%`
+    this.els.pitchValue.textContent = pitchSemitones === 0 ? 'Off' : `${pitchSemitones > 0 ? '+' : ''}${pitchSemitones} st`
+  }
+
+  applySpeedPitchControls() {
+    const speedPitch = this.currentSpeedPitch()
+    this.updateSpeedPitchLabels(speedPitch)
+    this.previewSource?.setSpeedPitch(speedPitch)
+    this.updateSaveButtonState()
+  }
+
   // Builds a comparable snapshot of "what's currently saved" vs. "what's
   // live in the controls" - explicit key order/defaults on both sides
   // (rather than relying on entry.filters' own possibly-partial shape, e.g.
@@ -503,7 +555,7 @@ export default class EditorPlugin {
   // has changed. crossfadeMs is compared as the rounded integer the slider
   // itself produces, not the seconds value it's persisted as, so float
   // round-tripping (ms -> seconds -> ms) can't cause a false "dirty" flag.
-  snapshotOf(loopStart, loopEnd, filters, crossfadeMs) {
+  snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch) {
     return JSON.stringify({
       loopStart,
       loopEnd,
@@ -514,14 +566,22 @@ export default class EditorPlugin {
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0
       },
-      crossfadeMs
+      crossfadeMs,
+      speedPitch: {
+        speed: speedPitch.speed ?? 1,
+        pitchSemitones: speedPitch.pitchSemitones ?? 0,
+        reversed: speedPitch.reversed ?? false
+      }
     })
   }
 
   hasUnsavedChanges() {
     if (!this.currentEntry || !this.loopEditorController || !this.savedSnapshot) return false
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
-    return this.snapshotOf(loopStart, loopEnd, this.currentFilters(), this.currentCrossfadeMs()) !== this.savedSnapshot
+    return (
+      this.snapshotOf(loopStart, loopEnd, this.currentFilters(), this.currentCrossfadeMs(), this.currentSpeedPitch()) !==
+      this.savedSnapshot
+    )
   }
 
   updateSaveButtonState() {
@@ -578,6 +638,10 @@ export default class EditorPlugin {
     this.els.crossfade.value = String(crossfadeMs)
     this.updateCrossfadeLabel(crossfadeMs)
 
+    const speedPitch = entry.speedPitch ?? { speed: 1, pitchSemitones: 0, reversed: false }
+    this.setSpeedPitchControls(speedPitch)
+    this.updateSpeedPitchLabels(speedPitch)
+
     await this.engine.resume()
     this.previewSource = new PreviewSource(this.engine, {
       soundId: entry.id,
@@ -585,7 +649,8 @@ export default class EditorPlugin {
       loopEnd: entry.loopEnd,
       volume: 0.7,
       looping: this.looping,
-      crossfadeSeconds: crossfadeMs / 1000
+      crossfadeSeconds: crossfadeMs / 1000,
+      speedPitch
     })
     // Only fires when Loop preview is off and playback runs off the end on
     // its own - the button/playhead-tracking RAF otherwise only stop via
@@ -611,7 +676,7 @@ export default class EditorPlugin {
     this.loopEditorController.load(duration, loopStart, loopEnd)
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs)
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch)
     this.updateSaveButtonState()
 
     this.els.waveformStatus.textContent = this.waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
@@ -628,15 +693,18 @@ export default class EditorPlugin {
     const filters = this.currentFilters()
     const crossfadeMs = this.currentCrossfadeMs()
     const crossfadeSeconds = crossfadeMs / 1000
+    const speedPitch = this.currentSpeedPitch()
 
     await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
     await this.api.library.updateFilters(id, filters)
     await this.api.library.updateCrossfade(id, crossfadeSeconds)
+    await this.api.library.updateSpeedPitch(id, speedPitch)
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd
     this.currentEntry.filters = filters
     this.currentEntry.crossfadeSeconds = crossfadeSeconds
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs)
+    this.currentEntry.speedPitch = speedPitch
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch)
 
     // This never touches the original audio file: trim points and filters
     // are stored as metadata, applied live whenever the Mixer streams the
@@ -645,17 +713,21 @@ export default class EditorPlugin {
     // longer trimmed region keeps the Mixer streaming (still filtered, just
     // with a small loop seam) instead of fully decoding it client-side,
     // which would risk the same memory/crash problem long files hit before
-    // this app streamed instead of decoding.
+    // this app streamed instead of decoding. Speed/Pitch/Reverse follow the
+    // same cap - Speed alone also applies live to a streamed (unbaked)
+    // sound (see core's LocalFileSoundSource), but Pitch and Reverse need
+    // the real ffmpeg render to take effect at all.
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
       this.els.save.disabled = true
       this.els.save.textContent = 'Saving…'
-      const result = await this.api.audio.renderLoopClip(id, { loopStart, loopEnd, filters, crossfadeSeconds })
+      const result = await this.api.audio.renderLoopClip(id, { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch })
       if (result.ok) {
         this.currentEntry.loopClipReady = true
         this.currentEntry.loopClipStart = loopStart
         this.currentEntry.loopClipEnd = loopEnd
         this.currentEntry.loopClipFilters = filters
         this.currentEntry.loopClipCrossfadeSeconds = crossfadeSeconds
+        this.currentEntry.loopClipSpeedPitch = speedPitch
         this.els.saveStatus.textContent = 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
       } else {
         this.currentEntry.loopClipReady = false
@@ -663,6 +735,7 @@ export default class EditorPlugin {
         this.currentEntry.loopClipEnd = null
         this.currentEntry.loopClipFilters = null
         this.currentEntry.loopClipCrossfadeSeconds = null
+        this.currentEntry.loopClipSpeedPitch = null
         this.els.saveStatus.textContent = 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
       }
       this.updateSaveButtonState()
