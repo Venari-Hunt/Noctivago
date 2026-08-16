@@ -9,6 +9,13 @@ const MIN_LOOP_SECONDS = 0.05
 const MIN_VIEW_SECONDS = 0.5
 const ZOOM_IN_FACTOR = 0.8
 const ZOOM_OUT_FACTOR = 1.25
+// Dragging a handle/playhead within this many pixels of either canvas edge
+// auto-scrolls the viewport toward that edge, continuously, for as long as
+// the cursor stays there - not just on further mouse movement, since a
+// stationary cursor sitting at the edge stops generating mousemove events.
+const EDGE_SCROLL_ZONE_PX = 24
+// Fraction of the current visible span to scroll per animation frame.
+const EDGE_SCROLL_FRACTION = 0.02
 
 export function createLoopEditorController(canvas) {
   let duration = 0
@@ -20,6 +27,9 @@ export function createLoopEditorController(canvas) {
   let panStartX = 0
   let panStartViewStart = 0
   let panStartViewEnd = 0
+  let lastPointerClientX = 0
+  let edgeScrollDirection = 0
+  let edgeScrollRafId = null
   let onChange = () => {}
   let onScrub = () => {}
   let onViewportChange = () => {}
@@ -105,18 +115,14 @@ export function createLoopEditorController(canvas) {
     if (closest.dist <= HANDLE_HIT_PX) dragging = closest.type
   }
 
-  function pointerMove(evt) {
-    if (!dragging || !duration) return
+  // Shared by pointerMove (real mouse movement) and tickEdgeScroll (the
+  // viewport moving under a stationary cursor) - both need to re-derive the
+  // dragged handle/playhead's time from the same on-screen clientX, just
+  // against whatever the current viewport mapping happens to be at the
+  // moment.
+  function updateDragValue(clientX) {
     const rect = canvas.getBoundingClientRect()
-
-    if (dragging === 'pan') {
-      const span = panStartViewEnd - panStartViewStart
-      const deltaTime = ((evt.clientX - panStartX) / rect.width) * span
-      applyViewport(panStartViewStart - deltaTime, panStartViewEnd - deltaTime)
-      return
-    }
-
-    const t = xToTime(evt.clientX - rect.left, rect.width)
+    const t = xToTime(clientX - rect.left, rect.width)
 
     if (dragging === 'start') {
       loopStart = Math.min(snapToPlayhead(t, rect), loopEnd - MIN_LOOP_SECONDS)
@@ -133,8 +139,56 @@ export function createLoopEditorController(canvas) {
     }
   }
 
+  function tickEdgeScroll() {
+    edgeScrollRafId = null
+    if (!dragging || edgeScrollDirection === 0) return
+
+    const span = viewEnd - viewStart
+    const delta = edgeScrollDirection * span * EDGE_SCROLL_FRACTION
+    const prevStart = viewStart
+    const prevEnd = viewEnd
+    applyViewport(viewStart + delta, viewEnd + delta)
+    // Already at the file's start/end bound - nothing left to scroll toward,
+    // stop rather than spin the RAF loop uselessly for the rest of the drag.
+    if (viewStart === prevStart && viewEnd === prevEnd) return
+
+    updateDragValue(lastPointerClientX)
+    edgeScrollRafId = requestAnimationFrame(tickEdgeScroll)
+  }
+
+  function updateEdgeScroll(clientX) {
+    const rect = canvas.getBoundingClientRect()
+    const x = clientX - rect.left
+    if (x < EDGE_SCROLL_ZONE_PX) edgeScrollDirection = -1
+    else if (x > rect.width - EDGE_SCROLL_ZONE_PX) edgeScrollDirection = 1
+    else edgeScrollDirection = 0
+
+    if (edgeScrollDirection !== 0 && edgeScrollRafId == null) {
+      edgeScrollRafId = requestAnimationFrame(tickEdgeScroll)
+    }
+  }
+
+  function pointerMove(evt) {
+    if (!dragging || !duration) return
+    const rect = canvas.getBoundingClientRect()
+
+    if (dragging === 'pan') {
+      const span = panStartViewEnd - panStartViewStart
+      const deltaTime = ((evt.clientX - panStartX) / rect.width) * span
+      applyViewport(panStartViewStart - deltaTime, panStartViewEnd - deltaTime)
+      return
+    }
+
+    lastPointerClientX = evt.clientX
+    updateDragValue(evt.clientX)
+    if (dragging === 'start' || dragging === 'end' || dragging === 'playhead') {
+      updateEdgeScroll(evt.clientX)
+    }
+  }
+
   function pointerUp() {
     dragging = null
+    edgeScrollDirection = 0
   }
 
   // Wheel zoom, centered on the cursor's time position - only active while
@@ -218,6 +272,7 @@ export function createLoopEditorController(canvas) {
       onViewportChange = fn
     },
     destroy() {
+      if (edgeScrollRafId != null) cancelAnimationFrame(edgeScrollRafId)
       canvas.removeEventListener('mousedown', pointerDown)
       window.removeEventListener('mousemove', pointerMove)
       window.removeEventListener('mouseup', pointerUp)
