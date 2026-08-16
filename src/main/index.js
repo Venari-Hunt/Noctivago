@@ -115,7 +115,13 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Lets the Mixer resume playback on launch (see resume-on-open in
+      // tabs/mixer/index.js) without Chromium's usual "AudioContext.resume()
+      // needs a prior user gesture" autoplay restriction blocking it - this
+      // is a trusted first-party app the user explicitly asked to auto-
+      // resume, not arbitrary embedded web content.
+      autoplayPolicy: 'no-user-gesture-required'
     }
   })
 

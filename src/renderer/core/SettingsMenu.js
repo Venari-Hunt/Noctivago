@@ -11,6 +11,7 @@ export function installSettingsMenu() {
   const autoUpdateCheckbox = document.getElementById('settings-auto-update-enabled')
   const checkNowBtn = document.getElementById('settings-check-now')
   const checkStatus = document.getElementById('settings-check-status')
+  const autoInstallUpdatesCheckbox = document.getElementById('settings-auto-install-updates')
   const minimizeToTrayCheckbox = document.getElementById('settings-minimize-to-tray-enabled')
 
   const watchedFolderList = document.getElementById('watched-folder-list')
@@ -29,6 +30,7 @@ export function installSettingsMenu() {
   openBtn.addEventListener('click', async () => {
     const settings = await window.noctivago.settings.get()
     autoUpdateCheckbox.checked = settings.autoUpdateEnabled
+    autoInstallUpdatesCheckbox.checked = settings.autoInstallUpdates
     minimizeToTrayCheckbox.checked = settings.minimizeToTrayEnabled
     checkStatus.textContent = ''
     refreshWatchedFolders()
@@ -53,6 +55,10 @@ export function installSettingsMenu() {
 
   autoUpdateCheckbox.addEventListener('change', () => {
     window.noctivago.settings.setAutoUpdateEnabled(autoUpdateCheckbox.checked)
+  })
+
+  autoInstallUpdatesCheckbox.addEventListener('change', () => {
+    window.noctivago.settings.setAutoInstallUpdatesEnabled(autoInstallUpdatesCheckbox.checked)
   })
 
   minimizeToTrayCheckbox.addEventListener('change', () => {

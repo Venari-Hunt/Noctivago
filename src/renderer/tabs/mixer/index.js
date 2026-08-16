@@ -269,6 +269,20 @@ async function getOrCreateSource(entry) {
   return source
 }
 
+// Persists which sounds are in the mix and whether the mix is currently
+// playing at all, so a restart can rebuild the same state - see
+// maybeResumeOnLaunch. Called on every transition rather than once at quit
+// time, since there's no reliable synchronous main<->renderer round-trip at
+// the exact moment the app closes; whatever these last said is already
+// correct by the time it matters.
+function persistIncluded(id, included) {
+  api.library.updateIncluded(id, included)
+}
+
+function persistPlayingState() {
+  api.settings.setWasPlayingOnClose(state.playing.size > 0)
+}
+
 // Starts actual playback of a sound and marks it included+playing. Used by
 // the per-sound toggle, "Play all", and preset loading.
 async function startPlayback(id, entry) {
@@ -282,10 +296,13 @@ async function startPlayback(id, entry) {
     await source.play()
     state.playing.add(id)
     state.included.add(id)
+    persistIncluded(id, true)
+    persistPlayingState()
   } catch (err) {
     console.error('Failed to play sound', entry.name, err)
     state.errors.set(id, 'Could not decode this audio file.')
     state.included.delete(id)
+    persistIncluded(id, false)
   } finally {
     state.loading.delete(id)
     render()
@@ -295,6 +312,7 @@ async function startPlayback(id, entry) {
 function stopPlayback(id) {
   state.sources.get(id)?.pause()
   state.playing.delete(id)
+  persistPlayingState()
 }
 
 // The per-sound button toggles mix membership. Turning a sound on plays it
@@ -306,6 +324,7 @@ async function toggleIncluded(id) {
 
   if (state.included.has(id)) {
     state.included.delete(id)
+    persistIncluded(id, false)
     stopPlayback(id)
     render()
     return
@@ -526,6 +545,7 @@ async function loadPreset(preset) {
   for (const id of [...state.included]) {
     if (!newIds.has(id)) {
       state.included.delete(id)
+      persistIncluded(id, false)
       stopPlayback(id)
     }
   }
@@ -562,6 +582,26 @@ export function onShow() {
   refreshList()
 }
 
+// If the app was closed while something was playing, resume automatically
+// on next launch instead of opening to a silent, empty-feeling mix - user-
+// requested directly. Reads each sound's persisted `included` flag (see
+// persistIncluded); only ever called once, right after mount()'s initial
+// library load, not on every later refreshList() (tab-switch refreshes
+// etc.), which would otherwise re-trigger this every time the user comes
+// back to the Mixer tab.
+async function maybeResumeOnLaunch() {
+  const settings = await api.settings.get()
+  if (!settings.wasPlayingOnClose) return
+
+  const toResume = state.library.filter((entry) => entry.included && entry.status !== 'missing')
+  if (toResume.length === 0) return
+
+  await engine.resume()
+  for (const entry of toResume) {
+    await startPlayback(entry.id, entry)
+  }
+}
+
 export function mount(container) {
   container.innerHTML = `
     <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
@@ -575,7 +615,7 @@ export function mount(container) {
     state.searchQuery = els.soundSearch.value
     render()
   })
-  refreshList()
+  refreshList().then(maybeResumeOnLaunch)
   // mount() only ever runs once (TabHost lazily mounts each tab a single
   // time), so this is a one-time listener registration, not a per-mount leak.
   window.noctivago.tray.onTogglePlayPause(toggleGlobalPlayback)

@@ -203,6 +203,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     fileSizeBytes: stats.size,
     durationSeconds: null,
     volume: 0.7,
+    included: false,
     loopStart: 0,
     loopEnd: null,
     filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
@@ -241,6 +242,14 @@ export function updateMeta(id, { durationSeconds }) {
 // every sound back to the 0.7 default, reported directly by the user.
 export function updateVolume(id, volume) {
   return updateEntry(id, { volume })
+}
+
+// Persists which sounds are currently in the mix, so a restart can rebuild
+// it - see mixer/index.js's resume-on-launch logic (gated by
+// settings.wasPlayingOnClose, not this alone: a sound can be "included"
+// while the whole mix is paused, which shouldn't autoplay anything).
+export function updateIncluded(id, included) {
+  return updateEntry(id, { included })
 }
 
 export function updateLoopPoints(id, { loopStart, loopEnd }) {

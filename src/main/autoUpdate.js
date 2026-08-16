@@ -77,6 +77,17 @@ export function initAutoUpdate() {
   autoUpdater.on('update-available', async (info) => {
     if (info.version === dismissedVersion) return
     manualCheckPending = false
+
+    // Opt-in Settings toggle - skips this confirmation entirely and goes
+    // straight to downloading. update-downloaded below already installs
+    // and restarts with no second prompt, so this is the one remaining
+    // gate between "update detected" and "fully automatic."
+    if (getSettings().autoInstallUpdates) {
+      log.info(`Auto-update: ${info.version} available, downloading automatically (autoInstallUpdates is on)`)
+      autoUpdater.downloadUpdate()
+      return
+    }
+
     const { response } = await dialog.showMessageBox({
       type: 'info',
       buttons: ['Download', 'Not now'],

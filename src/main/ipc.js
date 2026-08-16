@@ -5,7 +5,7 @@ import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose } from './settings.js'
 import { setAutoUpdateEnabled, checkForUpdatesNow } from './autoUpdate.js'
 import { setTrayEnabled } from './tray.js'
 import { watchNewFolder, unwatchFolder } from './watchFolders.js'
@@ -15,12 +15,14 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('settings:setAutoUpdateEnabled', (_event, enabled) => setAutoUpdateEnabled(enabled))
+  ipcMain.handle('settings:setAutoInstallUpdatesEnabled', (_event, enabled) => setAutoInstallUpdatesEnabled(enabled))
   ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
   ipcMain.handle('settings:setMinimizeToTrayEnabled', (_event, enabled) => {
     const settings = setMinimizeToTrayEnabled(enabled)
     setTrayEnabled(enabled)
     return settings
   })
+  ipcMain.handle('settings:setWasPlayingOnClose', (_event, wasPlaying) => setWasPlayingOnClose(wasPlaying))
 
   ipcMain.handle('library:list', () => library.listSounds())
   ipcMain.handle('library:pickFile', () => library.pickFile())
@@ -31,6 +33,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:updateLoopPoints', (_event, id, points) => library.updateLoopPoints(id, points))
   ipcMain.handle('library:updateFilters', (_event, id, filters) => library.updateFilters(id, filters))
   ipcMain.handle('library:updateVolume', (_event, id, volume) => library.updateVolume(id, volume))
+  ipcMain.handle('library:updateIncluded', (_event, id, included) => library.updateIncluded(id, included))
   ipcMain.handle('library:rename', (_event, id, name) => library.rename(id, name))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))

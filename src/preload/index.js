@@ -8,7 +8,9 @@ const api = {
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     setAutoUpdateEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoUpdateEnabled', enabled),
-    setMinimizeToTrayEnabled: (enabled) => ipcRenderer.invoke('settings:setMinimizeToTrayEnabled', enabled)
+    setAutoInstallUpdatesEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoInstallUpdatesEnabled', enabled),
+    setMinimizeToTrayEnabled: (enabled) => ipcRenderer.invoke('settings:setMinimizeToTrayEnabled', enabled),
+    setWasPlayingOnClose: (wasPlaying) => ipcRenderer.invoke('settings:setWasPlayingOnClose', wasPlaying)
   },
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow')
@@ -35,6 +37,7 @@ const api = {
     updateLoopPoints: (id, points) => ipcRenderer.invoke('library:updateLoopPoints', id, points),
     updateFilters: (id, filters) => ipcRenderer.invoke('library:updateFilters', id, filters),
     updateVolume: (id, volume) => ipcRenderer.invoke('library:updateVolume', id, volume),
+    updateIncluded: (id, included) => ipcRenderer.invoke('library:updateIncluded', id, included),
     rename: (id, name) => ipcRenderer.invoke('library:rename', id, name),
     relink: (id) => ipcRenderer.invoke('library:relink', id),
     remove: (id) => ipcRenderer.invoke('library:remove', id),
