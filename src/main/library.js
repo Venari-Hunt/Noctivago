@@ -3,7 +3,9 @@ import Store from 'electron-store'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { getLoopClipPath, deleteLoopClip } from './ffmpeg/loopClip.js'
+import { getLoopClipPath, deleteLoopClip, renderLoopClip, probeDurationSeconds } from './ffmpeg/loopClip.js'
+import { getSettings } from './settings.js'
+import { MAX_BUFFER_CLIP_SECONDS } from '../shared/constants.js'
 
 const store = new Store({
   name: 'library',
@@ -196,6 +198,63 @@ export function addFolderSounds(folderPath, { keepCopy }) {
   return files.map((filePath) => addSound({ path: filePath, name: path.parse(filePath).name, keepCopy }))
 }
 
+// Opt-in background bake for the eagerlyBakeOnImport setting - kicked off
+// fire-and-forget from addSound() below, which every import path (single
+// file, folder-as-preset, folder-as-tag, watch-folder auto-import) already
+// funnels through, so this needed zero changes at any of those call sites.
+// A fresh import has no durationSeconds yet - that's normally only learned
+// lazily, the first time a sound actually plays and its <audio> element
+// fires loadedmetadata (see tabs/mixer/index.js's getOrCreateSource) - so
+// this probes it directly via ffmpeg first (probeDurationSeconds). Re-reads
+// the entry fresh after that probe (which can take a moment on a large
+// file) rather than trusting the snapshot passed in, in case the user
+// edited the sound (e.g. via Remix) while the probe was still in flight.
+// Silently does nothing past the MAX_BUFFER_CLIP_SECONDS cap (same
+// eligibility every other buffer-mode path enforces) or on any ffmpeg
+// failure - this is a pure background convenience, never something an
+// import should visibly wait on or fail because of.
+const eagerBaking = new Set()
+
+async function maybeEagerBakeOnImport(entry) {
+  if (!getSettings().eagerlyBakeOnImport) return
+  if (eagerBaking.has(entry.id)) return
+  eagerBaking.add(entry.id)
+  try {
+    const inputPath = resolvePlaybackPath(entry)
+    if (!fs.existsSync(inputPath)) return
+    const durationSeconds = await probeDurationSeconds(inputPath)
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return
+    updateMeta(entry.id, { durationSeconds })
+
+    const fresh = store.get('sounds').find((s) => s.id === entry.id)
+    if (!fresh || fresh.loopEnd == null) return
+    if (fresh.loopEnd - fresh.loopStart > MAX_BUFFER_CLIP_SECONDS) return
+
+    const result = await renderLoopClip({
+      id: fresh.id,
+      inputPath,
+      loopStart: fresh.loopStart,
+      loopEnd: fresh.loopEnd,
+      filters: fresh.filters,
+      crossfadeSeconds: fresh.crossfadeSeconds,
+      speedPitch: fresh.speedPitch
+    })
+    if (result.ok) {
+      setLoopClipReady(fresh.id, {
+        loopStart: fresh.loopStart,
+        loopEnd: fresh.loopEnd,
+        filters: fresh.filters,
+        crossfadeSeconds: fresh.crossfadeSeconds,
+        speedPitch: fresh.speedPitch
+      })
+    }
+  } catch (err) {
+    console.error('Eager bake on import failed', entry.id, err)
+  } finally {
+    eagerBaking.delete(entry.id)
+  }
+}
+
 export function addSound({ path: sourcePath, name, keepCopy }) {
   const id = crypto.randomUUID()
   const stats = fs.statSync(sourcePath)
@@ -257,6 +316,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
   const sounds = store.get('sounds')
   sounds.push(entry)
   store.set('sounds', sounds)
+  maybeEagerBakeOnImport(entry)
   return entry
 }
 

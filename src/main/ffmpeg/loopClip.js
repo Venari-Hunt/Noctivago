@@ -57,6 +57,25 @@ async function probeAvailableDuration(inputPath, start, requestedDuration) {
   return byteCount / 2 / PROBE_SAMPLE_RATE
 }
 
+// Same technique as probeAvailableDuration (decode to raw headerless PCM at a
+// low sample rate and count bytes, never buffering the decoded audio - same
+// O(1)-memory approach waveformPeaks.js already uses for whole-file reads),
+// but with no -t cap, so it reads clear through to EOF - used to learn a
+// freshly-imported file's real duration before its metadata has ever been
+// probed any other way (see library.js's eager-bake-on-import setting, the
+// one caller of this outside the normal Save/first-play paths, both of which
+// already have a duration from waitForMetadata() by the time they render).
+export async function probeDurationSeconds(inputPath) {
+  let byteCount = 0
+  await runFfmpegPipe(
+    ['-i', inputPath, '-vn', '-ac', '1', '-ar', String(PROBE_SAMPLE_RATE), '-f', 's16le', 'pipe:1'],
+    (chunk) => {
+      byteCount += chunk.length
+    }
+  )
+  return byteCount / 2 / PROBE_SAMPLE_RATE
+}
+
 // Default length of the self-crossfade blended into the tail of every
 // rendered clip (see buildFilterComplex) so the loop seam has no hard
 // discontinuity, even when the audio content itself doesn't naturally

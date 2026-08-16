@@ -10,7 +10,8 @@ const api = {
     setAutoUpdateEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoUpdateEnabled', enabled),
     setAutoInstallUpdatesEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoInstallUpdatesEnabled', enabled),
     setMinimizeToTrayEnabled: (enabled) => ipcRenderer.invoke('settings:setMinimizeToTrayEnabled', enabled),
-    setWasPlayingOnClose: (wasPlaying) => ipcRenderer.invoke('settings:setWasPlayingOnClose', wasPlaying)
+    setWasPlayingOnClose: (wasPlaying) => ipcRenderer.invoke('settings:setWasPlayingOnClose', wasPlaying),
+    setEagerlyBakeOnImportEnabled: (enabled) => ipcRenderer.invoke('settings:setEagerlyBakeOnImportEnabled', enabled)
   },
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow')

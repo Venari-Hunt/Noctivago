@@ -6,7 +6,8 @@ const store = new Store({
     autoUpdateEnabled: true,
     autoInstallUpdates: false,
     minimizeToTrayEnabled: false,
-    wasPlayingOnClose: false
+    wasPlayingOnClose: false,
+    eagerlyBakeOnImport: false
   }
 })
 
@@ -15,7 +16,8 @@ export function getSettings() {
     autoUpdateEnabled: store.get('autoUpdateEnabled'),
     autoInstallUpdates: store.get('autoInstallUpdates'),
     minimizeToTrayEnabled: store.get('minimizeToTrayEnabled'),
-    wasPlayingOnClose: store.get('wasPlayingOnClose')
+    wasPlayingOnClose: store.get('wasPlayingOnClose'),
+    eagerlyBakeOnImport: store.get('eagerlyBakeOnImport')
   }
 }
 
@@ -35,6 +37,19 @@ export function setAutoInstallUpdatesEnabled(enabled) {
 
 export function setMinimizeToTrayEnabled(enabled) {
   store.set('minimizeToTrayEnabled', Boolean(enabled))
+  return getSettings()
+}
+
+// When on, every newly-imported sound (single file, folder-as-preset,
+// folder-as-tag, or watch-folder auto-import - all of them funnel through
+// library.js's addSound()) gets its seamless-loop clip baked immediately in
+// the background, instead of waiting for the sound's first play (the
+// existing lazy default - see tabs/mixer/index.js's maybeAutoBake). Purely
+// an upfront-convenience opt-in for pre-processing a whole batch at once;
+// the lazy default stays the default since eagerly baking every import would
+// waste CPU/disk on sounds that might never get played.
+export function setEagerlyBakeOnImportEnabled(enabled) {
+  store.set('eagerlyBakeOnImport', Boolean(enabled))
   return getSettings()
 }
 
