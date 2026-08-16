@@ -33,6 +33,7 @@ const els = {
   addSoundMenu: document.getElementById('add-sound-menu'),
   addSoundFileItem: document.getElementById('add-sound-file'),
   addSoundFolderPresetItem: document.getElementById('add-sound-folder-preset'),
+  addSoundFolderTagItem: document.getElementById('add-sound-folder-tag'),
   addSoundWatchFolderItem: document.getElementById('add-sound-watch-folder'),
   openPresetsBtn: document.getElementById('open-presets'),
 
@@ -45,9 +46,18 @@ const els = {
   addFolderPresetDialog: document.getElementById('add-folder-preset-dialog'),
   addFolderPresetName: document.getElementById('add-folder-preset-name'),
   addFolderPresetKeepCopy: document.getElementById('add-folder-preset-keep-copy'),
+  addFolderPresetTag: document.getElementById('add-folder-preset-tag'),
+  addFolderPresetTagName: document.getElementById('add-folder-preset-tag-name'),
   addFolderPresetStatus: document.getElementById('add-folder-preset-status'),
   addFolderPresetCancel: document.getElementById('add-folder-preset-cancel'),
   addFolderPresetConfirm: document.getElementById('add-folder-preset-confirm'),
+
+  addFolderTagDialog: document.getElementById('add-folder-tag-dialog'),
+  addFolderTagName: document.getElementById('add-folder-tag-name'),
+  addFolderTagKeepCopy: document.getElementById('add-folder-tag-keep-copy'),
+  addFolderTagStatus: document.getElementById('add-folder-tag-status'),
+  addFolderTagCancel: document.getElementById('add-folder-tag-cancel'),
+  addFolderTagConfirm: document.getElementById('add-folder-tag-confirm'),
 
   presetsModal: document.getElementById('presets-modal'),
   newPresetName: document.getElementById('new-preset-name'),
@@ -59,6 +69,13 @@ const els = {
 
 let pickedFile = null
 let pickedFolder = null
+// Folder-name tag text for the "Add folder as preset" dialog's own tag
+// checkbox - derived from the folder path at pick time (same as the preset
+// name field's own default), kept independent of whatever the user may have
+// typed into that name field, since the tag should always reflect the
+// folder's real name per the original ask.
+let pickedFolderPresetTagName = null
+let pickedFolderForTag = null // folder path for the standalone "Add folder as tag" dialog
 // Ids currently being auto-baked (see maybeAutoBake) - prevents firing a
 // second concurrent bake for the same sound if getOrCreateSource runs again
 // (e.g. a rapid re-toggle) before the first one finishes.
@@ -582,8 +599,11 @@ els.addSoundFolderPresetItem.addEventListener('click', async () => {
   if (!folder) return
   pickedFolder = folder
   const folderName = folder.split(/[\\/]/).filter(Boolean).pop() ?? 'New preset'
+  pickedFolderPresetTagName = folderName
   els.addFolderPresetName.value = folderName
   els.addFolderPresetKeepCopy.checked = false
+  els.addFolderPresetTag.checked = false
+  els.addFolderPresetTagName.textContent = folderName
   els.addFolderPresetStatus.textContent = ''
   showModal(els.addFolderPresetDialog)
 })
@@ -616,9 +636,57 @@ els.addFolderPresetConfirm.addEventListener('click', async () => {
     sounds: added.map((entry) => ({ soundId: entry.id, volume: 0.7 }))
   })
 
+  if (els.addFolderPresetTag.checked && pickedFolderPresetTagName) {
+    await Promise.all(added.map((entry) => api.library.updateTags(entry.id, [...(entry.tags ?? []), pickedFolderPresetTagName])))
+  }
+
   els.addFolderPresetConfirm.disabled = false
   pickedFolder = null
+  pickedFolderPresetTagName = null
   hideModal(els.addFolderPresetDialog)
+  await refreshList()
+})
+
+els.addSoundFolderTagItem.addEventListener('click', async () => {
+  closeAddSoundMenu()
+  const folder = await api.library.pickFolder()
+  if (!folder) return
+  pickedFolderForTag = folder
+  const folderName = folder.split(/[\\/]/).filter(Boolean).pop() ?? ''
+  els.addFolderTagName.value = folderName
+  els.addFolderTagKeepCopy.checked = false
+  els.addFolderTagStatus.textContent = ''
+  showModal(els.addFolderTagDialog)
+})
+
+els.addFolderTagCancel.addEventListener('click', () => {
+  pickedFolderForTag = null
+  hideModal(els.addFolderTagDialog)
+})
+
+els.addFolderTagConfirm.addEventListener('click', async () => {
+  if (!pickedFolderForTag) return
+  const tag = els.addFolderTagName.value.trim()
+  if (!tag) {
+    els.addFolderTagStatus.textContent = 'Enter a tag first.'
+    return
+  }
+
+  els.addFolderTagConfirm.disabled = true
+  els.addFolderTagStatus.textContent = 'Adding sounds…'
+
+  const added = await api.library.addFolderSounds(pickedFolderForTag, { keepCopy: els.addFolderTagKeepCopy.checked })
+  if (added.length === 0) {
+    els.addFolderTagConfirm.disabled = false
+    els.addFolderTagStatus.textContent = 'No audio files found directly inside that folder.'
+    return
+  }
+
+  await Promise.all(added.map((entry) => api.library.updateTags(entry.id, [...(entry.tags ?? []), tag])))
+
+  els.addFolderTagConfirm.disabled = false
+  pickedFolderForTag = null
+  hideModal(els.addFolderTagDialog)
   await refreshList()
 })
 

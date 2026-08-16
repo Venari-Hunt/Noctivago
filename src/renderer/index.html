@@ -22,6 +22,7 @@
           <div id="add-sound-menu" class="dropdown-menu hidden">
             <button id="add-sound-file" class="dropdown-item" type="button">Add file…</button>
             <button id="add-sound-folder-preset" class="dropdown-item" type="button">Add folder as preset…</button>
+            <button id="add-sound-folder-tag" class="dropdown-item" type="button">Add folder as tag…</button>
             <button id="add-sound-watch-folder" class="dropdown-item" type="button">Watch a folder…</button>
           </div>
         </div>
@@ -58,10 +59,33 @@
           <input id="add-folder-preset-keep-copy" type="checkbox" />
           Keep copies in the app (safe if you move/delete the originals — uses extra disk space)
         </label>
+        <label class="checkbox-row">
+          <input id="add-folder-preset-tag" type="checkbox" />
+          Also tag these sounds with the folder's name (<span id="add-folder-preset-tag-name"></span>)
+        </label>
         <p id="add-folder-preset-status" class="add-folder-preset-status"></p>
         <div class="modal-actions">
           <button id="add-folder-preset-cancel" class="btn" type="button">Cancel</button>
           <button id="add-folder-preset-confirm" class="btn btn-primary" type="button">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-folder-tag-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Add folder as tag</h2>
+        <p class="modal-hint">Every audio file directly inside this folder will be added to your library and tagged with the name below — no preset is created.</p>
+        <label class="field-label">Tag
+          <input id="add-folder-tag-name" type="text" />
+        </label>
+        <label class="checkbox-row">
+          <input id="add-folder-tag-keep-copy" type="checkbox" />
+          Keep copies in the app (safe if you move/delete the originals — uses extra disk space)
+        </label>
+        <p id="add-folder-tag-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="add-folder-tag-cancel" class="btn" type="button">Cancel</button>
+          <button id="add-folder-tag-confirm" class="btn btn-primary" type="button">Add</button>
         </div>
       </div>
     </div>
