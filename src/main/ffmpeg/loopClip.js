@@ -1,9 +1,61 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import { runFfmpegToFile } from './runFfmpeg.js'
+import { runFfmpegToFile, runFfmpegPipe } from './runFfmpeg.js'
 
 const pending = new Map()
+
+// BUG FIX (2026-08-16): discovered while verifying the rotation fix below
+// against a real (not synthetic) file - ffmpeg's acrossfade silently
+// produces a *completely empty* output, with no error and exit code 0, if
+// its first input is even a few milliseconds shorter than the declared `d`.
+// Confirmed a real Opus file (through a YouTube-download/optimize pipeline)
+// where the container's own claimed duration overstated the truly
+// decodable audio by ~6ms - small enough to be invisible, but enough to
+// collapse the "tail" read to just under the requested crossfade length,
+// which made acrossfade emit nothing and left the render silently
+// crossfade-free (concat just carried mainF's length through unchanged).
+// This wasn't introduced by the rotation change above - it's been latent
+// in the original tail/head crossfade since it first shipped, for any
+// source file where the last `fade` seconds aren't fully decodable for
+// this same reason - plausibly a real contributor to loops that "still
+// sound abrupt" despite the feature nominally being active.
+//
+// The first fix attempt here just shrank `fade` when the tail came up
+// short - wrong, and proven wrong against the same real file: shrinking
+// `fade` while still anchoring the tail read to the same `loopEnd` doesn't
+// help, because the actual problem is that `loopEnd` itself sits past what
+// the source can truly decode, not that the *window size* was wrong. Any
+// read still aimed at that same unreachable endpoint comes up short by
+// (approximately) the same absolute amount regardless of how small the
+// window gets, so the collapse just kept recurring at the new, smaller
+// fade. The real fix (see doRender) is to pull the *target endpoint*
+// itself in to match what's truly decodable when a shortfall is detected,
+// not to shrink the crossfade window around an endpoint that doesn't
+// exist - the few milliseconds this trims off the requested loopEnd are
+// inaudible and don't need to be reconciled with anything else, since the
+// baked clip's own real duration is what BufferSoundSource actually loops,
+// not a value recomputed from loopStart/loopEnd at playback time.
+//
+// Probes via raw headerless PCM at a low sample rate (8kHz, mono) piped to
+// memory - cheap since the window being probed is always small (at most a
+// couple of seconds) regardless of how long the overall clip is.
+const PROBE_SAMPLE_RATE = 8000
+
+async function probeAvailableDuration(inputPath, start, requestedDuration) {
+  if (requestedDuration <= 0) return 0
+  let byteCount = 0
+  await runFfmpegPipe(
+    [
+      '-ss', start.toFixed(6), '-t', requestedDuration.toFixed(6), '-i', inputPath,
+      '-vn', '-ac', '1', '-ar', String(PROBE_SAMPLE_RATE), '-f', 's16le', 'pipe:1'
+    ],
+    (chunk) => {
+      byteCount += chunk.length
+    }
+  )
+  return byteCount / 2 / PROBE_SAMPLE_RATE
+}
 
 // Default length of the self-crossfade blended into the tail of every
 // rendered clip (see buildFilterComplex) so the loop seam has no hard
@@ -193,7 +245,25 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
 
   const duration = loopEnd - loopStart
   const requestedFade = crossfadeSeconds ?? DEFAULT_CROSSFADE_SECONDS
-  const fade = Math.max(0, Math.min(requestedFade, duration / 4))
+  let fade = Math.max(0, Math.min(requestedFade, duration / 4))
+
+  // See probeAvailableDuration's comment for why this pulls the *endpoints*
+  // in rather than shrinking `fade` - a probed shortfall means the source
+  // genuinely can't be decoded that far, not that the window was too big.
+  let effectiveLoopStart = loopStart
+  let effectiveLoopEnd = loopEnd
+  if (fade > 0) {
+    const [availableTail, availableHead] = await Promise.all([
+      probeAvailableDuration(inputPath, loopEnd - fade, fade),
+      probeAvailableDuration(inputPath, loopStart, fade)
+    ])
+    const tailShortfall = fade - availableTail
+    if (tailShortfall > 0.0005) effectiveLoopEnd = loopEnd - tailShortfall - 0.001
+    const headShortfall = fade - availableHead
+    if (headShortfall > 0.0005) effectiveLoopStart = loopStart + headShortfall + 0.001
+  }
+  const effectiveDuration = effectiveLoopEnd - effectiveLoopStart
+  fade = Math.max(0, Math.min(fade, effectiveDuration / 4))
 
   let args
   if (fade <= 0) {
@@ -203,19 +273,19 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     const filterChain = buildFilterChain(filters)
     args = [
       '-y',
-      '-ss', loopStart.toFixed(6), '-t', duration.toFixed(6), '-i', inputPath,
+      '-ss', effectiveLoopStart.toFixed(6), '-t', effectiveDuration.toFixed(6), '-i', inputPath,
       ...(filterChain ? ['-af', filterChain] : []),
       '-vn',
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath
     ]
   } else {
-    const mainDuration = duration - fade
+    const mainDuration = effectiveDuration - fade
     args = [
       '-y',
-      '-ss', loopStart.toFixed(6), '-t', mainDuration.toFixed(6), '-i', inputPath,
-      '-ss', (loopEnd - fade).toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
-      '-ss', loopStart.toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
-      '-filter_complex', buildRotatedFilterComplex(filters, fade.toFixed(6), mainDuration.toFixed(6), duration.toFixed(6)),
+      '-ss', effectiveLoopStart.toFixed(6), '-t', mainDuration.toFixed(6), '-i', inputPath,
+      '-ss', (effectiveLoopEnd - fade).toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
+      '-ss', effectiveLoopStart.toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
+      '-filter_complex', buildRotatedFilterComplex(filters, fade.toFixed(6), mainDuration.toFixed(6), effectiveDuration.toFixed(6)),
       '-map', '[out]',
       '-vn',
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath
