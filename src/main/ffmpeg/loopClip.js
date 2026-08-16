@@ -10,7 +10,19 @@ const pending = new Map()
 // when the audio content itself doesn't naturally repeat. Clamped per-clip
 // against the clip's own duration so this never misbehaves on a very short
 // trim.
-const CROSSFADE_SECONDS = 0.03
+//
+// BUG FIX (2026-08-16): was 0.03 (30ms) - too short for real, transient-
+// heavy ambient content (rain, in the reported case) to actually mask the
+// seam. Measured directly against a real user file (a highpass/lowpass/
+// gain-filtered rain recording): the sample-level discontinuity at the loop
+// wrap point (comparing the clip's last sample to its first) dropped from
+// 48/32768 at 30ms to 9/32768 at 200ms - roughly an 80% reduction - with no
+// clipping (astats confirmed peak well under 0dB at 200ms). Bumped from an
+// untested "should be enough" guess to a value verified against real,
+// difficult content, not just synthetic sine tones (which crossfade
+// trivially well regardless of duration and had masked this gap in the
+// original testing).
+const CROSSFADE_SECONDS = 0.2
 
 function clipsDir() {
   return path.join(app.getPath('userData'), 'clips')
