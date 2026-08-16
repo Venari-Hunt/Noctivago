@@ -46,6 +46,10 @@ export default class EditorPlugin {
     this.previewRafId = null
     this.loopEditorController = null
     this.waveformPeaksCache = new Map()
+    // Persists across sounds within one tab session (like the filter
+    // sliders' values don't) since it's a preview-workflow preference, not
+    // per-sound saved state - nothing about it is written to the library.
+    this.looping = true
     this.els = {}
   }
 
@@ -91,6 +95,13 @@ export default class EditorPlugin {
           <div id="editor-scrollbar" class="editor-scrollbar">
             <div id="editor-scrollbar-thumb" class="editor-scrollbar-thumb"></div>
           </div>
+          <div class="editor-preview-controls">
+            <button id="editor-play-pause" class="btn btn-small" type="button">Play</button>
+            <label class="editor-loop-toggle">
+              <input id="editor-loop-toggle" type="checkbox" checked />
+              Loop preview
+            </label>
+          </div>
           <p id="editor-waveform-status" class="editor-waveform-status"></p>
           <div class="editor-times">
             <label>Start <input id="editor-start-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
@@ -134,7 +145,6 @@ export default class EditorPlugin {
             <button class="btn btn-small" type="button" data-preset="underwater">Underwater</button>
           </div>
           <div class="editor-actions">
-            <button id="editor-play-pause" class="btn" type="button">Play</button>
             <button id="editor-reset-filters" class="btn" type="button">Reset filters</button>
             <span class="spacer"></span>
             <button id="editor-save" class="btn btn-primary" type="button">Save</button>
@@ -154,6 +164,7 @@ export default class EditorPlugin {
       scrollbarTrack: container.querySelector('#editor-scrollbar'),
       scrollbarThumb: container.querySelector('#editor-scrollbar-thumb'),
       waveformStatus: container.querySelector('#editor-waveform-status'),
+      loopToggle: container.querySelector('#editor-loop-toggle'),
       startInput: container.querySelector('#editor-start-input'),
       endInput: container.querySelector('#editor-end-input'),
       highpass: container.querySelector('#editor-highpass'),
@@ -241,6 +252,11 @@ export default class EditorPlugin {
     })
 
     this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
+
+    this.els.loopToggle.addEventListener('change', () => {
+      this.looping = this.els.loopToggle.checked
+      this.previewSource?.setLooping(this.looping)
+    })
   }
 
   async refreshLibrary() {
@@ -366,8 +382,16 @@ export default class EditorPlugin {
       soundId: entry.id,
       loopStart: entry.loopStart,
       loopEnd: entry.loopEnd,
-      volume: 0.7
+      volume: 0.7,
+      looping: this.looping
     })
+    // Only fires when Loop preview is off and playback runs off the end on
+    // its own - the button/playhead-tracking RAF otherwise only stop via
+    // the explicit Play/Pause click handler below.
+    this.previewSource.onEnded = () => {
+      this.stopPreviewTicking()
+      this.els.playPause.textContent = 'Play'
+    }
     const duration = await this.previewSource.waitForMetadata()
     if (this.currentEntry?.id !== id) return // switched sounds while loading
 

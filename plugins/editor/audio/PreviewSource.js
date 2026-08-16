@@ -14,11 +14,12 @@ const MAX_ECHO_DELAY_SECONDS = 2.0
 // feedback with no ffmpeg round-trip — ffmpeg only runs once, to bake the
 // final values in when the user saves.
 export class PreviewSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, looping = true }) {
     this.engine = engine
     this.loopStart = loopStart ?? 0
     this.loopEnd = loopEnd ?? null
     this.volume = volume
+    this.looping = looping
     this.playing = false
     this._rafId = null
     this._pauseTimeoutId = null
@@ -79,6 +80,10 @@ export class PreviewSource {
     this.loopEnd = loopEnd
   }
 
+  setLooping(looping) {
+    this.looping = looping
+  }
+
   setFilters({ highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0 }) {
     const now = this.engine.context.currentTime
     this.highpassNode.frequency.setTargetAtTime(highpassHz, now, FILTER_SMOOTHING_SECONDS)
@@ -97,7 +102,13 @@ export class PreviewSource {
     if (!this.playing) return
     const end = this._loopEnd()
     if (Number.isFinite(end) && this.audioEl.currentTime >= end - LOOP_EPSILON_SECONDS) {
-      this.audioEl.currentTime = this.loopStart
+      if (this.looping) {
+        this.audioEl.currentTime = this.loopStart
+      } else {
+        this.pause()
+        this.onEnded?.()
+        return
+      }
     }
     this._rafId = requestAnimationFrame(() => this._tick())
   }

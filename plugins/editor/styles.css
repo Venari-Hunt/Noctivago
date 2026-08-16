@@ -54,6 +54,22 @@
   cursor: grabbing;
 }
 
+.editor-preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.editor-loop-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
 .editor-waveform-status {
   margin: 6px 0 0;
   font-size: 11px;
