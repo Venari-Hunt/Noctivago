@@ -2,9 +2,11 @@ import { createTabHost } from './core/TabHost.js'
 import { loadPlugins } from './core/PluginLoader.js'
 import { installSliderDoubleClickReset } from './core/sliderReset.js'
 import { installSettingsMenu } from './core/SettingsMenu.js'
+import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
 installSliderDoubleClickReset()
+installWatchFolderDialog()
 installSettingsMenu()
 
 // The BrowserWindow's initial title option gets overwritten by the loaded

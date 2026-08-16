@@ -1,4 +1,5 @@
 import { renderWatchedFolderList } from '../ui/WatchedFolderList.js'
+import { openWatchFolderPicker } from './WatchFolderDialog.js'
 
 // Wires the toolbar's gear button + Settings modal. Core, not a plugin -
 // mirrors the other app-wide bits (dev badge, slider reset) wired directly
@@ -14,13 +15,6 @@ export function installSettingsMenu() {
 
   const watchedFolderList = document.getElementById('watched-folder-list')
   const addWatchedFolderBtn = document.getElementById('add-watched-folder')
-  const addDialog = document.getElementById('add-watched-folder-dialog')
-  const addDialogPath = document.getElementById('add-watched-folder-path')
-  const addDialogKeepCopy = document.getElementById('add-watched-folder-keep-copy')
-  const addDialogStatus = document.getElementById('add-watched-folder-status')
-  const addDialogCancel = document.getElementById('add-watched-folder-cancel')
-  const addDialogConfirm = document.getElementById('add-watched-folder-confirm')
-  let pickedWatchFolder = null
 
   async function refreshWatchedFolders() {
     const folders = await window.noctivago.library.listWatchedFolders()
@@ -41,37 +35,18 @@ export function installSettingsMenu() {
     modal.classList.remove('hidden')
   })
 
-  addWatchedFolderBtn.addEventListener('click', async () => {
-    const folder = await window.noctivago.library.pickWatchFolder()
-    if (!folder) return
-    pickedWatchFolder = folder
-    addDialogPath.textContent = folder
-    addDialogKeepCopy.checked = false
-    addDialogStatus.textContent = ''
-    addDialogConfirm.disabled = false
-    modal.classList.add('hidden')
-    addDialog.classList.remove('hidden')
-  })
+  addWatchedFolderBtn.addEventListener('click', openWatchFolderPicker)
 
-  addDialogCancel.addEventListener('click', () => {
-    pickedWatchFolder = null
-    addDialog.classList.add('hidden')
-    modal.classList.remove('hidden')
-  })
-
-  addDialogConfirm.addEventListener('click', async () => {
-    if (!pickedWatchFolder) return
-    addDialogConfirm.disabled = true
-    addDialogStatus.textContent = 'Scanning…'
-    const { addedCount } = await window.noctivago.library.addWatchedFolder(pickedWatchFolder, {
-      keepCopy: addDialogKeepCopy.checked
-    })
-    pickedWatchFolder = null
-    addDialog.classList.add('hidden')
-    modal.classList.remove('hidden')
-    await refreshWatchedFolders()
+  // Fires after a successful add from *either* entry point (this button or
+  // the toolbar "+" menu) - refreshes the list here only if it's actually
+  // visible right now, since it also refreshes fresh on every openBtn click.
+  document.addEventListener('watched-folder-added', ({ detail }) => {
+    if (modal.classList.contains('hidden')) return
+    refreshWatchedFolders()
     checkStatus.textContent =
-      addedCount > 0 ? `Watching folder — imported ${addedCount} sound${addedCount === 1 ? '' : 's'}.` : 'Watching folder.'
+      detail.addedCount > 0
+        ? `Watching folder — imported ${detail.addedCount} sound${detail.addedCount === 1 ? '' : 's'}.`
+        : 'Watching folder.'
   })
 
   closeBtn.addEventListener('click', () => modal.classList.add('hidden'))

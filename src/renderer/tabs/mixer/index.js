@@ -3,6 +3,7 @@ import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { renderSoundList } from '../../ui/SoundList.js'
 import { renderPresetList } from '../../ui/PresetsModal.js'
+import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -26,6 +27,7 @@ const els = {
   addSoundMenu: document.getElementById('add-sound-menu'),
   addSoundFileItem: document.getElementById('add-sound-file'),
   addSoundFolderPresetItem: document.getElementById('add-sound-folder-preset'),
+  addSoundWatchFolderItem: document.getElementById('add-sound-watch-folder'),
   openPresetsBtn: document.getElementById('open-presets'),
 
   addSoundDialog: document.getElementById('add-sound-dialog'),
@@ -329,6 +331,11 @@ els.addSoundConfirm.addEventListener('click', async () => {
   pickedFile = null
   hideModal(els.addSoundDialog)
   await refreshList()
+})
+
+els.addSoundWatchFolderItem.addEventListener('click', () => {
+  closeAddSoundMenu()
+  openWatchFolderPicker()
 })
 
 els.addSoundFolderPresetItem.addEventListener('click', async () => {
