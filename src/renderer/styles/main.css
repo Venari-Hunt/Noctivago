@@ -190,6 +190,11 @@ main {
   border-radius: 8px;
 }
 
+.sound-row:hover {
+  background: var(--surface-alt);
+  border-color: var(--accent);
+}
+
 .sound-row-missing {
   opacity: 0.6;
 }
