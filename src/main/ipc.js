@@ -35,6 +35,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:updateVolume', (_event, id, volume) => library.updateVolume(id, volume))
   ipcMain.handle('library:updateIncluded', (_event, id, included) => library.updateIncluded(id, included))
   ipcMain.handle('library:updateCrossfade', (_event, id, crossfadeSeconds) => library.updateCrossfade(id, crossfadeSeconds))
+  ipcMain.handle('library:updateTags', (_event, id, tags) => library.updateTags(id, tags))
+  ipcMain.handle('library:reorderSounds', (_event, orderedIds) => library.reorderSounds(orderedIds))
   ipcMain.handle('library:rename', (_event, id, name) => library.rename(id, name))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))

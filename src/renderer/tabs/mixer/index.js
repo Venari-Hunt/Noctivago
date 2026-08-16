@@ -1,7 +1,7 @@
 import { AudioEngine } from '../../audio/AudioEngine.js'
 import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
-import { renderSoundList } from '../../ui/SoundList.js'
+import { renderSoundList, sortForDisplay, SORT_MODES, GROUP_MODES } from '../../ui/SoundList.js'
 import { renderPresetList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
@@ -12,6 +12,9 @@ const engine = new AudioEngine()
 const state = {
   library: [],
   searchQuery: '',
+  sortMode: 'name-asc',
+  groupMode: 'none',
+  activeTagFilter: null,
   sources: new Map(),
   volumes: new Map(),
   included: new Set(),
@@ -77,21 +80,72 @@ const NO_SEARCH_MATCHES_TEXT = 'No sounds match your search.'
 
 function visibleLibrary() {
   const query = state.searchQuery.trim().toLowerCase()
-  if (!query) return state.library
-  return state.library.filter((entry) => entry.name.toLowerCase().includes(query))
+  let entries = state.library
+  if (query) entries = entries.filter((entry) => entry.name.toLowerCase().includes(query))
+  if (state.activeTagFilter) entries = entries.filter((entry) => entry.tags?.includes(state.activeTagFilter))
+  return entries
+}
+
+function renderTagFilterBar() {
+  const allTags = [...new Set(state.library.flatMap((entry) => entry.tags ?? []))].sort((a, b) => a.localeCompare(b))
+  els.tagFilterBar.innerHTML = ''
+  els.tagFilterBar.classList.toggle('hidden', allTags.length === 0)
+  for (const tag of allTags) {
+    const chip = document.createElement('button')
+    chip.type = 'button'
+    chip.className = 'tag-chip tag-filter-chip' + (state.activeTagFilter === tag ? ' tag-filter-chip-active' : '')
+    chip.textContent = tag
+    chip.addEventListener('click', () => {
+      state.activeTagFilter = state.activeTagFilter === tag ? null : tag
+      render()
+    })
+    els.tagFilterBar.appendChild(chip)
+  }
 }
 
 function render() {
   const visible = visibleLibrary()
-  els.emptyState.textContent = state.searchQuery.trim() && state.library.length > 0 ? NO_SEARCH_MATCHES_TEXT : EMPTY_LIBRARY_TEXT
-  renderSoundList(els.soundList, els.emptyState, visible, state, {
-    onToggleIncluded: toggleIncluded,
-    onVolumeChange: changeVolume,
-    onRemove: removeSound,
-    onRelink: relinkSound,
-    onRename: renameSound
-  })
+  const filtering = state.searchQuery.trim() || state.activeTagFilter
+  els.emptyState.textContent = filtering && state.library.length > 0 ? NO_SEARCH_MATCHES_TEXT : EMPTY_LIBRARY_TEXT
+  renderTagFilterBar()
+  renderSoundList(
+    els.soundList,
+    els.emptyState,
+    visible,
+    state,
+    { sortMode: state.sortMode, groupMode: state.groupMode },
+    {
+      onToggleIncluded: toggleIncluded,
+      onVolumeChange: changeVolume,
+      onRemove: removeSound,
+      onRelink: relinkSound,
+      onRename: renameSound,
+      onTagsChange: changeTags,
+      onReorderDrop: reorderByDrop
+    }
+  )
   refreshGlobalButton()
+}
+
+async function changeTags(id, tags) {
+  await api.library.updateTags(id, tags)
+  await refreshList()
+}
+
+// Drop target is always "insert dragged item immediately before this row" -
+// simpler than checking which half of the target row the cursor is over,
+// and still enough to reach any position with one drag. Computed against
+// the *full* library order (not just the currently visible/filtered rows),
+// so an active search or tag filter never lets a hidden sound's relative
+// position drift as a side effect of reordering the visible ones.
+async function reorderByDrop(draggedId, targetId) {
+  const fullOrder = sortForDisplay(state.library, 'custom').map((e) => e.id)
+  const withoutDragged = fullOrder.filter((id) => id !== draggedId)
+  const targetIndex = withoutDragged.indexOf(targetId)
+  if (targetIndex === -1) return
+  withoutDragged.splice(targetIndex, 0, draggedId)
+  await api.library.reorderSounds(withoutDragged)
+  await refreshList()
 }
 
 async function renameSound(id, name) {
@@ -611,14 +665,40 @@ async function maybeResumeOnLaunch() {
 export function mount(container) {
   container.innerHTML = `
     <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
+    <div class="sound-list-controls">
+      <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
+      <select id="sound-group" class="sound-group-select" title="Group by"></select>
+    </div>
+    <div id="tag-filter-bar" class="tag-filter-bar hidden"></div>
     <ul id="sound-list" class="sound-list"></ul>
     <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
   `
   els.soundSearch = container.querySelector('#sound-search')
+  els.soundSort = container.querySelector('#sound-sort')
+  els.soundGroup = container.querySelector('#sound-group')
+  els.tagFilterBar = container.querySelector('#tag-filter-bar')
   els.soundList = container.querySelector('#sound-list')
   els.emptyState = container.querySelector('#empty-state')
+
+  for (const { value, label } of SORT_MODES) {
+    els.soundSort.appendChild(new Option(label, value))
+  }
+  for (const { value, label } of GROUP_MODES) {
+    els.soundGroup.appendChild(new Option(label, value))
+  }
+  els.soundSort.value = state.sortMode
+  els.soundGroup.value = state.groupMode
+
   els.soundSearch.addEventListener('input', () => {
     state.searchQuery = els.soundSearch.value
+    render()
+  })
+  els.soundSort.addEventListener('change', () => {
+    state.sortMode = els.soundSort.value
+    render()
+  })
+  els.soundGroup.addEventListener('change', () => {
+    state.groupMode = els.soundGroup.value
     render()
   })
   refreshList().then(maybeResumeOnLaunch)

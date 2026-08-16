@@ -17,6 +17,72 @@ function formatMeta(entry) {
   return parts.join(' · ')
 }
 
+// Tag chips (each removable via its own ×) plus a "+ tag" control that
+// turns into a text input on click - comma-separated so several tags can be
+// added in one go, mirroring the name field's double-click-to-edit pattern
+// elsewhere in this row.
+function buildTagsRow(entry, callbacks) {
+  const tagsRow = document.createElement('div')
+  tagsRow.className = 'sound-row-tags'
+
+  for (const tag of entry.tags ?? []) {
+    const chip = document.createElement('span')
+    chip.className = 'tag-chip'
+    chip.textContent = tag
+
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'tag-chip-remove'
+    remove.textContent = '×'
+    remove.title = `Remove tag "${tag}"`
+    remove.addEventListener('click', (evt) => {
+      evt.stopPropagation()
+      callbacks.onTagsChange(entry.id, (entry.tags ?? []).filter((t) => t !== tag))
+    })
+    chip.appendChild(remove)
+    tagsRow.appendChild(chip)
+  }
+
+  const addTagBtn = document.createElement('button')
+  addTagBtn.type = 'button'
+  addTagBtn.className = 'tag-chip tag-chip-add'
+  addTagBtn.textContent = '+ tag'
+  addTagBtn.addEventListener('click', () => {
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'tag-input'
+    input.placeholder = 'tag, tag…'
+    addTagBtn.replaceWith(input)
+    input.focus()
+
+    let settled = false
+    const commit = () => {
+      if (settled) return
+      settled = true
+      const newTags = input.value.split(',').map((t) => t.trim()).filter(Boolean)
+      if (newTags.length > 0) {
+        const merged = [...new Set([...(entry.tags ?? []), ...newTags])]
+        callbacks.onTagsChange(entry.id, merged)
+      } else {
+        input.replaceWith(addTagBtn)
+      }
+    }
+    const cancel = () => {
+      if (settled) return
+      settled = true
+      input.replaceWith(addTagBtn)
+    }
+    input.addEventListener('blur', commit)
+    input.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Enter') input.blur()
+      else if (evt.key === 'Escape') cancel()
+    })
+  })
+  tagsRow.appendChild(addTagBtn)
+
+  return tagsRow
+}
+
 export function createSoundRow(entry, { included, loading, error, volume }, callbacks) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
@@ -71,6 +137,8 @@ export function createSoundRow(entry, { included, loading, error, volume }, call
     errorLabel.textContent = error
     info.appendChild(errorLabel)
   }
+
+  info.appendChild(buildTagsRow(entry, callbacks))
 
   li.appendChild(info)
 

@@ -195,6 +195,42 @@ main {
   font-size: 13px;
 }
 
+.sound-list-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sound-sort-select,
+.sound-group-select {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.tag-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tag-filter-chip {
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.tag-filter-chip-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface-alt);
+}
+
 .sound-list,
 .preset-list {
   list-style: none;
@@ -203,6 +239,16 @@ main {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.sound-group-header {
+  margin-top: 4px;
+  padding: 4px 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
 }
 
 .sound-row {
@@ -218,6 +264,14 @@ main {
 .sound-row:hover {
   background: var(--surface-alt);
   border-color: var(--accent);
+}
+
+.sound-row-draggable {
+  cursor: grab;
+}
+
+.sound-row-draggable.dragging {
+  opacity: 0.4;
 }
 
 .sound-row-missing {
@@ -254,6 +308,57 @@ main {
 .sound-row-meta {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+.sound-row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 11px;
+  border: none;
+}
+
+.tag-chip-remove {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tag-chip-add {
+  cursor: pointer;
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
+}
+
+.tag-chip-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tag-input {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--surface-alt);
+  color: var(--text);
+  width: 120px;
 }
 
 .sound-row-missing-label {

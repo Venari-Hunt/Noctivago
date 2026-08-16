@@ -48,13 +48,27 @@ function checkStatus(entry) {
   return fs.existsSync(resolvePlaybackPath(entry)) ? 'ok' : 'missing'
 }
 
+// Backfills fields added after some entries already existed (tags, dateAdded,
+// dateCreated, sortIndex) - same in-place-refresh-on-read pattern checkStatus
+// already uses for `status`, so older libraries pick these up transparently
+// on next list() rather than needing a dedicated migration step. dateAdded
+// has no real original value to recover for pre-existing entries, so it
+// backfills to "now" (the moment they're first seen under the new schema) -
+// they'll cluster together by date added until touched individually, which
+// is an acceptable one-time approximation for a cosmetic sort key.
 export function listSounds() {
   const sounds = store.get('sounds')
   let changed = false
   const refreshed = sounds.map((entry) => {
     const status = checkStatus(entry)
-    if (status !== entry.status) changed = true
-    return { ...entry, status }
+    const patch = {}
+    if (status !== entry.status) patch.status = status
+    if (entry.tags === undefined) patch.tags = []
+    if (entry.dateAdded === undefined) patch.dateAdded = Date.now()
+    if (entry.dateCreated === undefined) patch.dateCreated = entry.dateAdded ?? patch.dateAdded
+    if (entry.sortIndex === undefined) patch.sortIndex = entry.dateAdded ?? patch.dateAdded
+    if (Object.keys(patch).length > 0) changed = true
+    return { ...entry, ...patch }
   })
   if (changed) store.set('sounds', refreshed)
   return refreshed
@@ -185,6 +199,7 @@ export function addFolderSounds(folderPath, { keepCopy }) {
 export function addSound({ path: sourcePath, name, keepCopy }) {
   const id = crypto.randomUUID()
   const stats = fs.statSync(sourcePath)
+  const now = Date.now()
 
   let storageMode = 'reference'
   let storedFileName = null
@@ -213,6 +228,17 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     loopClipEnd: null,
     loopClipFilters: null,
     loopClipCrossfadeSeconds: null,
+    // tags: user-assignable, free-text. dateCreated reads the *source* file's
+    // own filesystem birthtime (stat'd above, before any copy) - falls back
+    // to "now" on filesystems/mounts that don't report a real birthtime.
+    // sortIndex backs the Mixer's "Custom order" sort mode (see SoundList.js)
+    // - starts at insertion order (now), reassigned to clean sequential
+    // integers across the whole library whenever the user actually drags to
+    // reorder (see reorderSounds below).
+    tags: [],
+    dateAdded: now,
+    dateCreated: stats.birthtimeMs || now,
+    sortIndex: now,
     status: 'ok'
   }
 
@@ -267,6 +293,27 @@ export function updateFilters(id, filters) {
 // the Remix plugin's crossfade slider is actually touched and saved.
 export function updateCrossfade(id, crossfadeSeconds) {
   return updateEntry(id, { crossfadeSeconds })
+}
+
+export function updateTags(id, tags) {
+  return updateEntry(id, { tags })
+}
+
+// Reassigns every sound's sortIndex to its position in orderedIds (which
+// must include every sound id currently in the library, not just a visible
+// subset - see the Mixer's drag-and-drop handler for how it builds this
+// from the full library order, not just what's on screen under an active
+// search/tag filter). Sounds not present in orderedIds keep their existing
+// sortIndex unchanged, so a stale/partial list can't silently drop entries
+// out of the ordering.
+export function reorderSounds(orderedIds) {
+  const sounds = store.get('sounds')
+  const indexById = new Map(orderedIds.map((id, index) => [id, index]))
+  const reordered = sounds.map((entry) =>
+    indexById.has(entry.id) ? { ...entry, sortIndex: indexById.get(entry.id) } : entry
+  )
+  store.set('sounds', reordered)
+  return reordered
 }
 
 export function rename(id, name) {
