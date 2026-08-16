@@ -99,25 +99,43 @@ async function renameSound(id, name) {
   await refreshList()
 }
 
-// Bug fix: saving new filters or a new trim in the Remix plugin updates the
-// library entry, but a sound already in the mix already has a live source
-// object (state.sources keeps it around across pause too, not just while
-// actively playing) built from the *old* values - nothing was ever telling
-// that live source about the change. This reconciles every live source
-// against the freshly-fetched entry on each refresh: a stream-mode source
-// gets its filters/loop points updated smoothly in place, and a mismatch in
-// which *kind* of source an entry should now use (e.g. a clip just got
-// baked, or edited without re-baking so it's no longer buffer-eligible)
-// swaps the source entirely, since BufferSoundSource has no live-update path
-// for baked-in loop points (see its setLoopPoints no-op).
+// Snapshot of the exact loop points + filters a BufferSoundSource's decoded
+// AudioBuffer was baked from - stashed on the source at creation time (see
+// tryCreateBufferSource) and compared against the entry's *current* values
+// below. Re-saving a sound that was already buffer-eligible (trim it again,
+// tweak a filter again) stays buffer-eligible both before and after - the
+// boolean "should this be buffer mode" never flips - so without this check
+// reconcileSource had no way to notice the live AudioBuffer itself had gone
+// stale, and kept playing the *previous* bake indefinitely. Matches
+// loopClipEligible's own comparison fields.
+function bufferBakeSnapshot(entry) {
+  return JSON.stringify({ loopStart: entry.loopStart, loopEnd: entry.loopEnd, filters: entry.filters })
+}
+
+// BUG FIX (2026-08-16): saving new filters or a new trim in the Remix plugin
+// updates the library entry, but a sound already in the mix already has a
+// live source object (state.sources keeps it around across pause too, not
+// just while actively playing) built from the *old* values - nothing was
+// ever telling that live source about the change. This reconciles every
+// live source against the freshly-fetched entry on each refresh: a
+// stream-mode source gets its filters/loop points updated smoothly in
+// place; a mismatch in which *kind* of source an entry should now use (e.g.
+// a clip just got baked, or edited without re-baking so it's no longer
+// buffer-eligible) swaps the source entirely, since BufferSoundSource has
+// no live-update path for baked-in loop points (see its setLoopPoints
+// no-op) - and neither does re-baking *again* while already in buffer mode,
+// which is exactly the case the boolean-only check above originally missed
+// (reported live: re-trimming an already-baked sound kept playing the old
+// clip until a full app restart forced a fresh decode).
 function reconcileSource(entry) {
   const source = state.sources.get(entry.id)
   if (!source) return
 
   const shouldBeBuffer = loopClipEligible(entry)
   const isBuffer = source instanceof BufferSoundSource
+  const bufferIsStale = isBuffer && source.bakeSnapshot !== bufferBakeSnapshot(entry)
 
-  if (shouldBeBuffer !== isBuffer) {
+  if (shouldBeBuffer !== isBuffer || bufferIsStale) {
     swapSource(entry)
     return
   }
@@ -140,7 +158,14 @@ function swapSource(entry) {
 
 async function refreshList() {
   state.library = await api.library.list()
-  for (const entry of state.library) reconcileSource(entry)
+  for (const entry of state.library) {
+    // Seeds state.volumes from the persisted value the first time this
+    // entry is seen in a session (e.g. right after app startup, when
+    // state.volumes is empty) - never overwrites a value already set this
+    // session, so it doesn't fight an in-progress slider drag.
+    if (!state.volumes.has(entry.id)) state.volumes.set(entry.id, entry.volume ?? 0.7)
+    reconcileSource(entry)
+  }
   render()
 }
 
@@ -196,7 +221,9 @@ async function tryCreateBufferSource(entry) {
     if (!response.ok) return null
     const arrayBuffer = await response.arrayBuffer()
     const audioBuffer = await engine.context.decodeAudioData(arrayBuffer)
-    return new BufferSoundSource(engine, { audioBuffer, volume: state.volumes.get(entry.id) ?? 0.7 })
+    const source = new BufferSoundSource(engine, { audioBuffer, volume: state.volumes.get(entry.id) ?? 0.7 })
+    source.bakeSnapshot = bufferBakeSnapshot(entry)
+    return source
   } catch (err) {
     console.error('Failed to decode loop clip, falling back to streaming', entry.name, err)
     return null
@@ -288,9 +315,27 @@ async function toggleIncluded(id) {
   await startPlayback(id, entry)
 }
 
+// BUG FIX: per-sound volume was tracked only in this in-memory Map, never
+// persisted - every app restart silently reset every sound's volume back to
+// the 0.7 default, reported directly by the user. The live audio update
+// stays immediate (every slider tick); the actual disk write is debounced
+// since a drag fires many 'input' events per second and there's no need to
+// hit electron-store's synchronous file write that often.
+const volumeSaveTimers = new Map()
+const VOLUME_SAVE_DEBOUNCE_MS = 400
+
 function changeVolume(id, volume) {
   state.volumes.set(id, volume)
   state.sources.get(id)?.setVolume(volume)
+
+  clearTimeout(volumeSaveTimers.get(id))
+  volumeSaveTimers.set(
+    id,
+    setTimeout(() => {
+      volumeSaveTimers.delete(id)
+      api.library.updateVolume(id, volume)
+    }, VOLUME_SAVE_DEBOUNCE_MS)
+  )
 }
 
 async function removeSound(id) {

@@ -202,6 +202,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     storedFileName,
     fileSizeBytes: stats.size,
     durationSeconds: null,
+    volume: 0.7,
     loopStart: 0,
     loopEnd: null,
     filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
@@ -233,6 +234,13 @@ export function updateMeta(id, { durationSeconds }) {
   const patch = { durationSeconds }
   if (entry && entry.loopEnd === null) patch.loopEnd = durationSeconds
   return updateEntry(id, patch)
+}
+
+// BUG FIX: per-sound volume was tracked only in the Mixer's in-memory
+// state.volumes Map, never persisted at all - every restart silently reset
+// every sound back to the 0.7 default, reported directly by the user.
+export function updateVolume(id, volume) {
+  return updateEntry(id, { volume })
 }
 
 export function updateLoopPoints(id, { loopStart, loopEnd }) {
