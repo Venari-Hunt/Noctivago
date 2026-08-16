@@ -17,16 +17,18 @@ const EDGE_SCROLL_ZONE_PX = 24
 // Fraction of the current visible span to scroll per animation frame.
 const EDGE_SCROLL_FRACTION = 0.02
 // Holding a drag still (within HOLD_ZOOM_STILL_TOLERANCE_PX of where
-// stillness began) for this long starts a progressive zoom-in ramp centered
+// stillness began) for this long starts a quick zoom-in animation centered
 // on whatever's being precisely positioned - lets the last stretch of a
 // drag land pixel-accurately instead of fighting a coarse, zoomed-out view.
 const HOLD_ZOOM_DELAY_MS = 450
 const HOLD_ZOOM_STILL_TOLERANCE_PX = 2
-// Per-frame span multiplier while the hold-zoom ramp is running - gentler
-// than wheel-zoom's per-tick ZOOM_IN_FACTOR since this runs every animation
-// frame continuously rather than once per discrete scroll tick; reaches
-// MIN_VIEW_SECONDS from a fully zoomed-out view in a couple of seconds.
-const HOLD_ZOOM_FACTOR_PER_FRAME = 0.97
+// How long the zoom-in animation itself takes once triggered, and how long
+// the reverse (back to whatever the view was before this drag started, on
+// release) takes too - both directions, same duration, per direct feedback
+// that the original continuous multi-second ramp felt sluggish and that
+// staying zoomed in forever after releasing was disorienting rather than
+// helpful once the precise positioning it was for is actually done.
+const ZOOM_ANIMATION_MS = 200
 
 export function createLoopEditorController(canvas) {
   let duration = 0
@@ -48,6 +50,14 @@ export function createLoopEditorController(canvas) {
   let holdZoomRafId = null
   let holdZoomOriginX = 0
   let holdZoomFocusTime = null
+  let holdZoomActive = false
+  // The viewport as it was at the start of the current drag gesture, before
+  // any hold-zoom happens - restored on release via animateViewportTo (see
+  // pointerUp) so zooming in to position precisely doesn't leave the
+  // waveform stuck zoomed in afterward.
+  let dragStartViewStart = 0
+  let dragStartViewEnd = 0
+  let viewportAnimRafId = null
   // Held while Ctrl is down, disabling snapToPlayhead below - synced from
   // real mouse events (evt.ctrlKey, the most reliable source) and backed up
   // by window keydown/keyup so pressing/releasing Ctrl while the cursor
@@ -102,6 +112,39 @@ export function createLoopEditorController(canvas) {
     onViewportChange({ viewStart, viewEnd, duration })
   }
 
+  function cancelViewportAnim() {
+    if (viewportAnimRafId != null) {
+      cancelAnimationFrame(viewportAnimRafId)
+      viewportAnimRafId = null
+    }
+  }
+
+  // Smoothly moves the viewport to [targetStart, targetEnd] over
+  // ZOOM_ANIMATION_MS, real-time-based (not frame-count-based) so the
+  // duration stays consistent regardless of frame rate - used both for the
+  // hold-zoom-in animation and for reverting the viewport back on release
+  // (see pointerUp). Ease-out cubic so it starts fast and settles gently
+  // rather than stopping abruptly.
+  function animateViewportTo(targetStart, targetEnd, onDone) {
+    cancelViewportAnim()
+    const fromStart = viewStart
+    const fromEnd = viewEnd
+    const startTime = performance.now()
+
+    function tick() {
+      const t = Math.min(1, (performance.now() - startTime) / ZOOM_ANIMATION_MS)
+      const eased = 1 - Math.pow(1 - t, 3)
+      applyViewport(fromStart + (targetStart - fromStart) * eased, fromEnd + (targetEnd - fromEnd) * eased)
+      if (t < 1) {
+        viewportAnimRafId = requestAnimationFrame(tick)
+      } else {
+        viewportAnimRafId = null
+        onDone?.()
+      }
+    }
+    viewportAnimRafId = requestAnimationFrame(tick)
+  }
+
   // If a dragged start/end handle ends up within SNAP_PX of the playhead,
   // snap it exactly onto the playhead's time instead of the raw drag
   // position - unless Ctrl is held, which disables snapping entirely (an
@@ -150,6 +193,8 @@ export function createLoopEditorController(canvas) {
         moveRegionStartClientX = evt.clientX
         moveRegionStartLoopStart = loopStart
         moveRegionStartLoopEnd = loopEnd
+        dragStartViewStart = viewStart
+        dragStartViewEnd = viewEnd
         scheduleHoldZoom(evt.clientX)
       }
       return
@@ -165,7 +210,11 @@ export function createLoopEditorController(canvas) {
     const closest = candidates.reduce((a, b) => (a.dist <= b.dist ? a : b))
     if (closest.dist <= HANDLE_HIT_PX) {
       dragging = closest.type
-      if (dragging === 'start' || dragging === 'end') scheduleHoldZoom(evt.clientX)
+      if (dragging === 'start' || dragging === 'end') {
+        dragStartViewStart = viewStart
+        dragStartViewEnd = viewEnd
+        scheduleHoldZoom(evt.clientX)
+      }
     }
   }
 
@@ -247,9 +296,9 @@ export function createLoopEditorController(canvas) {
   }
 
   // Cancels any pending "about to start zooming" timer and any actively-
-  // running zoom ramp - called both on real movement (see pointerMove,
-  // which immediately re-arms from the new position) and on drag end, so a
-  // ramp never keeps running once the gesture it belongs to is over.
+  // running zoom animation - called both on real movement (see pointerMove,
+  // which immediately re-arms from the new position) and on drag end, so an
+  // animation never keeps running once the gesture it belongs to is over.
   function clearHoldZoom() {
     if (holdZoomTimeoutId != null) {
       clearTimeout(holdZoomTimeoutId)
@@ -276,7 +325,8 @@ export function createLoopEditorController(canvas) {
       else if (dragging === 'end') holdZoomFocusTime = loopEnd
       else if (dragging === 'moveRegion') holdZoomFocusTime = loopEnd
       else return
-      tickHoldZoom()
+      holdZoomActive = true
+      tickHoldZoom(performance.now(), viewEnd - viewStart)
     }, HOLD_ZOOM_DELAY_MS)
   }
 
@@ -285,19 +335,24 @@ export function createLoopEditorController(canvas) {
   // exact instant pinned at the same on-screen ratio every frame, which is
   // what keeps the dragged handle (or the region's right edge) from
   // visually jumping around as the coordinate mapping changes underneath
-  // it mid-ramp.
-  function tickHoldZoom() {
+  // it mid-animation. Reaches MIN_VIEW_SECONDS in ZOOM_ANIMATION_MS via a
+  // real-time-based exponential decay of the span (not a fixed per-frame
+  // multiplier) - the ratio is recomputed fresh from the *actual* current
+  // viewStart every frame rather than carried forward as a stale value,
+  // which is what keeps the anchor exact throughout, not just at the end.
+  function tickHoldZoom(startTime, fromSpan) {
     holdZoomRafId = null
     if (!dragging || holdZoomFocusTime == null) return
     const span = viewEnd - viewStart
     if (span <= MIN_VIEW_SECONDS + 0.001) return
 
-    const newSpan = Math.max(span * HOLD_ZOOM_FACTOR_PER_FRAME, MIN_VIEW_SECONDS)
+    const t = Math.min(1, (performance.now() - startTime) / ZOOM_ANIMATION_MS)
+    const newSpan = Math.max(fromSpan * Math.pow(MIN_VIEW_SECONDS / fromSpan, t), MIN_VIEW_SECONDS)
     const ratio = (holdZoomFocusTime - viewStart) / span
     const newStart = holdZoomFocusTime - ratio * newSpan
     applyViewport(newStart, newStart + newSpan)
 
-    holdZoomRafId = requestAnimationFrame(tickHoldZoom)
+    if (t < 1) holdZoomRafId = requestAnimationFrame(() => tickHoldZoom(startTime, fromSpan))
   }
 
   function handleCtrlKeyChange(evt) {
@@ -337,9 +392,18 @@ export function createLoopEditorController(canvas) {
   }
 
   function pointerUp() {
+    const wasZoomable = dragging === 'start' || dragging === 'end' || dragging === 'moveRegion'
     dragging = null
     edgeScrollDirection = 0
     clearHoldZoom()
+
+    // Only animate back if the view actually moved during this drag (hold-
+    // zoom engaged, or edge-scroll panned it) - skip the no-op animation on
+    // an ordinary short drag that never triggered either.
+    if (wasZoomable && holdZoomActive && (viewStart !== dragStartViewStart || viewEnd !== dragStartViewEnd)) {
+      animateViewportTo(dragStartViewStart, dragStartViewEnd)
+    }
+    holdZoomActive = false
   }
 
   // Wheel zoom, centered on the cursor's time position - only active while
@@ -432,6 +496,7 @@ export function createLoopEditorController(canvas) {
     destroy() {
       if (edgeScrollRafId != null) cancelAnimationFrame(edgeScrollRafId)
       clearHoldZoom()
+      cancelViewportAnim()
       canvas.removeEventListener('mousedown', pointerDown)
       window.removeEventListener('mousemove', pointerMove)
       window.removeEventListener('mouseup', pointerUp)
