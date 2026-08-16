@@ -42,6 +42,8 @@ export default class EditorPlugin {
 
     this.library = []
     this.currentEntry = null
+    this.pickerQuery = ''
+    this.pickerHighlightIndex = -1
     this.previewSource = null
     this.previewRafId = null
     this.loopEditorController = null
@@ -62,7 +64,7 @@ export default class EditorPlugin {
         // Picks up sounds added/removed elsewhere (e.g. the Mixer) since
         // this tab last mounted — mount() only runs once per tab lifetime,
         // so without this the picker would silently go stale.
-        if (this.els.select) this.refreshLibrary().catch((err) => console.error('Editor: failed to refresh library', err))
+        if (this.els.soundSearch) this.refreshLibrary().catch((err) => console.error('Editor: failed to refresh library', err))
       },
       onHide: () => {
         this.previewSource?.pause()
@@ -85,9 +87,8 @@ export default class EditorPlugin {
     container.innerHTML = `
       <div class="editor-tab">
         <div class="editor-picker">
-          <select id="editor-sound-select">
-            <option value="">Select a sound to edit…</option>
-          </select>
+          <input id="editor-sound-search" type="text" class="editor-sound-search" placeholder="Select a sound to edit…" autocomplete="off" />
+          <ul id="editor-sound-options" class="editor-sound-options hidden"></ul>
         </div>
         <div id="editor-panel" class="editor-panel hidden">
           <h3 id="editor-sound-name"></h3>
@@ -156,7 +157,8 @@ export default class EditorPlugin {
     `
 
     this.els = {
-      select: container.querySelector('#editor-sound-select'),
+      soundSearch: container.querySelector('#editor-sound-search'),
+      soundOptions: container.querySelector('#editor-sound-options'),
       panel: container.querySelector('#editor-panel'),
       empty: container.querySelector('#editor-empty'),
       soundName: container.querySelector('#editor-sound-name'),
@@ -204,11 +206,41 @@ export default class EditorPlugin {
   }
 
   wireControls() {
-    this.els.select.addEventListener('change', () => {
-      const id = this.els.select.value
-      if (id) this.loadSound(id).catch((err) => console.error('Editor: failed to load sound', err))
-      else this.showEmpty()
+    this.els.soundSearch.addEventListener('focus', () => this.openPicker())
+
+    this.els.soundSearch.addEventListener('input', () => {
+      this.pickerQuery = this.els.soundSearch.value
+      this.pickerHighlightIndex = -1
+      this.openPicker()
     })
+
+    this.els.soundSearch.addEventListener('keydown', (evt) => {
+      const options = this.filteredPickerSounds()
+      if (evt.key === 'ArrowDown') {
+        evt.preventDefault()
+        if (options.length === 0) return
+        this.pickerHighlightIndex = (this.pickerHighlightIndex + 1) % options.length
+        this.renderPickerOptions()
+      } else if (evt.key === 'ArrowUp') {
+        evt.preventDefault()
+        if (options.length === 0) return
+        this.pickerHighlightIndex = (this.pickerHighlightIndex - 1 + options.length) % options.length
+        this.renderPickerOptions()
+      } else if (evt.key === 'Enter') {
+        evt.preventDefault()
+        const picked = options[this.pickerHighlightIndex]
+        if (picked) this.selectPickerSound(picked.id)
+      } else if (evt.key === 'Escape') {
+        this.closePicker()
+        this.els.soundSearch.blur()
+      }
+    })
+
+    // The option list's own mousedown handlers call preventDefault() (see
+    // renderPickerOptions), which stops the input from ever losing focus on
+    // an option click - so a plain blur here always means the user actually
+    // clicked/tabbed away, never a false positive from picking an option.
+    this.els.soundSearch.addEventListener('blur', () => this.closePicker())
 
     this.els.startInput.addEventListener('change', () => this.applyManualLoopPoints())
     this.els.endInput.addEventListener('change', () => this.applyManualLoopPoints())
@@ -261,18 +293,93 @@ export default class EditorPlugin {
 
   async refreshLibrary() {
     this.library = await this.api.library.list()
-    const editable = this.library.filter((s) => s.status !== 'missing')
-    const currentValue = this.els.select.value
-    this.els.select.innerHTML = '<option value="">Select a sound to edit…</option>'
-    for (const entry of editable) {
-      const option = document.createElement('option')
-      option.value = entry.id
-      option.textContent = entry.name
-      this.els.select.appendChild(option)
+    if (this.currentEntry) {
+      const updated = this.editableSounds().find((s) => s.id === this.currentEntry.id)
+      // Don't stomp on text the user is actively typing to search.
+      if (updated && document.activeElement !== this.els.soundSearch) this.els.soundSearch.value = updated.name
+      else if (!updated) this.els.soundSearch.value = ''
     }
-    if (currentValue && editable.some((s) => s.id === currentValue)) {
-      this.els.select.value = currentValue
+    if (!this.els.soundOptions.classList.contains('hidden')) this.renderPickerOptions()
+  }
+
+  editableSounds() {
+    return this.library.filter((s) => s.status !== 'missing')
+  }
+
+  filteredPickerSounds() {
+    const query = this.pickerQuery.trim().toLowerCase()
+    const editable = this.editableSounds()
+    if (!query) return editable
+    return editable.filter((s) => s.name.toLowerCase().includes(query))
+  }
+
+  openPicker() {
+    this.pickerHighlightIndex = -1
+    this.renderPickerOptions()
+    this.els.soundOptions.classList.remove('hidden')
+  }
+
+  closePicker() {
+    this.els.soundOptions.classList.add('hidden')
+  }
+
+  renderPickerOptions() {
+    const options = this.filteredPickerSounds()
+    this.els.soundOptions.innerHTML = ''
+
+    // Mirrors the old native <select>'s always-present blank option - lets
+    // the user explicitly go back to "nothing selected" instead of only
+    // ever switching between sounds. Only shown before the user's typed a
+    // search, so it doesn't get in the way of narrowing results down.
+    if (this.currentEntry && !this.pickerQuery.trim()) {
+      const clear = document.createElement('li')
+      clear.className = 'editor-sound-option editor-sound-option-clear'
+      clear.textContent = 'Select a sound to edit…'
+      clear.addEventListener('mousedown', (evt) => {
+        evt.preventDefault()
+        this.clearPickerSelection()
+      })
+      this.els.soundOptions.appendChild(clear)
     }
+
+    if (options.length === 0) {
+      const empty = document.createElement('li')
+      empty.className = 'editor-sound-option-empty'
+      empty.textContent = 'No sounds match.'
+      this.els.soundOptions.appendChild(empty)
+      return
+    }
+
+    options.forEach((entry, index) => {
+      const li = document.createElement('li')
+      li.className = 'editor-sound-option' + (index === this.pickerHighlightIndex ? ' editor-sound-option-highlighted' : '')
+      li.textContent = entry.name
+      // mousedown + preventDefault, not click - stops the input from
+      // blurring (and therefore closePicker() from firing) before this
+      // handler runs, which would otherwise remove the option out from
+      // under the click.
+      li.addEventListener('mousedown', (evt) => {
+        evt.preventDefault()
+        this.selectPickerSound(entry.id)
+      })
+      this.els.soundOptions.appendChild(li)
+    })
+  }
+
+  selectPickerSound(id) {
+    const entry = this.editableSounds().find((s) => s.id === id)
+    if (!entry) return
+    this.els.soundSearch.value = entry.name
+    this.pickerQuery = ''
+    this.closePicker()
+    this.loadSound(id).catch((err) => console.error('Editor: failed to load sound', err))
+  }
+
+  clearPickerSelection() {
+    this.els.soundSearch.value = ''
+    this.pickerQuery = ''
+    this.closePicker()
+    this.showEmpty()
   }
 
   showEmpty() {

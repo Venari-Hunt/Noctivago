@@ -1,8 +1,9 @@
 .editor-picker {
+  position: relative;
   margin-bottom: 12px;
 }
 
-.editor-picker select {
+.editor-sound-search {
   width: 100%;
   padding: 8px;
   border-radius: 6px;
@@ -10,6 +11,48 @@
   background: var(--surface-alt);
   color: var(--text);
   font-size: 13px;
+}
+
+.editor-sound-options {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.editor-sound-option {
+  padding: 7px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.editor-sound-option:hover,
+.editor-sound-option-highlighted {
+  background: var(--surface-alt);
+}
+
+.editor-sound-option-clear {
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  margin-bottom: 4px;
+}
+
+.editor-sound-option-empty {
+  padding: 7px 8px;
+  font-size: 13px;
+  color: var(--text-dim);
 }
 
 .editor-panel h3 {
