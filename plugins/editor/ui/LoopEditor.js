@@ -16,6 +16,17 @@ const ZOOM_OUT_FACTOR = 1.25
 const EDGE_SCROLL_ZONE_PX = 24
 // Fraction of the current visible span to scroll per animation frame.
 const EDGE_SCROLL_FRACTION = 0.02
+// Holding a drag still (within HOLD_ZOOM_STILL_TOLERANCE_PX of where
+// stillness began) for this long starts a progressive zoom-in ramp centered
+// on whatever's being precisely positioned - lets the last stretch of a
+// drag land pixel-accurately instead of fighting a coarse, zoomed-out view.
+const HOLD_ZOOM_DELAY_MS = 450
+const HOLD_ZOOM_STILL_TOLERANCE_PX = 2
+// Per-frame span multiplier while the hold-zoom ramp is running - gentler
+// than wheel-zoom's per-tick ZOOM_IN_FACTOR since this runs every animation
+// frame continuously rather than once per discrete scroll tick; reaches
+// MIN_VIEW_SECONDS from a fully zoomed-out view in a couple of seconds.
+const HOLD_ZOOM_FACTOR_PER_FRAME = 0.97
 
 export function createLoopEditorController(canvas) {
   let duration = 0
@@ -33,6 +44,10 @@ export function createLoopEditorController(canvas) {
   let lastPointerClientX = 0
   let edgeScrollDirection = 0
   let edgeScrollRafId = null
+  let holdZoomTimeoutId = null
+  let holdZoomRafId = null
+  let holdZoomOriginX = 0
+  let holdZoomFocusTime = null
   // Held while Ctrl is down, disabling snapToPlayhead below - synced from
   // real mouse events (evt.ctrlKey, the most reliable source) and backed up
   // by window keydown/keyup so pressing/releasing Ctrl while the cursor
@@ -135,6 +150,7 @@ export function createLoopEditorController(canvas) {
         moveRegionStartClientX = evt.clientX
         moveRegionStartLoopStart = loopStart
         moveRegionStartLoopEnd = loopEnd
+        scheduleHoldZoom(evt.clientX)
       }
       return
     }
@@ -147,7 +163,10 @@ export function createLoopEditorController(canvas) {
       candidates.push({ type: 'playhead', dist: Math.abs(x - timeToX(playhead, rect.width)) })
     }
     const closest = candidates.reduce((a, b) => (a.dist <= b.dist ? a : b))
-    if (closest.dist <= HANDLE_HIT_PX) dragging = closest.type
+    if (closest.dist <= HANDLE_HIT_PX) {
+      dragging = closest.type
+      if (dragging === 'start' || dragging === 'end') scheduleHoldZoom(evt.clientX)
+    }
   }
 
   // Shared by pointerMove (real mouse movement) and tickEdgeScroll (the
@@ -227,6 +246,60 @@ export function createLoopEditorController(canvas) {
     }
   }
 
+  // Cancels any pending "about to start zooming" timer and any actively-
+  // running zoom ramp - called both on real movement (see pointerMove,
+  // which immediately re-arms from the new position) and on drag end, so a
+  // ramp never keeps running once the gesture it belongs to is over.
+  function clearHoldZoom() {
+    if (holdZoomTimeoutId != null) {
+      clearTimeout(holdZoomTimeoutId)
+      holdZoomTimeoutId = null
+    }
+    if (holdZoomRafId != null) {
+      cancelAnimationFrame(holdZoomRafId)
+      holdZoomRafId = null
+    }
+  }
+
+  function scheduleHoldZoom(clientX) {
+    clearHoldZoom()
+    holdZoomOriginX = clientX
+    holdZoomTimeoutId = setTimeout(() => {
+      holdZoomTimeoutId = null
+      // Focus point is whatever's actually being positioned - the dragged
+      // handle's own time for 'start'/'end' (where it coincides with the
+      // cursor anyway, since those track 1:1), but specifically loopEnd
+      // for 'moveRegion' regardless of where inside the region it was
+      // grabbed, per the ask: zoom centers on the right-hand cut line, not
+      // the drag point in general.
+      if (dragging === 'start') holdZoomFocusTime = loopStart
+      else if (dragging === 'end') holdZoomFocusTime = loopEnd
+      else if (dragging === 'moveRegion') holdZoomFocusTime = loopEnd
+      else return
+      tickHoldZoom()
+    }, HOLD_ZOOM_DELAY_MS)
+  }
+
+  // Anchors the shrinking viewport on holdZoomFocusTime the same way
+  // handleWheel's zoom already anchors on the cursor's time - keeps that
+  // exact instant pinned at the same on-screen ratio every frame, which is
+  // what keeps the dragged handle (or the region's right edge) from
+  // visually jumping around as the coordinate mapping changes underneath
+  // it mid-ramp.
+  function tickHoldZoom() {
+    holdZoomRafId = null
+    if (!dragging || holdZoomFocusTime == null) return
+    const span = viewEnd - viewStart
+    if (span <= MIN_VIEW_SECONDS + 0.001) return
+
+    const newSpan = Math.max(span * HOLD_ZOOM_FACTOR_PER_FRAME, MIN_VIEW_SECONDS)
+    const ratio = (holdZoomFocusTime - viewStart) / span
+    const newStart = holdZoomFocusTime - ratio * newSpan
+    applyViewport(newStart, newStart + newSpan)
+
+    holdZoomRafId = requestAnimationFrame(tickHoldZoom)
+  }
+
   function handleCtrlKeyChange(evt) {
     if (evt.key !== 'Control') return
     ctrlHeld = evt.type === 'keydown'
@@ -249,11 +322,24 @@ export function createLoopEditorController(canvas) {
     if (dragging === 'start' || dragging === 'end' || dragging === 'playhead' || dragging === 'moveRegion') {
       updateEdgeScroll(evt.clientX)
     }
+
+    // Real movement (beyond a small tolerance for hand tremor) cancels any
+    // pending/active hold-zoom and re-arms it from the new position - stops
+    // the ramp fighting an intentional drag the instant one resumes, matching
+    // "zoom in while held still" rather than "zoom in regardless."
+    if (dragging === 'start' || dragging === 'end' || dragging === 'moveRegion') {
+      if (Math.abs(evt.clientX - holdZoomOriginX) > HOLD_ZOOM_STILL_TOLERANCE_PX) {
+        scheduleHoldZoom(evt.clientX)
+      }
+    } else {
+      clearHoldZoom()
+    }
   }
 
   function pointerUp() {
     dragging = null
     edgeScrollDirection = 0
+    clearHoldZoom()
   }
 
   // Wheel zoom, centered on the cursor's time position - only active while
@@ -345,6 +431,7 @@ export function createLoopEditorController(canvas) {
     },
     destroy() {
       if (edgeScrollRafId != null) cancelAnimationFrame(edgeScrollRafId)
+      clearHoldZoom()
       canvas.removeEventListener('mousedown', pointerDown)
       window.removeEventListener('mousemove', pointerMove)
       window.removeEventListener('mouseup', pointerUp)
