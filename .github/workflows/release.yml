@@ -37,7 +37,19 @@ jobs:
       - name: Pre-create GitHub release (avoids electron-builder's parallel-upload race)
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          # Must match the tag electron-builder itself publishes to, which it
+          # derives from package.json's version - NOT github.ref_name. A tag
+          # push always has ref_name == the tag (e.g. "v0.1.4"), so those
+          # looked identical in testing, but a manual workflow_dispatch run
+          # against a branch has ref_name == the branch (e.g. "master"),
+          # which silently created a stray "master"-tagged release (and, on
+          # GitHub's end, a "master" git tag right alongside the real branch
+          # of the same name) that then stole /releases/latest out from under
+          # the real v0.1.4 release and broke every installed client's
+          # update check. Reading package.json directly instead makes this
+          # correct regardless of what ref triggered the run.
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
           gh release view $tag 2>$null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --title $tag --notes ""
