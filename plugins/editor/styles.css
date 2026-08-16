@@ -30,6 +30,30 @@
   cursor: ew-resize;
 }
 
+.editor-scrollbar {
+  position: relative;
+  height: 10px;
+  margin-top: 4px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.editor-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  min-width: 8px;
+  background: var(--accent);
+  border-radius: 5px;
+  cursor: grab;
+}
+
+.editor-scrollbar-thumb:active {
+  cursor: grabbing;
+}
+
 .editor-waveform-status {
   margin: 6px 0 0;
   font-size: 11px;

@@ -40,7 +40,7 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   const startX = timeToX(loopStart)
   const endX = timeToX(loopEnd)
 
-  ctx.fillStyle = 'rgba(122, 162, 247, 0.18)'
+  ctx.fillStyle = 'rgba(122, 162, 247, 0.35)'
   ctx.fillRect(startX, 0, endX - startX, height)
 
   if (peaks && peaks.length > 0) {

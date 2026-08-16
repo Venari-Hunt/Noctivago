@@ -1,6 +1,7 @@
 import { AudioEngine } from './audio/AudioEngine.js'
 import { PreviewSource } from './audio/PreviewSource.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
+import { createWaveformScrollbar } from './ui/WaveformScrollbar.js'
 import { formatDuration, parseDuration } from './util/time.js'
 
 // Mirrors src/shared/constants.js's MAX_BUFFER_CLIP_SECONDS. Duplicated here
@@ -77,7 +78,10 @@ export default class EditorPlugin {
         </div>
         <div id="editor-panel" class="editor-panel hidden">
           <h3 id="editor-sound-name"></h3>
-          <canvas id="editor-canvas" width="640" height="160" title="Scroll to zoom, shift+scroll to pan"></canvas>
+          <canvas id="editor-canvas" width="640" height="160" title="Scroll to zoom, shift+scroll or middle-drag to pan"></canvas>
+          <div id="editor-scrollbar" class="editor-scrollbar">
+            <div id="editor-scrollbar-thumb" class="editor-scrollbar-thumb"></div>
+          </div>
           <p id="editor-waveform-status" class="editor-waveform-status"></p>
           <div class="editor-times">
             <label>Start <input id="editor-start-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
@@ -126,6 +130,8 @@ export default class EditorPlugin {
       empty: container.querySelector('#editor-empty'),
       soundName: container.querySelector('#editor-sound-name'),
       canvas: container.querySelector('#editor-canvas'),
+      scrollbarTrack: container.querySelector('#editor-scrollbar'),
+      scrollbarThumb: container.querySelector('#editor-scrollbar-thumb'),
       waveformStatus: container.querySelector('#editor-waveform-status'),
       startInput: container.querySelector('#editor-start-input'),
       endInput: container.querySelector('#editor-end-input'),
@@ -149,6 +155,12 @@ export default class EditorPlugin {
     })
     this.loopEditorController.onScrub((t) => {
       if (this.previewSource) this.previewSource.audioEl.currentTime = t
+    })
+
+    this.waveformScrollbar = createWaveformScrollbar(this.els.scrollbarTrack, this.els.scrollbarThumb)
+    this.waveformScrollbar.onNavigate((start, end) => this.loopEditorController.setViewport(start, end))
+    this.loopEditorController.onViewportChange(({ viewStart, viewEnd, duration }) => {
+      this.waveformScrollbar.update(duration, viewStart, viewEnd)
     })
 
     this.wireControls()

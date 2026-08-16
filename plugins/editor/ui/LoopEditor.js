@@ -17,8 +17,12 @@ export function createLoopEditorController(canvas) {
   let playhead = null
   let peaks = null
   let dragging = null
+  let panStartX = 0
+  let panStartViewStart = 0
+  let panStartViewEnd = 0
   let onChange = () => {}
   let onScrub = () => {}
+  let onViewportChange = () => {}
 
   // The currently visible time window - [0, duration] at full zoom-out.
   // Everything below maps time<->x through this, not through [0, duration]
@@ -41,6 +45,29 @@ export function createLoopEditorController(canvas) {
     drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart, viewEnd })
   }
 
+  // Single place that actually commits a new viewport - clamps to
+  // [0, duration] (sliding the window back in bounds rather than shrinking
+  // it, so zoom level never changes as a side effect of clamping), redraws,
+  // and notifies anything watching (the scrollbar). Every viewport-changing
+  // path (wheel zoom, wheel/middle-drag pan, external setViewport from the
+  // scrollbar) goes through this one function.
+  function applyViewport(newStart, newEnd) {
+    let s = newStart
+    let e = newEnd
+    if (s < 0) {
+      e -= s
+      s = 0
+    }
+    if (e > duration) {
+      s -= e - duration
+      e = duration
+    }
+    viewStart = Math.max(s, 0)
+    viewEnd = Math.min(e, duration)
+    redraw()
+    onViewportChange({ viewStart, viewEnd, duration })
+  }
+
   // If a dragged start/end handle ends up within SNAP_PX of the playhead,
   // snap it exactly onto the playhead's time instead of the raw drag position.
   function snapToPlayhead(t, rect) {
@@ -50,6 +77,21 @@ export function createLoopEditorController(canvas) {
   }
 
   function pointerDown(evt) {
+    // Middle-click-drag pans the waveform ("grab and drag" semantics - drag
+    // right to reveal earlier content, the opposite sign of wheel-scroll
+    // panning, which follows normal scroll conventions instead). Browsers
+    // otherwise treat a middle click as autoscroll/paste-primary-selection,
+    // hence preventDefault here specifically (the other buttons don't need
+    // it - loop-handle/playhead dragging never triggered either behavior).
+    if (evt.button === 1) {
+      evt.preventDefault()
+      dragging = 'pan'
+      panStartX = evt.clientX
+      panStartViewStart = viewStart
+      panStartViewEnd = viewEnd
+      return
+    }
+
     const rect = canvas.getBoundingClientRect()
     const x = evt.clientX - rect.left
     const candidates = [
@@ -66,6 +108,14 @@ export function createLoopEditorController(canvas) {
   function pointerMove(evt) {
     if (!dragging || !duration) return
     const rect = canvas.getBoundingClientRect()
+
+    if (dragging === 'pan') {
+      const span = panStartViewEnd - panStartViewStart
+      const deltaTime = ((evt.clientX - panStartX) / rect.width) * span
+      applyViewport(panStartViewStart - deltaTime, panStartViewEnd - deltaTime)
+      return
+    }
+
     const t = xToTime(evt.clientX - rect.left, rect.width)
 
     if (dragging === 'start') {
@@ -91,9 +141,7 @@ export function createLoopEditorController(canvas) {
   // hovering the canvas, since the listener is attached to the canvas
   // itself rather than window. A horizontal scroll gesture (shift+wheel on
   // a mouse, or a trackpad's two-finger horizontal swipe, both land in
-  // deltaX) pans instead of zooming - without some way to pan, zooming in
-  // would strand the view on one fixed window with no way to see the rest
-  // of the file, which isn't a usable feature on its own.
+  // deltaX) pans instead of zooming.
   function handleWheel(evt) {
     if (!duration) return
     evt.preventDefault()
@@ -102,19 +150,7 @@ export function createLoopEditorController(canvas) {
 
     if (Math.abs(evt.deltaX) > Math.abs(evt.deltaY)) {
       const shift = (evt.deltaX / rect.width) * span
-      let newStart = viewStart + shift
-      let newEnd = viewEnd + shift
-      if (newStart < 0) {
-        newEnd -= newStart
-        newStart = 0
-      }
-      if (newEnd > duration) {
-        newStart -= newEnd - duration
-        newEnd = duration
-      }
-      viewStart = Math.max(newStart, 0)
-      viewEnd = Math.min(newEnd, duration)
-      redraw()
+      applyViewport(viewStart + shift, viewEnd + shift)
       return
     }
 
@@ -124,19 +160,8 @@ export function createLoopEditorController(canvas) {
     const newSpan = Math.min(Math.max(span * factor, MIN_VIEW_SECONDS), duration)
 
     const ratio = (cursorTime - viewStart) / span
-    let newStart = cursorTime - ratio * newSpan
-    let newEnd = newStart + newSpan
-    if (newStart < 0) {
-      newEnd -= newStart
-      newStart = 0
-    }
-    if (newEnd > duration) {
-      newStart -= newEnd - duration
-      newEnd = duration
-    }
-    viewStart = Math.max(newStart, 0)
-    viewEnd = Math.min(newEnd, duration)
-    redraw()
+    const newStart = cursorTime - ratio * newSpan
+    applyViewport(newStart, newStart + newSpan)
   }
 
   canvas.addEventListener('mousedown', pointerDown)
@@ -154,6 +179,7 @@ export function createLoopEditorController(canvas) {
       viewStart = 0
       viewEnd = totalDuration
       redraw()
+      onViewportChange({ viewStart, viewEnd, duration })
     },
     setPeaks(newPeaks) {
       peaks = newPeaks
@@ -176,11 +202,20 @@ export function createLoopEditorController(canvas) {
       playhead = null
       redraw()
     },
+    // Lets an external navigator (the scrollbar) drive the viewport
+    // directly - goes through the same clamping/redraw/notify path as
+    // every internal viewport change.
+    setViewport(newStart, newEnd) {
+      applyViewport(newStart, newEnd)
+    },
     onLoopChange(fn) {
       onChange = fn
     },
     onScrub(fn) {
       onScrub = fn
+    },
+    onViewportChange(fn) {
+      onViewportChange = fn
     },
     destroy() {
       canvas.removeEventListener('mousedown', pointerDown)
