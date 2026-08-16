@@ -2,6 +2,10 @@ import log from 'electron-log/renderer'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
+// Matches plugins/editor/audio/PreviewSource.js's live-drag smoothing, so a
+// filter change saved in Remix updates an already-playing Mixer sound with
+// the same feel as dragging the slider live in the Remix preview itself.
+const FILTER_SMOOTHING_SECONDS = 0.01
 
 // How long a 'waiting'/stalled <audio> element gets before this treats it as
 // a real problem rather than normal, brief re-buffering. See the 'waiting'
@@ -41,16 +45,18 @@ export class LocalFileSoundSource {
     // in the Mixer even for sounds too long to qualify for a baked buffer
     // clip. Loop-clip eligibility only affects seam smoothness, never
     // whether filters apply.
+    this.filters = filters ?? {}
+
     this.highpassNode = engine.context.createBiquadFilter()
     this.highpassNode.type = 'highpass'
-    this.highpassNode.frequency.value = filters?.highpassHz ?? 0
+    this.highpassNode.frequency.value = this.filters.highpassHz ?? 0
 
     this.lowpassNode = engine.context.createBiquadFilter()
     this.lowpassNode.type = 'lowpass'
-    this.lowpassNode.frequency.value = filters?.lowpassHz ?? 20000
+    this.lowpassNode.frequency.value = this.filters.lowpassHz ?? 20000
 
     this.filterGainNode = engine.context.createGain()
-    this.filterGainNode.gain.value = filters?.gainDb ? Math.pow(10, filters.gainDb / 20) : 1
+    this.filterGainNode.gain.value = this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1
 
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
@@ -124,6 +130,32 @@ export class LocalFileSoundSource {
   setLoopPoints(loopStart, loopEnd) {
     this.loopStart = loopStart
     this.loopEnd = loopEnd
+  }
+
+  hasLoopPoints(loopStart, loopEnd) {
+    return this.loopStart === loopStart && this.loopEnd === loopEnd
+  }
+
+  // Bug fix: an already-playing sound's filters were only ever set once, at
+  // construction time - saving new filters in the Remix plugin updated the
+  // library entry, and the Mixer's onShow refresh picked up the new value
+  // into state.library, but the already-created LocalFileSoundSource for a
+  // sound already in the mix (playing OR just paused - getOrCreateSource
+  // reuses any cached source regardless of pause state) kept its original,
+  // now-stale filter nodes forever, since nothing ever called back into it.
+  // This is the live-update counterpart to that construction-time setup,
+  // called from the Mixer's refresh reconciliation once it detects the
+  // entry's filters no longer match what this source is actually playing.
+  setFilters(filters) {
+    this.filters = filters ?? {}
+    const now = this.engine.context.currentTime
+    this.highpassNode.frequency.setTargetAtTime(this.filters.highpassHz ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    this.lowpassNode.frequency.setTargetAtTime(this.filters.lowpassHz ?? 20000, now, FILTER_SMOOTHING_SECONDS)
+    this.filterGainNode.gain.setTargetAtTime(this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1, now, FILTER_SMOOTHING_SECONDS)
+  }
+
+  hasFilters(filters) {
+    return JSON.stringify(this.filters ?? {}) === JSON.stringify(filters ?? {})
   }
 
   _loopEnd() {

@@ -80,8 +80,48 @@ async function renameSound(id, name) {
   await refreshList()
 }
 
+// Bug fix: saving new filters or a new trim in the Remix plugin updates the
+// library entry, but a sound already in the mix already has a live source
+// object (state.sources keeps it around across pause too, not just while
+// actively playing) built from the *old* values - nothing was ever telling
+// that live source about the change. This reconciles every live source
+// against the freshly-fetched entry on each refresh: a stream-mode source
+// gets its filters/loop points updated smoothly in place, and a mismatch in
+// which *kind* of source an entry should now use (e.g. a clip just got
+// baked, or edited without re-baking so it's no longer buffer-eligible)
+// swaps the source entirely, since BufferSoundSource has no live-update path
+// for baked-in loop points (see its setLoopPoints no-op).
+function reconcileSource(entry) {
+  const source = state.sources.get(entry.id)
+  if (!source) return
+
+  const shouldBeBuffer = loopClipEligible(entry)
+  const isBuffer = source instanceof BufferSoundSource
+
+  if (shouldBeBuffer !== isBuffer) {
+    swapSource(entry)
+    return
+  }
+
+  if (!isBuffer) {
+    if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
+    if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
+  }
+}
+
+function swapSource(entry) {
+  const wasPlaying = state.playing.has(entry.id)
+  state.sources.get(entry.id)?.dispose()
+  state.sources.delete(entry.id)
+  if (wasPlaying) {
+    state.playing.delete(entry.id)
+    startPlayback(entry.id, entry)
+  }
+}
+
 async function refreshList() {
   state.library = await api.library.list()
+  for (const entry of state.library) reconcileSource(entry)
   render()
 }
 
@@ -407,8 +447,9 @@ async function deletePreset(id) {
 // Re-reads the library on every return to this tab, so edits made in
 // another tab (e.g. trim/filters saved in the Remix plugin) take effect
 // without requiring an unrelated action like adding or removing a sound to
-// trigger a refresh. Cheap (one IPC call) and non-disruptive — it only
-// replaces `state.library`, never touches already-playing sources.
+// trigger a refresh. Cheap (one IPC call), and reconcileSource (called from
+// refreshList for every entry) is what actually pushes changed filters/loop
+// points into any already-playing or already-paused-but-cached source.
 export function onShow() {
   refreshList()
 }
