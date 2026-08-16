@@ -111,6 +111,19 @@ main {
   background: var(--accent);
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn:disabled:hover {
+  border-color: var(--border);
+}
+
+.btn-primary:disabled:hover {
+  background: var(--accent-strong);
+}
+
 .btn-danger {
   color: var(--danger);
 }

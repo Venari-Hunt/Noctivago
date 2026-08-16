@@ -190,6 +190,7 @@ export default class EditorPlugin {
     this.loopEditorController.onLoopChange(({ loopStart, loopEnd }) => {
       this.updateLoopTimeInputs(loopStart, loopEnd)
       this.previewSource?.setLoopPoints(loopStart, loopEnd)
+      this.updateSaveButtonState()
     })
     this.loopEditorController.onScrub((t) => {
       if (this.previewSource) this.previewSource.audioEl.currentTime = t
@@ -402,6 +403,7 @@ export default class EditorPlugin {
     this.loopEditorController.setLoopPoints(start, end)
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     this.updateLoopTimeInputs(loopStart, loopEnd)
+    this.updateSaveButtonState()
   }
 
   // Shared by Reset filters and every preset button, both of which just set
@@ -436,6 +438,39 @@ export default class EditorPlugin {
     const filters = this.currentFilters()
     this.updateFilterLabels(filters)
     this.previewSource?.setFilters(filters)
+    this.updateSaveButtonState()
+  }
+
+  // Builds a comparable snapshot of "what's currently saved" vs. "what's
+  // live in the controls" - explicit key order/defaults on both sides
+  // (rather than relying on entry.filters' own possibly-partial shape, e.g.
+  // older entries saved before echoDelayMs/echoDecay existed) so the two
+  // JSON strings only differ when something the user could actually change
+  // has changed.
+  snapshotOf(loopStart, loopEnd, filters) {
+    return JSON.stringify({
+      loopStart,
+      loopEnd,
+      filters: {
+        highpassHz: filters.highpassHz ?? 0,
+        lowpassHz: filters.lowpassHz ?? 20000,
+        gainDb: filters.gainDb ?? 0,
+        echoDelayMs: filters.echoDelayMs ?? 0,
+        echoDecay: filters.echoDecay ?? 0
+      }
+    })
+  }
+
+  hasUnsavedChanges() {
+    if (!this.currentEntry || !this.loopEditorController || !this.savedSnapshot) return false
+    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+    return this.snapshotOf(loopStart, loopEnd, this.currentFilters()) !== this.savedSnapshot
+  }
+
+  updateSaveButtonState() {
+    const dirty = this.hasUnsavedChanges()
+    this.els.save.disabled = !dirty
+    this.els.save.textContent = dirty ? 'Save' : 'Nothing to save'
   }
 
   stopPreviewTicking() {
@@ -476,8 +511,6 @@ export default class EditorPlugin {
     this.els.panel.classList.remove('hidden')
     this.els.soundName.textContent = entry.name
     this.els.playPause.textContent = 'Play'
-    this.els.save.disabled = false
-    this.els.save.textContent = 'Save'
     this.els.saveStatus.textContent = ''
 
     const filters = entry.filters ?? { ...NEUTRAL_FILTERS }
@@ -516,6 +549,8 @@ export default class EditorPlugin {
     this.loopEditorController.load(duration, loopStart, loopEnd)
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters)
+    this.updateSaveButtonState()
 
     this.els.waveformStatus.textContent = this.waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
     const peaks = await this.getWaveformPeaks(id)
@@ -535,6 +570,7 @@ export default class EditorPlugin {
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd
     this.currentEntry.filters = filters
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters)
 
     // This never touches the original audio file: trim points and filters
     // are stored as metadata, applied live whenever the Mixer streams the
@@ -561,10 +597,10 @@ export default class EditorPlugin {
         this.currentEntry.loopClipFilters = null
         this.els.saveStatus.textContent = 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
       }
-      this.els.save.disabled = false
-      this.els.save.textContent = 'Save'
+      this.updateSaveButtonState()
     } else {
       this.els.saveStatus.textContent = 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
+      this.updateSaveButtonState()
     }
   }
 }
