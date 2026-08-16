@@ -4,6 +4,7 @@ import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { renderSoundList } from '../../ui/SoundList.js'
 import { renderPresetList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
+import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -54,6 +55,10 @@ const els = {
 
 let pickedFile = null
 let pickedFolder = null
+// Ids currently being auto-baked (see maybeAutoBake) - prevents firing a
+// second concurrent bake for the same sound if getOrCreateSource runs again
+// (e.g. a rapid re-toggle) before the first one finishes.
+const autoBaking = new Set()
 
 function showModal(el) {
   el.classList.remove('hidden')
@@ -148,6 +153,38 @@ function loopClipEligible(entry) {
   )
 }
 
+// BUG FIX: a sound never opened and saved in the Remix plugin had no baked
+// loop clip at all, so it always hard-looped the *entire* file via
+// LocalFileSoundSource's plain seek-back - fine if the file happens to
+// already loop cleanly on its own, audibly abrupt otherwise (that's the
+// whole reason the crossfaded bake exists). This used to only matter for
+// sounds someone manually dragged into Remix; watch-folder auto-import (and
+// folder-as-preset, and a plain add) never touch Remix at all, so
+// bulk-imported sounds could stay permanently un-smoothed - reported by the
+// user as "loops are REALLY abrupt" right after watch-folder shipped, since
+// bulk-importing without ever visiting Remix went from rare to the default
+// way sounds get added. Bakes a full-file loop clip automatically the first
+// time a never-baked, cap-eligible sound actually plays - the exact same
+// renderLoopClip Remix's own Save button calls, just triggered implicitly.
+// reconcileSource (already run on every refreshList) picks up the result
+// and swaps the live source over to BufferSoundSource with zero additional
+// code, same as any other filter/loop-point change.
+function maybeAutoBake(entry) {
+  if (entry.loopClipReady || autoBaking.has(entry.id)) return
+  const loopEnd = entry.loopEnd ?? entry.durationSeconds
+  if (loopEnd == null) return
+  if (loopEnd - entry.loopStart > MAX_BUFFER_CLIP_SECONDS) return
+
+  autoBaking.add(entry.id)
+  api.audio
+    .renderLoopClip(entry.id, { loopStart: entry.loopStart, loopEnd, filters: entry.filters })
+    .then((result) => {
+      if (result.ok) refreshList()
+    })
+    .catch((err) => console.error('Auto-bake failed', entry.name, err))
+    .finally(() => autoBaking.delete(entry.id))
+}
+
 // Tries the small pre-rendered loop clip (native, sample-accurate looping;
 // trimmed and filtered by the Remix plugin, see plugins/editor/). Returns
 // null on any failure so the caller falls back to streaming the original
@@ -197,6 +234,8 @@ async function getOrCreateSource(entry) {
         source.setLoopPoints(entry.loopStart, duration)
       }
     }
+
+    maybeAutoBake(entry)
   }
 
   state.sources.set(entry.id, source)
