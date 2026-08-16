@@ -22,6 +22,19 @@ const EDGE_SCROLL_FRACTION = 0.02
 // drag land pixel-accurately instead of fighting a coarse, zoomed-out view.
 const HOLD_ZOOM_DELAY_MS = 450
 const HOLD_ZOOM_STILL_TOLERANCE_PX = 2
+// How far the hold-zoom shrinks the view, relative to whatever span was
+// already visible when the hold triggered - NOT a fixed absolute target
+// (that was the original design, MIN_VIEW_SECONDS below, but it made the
+// zoom feel "way too strong" on a long clip: converging to a fixed 0.5s
+// window is a ~120x zoom on a 60s view but only 2x on a 1s view). Dividing
+// the *current* span by this factor instead means the zoom depth scales
+// with how zoomed-in you already are, not the file's total length.
+// HOLD_ZOOM_FLOOR_SECONDS still caps how tight it can get even from an
+// already-small starting span, so it never collapses to something
+// unreadable. Both tunable directly - see feedback thread this was added
+// for.
+const HOLD_ZOOM_TARGET_FACTOR = 8
+const HOLD_ZOOM_FLOOR_SECONDS = 0.3
 // How long the zoom-in animation itself takes once triggered, and how long
 // the reverse (back to whatever the view was before this drag started, on
 // release) takes too - both directions, same duration, per direct feedback
@@ -335,19 +348,24 @@ export function createLoopEditorController(canvas) {
   // exact instant pinned at the same on-screen ratio every frame, which is
   // what keeps the dragged handle (or the region's right edge) from
   // visually jumping around as the coordinate mapping changes underneath
-  // it mid-animation. Reaches MIN_VIEW_SECONDS in ZOOM_ANIMATION_MS via a
-  // real-time-based exponential decay of the span (not a fixed per-frame
+  // it mid-animation. Reaches targetSpan (fromSpan/HOLD_ZOOM_TARGET_FACTOR,
+  // floored at HOLD_ZOOM_FLOOR_SECONDS - see above) in ZOOM_ANIMATION_MS via
+  // a real-time-based exponential decay of the span (not a fixed per-frame
   // multiplier) - the ratio is recomputed fresh from the *actual* current
   // viewStart every frame rather than carried forward as a stale value,
   // which is what keeps the anchor exact throughout, not just at the end.
+  // targetSpan itself is derived once from fromSpan (fixed for the whole
+  // animation, not recomputed against the shrinking current span each
+  // frame) so the exponential decay has a stable endpoint to converge to.
   function tickHoldZoom(startTime, fromSpan) {
     holdZoomRafId = null
     if (!dragging || holdZoomFocusTime == null) return
+    const targetSpan = Math.max(fromSpan / HOLD_ZOOM_TARGET_FACTOR, HOLD_ZOOM_FLOOR_SECONDS)
     const span = viewEnd - viewStart
-    if (span <= MIN_VIEW_SECONDS + 0.001) return
+    if (span <= targetSpan + 0.001) return
 
     const t = Math.min(1, (performance.now() - startTime) / ZOOM_ANIMATION_MS)
-    const newSpan = Math.max(fromSpan * Math.pow(MIN_VIEW_SECONDS / fromSpan, t), MIN_VIEW_SECONDS)
+    const newSpan = Math.max(fromSpan * Math.pow(targetSpan / fromSpan, t), targetSpan)
     const ratio = (holdZoomFocusTime - viewStart) / span
     const newStart = holdZoomFocusTime - ratio * newSpan
     applyViewport(newStart, newStart + newSpan)
