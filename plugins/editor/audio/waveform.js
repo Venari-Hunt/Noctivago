@@ -8,14 +8,23 @@ function formatTick(seconds, showHours) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function pickTickStep(duration, width) {
+function pickTickStep(span, width) {
   const targetTicks = Math.max(2, Math.floor(width / 80))
-  const rawStep = duration / targetTicks
+  const rawStep = span / targetTicks
   const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200]
   return steps.find((s) => s >= rawStep) ?? steps[steps.length - 1]
 }
 
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks }) {
+// viewStart/viewEnd (defaulting to the full [0, duration] range) let the
+// zoomed-in LoopEditor draw just a window of the waveform instead of the
+// whole file. peaks itself stays a fixed-resolution array spanning the
+// *full* duration (one entry per pixel column at full zoom-out) - zooming
+// in resamples that same array (nearest-neighbor) rather than fetching
+// finer-grained peaks from ffmpeg, the simpler of the two options noted
+// when this feature was scoped. Trade-off: the waveform gets visibly
+// blockier the further you zoom in, since there's no more real detail to
+// show past the original resolution - accepted for v1.
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration }) {
   const ctx = canvas.getContext('2d')
   const width = canvas.width
   const height = canvas.height
@@ -25,8 +34,11 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
 
   if (!Number.isFinite(duration) || duration <= 0) return
 
-  const startX = (loopStart / duration) * width
-  const endX = (loopEnd / duration) * width
+  const viewSpan = viewEnd - viewStart
+  const timeToX = (t) => ((t - viewStart) / viewSpan) * width
+
+  const startX = timeToX(loopStart)
+  const endX = timeToX(loopEnd)
 
   ctx.fillStyle = 'rgba(122, 162, 247, 0.18)'
   ctx.fillRect(startX, 0, endX - startX, height)
@@ -34,8 +46,10 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   if (peaks && peaks.length > 0) {
     ctx.strokeStyle = '#7aa2f7'
     ctx.beginPath()
-    for (let x = 0; x < peaks.length && x < width; x++) {
-      const [min, max] = peaks[x]
+    for (let x = 0; x < width; x++) {
+      const t = viewStart + (x / width) * viewSpan
+      const peakIndex = Math.min(peaks.length - 1, Math.max(0, Math.floor((t / duration) * peaks.length)))
+      const [min, max] = peaks[peakIndex]
       ctx.moveTo(x + 0.5, mid + min * mid * 0.9)
       ctx.lineTo(x + 0.5, mid + max * mid * 0.9)
     }
@@ -53,9 +67,13 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   ctx.font = '11px sans-serif'
   ctx.textBaseline = 'top'
   const showHours = duration >= 3600
-  const step = pickTickStep(duration, width)
-  for (let t = 0; t <= duration; t += step) {
-    const x = (t / duration) * width
+  const step = pickTickStep(viewSpan, width)
+  // Ticks are computed over the visible span, not [0, duration] - otherwise
+  // a zoomed-in view far from t=0 on a long file would iterate thousands of
+  // off-screen ticks for nothing (or show none at all).
+  const firstTick = Math.ceil(viewStart / step) * step
+  for (let t = firstTick; t <= viewEnd; t += step) {
+    const x = timeToX(t)
     ctx.strokeStyle = 'rgba(59, 63, 88, 0.7)'
     ctx.beginPath()
     ctx.moveTo(x + 0.5, mid - 6)
@@ -74,7 +92,7 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   ctx.stroke()
 
   if (Number.isFinite(playhead)) {
-    const playX = (Math.min(Math.max(playhead, 0), duration) / duration) * width
+    const playX = timeToX(Math.min(Math.max(playhead, 0), duration))
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 1.5
     ctx.beginPath()

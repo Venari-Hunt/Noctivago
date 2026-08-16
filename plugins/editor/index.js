@@ -77,7 +77,7 @@ export default class EditorPlugin {
         </div>
         <div id="editor-panel" class="editor-panel hidden">
           <h3 id="editor-sound-name"></h3>
-          <canvas id="editor-canvas" width="640" height="160"></canvas>
+          <canvas id="editor-canvas" width="640" height="160" title="Scroll to zoom, shift+scroll to pan"></canvas>
           <p id="editor-waveform-status" class="editor-waveform-status"></p>
           <div class="editor-times">
             <label>Start <input id="editor-start-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
