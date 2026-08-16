@@ -11,6 +11,7 @@ import { registerPluginProtocol } from './plugins/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
 import { getSettings } from './settings.js'
 import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
+import { initWatchFolders, startWatching, stopWatching } from './watchFolders.js'
 
 log.initialize()
 
@@ -153,11 +154,15 @@ app.whenReady().then(() => {
   initAutoUpdate()
   initTray(win)
   setTrayEnabled(getSettings().minimizeToTrayEnabled)
+  initWatchFolders(win)
+  startWatching()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+app.on('before-quit', stopWatching)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

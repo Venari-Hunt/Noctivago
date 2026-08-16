@@ -95,8 +95,30 @@
           <input id="settings-minimize-to-tray-enabled" type="checkbox" />
           Keep playing in the background when closed (minimizes to the system tray instead of quitting — click the tray icon to bring the window back, right-click it for play/pause and quit)
         </label>
+        <h3 class="settings-section-heading">Watched folders</h3>
+        <p class="modal-hint">Audio files added to these folders later are automatically imported into your library.</p>
+        <ul id="watched-folder-list" class="preset-list"></ul>
+        <div class="settings-row">
+          <button id="add-watched-folder" class="btn" type="button">Add watched folder…</button>
+        </div>
         <div class="modal-actions">
           <button id="settings-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-watched-folder-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Watch folder</h2>
+        <p class="modal-hint" id="add-watched-folder-path"></p>
+        <label class="checkbox-row">
+          <input id="add-watched-folder-keep-copy" type="checkbox" />
+          Keep copies in the app for files found here (safe if the originals move or are deleted — uses extra disk space)
+        </label>
+        <p id="add-watched-folder-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="add-watched-folder-cancel" class="btn" type="button">Cancel</button>
+          <button id="add-watched-folder-confirm" class="btn btn-primary" type="button">Watch this folder</button>
         </div>
       </div>
     </div>

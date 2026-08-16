@@ -8,6 +8,7 @@ import { invokePlugin } from './plugins/invoke.js'
 import { getSettings, setMinimizeToTrayEnabled } from './settings.js'
 import { setAutoUpdateEnabled, checkForUpdatesNow } from './autoUpdate.js'
 import { setTrayEnabled } from './tray.js'
+import { watchNewFolder, unwatchFolder } from './watchFolders.js'
 
 export function registerIpcHandlers() {
   ipcMain.handle('app:isPackaged', () => app.isPackaged)
@@ -32,6 +33,17 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:rename', (_event, id, name) => library.rename(id, name))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))
+  ipcMain.handle('library:listWatchedFolders', () => library.listWatchedFolders())
+  ipcMain.handle('library:pickWatchFolder', () => library.pickWatchFolder())
+  ipcMain.handle('library:addWatchedFolder', (_event, folderPath, options) => {
+    const { entry, added } = library.addWatchedFolder(folderPath, options)
+    watchNewFolder(entry)
+    return { entry, addedCount: added.length }
+  })
+  ipcMain.handle('library:removeWatchedFolder', (_event, id) => {
+    unwatchFolder(id)
+    library.removeWatchedFolder(id)
+  })
 
   ipcMain.handle('presets:list', () => presets.listPresets())
   ipcMain.handle('presets:save', (_event, payload) => presets.savePreset(payload))

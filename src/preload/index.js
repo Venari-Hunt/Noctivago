@@ -36,7 +36,19 @@ const api = {
     updateFilters: (id, filters) => ipcRenderer.invoke('library:updateFilters', id, filters),
     rename: (id, name) => ipcRenderer.invoke('library:rename', id, name),
     relink: (id) => ipcRenderer.invoke('library:relink', id),
-    remove: (id) => ipcRenderer.invoke('library:remove', id)
+    remove: (id) => ipcRenderer.invoke('library:remove', id),
+    listWatchedFolders: () => ipcRenderer.invoke('library:listWatchedFolders'),
+    pickWatchFolder: () => ipcRenderer.invoke('library:pickWatchFolder'),
+    addWatchedFolder: (folderPath, options) => ipcRenderer.invoke('library:addWatchedFolder', folderPath, options),
+    removeWatchedFolder: (id) => ipcRenderer.invoke('library:removeWatchedFolder', id),
+    // Fires whenever a watched folder auto-imports a new sound (initial
+    // scan or live fs.watch pickup) - lets an already-mounted tab refresh
+    // without the user needing to switch away and back first.
+    onChanged: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('library:changed', listener)
+      return () => ipcRenderer.removeListener('library:changed', listener)
+    }
   },
   presets: {
     list: () => ipcRenderer.invoke('presets:list'),

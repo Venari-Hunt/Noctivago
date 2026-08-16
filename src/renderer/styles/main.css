@@ -374,6 +374,19 @@ main {
   color: var(--text-dim);
 }
 
+.settings-section-heading {
+  margin: 20px 0 4px;
+  font-size: 13px;
+}
+
+.watched-folder-missing {
+  color: var(--danger);
+}
+
+#watched-folder-list {
+  margin-bottom: 10px;
+}
+
 .preset-row {
   display: flex;
   align-items: center;

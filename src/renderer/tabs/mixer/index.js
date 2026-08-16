@@ -470,4 +470,8 @@ export function mount(container) {
   // mount() only ever runs once (TabHost lazily mounts each tab a single
   // time), so this is a one-time listener registration, not a per-mount leak.
   window.noctivago.tray.onTogglePlayPause(toggleGlobalPlayback)
+  // Lets a sound auto-imported by a watched folder show up immediately even
+  // if the user never leaves the Mixer tab (onShow's refresh alone would
+  // only catch it on the next tab switch).
+  window.noctivago.library.onChanged(refreshList)
 }
