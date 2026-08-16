@@ -16,11 +16,21 @@ extraResources:
   # src/main/tray.js for how it's read back via process.resourcesPath).
   - from: resources/tray-icon.png
     to: tray-icon.png
-  - from: resources/icon.png
-    to: icon.png
+  - from: resources/icon.ico
+    to: icon.ico
 win:
   target: nsis
-  icon: resources/icon.png
+  # A hand-built .ico, not a plain PNG - electron-builder's own PNG->ICO
+  # auto-conversion (via its bundled icon-gen tool) PNG-compresses every
+  # size in the icon, but Windows only honors PNG compression for the
+  # 256px entry; sizes below that (16/24/32/48/64, exactly what the
+  # taskbar and Windows Search use) silently fall back to a generic icon
+  # if they're PNG-compressed instead of classic uncompressed bitmap data.
+  # This .ico was generated with real BMP/DIB data for every size below
+  # 256 and verified by loading it back through .NET's System.Drawing.Icon
+  # (Windows' own icon parser) before use - see CLAUDE.md for how it was
+  # built and how to regenerate it if the design ever changes.
+  icon: resources/icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

@@ -21,8 +21,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // explicit icon here is what makes the *dev-mode* window/taskbar show the
 // app's own icon instead of the bare Electron default.
 const APP_ICON_PATH = app.isPackaged
-  ? path.join(process.resourcesPath, 'icon.png')
-  : path.join(__dirname, '../../resources/icon.png')
+  ? path.join(process.resourcesPath, 'icon.ico')
+  : path.join(__dirname, '../../resources/icon.ico')
 
 const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
