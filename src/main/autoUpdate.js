@@ -51,10 +51,15 @@ export function initAutoUpdate() {
 
   // No second confirmation here on purpose - the one Download? prompt above
   // is the only consent needed; once that's given, install-and-restart just
-  // happens.
+  // happens. quitAndInstall()'s two args matter: isSilent=true skips the
+  // NSIS installer's own wizard window (its default is false, which is why
+  // v0.1.4's install still showed a visible installer despite this comment
+  // already claiming "installs automatically") and isForceRunAfter=true
+  // relaunches the app once the silent install finishes, matching what a
+  // visible install would have done after the user clicked through it.
   autoUpdater.on('update-downloaded', (info) => {
     log.info(`Auto-update: ${info.version} downloaded, installing and restarting now`)
-    autoUpdater.quitAndInstall()
+    autoUpdater.quitAndInstall(true, true)
   })
 
   autoUpdater.on('update-not-available', (info) => {
