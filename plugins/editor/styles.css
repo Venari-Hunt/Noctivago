@@ -146,6 +146,79 @@
   font-size: 12px;
 }
 
+.editor-playmode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.editor-playmode-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  width: 82px;
+  flex-shrink: 0;
+}
+
+.editor-playmode-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.editor-playmode-hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.editor-scatter-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.editor-scatter-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.editor-scatter-controls label > span:first-child {
+  width: 82px;
+  flex-shrink: 0;
+}
+
+.editor-scatter-controls input[type='range'] {
+  flex: 1;
+}
+
+.editor-scatter-controls input[type='number'] {
+  width: 64px;
+}
+
+.editor-scatter-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .editor-crossfade {
   margin: 16px 0;
   padding: 12px;

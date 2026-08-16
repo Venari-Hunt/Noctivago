@@ -116,13 +116,48 @@ export default class EditorPlugin {
             <label>End <input id="editor-end-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
             <label>Length <input id="editor-length-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
           </div>
-          <div class="editor-crossfade">
+          <div class="editor-playmode">
+            <span class="editor-playmode-label">Playback mode</span>
+            <label class="editor-playmode-option">
+              <input type="radio" name="editor-playmode" id="editor-playmode-loop" value="loop" checked />
+              Loop
+            </label>
+            <label class="editor-playmode-option">
+              <input type="radio" name="editor-playmode" id="editor-playmode-scatter" value="scatter" />
+              Random interval
+            </label>
+            <p class="editor-playmode-hint">Random interval replays this clip at a random gap instead of looping it back-to-back — good for a short, event-like sound (a creak, a bird call) inside a longer ambient mix.</p>
+          </div>
+          <div id="editor-crossfade-section" class="editor-crossfade">
             <label>
               <span>Loop crossfade</span>
               <input id="editor-crossfade" type="range" min="0" max="2000" value="200" step="10" />
               <span id="editor-crossfade-value" class="editor-filter-value">200 ms</span>
             </label>
             <p class="editor-crossfade-hint">Blends the seam so the loop isn't audible. Longer helps busy, textured audio (rain, crowds) — 0 disables blending. Automatically capped for very short loops.</p>
+          </div>
+          <div id="editor-scatter-section" class="editor-scatter-controls hidden">
+            <label>
+              <span>Gap (min)</span>
+              <input id="editor-scatter-gap-min" type="number" min="0" max="3600" step="1" value="5" />
+              <span class="editor-filter-value">s</span>
+            </label>
+            <label>
+              <span>Gap (max)</span>
+              <input id="editor-scatter-gap-max" type="number" min="0" max="3600" step="1" value="35" />
+              <span class="editor-filter-value">s</span>
+            </label>
+            <label>
+              <span>Pitch (min)</span>
+              <input id="editor-scatter-pitch-min" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="editor-scatter-pitch-min-value" class="editor-filter-value">0 st</span>
+            </label>
+            <label>
+              <span>Pitch (max)</span>
+              <input id="editor-scatter-pitch-max" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="editor-scatter-pitch-max-value" class="editor-filter-value">0 st</span>
+            </label>
+            <p class="editor-scatter-hint">Each replay picks a random gap and pitch within these ranges. Leave both pitch bounds at 0 for a fully random pitch each time.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -203,8 +238,18 @@ export default class EditorPlugin {
       startInput: container.querySelector('#editor-start-input'),
       endInput: container.querySelector('#editor-end-input'),
       lengthInput: container.querySelector('#editor-length-input'),
+      playModeLoop: container.querySelector('#editor-playmode-loop'),
+      playModeScatter: container.querySelector('#editor-playmode-scatter'),
+      crossfadeSection: container.querySelector('#editor-crossfade-section'),
       crossfade: container.querySelector('#editor-crossfade'),
       crossfadeValue: container.querySelector('#editor-crossfade-value'),
+      scatterSection: container.querySelector('#editor-scatter-section'),
+      scatterGapMin: container.querySelector('#editor-scatter-gap-min'),
+      scatterGapMax: container.querySelector('#editor-scatter-gap-max'),
+      scatterPitchMin: container.querySelector('#editor-scatter-pitch-min'),
+      scatterPitchMinValue: container.querySelector('#editor-scatter-pitch-min-value'),
+      scatterPitchMax: container.querySelector('#editor-scatter-pitch-max'),
+      scatterPitchMaxValue: container.querySelector('#editor-scatter-pitch-max-value'),
       speed: container.querySelector('#editor-speed'),
       speedValue: container.querySelector('#editor-speed-value'),
       pitch: container.querySelector('#editor-pitch'),
@@ -287,6 +332,13 @@ export default class EditorPlugin {
     this.els.startInput.addEventListener('change', () => this.applyManualLoopPoints())
     this.els.endInput.addEventListener('change', () => this.applyManualLoopPoints())
     this.els.lengthInput.addEventListener('change', () => this.applyManualLength())
+
+    this.els.playModeLoop.addEventListener('change', () => this.applyPlayModeControl())
+    this.els.playModeScatter.addEventListener('change', () => this.applyPlayModeControl())
+    this.els.scatterGapMin.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterGapMax.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterPitchMin.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterPitchMax.addEventListener('input', () => this.applyScatterControls())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
 
@@ -521,6 +573,51 @@ export default class EditorPlugin {
     this.updateSaveButtonState()
   }
 
+  currentPlayMode() {
+    return this.els.playModeScatter.checked ? 'scatter' : 'loop'
+  }
+
+  setPlayModeControls(playMode) {
+    this.els.playModeLoop.checked = playMode !== 'scatter'
+    this.els.playModeScatter.checked = playMode === 'scatter'
+    this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter')
+    this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
+  }
+
+  currentScatterConfig() {
+    return {
+      minGapSeconds: Number(this.els.scatterGapMin.value),
+      maxGapSeconds: Number(this.els.scatterGapMax.value),
+      minPitchSemitones: Number(this.els.scatterPitchMin.value),
+      maxPitchSemitones: Number(this.els.scatterPitchMax.value)
+    }
+  }
+
+  setScatterControls({ minGapSeconds = 5, maxGapSeconds = 35, minPitchSemitones = 0, maxPitchSemitones = 0 }) {
+    this.els.scatterGapMin.value = String(minGapSeconds)
+    this.els.scatterGapMax.value = String(maxGapSeconds)
+    this.els.scatterPitchMin.value = String(minPitchSemitones)
+    this.els.scatterPitchMax.value = String(maxPitchSemitones)
+  }
+
+  updateScatterLabels({ minPitchSemitones = 0, maxPitchSemitones = 0 }) {
+    this.els.scatterPitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
+    this.els.scatterPitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
+  }
+
+  applyPlayModeControl() {
+    const playMode = this.currentPlayMode()
+    this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter')
+    this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
+    this.updateSaveButtonState()
+  }
+
+  applyScatterControls() {
+    const scatter = this.currentScatterConfig()
+    this.updateScatterLabels(scatter)
+    this.updateSaveButtonState()
+  }
+
   currentSpeedPitch() {
     return {
       speed: Number(this.els.speed.value) / 100,
@@ -555,7 +652,7 @@ export default class EditorPlugin {
   // has changed. crossfadeMs is compared as the rounded integer the slider
   // itself produces, not the seconds value it's persisted as, so float
   // round-tripping (ms -> seconds -> ms) can't cause a false "dirty" flag.
-  snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch) {
+  snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter) {
     return JSON.stringify({
       loopStart,
       loopEnd,
@@ -571,6 +668,13 @@ export default class EditorPlugin {
         speed: speedPitch.speed ?? 1,
         pitchSemitones: speedPitch.pitchSemitones ?? 0,
         reversed: speedPitch.reversed ?? false
+      },
+      playMode,
+      scatter: {
+        minGapSeconds: scatter.minGapSeconds ?? 5,
+        maxGapSeconds: scatter.maxGapSeconds ?? 35,
+        minPitchSemitones: scatter.minPitchSemitones ?? 0,
+        maxPitchSemitones: scatter.maxPitchSemitones ?? 0
       }
     })
   }
@@ -579,8 +683,15 @@ export default class EditorPlugin {
     if (!this.currentEntry || !this.loopEditorController || !this.savedSnapshot) return false
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     return (
-      this.snapshotOf(loopStart, loopEnd, this.currentFilters(), this.currentCrossfadeMs(), this.currentSpeedPitch()) !==
-      this.savedSnapshot
+      this.snapshotOf(
+        loopStart,
+        loopEnd,
+        this.currentFilters(),
+        this.currentCrossfadeMs(),
+        this.currentSpeedPitch(),
+        this.currentPlayMode(),
+        this.currentScatterConfig()
+      ) !== this.savedSnapshot
     )
   }
 
@@ -642,6 +753,12 @@ export default class EditorPlugin {
     this.setSpeedPitchControls(speedPitch)
     this.updateSpeedPitchLabels(speedPitch)
 
+    const playMode = entry.playMode ?? 'loop'
+    const scatter = entry.scatter ?? { minGapSeconds: 5, maxGapSeconds: 35, minPitchSemitones: 0, maxPitchSemitones: 0 }
+    this.setPlayModeControls(playMode)
+    this.setScatterControls(scatter)
+    this.updateScatterLabels(scatter)
+
     await this.engine.resume()
     this.previewSource = new PreviewSource(this.engine, {
       soundId: entry.id,
@@ -676,7 +793,7 @@ export default class EditorPlugin {
     this.loopEditorController.load(duration, loopStart, loopEnd)
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch)
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter)
     this.updateSaveButtonState()
 
     this.els.waveformStatus.textContent = this.waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
@@ -694,17 +811,30 @@ export default class EditorPlugin {
     const crossfadeMs = this.currentCrossfadeMs()
     const crossfadeSeconds = crossfadeMs / 1000
     const speedPitch = this.currentSpeedPitch()
+    const playMode = this.currentPlayMode()
+    const scatter = this.currentScatterConfig()
+    // Random-interval playback replays the clip as one-shots, never
+    // back-to-back — the crossfade+rotation a looped clip needs to hide its
+    // own wrap point would be wrong here, so the bake below always uses 0
+    // (plain trim) for a scatter-mode sound regardless of the crossfade
+    // slider's own saved value. Mirrors library.js/tabs/mixer's own
+    // effectiveCrossfadeSeconds exactly — keep in sync if this ever changes.
+    const effectiveCrossfadeSeconds = playMode === 'scatter' ? 0 : crossfadeSeconds
 
     await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
     await this.api.library.updateFilters(id, filters)
     await this.api.library.updateCrossfade(id, crossfadeSeconds)
     await this.api.library.updateSpeedPitch(id, speedPitch)
+    await this.api.library.updatePlayMode(id, playMode)
+    await this.api.library.updateScatterConfig(id, scatter)
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd
     this.currentEntry.filters = filters
     this.currentEntry.crossfadeSeconds = crossfadeSeconds
     this.currentEntry.speedPitch = speedPitch
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch)
+    this.currentEntry.playMode = playMode
+    this.currentEntry.scatter = scatter
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter)
 
     // This never touches the original audio file: trim points and filters
     // are stored as metadata, applied live whenever the Mixer streams the
@@ -720,15 +850,24 @@ export default class EditorPlugin {
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
       this.els.save.disabled = true
       this.els.save.textContent = 'Saving…'
-      const result = await this.api.audio.renderLoopClip(id, { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch })
+      const result = await this.api.audio.renderLoopClip(id, {
+        loopStart,
+        loopEnd,
+        filters,
+        crossfadeSeconds: effectiveCrossfadeSeconds,
+        speedPitch
+      })
       if (result.ok) {
         this.currentEntry.loopClipReady = true
         this.currentEntry.loopClipStart = loopStart
         this.currentEntry.loopClipEnd = loopEnd
         this.currentEntry.loopClipFilters = filters
-        this.currentEntry.loopClipCrossfadeSeconds = crossfadeSeconds
+        this.currentEntry.loopClipCrossfadeSeconds = effectiveCrossfadeSeconds
         this.currentEntry.loopClipSpeedPitch = speedPitch
-        this.els.saveStatus.textContent = 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
+        this.els.saveStatus.textContent =
+          playMode === 'scatter'
+            ? 'Saved — original file untouched. Rendered a clip for random-interval playback.'
+            : 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
       } else {
         this.currentEntry.loopClipReady = false
         this.currentEntry.loopClipStart = null
@@ -736,11 +875,17 @@ export default class EditorPlugin {
         this.currentEntry.loopClipFilters = null
         this.currentEntry.loopClipCrossfadeSeconds = null
         this.currentEntry.loopClipSpeedPitch = null
-        this.els.saveStatus.textContent = 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
+        this.els.saveStatus.textContent =
+          playMode === 'scatter'
+            ? 'Saved — original file untouched. Clip render failed, so this will stream directly for random-interval playback.'
+            : 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
       }
       this.updateSaveButtonState()
     } else {
-      this.els.saveStatus.textContent = 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
+      this.els.saveStatus.textContent =
+        playMode === 'scatter'
+          ? 'Saved — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.'
+          : 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
       this.updateSaveButtonState()
     }
   }

@@ -1,6 +1,7 @@
 import { AudioEngine } from '../../audio/AudioEngine.js'
 import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
+import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
 import { renderSoundList, sortForDisplay, SORT_MODES, GROUP_MODES } from '../../ui/SoundList.js'
 import { renderPresetList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
@@ -172,12 +173,22 @@ function normalizeSpeedPitch(speedPitch) {
   })
 }
 
+// Scatter mode (see library.js's addSound) plays the trim as one-shots, not
+// back-to-back, so the crossfade+rotation a looped clip needs to hide its
+// own wrap point would be actively wrong - forcing the *effective* crossfade
+// to 0 reuses renderLoopClip unchanged (0 already means "plain trim, no
+// rotation") instead of a second bake pipeline. Mirrors library.js's own
+// effectiveCrossfadeSeconds exactly - keep both in sync if this ever changes.
+function effectiveCrossfadeSeconds(entry) {
+  return entry.playMode === 'scatter' ? 0 : entry.crossfadeSeconds
+}
+
 function bufferBakeSnapshot(entry) {
   return JSON.stringify({
     loopStart: entry.loopStart,
     loopEnd: entry.loopEnd,
     filters: entry.filters,
-    crossfadeSeconds: entry.crossfadeSeconds,
+    crossfadeSeconds: effectiveCrossfadeSeconds(entry),
     speedPitch: normalizeSpeedPitch(entry.speedPitch)
   })
 }
@@ -197,23 +208,38 @@ function bufferBakeSnapshot(entry) {
 // which is exactly the case the boolean-only check above originally missed
 // (reported live: re-trimming an already-baked sound kept playing the old
 // clip until a full app restart forced a fresh decode).
+// Four possible source kinds, crossing playMode ('loop' | 'scatter') with
+// whether a baked clip is currently usable - see getOrCreateSource/
+// tryCreateBufferSource for what actually gets constructed for each.
+function desiredSourceKind(entry) {
+  const buffer = loopClipEligible(entry)
+  if (entry.playMode === 'scatter') return buffer ? 'scatter-buffer' : 'scatter-stream'
+  return buffer ? 'loop-buffer' : 'loop-stream'
+}
+
 function reconcileSource(entry) {
   const source = state.sources.get(entry.id)
   if (!source) return
 
-  const shouldBeBuffer = loopClipEligible(entry)
-  const isBuffer = source instanceof BufferSoundSource
-  const bufferIsStale = isBuffer && source.bakeSnapshot !== bufferBakeSnapshot(entry)
+  const desiredKind = desiredSourceKind(entry)
+  const isBuffer = desiredKind === 'loop-buffer' || desiredKind === 'scatter-buffer'
+  const bufferIsStale = isBuffer && source.kind === desiredKind && source.bakeSnapshot !== bufferBakeSnapshot(entry)
 
-  if (shouldBeBuffer !== isBuffer || bufferIsStale) {
+  if (desiredKind !== source.kind || bufferIsStale) {
     swapSource(entry)
     return
   }
 
-  if (!isBuffer) {
+  if (desiredKind === 'loop-stream') {
     if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
     if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
     if (!source.hasSpeed(entry.speedPitch?.speed)) source.setSpeed(entry.speedPitch?.speed)
+  } else if (desiredKind === 'scatter-stream') {
+    if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
+    if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
+    if (!source.hasScatterConfig(entry.scatter)) source.setScatterConfig(entry.scatter)
+  } else if (desiredKind === 'scatter-buffer') {
+    if (!source.hasScatterConfig(entry.scatter)) source.setScatterConfig(entry.scatter)
   }
 }
 
@@ -246,7 +272,7 @@ function loopClipEligible(entry) {
     entry.loopClipStart === entry.loopStart &&
     entry.loopClipEnd === entry.loopEnd &&
     JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
-    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds &&
+    entry.loopClipCrossfadeSeconds === effectiveCrossfadeSeconds(entry) &&
     normalizeSpeedPitch(entry.loopClipSpeedPitch) === normalizeSpeedPitch(entry.speedPitch)
   )
 }
@@ -279,7 +305,7 @@ function maybeAutoBake(entry) {
       loopStart: entry.loopStart,
       loopEnd,
       filters: entry.filters,
-      crossfadeSeconds: entry.crossfadeSeconds,
+      crossfadeSeconds: effectiveCrossfadeSeconds(entry),
       speedPitch: entry.speedPitch
     })
     .then((result) => {
@@ -295,12 +321,17 @@ function maybeAutoBake(entry) {
 // file — this is what keeps the feature safe even if ffmpeg is missing or
 // the clip is corrupt.
 async function tryCreateBufferSource(entry) {
+  const isScatter = entry.playMode === 'scatter'
   try {
     const response = await fetch(`sound://${entry.id}?variant=clip`)
     if (!response.ok) return null
     const arrayBuffer = await response.arrayBuffer()
     const audioBuffer = await engine.context.decodeAudioData(arrayBuffer)
-    const source = new BufferSoundSource(engine, { audioBuffer, volume: state.volumes.get(entry.id) ?? 0.7 })
+    const volume = state.volumes.get(entry.id) ?? 0.7
+    const source = isScatter
+      ? new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter })
+      : new BufferSoundSource(engine, { audioBuffer, volume })
+    source.kind = isScatter ? 'scatter-buffer' : 'loop-buffer'
     source.bakeSnapshot = bufferBakeSnapshot(entry)
     return source
   } catch (err) {
@@ -318,14 +349,26 @@ async function getOrCreateSource(entry) {
   }
 
   if (!source) {
-    source = new LocalFileSoundSource(engine, {
-      soundId: entry.id,
-      loopStart: entry.loopStart,
-      loopEnd: entry.loopEnd,
-      volume: state.volumes.get(entry.id) ?? 0.7,
-      filters: entry.filters,
-      speed: entry.speedPitch?.speed
-    })
+    const isScatter = entry.playMode === 'scatter'
+    const volume = state.volumes.get(entry.id) ?? 0.7
+    source = isScatter
+      ? new StreamScatterSource(engine, {
+          soundId: entry.id,
+          loopStart: entry.loopStart,
+          loopEnd: entry.loopEnd,
+          volume,
+          filters: entry.filters,
+          scatter: entry.scatter
+        })
+      : new LocalFileSoundSource(engine, {
+          soundId: entry.id,
+          loopStart: entry.loopStart,
+          loopEnd: entry.loopEnd,
+          volume,
+          filters: entry.filters,
+          speed: entry.speedPitch?.speed
+        })
+    source.kind = isScatter ? 'scatter-stream' : 'loop-stream'
 
     const duration = await source.waitForMetadata()
     if (!Number.isFinite(duration)) {

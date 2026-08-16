@@ -224,6 +224,16 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
     crossfadeSeconds: null,
     speedPitch: { speed: 1, pitchSemitones: 0, reversed: false },
+    // playMode 'scatter': instead of looping continuously, replay the
+    // trimmed clip at a random gap (minGapSeconds-maxGapSeconds of silence
+    // between repeats) with a random pitch shift each time (minPitchSemitones-
+    // maxPitchSemitones; both at 0 means "fully random" rather than "no
+    // shift" - see plugins/editor/index.js's Playback Mode section, the only
+    // place this gets edited). Purely a playback-time schedule, never baked
+    // into the clip itself - see effectiveCrossfadeSeconds below for the one
+    // thing about scatter mode that *does* affect baking.
+    playMode: 'loop',
+    scatter: { minGapSeconds: 5, maxGapSeconds: 35, minPitchSemitones: 0, maxPitchSemitones: 0 },
     loopClipReady: false,
     loopClipStart: null,
     loopClipEnd: null,
@@ -292,6 +302,14 @@ export function updateFilters(id, filters) {
 
 export function updateSpeedPitch(id, speedPitch) {
   return updateEntry(id, { speedPitch })
+}
+
+export function updatePlayMode(id, playMode) {
+  return updateEntry(id, { playMode })
+}
+
+export function updateScatterConfig(id, scatter) {
+  return updateEntry(id, { scatter })
 }
 
 // Nullable - null means "use the app default" (see loopClip.js's
@@ -403,6 +421,21 @@ function normalizeSpeedPitch(speedPitch) {
   })
 }
 
+// Scatter mode (see addSound's playMode/scatter fields) replays the trimmed
+// clip as one-shots, never back-to-back - the crossfade+rotation a looped
+// clip needs to hide its own wrap point would be actively wrong here (it
+// permanently reorders the clip's audio, which only makes sense if the
+// clip's end is ever going to reconnect to its own start). Forcing the
+// *effective* crossfade to 0 for a scatter-mode sound reuses renderLoopClip
+// unchanged (0 already means "plain trim, no rotation" - see loopClip.js's
+// doRender) instead of needing a second bake pipeline, and naturally
+// invalidates any existing bake made under the other mode via the same
+// loopClipCrossfadeSeconds staleness check every other trim/filter change
+// already goes through.
+function effectiveCrossfadeSeconds(entry) {
+  return entry.playMode === 'scatter' ? 0 : entry.crossfadeSeconds
+}
+
 export function getLoopClipPathForId(id) {
   const sounds = store.get('sounds')
   const entry = sounds.find((s) => s.id === id)
@@ -412,7 +445,7 @@ export function getLoopClipPathForId(id) {
     entry.loopClipStart === entry.loopStart &&
     entry.loopClipEnd === entry.loopEnd &&
     JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
-    entry.loopClipCrossfadeSeconds === entry.crossfadeSeconds &&
+    entry.loopClipCrossfadeSeconds === effectiveCrossfadeSeconds(entry) &&
     normalizeSpeedPitch(entry.loopClipSpeedPitch) === normalizeSpeedPitch(entry.speedPitch)
   if (!eligible) return null
   const clipPath = getLoopClipPath(id)

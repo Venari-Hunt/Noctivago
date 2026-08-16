@@ -37,6 +37,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:updateCrossfade', (_event, id, crossfadeSeconds) => library.updateCrossfade(id, crossfadeSeconds))
   ipcMain.handle('library:updateTags', (_event, id, tags) => library.updateTags(id, tags))
   ipcMain.handle('library:updateSpeedPitch', (_event, id, speedPitch) => library.updateSpeedPitch(id, speedPitch))
+  ipcMain.handle('library:updatePlayMode', (_event, id, playMode) => library.updatePlayMode(id, playMode))
+  ipcMain.handle('library:updateScatterConfig', (_event, id, scatter) => library.updateScatterConfig(id, scatter))
   ipcMain.handle('library:reorderSounds', (_event, orderedIds) => library.reorderSounds(orderedIds))
   ipcMain.handle('library:rename', (_event, id, name) => library.rename(id, name))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
