@@ -6,6 +6,10 @@ const LOOP_EPSILON_SECONDS = 0.03
 // filter change saved in Remix updates an already-playing Mixer sound with
 // the same feel as dragging the slider live in the Remix preview itself.
 const FILTER_SMOOTHING_SECONDS = 0.01
+// Upper bound a Web Audio DelayNode must declare at creation time - well
+// above the Remix slider's max (see plugins/editor/index.js) so the delay
+// time can never need a value the node wasn't built to hold.
+const MAX_ECHO_DELAY_SECONDS = 2.0
 
 // How long a 'waiting'/stalled <audio> element gets before this treats it as
 // a real problem rather than normal, brief re-buffering. See the 'waiting'
@@ -58,6 +62,23 @@ export class LocalFileSoundSource {
     this.filterGainNode = engine.context.createGain()
     this.filterGainNode.gain.value = this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1
 
+    // Echo: a feedback delay line tapped in parallel off the filtered (dry)
+    // signal. echoSendGain controls how much signal enters the delay loop
+    // at all (0 = no echo, matching how highpassHz=0 means "off" for that
+    // band); echoFeedbackGain attenuates each pass back through the delay,
+    // so a single (delayMs, decay) pair naturally produces a decaying train
+    // of repeats rather than one fixed echo - tied to the same value as
+    // echoSendGain so "how loud the echo enters" and "how long it persists"
+    // scale together from one user-facing knob (see the Remix preset UI).
+    this.echoDelayNode = engine.context.createDelay(MAX_ECHO_DELAY_SECONDS)
+    this.echoDelayNode.delayTime.value = (this.filters.echoDelayMs ?? 0) / 1000
+
+    this.echoSendGain = engine.context.createGain()
+    this.echoSendGain.gain.value = this.filters.echoDecay ?? 0
+
+    this.echoFeedbackGain = engine.context.createGain()
+    this.echoFeedbackGain.gain.value = this.filters.echoDecay ?? 0
+
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
@@ -65,6 +86,13 @@ export class LocalFileSoundSource {
     this.highpassNode.connect(this.lowpassNode)
     this.lowpassNode.connect(this.filterGainNode)
     this.filterGainNode.connect(this.gainNode)
+
+    this.filterGainNode.connect(this.echoSendGain)
+    this.echoSendGain.connect(this.echoDelayNode)
+    this.echoDelayNode.connect(this.echoFeedbackGain)
+    this.echoFeedbackGain.connect(this.echoDelayNode)
+    this.echoDelayNode.connect(this.gainNode)
+
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -152,6 +180,9 @@ export class LocalFileSoundSource {
     this.highpassNode.frequency.setTargetAtTime(this.filters.highpassHz ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.lowpassNode.frequency.setTargetAtTime(this.filters.lowpassHz ?? 20000, now, FILTER_SMOOTHING_SECONDS)
     this.filterGainNode.gain.setTargetAtTime(this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1, now, FILTER_SMOOTHING_SECONDS)
+    this.echoDelayNode.delayTime.setTargetAtTime((this.filters.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
+    this.echoSendGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    this.echoFeedbackGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
   }
 
   hasFilters(filters) {
@@ -230,6 +261,9 @@ export class LocalFileSoundSource {
     this.highpassNode.disconnect()
     this.lowpassNode.disconnect()
     this.filterGainNode.disconnect()
+    this.echoDelayNode.disconnect()
+    this.echoSendGain.disconnect()
+    this.echoFeedbackGain.disconnect()
     this.gainNode.disconnect()
   }
 }

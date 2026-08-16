@@ -10,19 +10,28 @@ import { formatDuration, parseDuration } from './util/time.js'
 // core if that value ever changes.
 const MAX_BUFFER_CLIP_SECONDS = 600
 
-const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0 }
+const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 }
 
-// Curated highpass/lowpass/gain combos for the one-click preset buttons.
-// All achievable with the existing 3 controls — no new audio engine work.
-// "Underwater" needs the lowpass slider's range extended below its old
-// 500Hz floor (see the HTML below) to sound convincing; everything else
+// Curated highpass/lowpass/gain/echo combos for the one-click preset
+// buttons. "Underwater" needs the lowpass slider's range extended below its
+// old 500Hz floor (see the HTML below) to sound convincing; everything else
 // fits the controls' original range.
+//
+// Echo and Reverb are the two presets that actually use echoDelayMs/
+// echoDecay - "Reverb" isn't a real reverb algorithm (this ffmpeg build has
+// no dedicated reverb filter, only aecho/chorus/flanger/etc., see the
+// backlog note this preset was scoped from), it's a short delay + fairly
+// high decay + a touch of lowpass tuned to read as a diffuse wash rather
+// than distinct repeats; "Echo" uses a longer delay + lower decay for
+// clear, separated slapback repeats instead.
 const FILTER_PRESETS = {
-  muffled: { label: 'Muffled', highpassHz: 0, lowpassHz: 700, gainDb: 0 },
-  phone: { label: 'Over the Phone', highpassHz: 300, lowpassHz: 3400, gainDb: 0 },
-  radio: { label: 'On the Radio', highpassHz: 150, lowpassHz: 6000, gainDb: 0 },
-  distant: { label: 'Distant', highpassHz: 0, lowpassHz: 2500, gainDb: -8 },
-  underwater: { label: 'Underwater', highpassHz: 0, lowpassHz: 250, gainDb: -3 }
+  muffled: { label: 'Muffled', highpassHz: 0, lowpassHz: 700, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+  phone: { label: 'Over the Phone', highpassHz: 300, lowpassHz: 3400, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+  radio: { label: 'On the Radio', highpassHz: 150, lowpassHz: 6000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+  distant: { label: 'Distant', highpassHz: 0, lowpassHz: 2500, gainDb: -8, echoDelayMs: 0, echoDecay: 0 },
+  underwater: { label: 'Underwater', highpassHz: 0, lowpassHz: 250, gainDb: -3, echoDelayMs: 0, echoDecay: 0 },
+  echo: { label: 'Echo', highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 350, echoDecay: 0.4 },
+  reverb: { label: 'Reverb', highpassHz: 0, lowpassHz: 8000, gainDb: 0, echoDelayMs: 50, echoDecay: 0.55 }
 }
 
 export default class EditorPlugin {
@@ -103,6 +112,16 @@ export default class EditorPlugin {
               <input id="editor-gain" type="range" min="-24" max="24" value="0" step="0.5" />
               <span id="editor-gain-value" class="editor-filter-value">0 dB</span>
             </label>
+            <label>
+              <span>Echo delay</span>
+              <input id="editor-echo-delay" type="range" min="0" max="1500" value="0" step="10" />
+              <span id="editor-echo-delay-value" class="editor-filter-value">Off</span>
+            </label>
+            <label>
+              <span>Echo decay</span>
+              <input id="editor-echo-decay" type="range" min="0" max="0.85" value="0" step="0.01" />
+              <span id="editor-echo-decay-value" class="editor-filter-value">Off</span>
+            </label>
           </div>
           <div class="editor-presets">
             <span class="editor-presets-label">Presets</span>
@@ -110,6 +129,8 @@ export default class EditorPlugin {
             <button class="btn btn-small" type="button" data-preset="phone">Over the Phone</button>
             <button class="btn btn-small" type="button" data-preset="radio">On the Radio</button>
             <button class="btn btn-small" type="button" data-preset="distant">Distant</button>
+            <button class="btn btn-small" type="button" data-preset="echo">Echo</button>
+            <button class="btn btn-small" type="button" data-preset="reverb">Reverb</button>
             <button class="btn btn-small" type="button" data-preset="underwater">Underwater</button>
           </div>
           <div class="editor-actions">
@@ -141,6 +162,10 @@ export default class EditorPlugin {
       lowpassValue: container.querySelector('#editor-lowpass-value'),
       gain: container.querySelector('#editor-gain'),
       gainValue: container.querySelector('#editor-gain-value'),
+      echoDelay: container.querySelector('#editor-echo-delay'),
+      echoDelayValue: container.querySelector('#editor-echo-delay-value'),
+      echoDecay: container.querySelector('#editor-echo-decay'),
+      echoDecayValue: container.querySelector('#editor-echo-decay-value'),
       playPause: container.querySelector('#editor-play-pause'),
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
@@ -180,11 +205,11 @@ export default class EditorPlugin {
     this.els.highpass.addEventListener('input', () => this.applyFilterControls())
     this.els.lowpass.addEventListener('input', () => this.applyFilterControls())
     this.els.gain.addEventListener('input', () => this.applyFilterControls())
+    this.els.echoDelay.addEventListener('input', () => this.applyFilterControls())
+    this.els.echoDecay.addEventListener('input', () => this.applyFilterControls())
 
     this.els.resetFilters.addEventListener('click', () => {
-      this.els.highpass.value = String(NEUTRAL_FILTERS.highpassHz)
-      this.els.lowpass.value = String(NEUTRAL_FILTERS.lowpassHz)
-      this.els.gain.value = String(NEUTRAL_FILTERS.gainDb)
+      this.setFilterSliders(NEUTRAL_FILTERS)
       this.applyFilterControls()
     })
 
@@ -192,9 +217,7 @@ export default class EditorPlugin {
       button.addEventListener('click', () => {
         const preset = FILTER_PRESETS[button.dataset.preset]
         if (!preset) return
-        this.els.highpass.value = String(preset.highpassHz)
-        this.els.lowpass.value = String(preset.lowpassHz)
-        this.els.gain.value = String(preset.gainDb)
+        this.setFilterSliders(preset)
         this.applyFilterControls()
       })
     }
@@ -258,11 +281,23 @@ export default class EditorPlugin {
     this.updateLoopTimeInputs(loopStart, loopEnd)
   }
 
+  // Shared by Reset filters and every preset button, both of which just set
+  // all five slider values from a filters object before re-applying.
+  setFilterSliders(filters) {
+    this.els.highpass.value = String(filters.highpassHz)
+    this.els.lowpass.value = String(filters.lowpassHz)
+    this.els.gain.value = String(filters.gainDb)
+    this.els.echoDelay.value = String(filters.echoDelayMs ?? 0)
+    this.els.echoDecay.value = String(filters.echoDecay ?? 0)
+  }
+
   currentFilters() {
     return {
       highpassHz: Number(this.els.highpass.value),
       lowpassHz: Number(this.els.lowpass.value),
-      gainDb: Number(this.els.gain.value)
+      gainDb: Number(this.els.gain.value),
+      echoDelayMs: Number(this.els.echoDelay.value),
+      echoDecay: Number(this.els.echoDecay.value)
     }
   }
 
@@ -270,6 +305,8 @@ export default class EditorPlugin {
     this.els.highpassValue.textContent = filters.highpassHz > 0 ? `${filters.highpassHz} Hz` : 'Off'
     this.els.lowpassValue.textContent = filters.lowpassHz < 20000 ? `${filters.lowpassHz} Hz` : 'Off'
     this.els.gainValue.textContent = `${filters.gainDb > 0 ? '+' : ''}${filters.gainDb} dB`
+    this.els.echoDelayValue.textContent = filters.echoDelayMs > 0 ? `${filters.echoDelayMs} ms` : 'Off'
+    this.els.echoDecayValue.textContent = filters.echoDecay > 0 ? filters.echoDecay.toFixed(2) : 'Off'
   }
 
   applyFilterControls() {
@@ -321,9 +358,7 @@ export default class EditorPlugin {
     this.els.saveStatus.textContent = ''
 
     const filters = entry.filters ?? { ...NEUTRAL_FILTERS }
-    this.els.highpass.value = String(filters.highpassHz)
-    this.els.lowpass.value = String(filters.lowpassHz)
-    this.els.gain.value = String(filters.gainDb)
+    this.setFilterSliders(filters)
     this.updateFilterLabels(filters)
 
     await this.engine.resume()

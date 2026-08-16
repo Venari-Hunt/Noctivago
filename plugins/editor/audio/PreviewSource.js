@@ -1,6 +1,10 @@
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
 const FILTER_SMOOTHING_SECONDS = 0.01
+// Matches src/renderer/audio/SoundSource.js's core-playback copy of this
+// same echo design - see that file for the full rationale (feedback delay
+// tapped off the dry signal, one knob driving both send and feedback gain).
+const MAX_ECHO_DELAY_SECONDS = 2.0
 
 // Streams a sound for editing preview (same sound://<id> streaming approach
 // as core's LocalFileSoundSource, so this works for files of any length)
@@ -37,6 +41,15 @@ export class PreviewSource {
     this.filterGainNode = engine.context.createGain()
     this.filterGainNode.gain.value = 1
 
+    this.echoDelayNode = engine.context.createDelay(MAX_ECHO_DELAY_SECONDS)
+    this.echoDelayNode.delayTime.value = 0
+
+    this.echoSendGain = engine.context.createGain()
+    this.echoSendGain.gain.value = 0
+
+    this.echoFeedbackGain = engine.context.createGain()
+    this.echoFeedbackGain.gain.value = 0
+
     this.outputGainNode = engine.context.createGain()
     this.outputGainNode.gain.value = 0
 
@@ -44,6 +57,13 @@ export class PreviewSource {
     this.highpassNode.connect(this.lowpassNode)
     this.lowpassNode.connect(this.filterGainNode)
     this.filterGainNode.connect(this.outputGainNode)
+
+    this.filterGainNode.connect(this.echoSendGain)
+    this.echoSendGain.connect(this.echoDelayNode)
+    this.echoDelayNode.connect(this.echoFeedbackGain)
+    this.echoFeedbackGain.connect(this.echoDelayNode)
+    this.echoDelayNode.connect(this.outputGainNode)
+
     this.outputGainNode.connect(engine.masterGain)
   }
 
@@ -59,11 +79,14 @@ export class PreviewSource {
     this.loopEnd = loopEnd
   }
 
-  setFilters({ highpassHz, lowpassHz, gainDb }) {
+  setFilters({ highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0 }) {
     const now = this.engine.context.currentTime
     this.highpassNode.frequency.setTargetAtTime(highpassHz, now, FILTER_SMOOTHING_SECONDS)
     this.lowpassNode.frequency.setTargetAtTime(lowpassHz, now, FILTER_SMOOTHING_SECONDS)
     this.filterGainNode.gain.setTargetAtTime(Math.pow(10, gainDb / 20), now, FILTER_SMOOTHING_SECONDS)
+    this.echoDelayNode.delayTime.setTargetAtTime(echoDelayMs / 1000, now, FILTER_SMOOTHING_SECONDS)
+    this.echoSendGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
+    this.echoFeedbackGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
   }
 
   _loopEnd() {
@@ -133,6 +156,9 @@ export class PreviewSource {
     this.highpassNode.disconnect()
     this.lowpassNode.disconnect()
     this.filterGainNode.disconnect()
+    this.echoDelayNode.disconnect()
+    this.echoSendGain.disconnect()
+    this.echoFeedbackGain.disconnect()
     this.outputGainNode.disconnect()
   }
 }

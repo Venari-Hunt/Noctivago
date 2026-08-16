@@ -120,7 +120,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     durationSeconds: null,
     loopStart: 0,
     loopEnd: null,
-    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0 },
+    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
     loopClipReady: false,
     loopClipStart: null,
     loopClipEnd: null,

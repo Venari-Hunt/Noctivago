@@ -20,15 +20,37 @@ export function getLoopClipPath(id) {
   return path.join(clipsDir(), `${id}.wav`)
 }
 
+// ffmpeg's aecho takes one fixed delay/decay per tap - it doesn't loop a
+// signal back through itself the way a real feedback delay does. The live
+// preview (PreviewSource.js / SoundSource.js) uses an actual Web Audio
+// feedback loop, which produces an unbounded train of repeats at
+// delayMs, 2*delayMs, 3*delayMs... each attenuated by decay^n. This
+// generates a fixed number of explicit taps following that same geometric
+// curve, so the baked clip's echo tail matches what was heard in preview
+// instead of sounding like a single, oddly bare repeat.
+const ECHO_TAPS = 6
+
+function buildEchoFilter(delayMs, decay) {
+  const delays = []
+  const decays = []
+  for (let i = 1; i <= ECHO_TAPS; i++) {
+    delays.push(Math.round(delayMs * i))
+    decays.push((decay ** i).toFixed(4))
+  }
+  return `aecho=1.0:1.0:${delays.join('|')}:${decays.join('|')}`
+}
+
 // Builds an ffmpeg filter chain fragment from a {highpassHz, lowpassHz,
-// gainDb} filter set, skipping any band left at its neutral/no-op value.
-// Returns null if every band is neutral (nothing to apply).
+// gainDb, echoDelayMs, echoDecay} filter set, skipping any band left at its
+// neutral/no-op value. Returns null if every band is neutral (nothing to
+// apply).
 function buildFilterChain(filters) {
   if (!filters) return null
   const parts = []
   if (filters.highpassHz > 0) parts.push(`highpass=f=${filters.highpassHz}`)
   if (filters.lowpassHz > 0 && filters.lowpassHz < 20000) parts.push(`lowpass=f=${filters.lowpassHz}`)
   if (filters.gainDb) parts.push(`volume=${filters.gainDb}dB`)
+  if (filters.echoDelayMs > 0 && filters.echoDecay > 0) parts.push(buildEchoFilter(filters.echoDelayMs, filters.echoDecay))
   return parts.length > 0 ? parts.join(',') : null
 }
 
@@ -50,14 +72,24 @@ function buildFilterChain(filters) {
 // repro with genuinely separate inputs. Verified directly against ffmpeg
 // before landing this — don't "simplify" back to a single-input graph
 // without re-verifying against real output duration, not just exit code 0.
-function buildFilterComplex(filters, fade) {
+// atrim after the filter chain matters specifically for echo: aecho extends
+// its output past the input's own length to fit the echo tail (confirmed
+// directly against the bundled binary - a 2s input became ~4s of output),
+// which would silently desync acrossfade/concat's exact-duration
+// assumptions below. Trimming each fragment back to its own original
+// length is also musically correct on its own terms, not just a technical
+// workaround: this is a *looping* clip, so any echo tail that would have
+// bled past the loop point gets hard-cut by the loop wrap regardless -
+// better to trim it deliberately here than leave it to an undefined,
+// unverified interaction with the crossfade seam.
+function buildFilterComplex(filters, fade, mainDuration) {
   const filterChain = buildFilterChain(filters)
   const suffix = filterChain ? `,${filterChain}` : ''
 
   return [
-    `[0:a:0]anull${suffix}[mainF]`,
-    `[1:a:0]anull${suffix}[tailF]`,
-    `[2:a:0]anull${suffix}[headF]`,
+    `[0:a:0]anull${suffix},atrim=start=0:end=${mainDuration}[mainF]`,
+    `[1:a:0]anull${suffix},atrim=start=0:end=${fade}[tailF]`,
+    `[2:a:0]anull${suffix},atrim=start=0:end=${fade}[headF]`,
     `[tailF][headF]acrossfade=d=${fade}:c1=tri:c2=tri[blended]`,
     `[mainF][blended]concat=n=2:v=0:a=1[out]`
   ].join(';')
@@ -91,7 +123,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters }) {
     '-ss', loopStart.toFixed(6), '-t', mainDuration.toFixed(6), '-i', inputPath,
     '-ss', (loopEnd - fade).toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
     '-ss', loopStart.toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
-    '-filter_complex', buildFilterComplex(filters, fade.toFixed(6)),
+    '-filter_complex', buildFilterComplex(filters, fade.toFixed(6), mainDuration.toFixed(6)),
     '-map', '[out]',
     '-vn',
     '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath
