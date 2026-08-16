@@ -5,9 +5,15 @@ import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
+import { getSettings } from './settings.js'
+import { setAutoUpdateEnabled, checkForUpdatesNow } from './autoUpdate.js'
 
 export function registerIpcHandlers() {
   ipcMain.handle('app:isPackaged', () => app.isPackaged)
+
+  ipcMain.handle('settings:get', () => getSettings())
+  ipcMain.handle('settings:setAutoUpdateEnabled', (_event, enabled) => setAutoUpdateEnabled(enabled))
+  ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
 
   ipcMain.handle('library:list', () => library.listSounds())
   ipcMain.handle('library:pickFile', () => library.pickFile())

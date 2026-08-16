@@ -16,6 +16,7 @@
         </label>
         <span class="spacer"></span>
         <button id="open-presets" class="btn" type="button">Presets</button>
+        <button id="open-settings" class="btn btn-icon" type="button" title="Settings">⚙</button>
         <div class="add-sound-menu-wrapper">
           <button id="add-sound" class="btn btn-icon" type="button" title="Add sound" aria-haspopup="true" aria-expanded="false">+</button>
           <div id="add-sound-menu" class="dropdown-menu hidden">
@@ -75,6 +76,23 @@
         <ul id="preset-list" class="preset-list"></ul>
         <div class="modal-actions">
           <button id="presets-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Settings</h2>
+        <label class="checkbox-row">
+          <input id="settings-auto-update-enabled" type="checkbox" />
+          Automatically check for updates
+        </label>
+        <div class="settings-row">
+          <button id="settings-check-now" class="btn" type="button">Check for updates now</button>
+          <span id="settings-check-status" class="settings-check-status"></span>
+        </div>
+        <div class="modal-actions">
+          <button id="settings-close" class="btn" type="button">Close</button>
         </div>
       </div>
     </div>

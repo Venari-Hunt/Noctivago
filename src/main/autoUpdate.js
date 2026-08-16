@@ -1,6 +1,7 @@
 import { app, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import log from 'electron-log/main'
+import { getSettings, setAutoUpdateEnabled as persistAutoUpdateEnabled } from './settings.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -35,20 +36,47 @@ autoUpdater.autoInstallOnAppQuit = false
 // few hours closes that gap without being excessive.
 const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
 
+let recheckIntervalId = null
+
+// Tracks the version the user already clicked "Not now" on, so the
+// periodic re-check doesn't nag them with the same prompt every few hours -
+// only a genuinely newer version (or the next app restart, which resets
+// this) prompts again.
+let dismissedVersion = null
+
+// Set right before a check triggered by the Settings menu's "Check for
+// updates now" button, so the update-not-available/error handlers know to
+// surface a result via dialog. The periodic background check deliberately
+// stays silent in both of those cases (a failed/empty background check
+// should be invisible, not an interruption) - but a check the user
+// explicitly asked for should never look like nothing happened.
+let manualCheckPending = false
+
+function runCheck() {
+  log.info(`Auto-update: checking (current version ${app.getVersion()}, token present: ${Boolean(__UPDATE_TOKEN__)})`)
+  autoUpdater.checkForUpdates().catch((err) => log.error('Auto-update check failed', err))
+}
+
+function startPeriodicChecks() {
+  if (recheckIntervalId) return
+  recheckIntervalId = setInterval(runCheck, RECHECK_INTERVAL_MS)
+}
+
+function stopPeriodicChecks() {
+  if (!recheckIntervalId) return
+  clearInterval(recheckIntervalId)
+  recheckIntervalId = null
+}
+
 export function initAutoUpdate() {
   // electron-updater only makes sense for an installed, packaged app - it
   // has no meaningful feed to check against a dev build, and would just
   // error on every `npm run dev` startup otherwise.
   if (!app.isPackaged) return
 
-  // Tracks the version the user already clicked "Not now" on, so the
-  // periodic re-check doesn't nag them with the same prompt every few
-  // hours - only a genuinely newer version (or the next app restart, which
-  // resets this) prompts again.
-  let dismissedVersion = null
-
   autoUpdater.on('update-available', async (info) => {
     if (info.version === dismissedVersion) return
+    manualCheckPending = false
     const { response } = await dialog.showMessageBox({
       type: 'info',
       buttons: ['Download', 'Not now'],
@@ -80,19 +108,60 @@ export function initAutoUpdate() {
 
   autoUpdater.on('update-not-available', (info) => {
     log.info(`Auto-update: no update available (latest published is ${info.version})`)
+    if (manualCheckPending) {
+      manualCheckPending = false
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'No update available',
+        message: `You're already on the latest version (${app.getVersion()}).`
+      })
+    }
   })
 
   autoUpdater.on('error', (err) => {
-    // Never surfaced to the user - a failed check (offline, rate-limited,
-    // misconfigured token) should be invisible, not an interruption.
+    // Never surfaced to the user for a background check - a failed check
+    // (offline, rate-limited, misconfigured token) should be invisible, not
+    // an interruption. A manual check is the one exception (see
+    // manualCheckPending above).
     log.error('Auto-update check failed', err)
+    if (manualCheckPending) {
+      manualCheckPending = false
+      dialog.showMessageBox({
+        type: 'error',
+        title: 'Update check failed',
+        message: 'Could not check for updates. Check your internet connection and try again later.'
+      })
+    }
   })
 
-  const runCheck = () => {
-    log.info(`Auto-update: checking (current version ${app.getVersion()}, token present: ${Boolean(__UPDATE_TOKEN__)})`)
-    autoUpdater.checkForUpdates().catch((err) => log.error('Auto-update check failed', err))
+  if (getSettings().autoUpdateEnabled) {
+    runCheck()
+    startPeriodicChecks()
   }
+}
 
+// Settings menu's "Check for updates now" - runs regardless of the
+// autoUpdateEnabled setting, since clicking a button asking to check is
+// explicit consent by itself, separate from the standing on/off preference.
+export function checkForUpdatesNow() {
+  if (!app.isPackaged) return
+  manualCheckPending = true
   runCheck()
-  setInterval(runCheck, RECHECK_INTERVAL_MS)
+}
+
+// Settings menu's auto-update toggle. Persists regardless of packaged
+// state (harmless in dev, and keeps the setting consistent if the same
+// userData folder is ever inspected), but only actually starts/stops real
+// checks when packaged.
+export function setAutoUpdateEnabled(enabled) {
+  const settings = persistAutoUpdateEnabled(enabled)
+  if (app.isPackaged) {
+    if (enabled) {
+      runCheck()
+      startPeriodicChecks()
+    } else {
+      stopPeriodicChecks()
+    }
+  }
+  return settings
 }
