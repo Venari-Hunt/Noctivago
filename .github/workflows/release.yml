@@ -20,6 +20,31 @@ jobs:
 
       - run: npm ci
 
+      # electron-builder uploads the NSIS installer and its .blockmap as two
+      # separate files in parallel, and each one independently checks
+      # "does the GitHub release for this tag exist yet, if not create it."
+      # When the release doesn't exist yet, both checks can land at the same
+      # instant and both try to create it - GitHub accepts the first and
+      # 422s the second ("already_exists"), which either kills the whole
+      # publish step (losing whichever upload hadn't finished) or, worse,
+      # silently drops that upload while electron-builder still exits 0.
+      # Pre-creating the release here removes the race entirely: by the time
+      # electron-builder's uploads run, the release unambiguously already
+      # exists, so both just attach their file to it instead of racing to
+      # create it. Confirmed necessary the hard way - v0.1.4 hit this twice,
+      # once failing outright and once silently shipping a release with only
+      # the blockmap and no actual installer.
+      - name: Pre-create GitHub release (avoids electron-builder's parallel-upload race)
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title $tag --notes ""
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - run: npm run release:win
         env:
           # Auto-provided by GitHub Actions, scoped to this repo only via the
