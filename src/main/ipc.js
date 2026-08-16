@@ -5,8 +5,9 @@ import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled } from './settings.js'
 import { setAutoUpdateEnabled, checkForUpdatesNow } from './autoUpdate.js'
+import { setTrayEnabled } from './tray.js'
 
 export function registerIpcHandlers() {
   ipcMain.handle('app:isPackaged', () => app.isPackaged)
@@ -14,6 +15,11 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('settings:setAutoUpdateEnabled', (_event, enabled) => setAutoUpdateEnabled(enabled))
   ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
+  ipcMain.handle('settings:setMinimizeToTrayEnabled', (_event, enabled) => {
+    const settings = setMinimizeToTrayEnabled(enabled)
+    setTrayEnabled(enabled)
+    return settings
+  })
 
   ipcMain.handle('library:list', () => library.listSounds())
   ipcMain.handle('library:pickFile', () => library.pickFile())

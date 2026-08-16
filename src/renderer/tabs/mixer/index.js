@@ -255,7 +255,10 @@ async function relinkSound(id) {
   await refreshList()
 }
 
-els.globalPlayPause.addEventListener('click', async () => {
+// Named (not inline) so the tray's "Play / Pause" menu item can trigger
+// exactly the same behavior as clicking the toolbar button, see mount()'s
+// window.noctivago.tray.onTogglePlayPause below.
+async function toggleGlobalPlayback() {
   if (state.playing.size > 0) {
     for (const id of [...state.playing]) stopPlayback(id)
     render()
@@ -266,7 +269,9 @@ els.globalPlayPause.addEventListener('click', async () => {
       if (entry) await startPlayback(id, entry)
     }
   }
-})
+}
+
+els.globalPlayPause.addEventListener('click', toggleGlobalPlayback)
 
 els.globalVolume.addEventListener('input', () => {
   const volume = Number(els.globalVolume.value) / 100
@@ -462,4 +467,7 @@ export function mount(container) {
   els.soundList = container.querySelector('#sound-list')
   els.emptyState = container.querySelector('#empty-state')
   refreshList()
+  // mount() only ever runs once (TabHost lazily mounts each tab a single
+  // time), so this is a one-time listener registration, not a per-mount leak.
+  window.noctivago.tray.onTogglePlayPause(toggleGlobalPlayback)
 }

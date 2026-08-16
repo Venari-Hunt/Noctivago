@@ -9,6 +9,8 @@ import { registerIpcHandlers } from './ipc.js'
 import { getPlaybackPathForId, getLoopClipPathForId } from './library.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
+import { getSettings } from './settings.js'
+import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
 
 log.initialize()
 
@@ -112,19 +114,36 @@ function createWindow() {
     return { action: 'deny' }
   })
 
+  // Only intercepts the close when the user has opted into "keep playing in
+  // the background" via Settings - otherwise this is a no-op and the window
+  // closes/quits exactly like before this feature existed. isAppQuitting()
+  // distinguishes a real quit (tray's Quit item, app.quit() from anywhere)
+  // from just clicking the window's X button, so there's still a real way
+  // to fully exit while the setting is on.
+  win.on('close', (event) => {
+    if (!isAppQuitting() && getSettings().minimizeToTrayEnabled) {
+      event.preventDefault()
+      win.hide()
+    }
+  })
+
   if (process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  return win
 }
 
 app.whenReady().then(() => {
   registerSoundProtocol()
   registerPluginProtocol()
   registerIpcHandlers()
-  createWindow()
+  const win = createWindow()
   initAutoUpdate()
+  initTray(win)
+  setTrayEnabled(getSettings().minimizeToTrayEnabled)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

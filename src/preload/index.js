@@ -7,10 +7,23 @@ const api = {
   isPackaged: () => ipcRenderer.invoke('app:isPackaged'),
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
-    setAutoUpdateEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoUpdateEnabled', enabled)
+    setAutoUpdateEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoUpdateEnabled', enabled),
+    setMinimizeToTrayEnabled: (enabled) => ipcRenderer.invoke('settings:setMinimizeToTrayEnabled', enabled)
   },
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow')
+  },
+  tray: {
+    // The tray's "Play / Pause" menu item has no direct line to renderer
+    // playback state (that's Mixer-only, in tabs/mixer/index.js) - it just
+    // asks the renderer to do what the toolbar's own Play/Pause button
+    // would do. Returns an unsubscribe function, matching the general
+    // pattern for listener-style preload APIs.
+    onTogglePlayPause: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('tray:togglePlayPause', listener)
+      return () => ipcRenderer.removeListener('tray:togglePlayPause', listener)
+    }
   },
   library: {
     list: () => ipcRenderer.invoke('library:list'),

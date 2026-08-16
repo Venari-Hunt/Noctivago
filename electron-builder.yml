@@ -10,6 +10,12 @@ asarUnpack:
 extraResources:
   - from: plugins
     to: plugins
+  # directories.buildResources (above) only feeds build-time assets like the
+  # installer icon - it isn't copied into the shipped app for runtime use on
+  # its own, so the system tray icon needs its own explicit entry here (see
+  # src/main/tray.js for how it's read back via process.resourcesPath).
+  - from: resources/tray-icon.png
+    to: tray-icon.png
 win:
   target: nsis
 nsis:
