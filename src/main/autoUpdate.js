@@ -28,15 +28,27 @@ autoUpdater.logger = log
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
 
+// Ambient-sound apps tend to get left running for hours or days at a
+// stretch - the original startup-only check meant anyone who doesn't
+// happen to restart for some other reason could sit on an old version
+// indefinitely without ever learning a new one shipped. Re-checking every
+// few hours closes that gap without being excessive.
+const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
+
 export function initAutoUpdate() {
   // electron-updater only makes sense for an installed, packaged app - it
   // has no meaningful feed to check against a dev build, and would just
   // error on every `npm run dev` startup otherwise.
   if (!app.isPackaged) return
 
-  log.info(`Auto-update: checking (current version ${app.getVersion()}, token present: ${Boolean(__UPDATE_TOKEN__)})`)
+  // Tracks the version the user already clicked "Not now" on, so the
+  // periodic re-check doesn't nag them with the same prompt every few
+  // hours - only a genuinely newer version (or the next app restart, which
+  // resets this) prompts again.
+  let dismissedVersion = null
 
   autoUpdater.on('update-available', async (info) => {
+    if (info.version === dismissedVersion) return
     const { response } = await dialog.showMessageBox({
       type: 'info',
       buttons: ['Download', 'Not now'],
@@ -46,7 +58,11 @@ export function initAutoUpdate() {
       message: `Noctívago ${info.version} is available (you have ${app.getVersion()}).`,
       detail: 'Download it now? It will install automatically and restart the app once the download finishes.'
     })
-    if (response === 0) autoUpdater.downloadUpdate()
+    if (response === 0) {
+      autoUpdater.downloadUpdate()
+    } else {
+      dismissedVersion = info.version
+    }
   })
 
   // No second confirmation here on purpose - the one Download? prompt above
@@ -72,5 +88,11 @@ export function initAutoUpdate() {
     log.error('Auto-update check failed', err)
   })
 
-  autoUpdater.checkForUpdates().catch((err) => log.error('Auto-update check failed', err))
+  const runCheck = () => {
+    log.info(`Auto-update: checking (current version ${app.getVersion()}, token present: ${Boolean(__UPDATE_TOKEN__)})`)
+    autoUpdater.checkForUpdates().catch((err) => log.error('Auto-update check failed', err))
+  }
+
+  runCheck()
+  setInterval(runCheck, RECHECK_INTERVAL_MS)
 }
