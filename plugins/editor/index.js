@@ -99,7 +99,7 @@ export default class EditorPlugin {
         </div>
         <div id="editor-panel" class="editor-panel hidden">
           <h3 id="editor-sound-name"></h3>
-          <canvas id="editor-canvas" width="640" height="160" title="Scroll to zoom, shift+scroll or middle-drag to pan"></canvas>
+          <canvas id="editor-canvas" width="640" height="160" title="Scroll to zoom, shift+scroll or middle-drag to pan. Right-click-drag inside the trimmed region to move it."></canvas>
           <div id="editor-scrollbar" class="editor-scrollbar">
             <div id="editor-scrollbar-thumb" class="editor-scrollbar-thumb"></div>
           </div>
@@ -114,6 +114,7 @@ export default class EditorPlugin {
           <div class="editor-times">
             <label>Start <input id="editor-start-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
             <label>End <input id="editor-end-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
+            <label>Length <input id="editor-length-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
           </div>
           <div class="editor-crossfade">
             <label>
@@ -184,6 +185,7 @@ export default class EditorPlugin {
       loopToggle: container.querySelector('#editor-loop-toggle'),
       startInput: container.querySelector('#editor-start-input'),
       endInput: container.querySelector('#editor-end-input'),
+      lengthInput: container.querySelector('#editor-length-input'),
       crossfade: container.querySelector('#editor-crossfade'),
       crossfadeValue: container.querySelector('#editor-crossfade-value'),
       highpass: container.querySelector('#editor-highpass'),
@@ -262,6 +264,7 @@ export default class EditorPlugin {
 
     this.els.startInput.addEventListener('change', () => this.applyManualLoopPoints())
     this.els.endInput.addEventListener('change', () => this.applyManualLoopPoints())
+    this.els.lengthInput.addEventListener('change', () => this.applyManualLength())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
 
@@ -412,6 +415,7 @@ export default class EditorPlugin {
   updateLoopTimeInputs(loopStart, loopEnd) {
     this.els.startInput.value = formatDuration(loopStart)
     this.els.endInput.value = formatDuration(loopEnd)
+    this.els.lengthInput.value = formatDuration(loopEnd - loopStart)
   }
 
   applyManualLoopPoints() {
@@ -422,6 +426,22 @@ export default class EditorPlugin {
     this.loopEditorController.setLoopPoints(start, end)
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     this.updateLoopTimeInputs(loopStart, loopEnd)
+    this.updateSaveButtonState()
+  }
+
+  // Resizes the region from its current Start (a fixed anchor), rather than
+  // e.g. keeping it centered - matches Start/End's own "type an exact
+  // value" mental model, just parameterized by length instead of an
+  // endpoint. Clamped to the waveform's own duration the same way
+  // LoopEditor.setLoopPoints already clamps any external call.
+  applyManualLength() {
+    if (!this.loopEditorController) return
+    const length = parseDuration(this.els.lengthInput.value)
+    if (length == null || length <= 0) return
+    const { loopStart } = this.loopEditorController.getLoopPoints()
+    this.loopEditorController.setLoopPoints(loopStart, loopStart + length)
+    const updated = this.loopEditorController.getLoopPoints()
+    this.updateLoopTimeInputs(updated.loopStart, updated.loopEnd)
     this.updateSaveButtonState()
   }
 

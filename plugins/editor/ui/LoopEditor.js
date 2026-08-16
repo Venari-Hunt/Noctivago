@@ -27,6 +27,9 @@ export function createLoopEditorController(canvas) {
   let panStartX = 0
   let panStartViewStart = 0
   let panStartViewEnd = 0
+  let moveRegionStartClientX = 0
+  let moveRegionStartLoopStart = 0
+  let moveRegionStartLoopEnd = 0
   let lastPointerClientX = 0
   let edgeScrollDirection = 0
   let edgeScrollRafId = null
@@ -114,6 +117,28 @@ export function createLoopEditorController(canvas) {
 
     const rect = canvas.getBoundingClientRect()
     const x = evt.clientX - rect.left
+
+    // Right-click-drag anywhere inside the trimmed region slides the whole
+    // loop (both loopStart and loopEnd, same offset) instead of moving just
+    // one edge - a distinct button from the left-click handle drags below,
+    // so there's no ambiguity between the two. preventDefault suppresses
+    // the browser's native right-click context menu, which has no
+    // legitimate use on this canvas anyway (see the canvas-level
+    // 'contextmenu' listener, which also always suppresses it - mousedown
+    // alone isn't enough since the menu itself opens on mouseup).
+    if (evt.button === 2) {
+      const startX = timeToX(loopStart, rect.width)
+      const endX = timeToX(loopEnd, rect.width)
+      if (x >= startX && x <= endX) {
+        evt.preventDefault()
+        dragging = 'moveRegion'
+        moveRegionStartClientX = evt.clientX
+        moveRegionStartLoopStart = loopStart
+        moveRegionStartLoopEnd = loopEnd
+      }
+      return
+    }
+
     const candidates = [
       { type: 'start', dist: Math.abs(x - timeToX(loopStart, rect.width)) },
       { type: 'end', dist: Math.abs(x - timeToX(loopEnd, rect.width)) }
@@ -146,6 +171,30 @@ export function createLoopEditorController(canvas) {
       playhead = t
       redraw()
       onScrub(t)
+    } else if (dragging === 'moveRegion') {
+      // Pixel-delta based (mirrors 'pan' above), not a difference of two
+      // xToTime() calls - the region's own length must stay exactly fixed
+      // through the drag, which a time-delta computed against a viewport
+      // that might have shifted mid-drag (edge-scroll) could subtly throw
+      // off. Clamped as a rigid pair: hitting either bound stops the whole
+      // region rather than letting it shrink.
+      const span = viewEnd - viewStart
+      const deltaTime = ((clientX - moveRegionStartClientX) / rect.width) * span
+      const length = moveRegionStartLoopEnd - moveRegionStartLoopStart
+      let newStart = moveRegionStartLoopStart + deltaTime
+      let newEnd = moveRegionStartLoopEnd + deltaTime
+      if (newStart < 0) {
+        newStart = 0
+        newEnd = length
+      }
+      if (newEnd > duration) {
+        newEnd = duration
+        newStart = duration - length
+      }
+      loopStart = newStart
+      loopEnd = newEnd
+      redraw()
+      onChange({ loopStart, loopEnd })
     }
   }
 
@@ -197,7 +246,7 @@ export function createLoopEditorController(canvas) {
 
     lastPointerClientX = evt.clientX
     updateDragValue(evt.clientX)
-    if (dragging === 'start' || dragging === 'end' || dragging === 'playhead') {
+    if (dragging === 'start' || dragging === 'end' || dragging === 'playhead' || dragging === 'moveRegion') {
       updateEdgeScroll(evt.clientX)
     }
   }
@@ -234,12 +283,17 @@ export function createLoopEditorController(canvas) {
     applyViewport(newStart, newStart + newSpan)
   }
 
+  function preventContextMenu(evt) {
+    evt.preventDefault()
+  }
+
   canvas.addEventListener('mousedown', pointerDown)
   window.addEventListener('mousemove', pointerMove)
   window.addEventListener('mouseup', pointerUp)
   canvas.addEventListener('wheel', handleWheel, { passive: false })
   window.addEventListener('keydown', handleCtrlKeyChange)
   window.addEventListener('keyup', handleCtrlKeyChange)
+  canvas.addEventListener('contextmenu', preventContextMenu)
 
   return {
     load(totalDuration, initialLoopStart, initialLoopEnd) {
@@ -297,6 +351,7 @@ export function createLoopEditorController(canvas) {
       canvas.removeEventListener('wheel', handleWheel)
       window.removeEventListener('keydown', handleCtrlKeyChange)
       window.removeEventListener('keyup', handleCtrlKeyChange)
+      canvas.removeEventListener('contextmenu', preventContextMenu)
     }
   }
 }
