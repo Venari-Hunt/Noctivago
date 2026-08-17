@@ -142,6 +142,7 @@ function buildEchoFilter(delayMs, decay) {
 // gain parameter at all and always shape the signal whenever selected, so
 // they're never skipped just for being "neutral."
 function buildEqBandFilter(band) {
+  if (band.muted) return null
   const type = band.type ?? 'peaking'
   const { freqHz: f, q, gainDb: g } = band
   switch (type) {

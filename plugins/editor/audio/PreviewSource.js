@@ -16,9 +16,11 @@ const MAX_ECHO_DELAY_SECONDS = 2.0
 // 'off' is a pseudo-type (not a real BiquadFilterNode type) - mapped to
 // 'allpass' (leaves the amplitude spectrum unchanged, a true no-op for
 // tone-shaping) rather than dynamically rewiring the fixed eqNodes chain
-// per band. Mirrors SoundSource.js's identical helper.
-function eqNodeType(type) {
-  return type === 'off' ? 'allpass' : (type ?? 'peaking')
+// per band. A muted band takes the same bypass regardless of its own real
+// type, non-destructively (mute never touches band.type). Mirrors
+// SoundSource.js's identical helper.
+function eqNodeType(band) {
+  return band.muted || band.type === 'off' ? 'allpass' : (band.type ?? 'peaking')
 }
 
 // One playback "voice": its own <audio> element and full filter chain, so
@@ -104,7 +106,7 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
   voice.eqNodes.forEach((node, i) => {
     const band = eq[i]
     if (!band) return
-    const newType = eqNodeType(band.type)
+    const newType = eqNodeType(band)
     if (node.type !== newType) node.type = newType
     node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
     node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)

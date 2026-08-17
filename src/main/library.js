@@ -68,7 +68,7 @@ function checkStatus(entry) {
 // unchanged, a true no-op for tone-shaping purposes without needing to
 // dynamically rewire the live filter chain per band.
 function defaultEqBands() {
-  return [60, 150, 400, 1000, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1, type: 'peaking' }))
+  return [60, 150, 400, 1000, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1, type: 'peaking', muted: false }))
 }
 
 // Backfills fields added after some entries already existed (tags, dateAdded,

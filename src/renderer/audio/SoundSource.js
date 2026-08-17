@@ -25,10 +25,13 @@ const MAX_RECOVERY_ATTEMPTS = 3
 
 // 'off' is a pseudo-type (not a real BiquadFilterNode type) - see the
 // eqNodes comment in the constructor below for why 'allpass' is the right
-// stand-in. Shared by both construction and live updates (setFilters) so
-// they can't drift.
-function eqNodeType(type) {
-  return type === 'off' ? 'allpass' : (type ?? 'peaking')
+// stand-in. A muted band (see the Remix EQ's per-band Mute/Solo controls)
+// takes the same 'allpass' bypass, independent of whatever real type it's
+// set to - muting is meant to be non-destructive, so it never touches
+// band.type itself, only whether the node actually applies it. Shared by
+// both construction and live updates (setFilters) so they can't drift.
+function eqNodeType(band) {
+  return band.muted || band.type === 'off' ? 'allpass' : (band.type ?? 'peaking')
 }
 
 export class LocalFileSoundSource {
@@ -96,7 +99,7 @@ export class LocalFileSoundSource {
     // and the baked clip agree.
     this.eqNodes = (this.filters.eq ?? []).map((band) => {
       const node = engine.context.createBiquadFilter()
-      node.type = eqNodeType(band.type)
+      node.type = eqNodeType(band)
       node.frequency.value = band.freqHz
       node.Q.value = band.q
       node.gain.value = band.gainDb
@@ -243,7 +246,7 @@ export class LocalFileSoundSource {
       // like the others below. Only actually reassigned when it changes,
       // since setting it unconditionally every call would reset the filter's
       // internal state (a small click) even when nothing changed.
-      const newType = eqNodeType(band.type)
+      const newType = eqNodeType(band)
       if (node.type !== newType) node.type = newType
       node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
       node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)

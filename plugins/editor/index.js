@@ -24,7 +24,7 @@ const DEFAULT_CROSSFADE_MS = 200
 // shared array, since callers mutate the objects they get back (the EQ
 // editor controller clones on load() too, but this is cheap insurance).
 function defaultEqBands() {
-  return [60, 150, 400, 1000, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1, type: 'peaking' }))
+  return [60, 150, 400, 1000, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1, type: 'peaking', muted: false }))
 }
 
 const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: defaultEqBands() }
@@ -252,8 +252,10 @@ export default class EditorPlugin {
                 <span>Q</span>
                 <input id="editor-eq-q" type="number" min="0.1" max="10" step="0.1" />
               </label>
+              <button id="editor-eq-mute" class="editor-eq-toggle-btn" type="button" title="Mute this band (keeps its settings, just stops applying it)">Mute</button>
+              <button id="editor-eq-solo" class="editor-eq-toggle-btn" type="button" title="Solo this band (hear only its effect, for auditioning while tuning)">Solo</button>
             </div>
-            <p class="editor-eq-hint">Drag a node on the graph to shape a band (hold Ctrl while dragging for finer control), or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it to default.</p>
+            <p class="editor-eq-hint">Drag a node on the graph to shape a band (hold Ctrl while dragging for finer control), or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it to default. Mute silences a band without losing its settings; Solo hears only that band while tuning.</p>
           </div>
           <div class="editor-presets">
             <span class="editor-presets-label">Presets</span>
@@ -324,6 +326,8 @@ export default class EditorPlugin {
       eqFreq: container.querySelector('#editor-eq-freq'),
       eqGain: container.querySelector('#editor-eq-gain'),
       eqQ: container.querySelector('#editor-eq-q'),
+      eqMute: container.querySelector('#editor-eq-mute'),
+      eqSolo: container.querySelector('#editor-eq-solo'),
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
       save: container.querySelector('#editor-save'),
@@ -439,6 +443,25 @@ export default class EditorPlugin {
 
     this.els.eqCompareA.addEventListener('click', () => this.switchEqCompareSlot('A'))
     this.els.eqCompareB.addEventListener('click', () => this.switchEqCompareSlot('B'))
+
+    this.els.eqMute.addEventListener('click', () => {
+      const idx = this.eqEditorController.getSelectedIndex()
+      const band = this.eqEditorController.getBands()[idx]
+      if (!band) return
+      this.eqEditorController.setSelectedBand({ muted: !band.muted })
+      this.applyEqControls()
+    })
+
+    // Toggle: clicking Solo on the already-soloed band un-solos it (back to
+    // "every band plays normally"), clicking it on a different band moves
+    // solo there instead - only one band can be soloed at a time.
+    this.els.eqSolo.addEventListener('click', () => {
+      const idx = this.eqEditorController.getSelectedIndex()
+      if (idx === -1) return
+      const current = this.eqEditorController.getSoloIndex()
+      this.eqEditorController.setSoloIndex(current === idx ? -1 : idx)
+      this.applyEqControls()
+    })
 
     this.els.resetFilters.addEventListener('click', () => {
       this.setFilterSliders(NEUTRAL_FILTERS)
@@ -687,6 +710,22 @@ export default class EditorPlugin {
     }
   }
 
+  // What the *live preview* should actually hear, distinct from
+  // currentFilters() (the real, saved-and-savable state) - a soloed band
+  // bypasses every other band for the preview only, without touching their
+  // real .muted values, since Solo is an audition aid that's never part of
+  // what gets persisted or baked. The soloed band itself is force-unmuted so
+  // soloing still lets you hear it even if it happens to be muted for real.
+  previewFilters() {
+    const filters = this.currentFilters()
+    const soloIndex = this.eqEditorController.getSoloIndex()
+    if (soloIndex === -1) return filters
+    return {
+      ...filters,
+      eq: filters.eq.map((band, i) => ({ ...band, muted: i !== soloIndex }))
+    }
+  }
+
   // Reflects the EQ editor's currently-selected node in the precision-entry
   // fields (see EqEditor.js's setSelectedBand for the reverse direction) -
   // called whenever the selection or its values change, whatever the source
@@ -700,6 +739,8 @@ export default class EditorPlugin {
     this.els.eqFreq.value = String(Math.round(band.freqHz))
     this.els.eqGain.value = String(band.gainDb)
     this.els.eqQ.value = String(band.q)
+    this.els.eqMute.classList.toggle('editor-eq-mute-active', Boolean(band.muted))
+    this.els.eqSolo.classList.toggle('editor-eq-solo-active', this.eqEditorController.getSoloIndex() === index)
   }
 
   applyEqFieldsToSelectedBand() {
@@ -716,7 +757,7 @@ export default class EditorPlugin {
   // since EQ is just another part of the same filters bag now.
   applyEqControls() {
     this.updateEqFieldsFromSelection()
-    this.previewSource?.setFilters(this.currentFilters())
+    this.previewSource?.setFilters(this.previewFilters())
     this.updateSaveButtonState()
   }
 
@@ -762,7 +803,7 @@ export default class EditorPlugin {
   applyFilterControls() {
     const filters = this.currentFilters()
     this.updateFilterLabels(filters)
-    this.previewSource?.setFilters(filters)
+    this.previewSource?.setFilters(this.previewFilters())
     this.updateSaveButtonState()
   }
 
@@ -870,7 +911,7 @@ export default class EditorPlugin {
         gainDb: filters.gainDb ?? 0,
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0,
-        eq: (filters.eq ?? defaultEqBands()).map((b) => ({ freqHz: b.freqHz, gainDb: b.gainDb, q: b.q, type: b.type ?? 'peaking' }))
+        eq: (filters.eq ?? defaultEqBands()).map((b) => ({ freqHz: b.freqHz, gainDb: b.gainDb, q: b.q, type: b.type ?? 'peaking', muted: b.muted ?? false }))
       },
       crossfadeMs,
       speedPitch: {
@@ -1028,7 +1069,7 @@ export default class EditorPlugin {
     const loopStart = entry.loopStart
     const loopEnd = entry.loopEnd ?? duration
     this.previewSource.setLoopPoints(loopStart, loopEnd)
-    this.previewSource.setFilters(filters)
+    this.previewSource.setFilters(this.previewFilters())
     this.previewSource.audioEl.currentTime = loopStart
     this.loopEditorController.load(duration, loopStart, loopEnd)
     this.updateLoopTimeInputs(loopStart, loopEnd)

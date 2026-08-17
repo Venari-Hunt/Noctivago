@@ -142,7 +142,7 @@ function drawLiveSpectrum(ctx, width, height, freqData, sampleRate) {
   ctx.fill()
 }
 
-function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum) {
+function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -196,12 +196,19 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum) {
     ctx.stroke()
   }
 
+  // A band renders dimmed whenever it's not actually contributing to the
+  // sound right now - either muted directly, or bypassed because a
+  // *different* band is soloed (soloIndex overrides every other band's own
+  // mute state for audition purposes, see index.js's previewFilters()) - so
+  // the graph stays an honest reflection of what's audible at a glance,
+  // without needing to select each node to check.
   bands.forEach((band, i) => {
+    const bypassed = band.muted || (soloIndex !== -1 && soloIndex !== i)
     const x = freqToX(band.freqHz, width)
     const y = gainToY(band.gainDb, height)
     ctx.beginPath()
     ctx.arc(x, y, i === selectedIndex ? 8 : 6, 0, Math.PI * 2)
-    ctx.fillStyle = i === selectedIndex ? '#f7768e' : '#7aa2f7'
+    ctx.fillStyle = bypassed ? 'rgba(122, 137, 176, 0.35)' : i === selectedIndex ? '#f7768e' : '#7aa2f7'
     ctx.fill()
     ctx.strokeStyle = '#1a1b26'
     ctx.lineWidth = 1.5
@@ -212,6 +219,11 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum) {
 export function createEqEditorController(canvas) {
   let bands = []
   let selectedIndex = -1
+  // -1 means "no band soloed." Preview-only, per-editing-session state -
+  // deliberately not part of the bands array (unlike .muted, which is a
+  // real, persisted per-band setting) since soloing is an audition aid, not
+  // something that should survive a save or be baked into the sound.
+  let soloIndex = -1
   let dragging = false
   // "Virtual" drag position in canvas-pixel space, decoupled from the raw
   // cursor position once Ctrl fine-tune is in play (see pointerMove) - starts
@@ -228,7 +240,7 @@ export function createEqEditorController(canvas) {
   let onDoubleClick = () => {}
 
   function redraw() {
-    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum)
+    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex)
   }
 
   // Interaction math (hit-testing, drag, wheel) works in the canvas's
@@ -375,6 +387,11 @@ export function createEqEditorController(canvas) {
       // showing stale data until the new one resolves.
       bandEnergy = null
       liveSpectrum = null
+      // Solo is scoped to "the arrangement currently being edited" - any
+      // fresh load (a new sound, Reset EQ, an A/B Compare slot switch) is a
+      // new arrangement, so carrying a stale solo forward would silently
+      // keep other bands bypassed with no visible reason why.
+      soloIndex = -1
       redraw()
     },
     getBands,
@@ -410,6 +427,17 @@ export function createEqEditorController(canvas) {
     },
     getSelectedIndex() {
       return selectedIndex
+    },
+    getSoloIndex() {
+      return soloIndex
+    },
+    // -1 clears solo. Setting it to an already-soloed index is a valid
+    // no-op call (the toggle behavior itself lives in index.js's click
+    // handler, which decides whether to pass -1 or the clicked index).
+    setSoloIndex(index) {
+      if (index < -1 || index >= bands.length) return
+      soloIndex = index
+      redraw()
     },
     setSelectedIndex(index) {
       if (index < -1 || index >= bands.length) return
