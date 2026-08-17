@@ -14,7 +14,18 @@ const FREQ_MAX = 20000
 const GAIN_MIN = -24
 const GAIN_MAX = 24
 export const Q_MIN = 0.1
-export const Q_MAX = 10
+// Was 10 - raised per direct feedback ("Feels like nodes Q value cap at 10
+// is too little"). Checked the FL Studio "Fruity Parametric EQ 2" reference
+// first rather than just picking a bigger number: its own Q/bandwidth
+// control isn't even the same shape as this one - a normalized 0-1 knob
+// through its own internal curve, not a plain numeric Q - so there's no
+// literal reference ceiling to copy. Neither BiquadFilterNode.Q nor
+// ffmpeg's width_type=q have a hardcoded max either. Settled on 20 as a
+// reasoned, moderate ceiling instead - a common real-world Q cap in
+// professional EQs (FabFilter Pro-Q, Waves), enough headroom for genuinely
+// surgical narrow-band work without drifting into a range so narrow it's
+// no longer musically useful.
+export const Q_MAX = 20
 const HIT_PX = 14
 const Q_WHEEL_STEP = 0.08
 // A new node's starting point - a neutral peaking band, roughly centered on

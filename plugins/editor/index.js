@@ -287,7 +287,7 @@ export default class EditorPlugin {
               </label>
               <label>
                 <span>Q</span>
-                <input id="editor-eq-q" type="number" min="0.1" max="10" step="0.1" />
+                <input id="editor-eq-q" type="number" min="0.1" max="20" step="0.1" />
               </label>
               <button id="editor-eq-mute" class="editor-eq-toggle-btn" type="button" title="Mute this band (keeps its settings, just stops applying it)">Mute</button>
               <button id="editor-eq-solo" class="editor-eq-toggle-btn" type="button" title="Solo this band (hear only its effect, for auditioning while tuning)">Solo</button>
