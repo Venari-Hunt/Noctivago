@@ -311,12 +311,26 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     // trimmed clip at a random gap (minGapSeconds-maxGapSeconds of silence
     // between repeats) with a random pitch shift each time (minPitchSemitones-
     // maxPitchSemitones; both at 0 means "fully random" rather than "no
-    // shift" - see plugins/editor/index.js's Playback Mode section, the only
-    // place this gets edited). Purely a playback-time schedule, never baked
-    // into the clip itself - see effectiveCrossfadeSeconds below for the one
-    // thing about scatter mode that *does* affect baking.
+    // shift"), a random volume scale each time (minVolume-maxVolume, both at
+    // 1 means "always full volume" - unlike pitch, 0 isn't a neutral value
+    // for volume, so there's no equivalent "both 0" special case here), and
+    // an optional fade-in/fade-out envelope per shot (fadeInMs/fadeOutMs,
+    // both 0 by default = today's hard on/off) - see plugins/editor/index.js's
+    // Playback Mode section, the only place this gets edited. Purely a
+    // playback-time schedule, never baked into the clip itself - see
+    // effectiveCrossfadeSeconds below for the one thing about scatter mode
+    // that *does* affect baking.
     playMode: 'loop',
-    scatter: { minGapSeconds: 5, maxGapSeconds: 35, minPitchSemitones: 0, maxPitchSemitones: 0 },
+    scatter: {
+      minGapSeconds: 5,
+      maxGapSeconds: 35,
+      minPitchSemitones: 0,
+      maxPitchSemitones: 0,
+      minVolume: 1,
+      maxVolume: 1,
+      fadeInMs: 0,
+      fadeOutMs: 0
+    },
     loopClipReady: false,
     loopClipStart: null,
     loopClipEnd: null,

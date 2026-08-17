@@ -194,7 +194,27 @@ export default class EditorPlugin {
               <input id="editor-scatter-pitch-max" type="range" min="-12" max="12" value="0" step="1" />
               <span id="editor-scatter-pitch-max-value" class="editor-filter-value">0 st</span>
             </label>
-            <p class="editor-scatter-hint">Each replay picks a random gap and pitch within these ranges. Leave both pitch bounds at 0 for a fully random pitch each time.</p>
+            <label>
+              <span>Volume (min)</span>
+              <input id="editor-scatter-volume-min" type="range" min="0" max="100" value="100" step="1" />
+              <span id="editor-scatter-volume-min-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
+              <span>Volume (max)</span>
+              <input id="editor-scatter-volume-max" type="range" min="0" max="100" value="100" step="1" />
+              <span id="editor-scatter-volume-max-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
+              <span>Fade in</span>
+              <input id="editor-scatter-fade-in" type="number" min="0" max="10000" step="50" value="0" />
+              <span class="editor-filter-value">ms</span>
+            </label>
+            <label>
+              <span>Fade out</span>
+              <input id="editor-scatter-fade-out" type="number" min="0" max="10000" step="50" value="0" />
+              <span class="editor-filter-value">ms</span>
+            </label>
+            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, and volume within these ranges. Leave both pitch bounds at 0 for a fully random pitch each time; leave both volume bounds at 100% for no volume variation. Fade in/out eases each shot's start/end instead of a hard cut.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -353,6 +373,12 @@ export default class EditorPlugin {
       scatterPitchMinValue: container.querySelector('#editor-scatter-pitch-min-value'),
       scatterPitchMax: container.querySelector('#editor-scatter-pitch-max'),
       scatterPitchMaxValue: container.querySelector('#editor-scatter-pitch-max-value'),
+      scatterVolumeMin: container.querySelector('#editor-scatter-volume-min'),
+      scatterVolumeMinValue: container.querySelector('#editor-scatter-volume-min-value'),
+      scatterVolumeMax: container.querySelector('#editor-scatter-volume-max'),
+      scatterVolumeMaxValue: container.querySelector('#editor-scatter-volume-max-value'),
+      scatterFadeIn: container.querySelector('#editor-scatter-fade-in'),
+      scatterFadeOut: container.querySelector('#editor-scatter-fade-out'),
       speed: container.querySelector('#editor-speed'),
       speedValue: container.querySelector('#editor-speed-value'),
       pitch: container.querySelector('#editor-pitch'),
@@ -514,6 +540,10 @@ export default class EditorPlugin {
     this.els.scatterGapMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterPitchMin.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterPitchMax.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterVolumeMin.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterVolumeMax.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterFadeIn.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterFadeOut.addEventListener('input', () => this.applyScatterControls())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
 
@@ -1079,20 +1109,39 @@ export default class EditorPlugin {
       minGapSeconds: Number(this.els.scatterGapMin.value),
       maxGapSeconds: Number(this.els.scatterGapMax.value),
       minPitchSemitones: Number(this.els.scatterPitchMin.value),
-      maxPitchSemitones: Number(this.els.scatterPitchMax.value)
+      maxPitchSemitones: Number(this.els.scatterPitchMax.value),
+      minVolume: Number(this.els.scatterVolumeMin.value) / 100,
+      maxVolume: Number(this.els.scatterVolumeMax.value) / 100,
+      fadeInMs: Number(this.els.scatterFadeIn.value),
+      fadeOutMs: Number(this.els.scatterFadeOut.value)
     }
   }
 
-  setScatterControls({ minGapSeconds = 5, maxGapSeconds = 35, minPitchSemitones = 0, maxPitchSemitones = 0 }) {
+  setScatterControls({
+    minGapSeconds = 5,
+    maxGapSeconds = 35,
+    minPitchSemitones = 0,
+    maxPitchSemitones = 0,
+    minVolume = 1,
+    maxVolume = 1,
+    fadeInMs = 0,
+    fadeOutMs = 0
+  }) {
     this.els.scatterGapMin.value = String(minGapSeconds)
     this.els.scatterGapMax.value = String(maxGapSeconds)
     this.els.scatterPitchMin.value = String(minPitchSemitones)
     this.els.scatterPitchMax.value = String(maxPitchSemitones)
+    this.els.scatterVolumeMin.value = String(Math.round(minVolume * 100))
+    this.els.scatterVolumeMax.value = String(Math.round(maxVolume * 100))
+    this.els.scatterFadeIn.value = String(fadeInMs)
+    this.els.scatterFadeOut.value = String(fadeOutMs)
   }
 
-  updateScatterLabels({ minPitchSemitones = 0, maxPitchSemitones = 0 }) {
+  updateScatterLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1 }) {
     this.els.scatterPitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
     this.els.scatterPitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
+    this.els.scatterVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
+    this.els.scatterVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
   }
 
   applyPlayModeControl() {
@@ -1172,7 +1221,11 @@ export default class EditorPlugin {
         minGapSeconds: scatter.minGapSeconds ?? 5,
         maxGapSeconds: scatter.maxGapSeconds ?? 35,
         minPitchSemitones: scatter.minPitchSemitones ?? 0,
-        maxPitchSemitones: scatter.maxPitchSemitones ?? 0
+        maxPitchSemitones: scatter.maxPitchSemitones ?? 0,
+        minVolume: scatter.minVolume ?? 1,
+        maxVolume: scatter.maxVolume ?? 1,
+        fadeInMs: scatter.fadeInMs ?? 0,
+        fadeOutMs: scatter.fadeOutMs ?? 0
       }
     })
   }
@@ -1299,7 +1352,16 @@ export default class EditorPlugin {
     this.updateSpeedPitchLabels(speedPitch)
 
     const playMode = entry.playMode ?? 'loop'
-    const scatter = entry.scatter ?? { minGapSeconds: 5, maxGapSeconds: 35, minPitchSemitones: 0, maxPitchSemitones: 0 }
+    const scatter = entry.scatter ?? {
+      minGapSeconds: 5,
+      maxGapSeconds: 35,
+      minPitchSemitones: 0,
+      maxPitchSemitones: 0,
+      minVolume: 1,
+      maxVolume: 1,
+      fadeInMs: 0,
+      fadeOutMs: 0
+    }
     this.setPlayModeControls(playMode)
     this.setScatterControls(scatter)
     this.updateScatterLabels(scatter)
