@@ -192,14 +192,26 @@ export class PreviewSource {
     this.outputGainNode.connect(engine.masterGain)
 
     // Real-time spectrum analyzer tap for the Remix EQ graph's live backdrop
-    // (see EqEditor.js's tickSpectrum) - connected in parallel off the same
-    // combined signal both voices feed into, so it reflects whichever voice
-    // is actually audible right now regardless of crossfade state. Never
-    // connected onward - an AnalyserNode doesn't need an output connection
-    // to analyze what's fed into it, this is a pure read tap.
+    // (see EqEditor.js's tickSpectrum). BUG FIX: this used to tap
+    // outputGainNode directly, which carries the preview volume slider's
+    // level AND the play/pause fade envelope (both ramp outputGainNode.gain
+    // itself) - reported directly by the user ("Remix tab general volume
+    // messes with the live spectrogram... it's just a control of volume for
+    // the tab and shouldn't tamper with tools for editing the audio"), and
+    // correct: the spectrum should reflect the audio content/filtering, not
+    // an arbitrary listening level. Fixed by giving both voices a SECOND,
+    // parallel connection into a dedicated fixed-at-1 gain node (never
+    // touched by setVolume/play/pause), tapping the analyser from that
+    // instead - still reflects whichever voice is actually audible
+    // (crossfade state) and any EQ/filter changes (both happen upstream, in
+    // each voice's own filter chain), just decoupled from the volume slider.
+    this.analyserFeedNode = engine.context.createGain()
+    this.analyserFeedNode.gain.value = 1
+    for (const voice of this.voices) voice.crossfadeGain.connect(this.analyserFeedNode)
+
     this.analyserNode = engine.context.createAnalyser()
     this.analyserNode.fftSize = 2048
-    this.outputGainNode.connect(this.analyserNode)
+    this.analyserFeedNode.connect(this.analyserNode)
   }
 
   // LoopEditor's playhead tracking and manual currentTime pokes only ever
@@ -383,6 +395,7 @@ export class PreviewSource {
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     for (const voice of this.voices) disposeVoice(voice)
     this.outputGainNode.disconnect()
+    this.analyserFeedNode.disconnect()
     this.analyserNode.disconnect()
   }
 }
