@@ -113,6 +113,7 @@ body {
 
 .tab-sticky-panel {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -571,10 +572,6 @@ main {
   gap: 8px;
   justify-content: flex-end;
   margin-top: 16px;
-}
-
-.spacer {
-  flex: 1;
 }
 
 .preset-save-row {

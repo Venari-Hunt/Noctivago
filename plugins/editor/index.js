@@ -309,11 +309,6 @@ export default class EditorPlugin {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
               Reset filters
             </button>
-            <span class="spacer"></span>
-            <button id="editor-save" class="btn btn-primary btn-icon-text" type="button">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-              <span id="editor-save-label">Save</span>
-            </button>
           </div>
           <p id="editor-save-status" class="editor-save-status"></p>
         </div>
@@ -383,8 +378,6 @@ export default class EditorPlugin {
       eqSolo: container.querySelector('#editor-eq-solo'),
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
-      save: container.querySelector('#editor-save'),
-      saveLabel: container.querySelector('#editor-save-label'),
       saveStatus: container.querySelector('#editor-save-status'),
       scrollTop: container.querySelector('#editor-scroll-top')
     }
@@ -599,12 +592,13 @@ export default class EditorPlugin {
         this.applyFilterControls()
       })
     }
-
-    this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
   }
 
-  // Builds the sticky bar's own contents - Play/Pause, the loop toggle, and
-  // a progress bar/time readout for the trim preview - kept separate from
+  // Builds the sticky bar's own contents - Play/Pause, the loop toggle, a
+  // progress bar/time readout for the trim preview, and Save (moved here
+  // from the bottom of the scrollable panel per direct feedback: "It's
+  // annoying just changing something on the top of the tab and then having
+  // to scroll right to the end just to save") - kept separate from
   // wireControls() above because it's mounted into a different container
   // (the shared #tab-sticky-bar, see TabHost.js's mountSticky), not the
   // scrollable panel body. Only ever called once, same lazy-mount-once
@@ -626,6 +620,10 @@ export default class EditorPlugin {
       <span id="editor-sticky-time" class="editor-sticky-time">0:00 / 0:00</span>
       <input id="editor-sticky-volume" type="range" min="0" max="100" value="${Math.round(this.previewVolume * 100)}" class="editor-sticky-volume" title="Preview volume" />
       <button id="editor-sticky-mute" class="btn btn-svg-icon" type="button" title="Mute">${VOLUME_ICON_SVG}</button>
+      <button id="editor-save" class="btn btn-primary btn-icon-text editor-sticky-save" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span id="editor-save-label">Save</span>
+      </button>
     `
 
     this.els.playPause = container.querySelector('#editor-play-pause')
@@ -634,6 +632,9 @@ export default class EditorPlugin {
     this.els.stickyTime = container.querySelector('#editor-sticky-time')
     this.els.stickyVolume = container.querySelector('#editor-sticky-volume')
     this.els.stickyMute = container.querySelector('#editor-sticky-mute')
+    this.els.save = container.querySelector('#editor-save')
+    this.els.saveLabel = container.querySelector('#editor-save-label')
+    this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
 
     this.els.playPause.addEventListener('click', async () => {
       if (!this.previewSource) return

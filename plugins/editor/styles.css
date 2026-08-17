@@ -156,6 +156,19 @@
   width: 90px;
 }
 
+/* Pushed to the far right of the sticky bar, same spot the spacer used to
+   put it at the bottom of the scrollable panel - Save is a distinct,
+   separate action from the playback cluster to its left. Deliberately NOT
+   flex-shrink:0 - its own text can grow to "Nothing to save" (longer than
+   "Save"), and a past real regression (v0.1.59) showed forcing this
+   specific button to hold its full width crowds a tight row; letting it
+   shrink instead (see main.css's .btn-icon-text comment) is the fix that
+   was already learned once for this exact button. */
+.editor-sticky-save {
+  margin-left: auto;
+  min-width: 0;
+}
+
 .editor-waveform-status {
   margin: 6px 0 0;
   font-size: 11px;
