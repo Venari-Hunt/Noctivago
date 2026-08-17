@@ -33,6 +33,36 @@ const NEW_BAND_DEFAULTS = { freqHz: 1000, gainDb: 0, q: 1, type: 'peaking', slop
 // cross-directory-import reason.
 export const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
 export const STEEP_STAGE_COUNT = 4
+
+// Right-click cycles a node's type through this exact order - matches the
+// precision-fields <select>'s own option order in index.js, so right-click
+// and the dropdown always agree on "next". A per-type color (fill) + 1-2
+// letter initial (drawn inside the node) replace the old binary selected/
+// unselected coloring, so a band's shape is now readable at a glance without
+// selecting it - 'off' has neither (it does nothing, stays the plain dimmed
+// gray the bypassed/muted state already used). 'peaking' keeps the graph's
+// original accent blue since it's the most common/default type.
+const TYPE_CYCLE_ORDER = ['off', 'lowpass', 'highpass', 'bandpass', 'notch', 'lowshelf', 'highshelf', 'peaking']
+const TYPE_COLORS = {
+  peaking: '#7aa2f7',
+  lowpass: '#2dd4bf',
+  highpass: '#ef4444',
+  bandpass: '#34d399',
+  notch: '#fbbf24',
+  lowshelf: '#a78bfa',
+  highshelf: '#22d3ee'
+}
+const TYPE_INITIALS = {
+  peaking: 'PK',
+  lowpass: 'LP',
+  highpass: 'HP',
+  bandpass: 'BP',
+  notch: 'N',
+  lowshelf: 'LS',
+  highshelf: 'HS'
+}
+const NODE_RADIUS = 9
+const NODE_RADIUS_SELECTED = 11
 export function eqBandStageCount(band) {
   return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
 }
@@ -223,7 +253,7 @@ function computeResponseCurve(bands, width, soloIndex) {
   return totalDb
 }
 
-function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, responseCurve) {
+function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, responseCurve, hoveredIndex = -1) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -284,22 +314,60 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloInde
   }
 
   // A band renders dimmed whenever it's not actually contributing to the
-  // sound right now - either muted directly, or bypassed because a
-  // *different* band is soloed (soloIndex overrides every other band's own
-  // mute state for audition purposes, see index.js's previewFilters()) - so
-  // the graph stays an honest reflection of what's audible at a glance,
-  // without needing to select each node to check.
+  // sound right now - muted directly, bypassed because a *different* band is
+  // soloed (soloIndex overrides every other band's own mute state for
+  // audition purposes, see index.js's previewFilters()), or set to 'off'
+  // (a real no-op type, not just visually excluded from the response curve
+  // like before) - so the graph stays an honest reflection of what's
+  // audible at a glance, without needing to select each node to check.
+  // Fill color now encodes the band's own *type* (TYPE_COLORS) rather than
+  // selection state, so every node's shape is readable without clicking it
+  // first - selection instead shows as a bigger radius + a pink ring
+  // (matching the graph's existing accent-highlight color) around the node,
+  // and each node's 1-2 letter initial (TYPE_INITIALS) is drawn on top.
   bands.forEach((band, i) => {
-    const bypassed = band.muted || (soloIndex !== -1 && soloIndex !== i)
+    const type = band.type ?? 'peaking'
+    const bypassed = band.muted || type === 'off' || (soloIndex !== -1 && soloIndex !== i)
     const x = freqToX(band.freqHz, width)
     const y = gainToY(band.gainDb, height)
+    const color = TYPE_COLORS[type] ?? TYPE_COLORS.peaking
+    const isSelected = i === selectedIndex
+    const radius = isSelected ? NODE_RADIUS_SELECTED : NODE_RADIUS
+
+    // Hover bloom - a soft blurred glow behind the node, requested directly
+    // ("When you hover over a node it lights up a little bit with a bloom/
+    // blurred element above it"). A larger, translucent circle drawn with
+    // canvas shadowBlur active gives a soft halo; the crisp node circle
+    // drawn right after (with shadowBlur off) stays sharp-edged on top of it.
+    if (i === hoveredIndex && !bypassed) {
+      ctx.save()
+      ctx.shadowColor = color
+      ctx.shadowBlur = 18
+      ctx.globalAlpha = 0.5
+      ctx.beginPath()
+      ctx.arc(x, y, radius + 2, 0, Math.PI * 2)
+      ctx.fillStyle = color
+      ctx.fill()
+      ctx.restore()
+    }
+
     ctx.beginPath()
-    ctx.arc(x, y, i === selectedIndex ? 8 : 6, 0, Math.PI * 2)
-    ctx.fillStyle = bypassed ? 'rgba(122, 137, 176, 0.35)' : i === selectedIndex ? '#f7768e' : '#7aa2f7'
+    ctx.arc(x, y, radius, 0, Math.PI * 2)
+    ctx.fillStyle = bypassed ? 'rgba(122, 137, 176, 0.35)' : color
     ctx.fill()
-    ctx.strokeStyle = '#1a1b26'
-    ctx.lineWidth = 1.5
+    ctx.strokeStyle = isSelected ? '#f7768e' : '#1a1b26'
+    ctx.lineWidth = isSelected ? 2.5 : 1.5
     ctx.stroke()
+
+    const initials = TYPE_INITIALS[type]
+    if (initials && !bypassed) {
+      ctx.fillStyle = '#1a1b26'
+      ctx.font = 'bold 8px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(initials, x, y + 0.5)
+      ctx.textAlign = 'left'
+      ctx.font = '10px sans-serif'
+    }
   })
 }
 
@@ -323,6 +391,9 @@ export function createEqEditorController(canvas) {
   let bandEnergy = null
   let liveSpectrum = null
   let freqDataBuffer = null
+  // Which node the mouse is currently over, for the hover-bloom effect -
+  // updated by pointerMove whenever it isn't busy dragging (see below).
+  let hoveredIndex = -1
   // Registered via setTrashDropTarget (see index.js) - hit-tested in
   // pointerUp against the real button's own bounding rect, so "drag a node
   // onto the trash can" doesn't need this controller to know anything about
@@ -356,7 +427,7 @@ export function createEqEditorController(canvas) {
 
   function redraw() {
     const { width } = canvas.getBoundingClientRect()
-    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, getResponseCurve(width))
+    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, getResponseCurve(width), hoveredIndex)
   }
 
   // Interaction math (hit-testing, drag, wheel) works in the canvas's
@@ -419,7 +490,19 @@ export function createEqEditorController(canvas) {
   // frame) means holding/releasing Ctrl mid-drag never causes a jump - only
   // the scale of movement going forward changes.
   function pointerMove(evt) {
-    if (!dragging || selectedIndex === -1) return
+    if (!dragging || selectedIndex === -1) {
+      // Not dragging - this move only ever updates hover-bloom state.
+      // Bound at window level (see below, matching drag's own listener), so
+      // this fires for the whole window; nearestBandIndex's own hit-radius
+      // already turns "far from any node" (or off-canvas entirely) into -1.
+      const { x, y, width, height } = eventPos(evt)
+      const idx = nearestBandIndex(x, y, width, height)
+      if (idx !== hoveredIndex) {
+        hoveredIndex = idx
+        redraw()
+      }
+      return
+    }
     const { x, y, width, height } = eventPos(evt)
     const scale = evt.ctrlKey ? FINE_TUNE_SCALE : 1
     dragVirtualX = Math.min(Math.max(dragVirtualX + (x - lastMouseX) * scale, 0), width)
@@ -516,6 +599,28 @@ export function createEqEditorController(canvas) {
     onChange(getBands(), selectedIndex)
   }
 
+  // Right-click cycles a node's type through TYPE_CYCLE_ORDER, wrapping
+  // around - requested directly ("Right clicking a node on remix tab should
+  // cicle it's type/mode"). Fully self-contained here (unlike Alt+click's
+  // reset, which defers "what does reset mean" to index.js via a callback)
+  // since cycling has no ambiguity to resolve - matches the plain-mutate-
+  // then-onChange pattern pointerMove already uses for freq/gain drags.
+  // Leaves band.slope untouched, same as switching type via the dropdown
+  // already does - it just goes inert/hidden for a non-slope-capable type
+  // rather than being reset.
+  function handleContextMenu(evt) {
+    const { x, y, width, height } = eventPos(evt)
+    const idx = nearestBandIndex(x, y, width, height)
+    if (idx === -1) return
+    evt.preventDefault()
+    const band = bands[idx]
+    const currentType = TYPE_CYCLE_ORDER.indexOf(band.type ?? 'peaking')
+    band.type = TYPE_CYCLE_ORDER[(currentType + 1) % TYPE_CYCLE_ORDER.length]
+    selectedIndex = idx
+    redraw()
+    onChange(getBands(), selectedIndex)
+  }
+
   function getBands() {
     return bands.map((b) => ({ ...b }))
   }
@@ -533,6 +638,7 @@ export function createEqEditorController(canvas) {
   window.addEventListener('mouseup', pointerUp)
   canvas.addEventListener('wheel', handleWheel, { passive: false })
   canvas.addEventListener('dblclick', handleDoubleClick)
+  canvas.addEventListener('contextmenu', handleContextMenu)
   window.addEventListener('resize', handleResize)
 
   return {
@@ -634,6 +740,7 @@ export function createEqEditorController(canvas) {
       window.removeEventListener('mouseup', pointerUp)
       window.removeEventListener('resize', handleResize)
       canvas.removeEventListener('dblclick', handleDoubleClick)
+      canvas.removeEventListener('contextmenu', handleContextMenu)
     }
   }
 }
