@@ -17,6 +17,36 @@ function formatMeta(entry) {
   return parts.join(' · ')
 }
 
+// Requested directly: a name truncated by window width should marquee-scroll
+// on hover to reveal the full text, "mildly fast, a little faster for really
+// long names." .sound-row-name is already white-space:nowrap + overflow:
+// hidden + text-overflow:ellipsis (see main.css), so scrollWidth exceeding
+// clientWidth is exactly "this name is truncated" - nothing extra to check.
+// pxPerSec scales up mildly with how much text needs to scroll (a genuinely
+// long name reads a bit brisker, not just proportionally longer), capped so
+// it never gets uncomfortably fast.
+const MARQUEE_BASE_PX_PER_SEC = 45
+const MARQUEE_SPEED_SCALE = 0.06
+const MARQUEE_MAX_PX_PER_SEC = 140
+
+function wireMarquee(name) {
+  name.addEventListener('mouseenter', () => {
+    const overflow = name.scrollWidth - name.clientWidth
+    if (overflow <= 0) return
+    const pxPerSec = Math.min(MARQUEE_MAX_PX_PER_SEC, MARQUEE_BASE_PX_PER_SEC + overflow * MARQUEE_SPEED_SCALE)
+    // Round trip (there and back) plus a little pause budget baked into the
+    // keyframes' own held start/end percentages (see main.css) - this is
+    // just the moving portion's time budget.
+    const duration = (overflow / pxPerSec) * 2 + 0.6
+    name.style.setProperty('--marquee-distance', `-${overflow}px`)
+    name.style.setProperty('--marquee-duration', `${duration}s`)
+    name.classList.add('sound-row-name-marquee')
+  })
+  name.addEventListener('mouseleave', () => {
+    name.classList.remove('sound-row-name-marquee')
+  })
+}
+
 // Tag chips (each removable via its own ×) plus a "+ tag" control that
 // turns into a text input on click - comma-separated so several tags can be
 // added in one go, mirroring the name field's double-click-to-edit pattern
@@ -124,6 +154,7 @@ export function createSoundRow(entry, { included, loading, error, volume }, call
       else if (evt.key === 'Escape') cancel()
     })
   })
+  wireMarquee(name)
   info.appendChild(name)
 
   const meta = document.createElement('span')

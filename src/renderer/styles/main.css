@@ -305,6 +305,23 @@ main {
   cursor: text;
 }
 
+.sound-row-name-marquee {
+  text-overflow: clip;
+  animation: sound-row-name-marquee var(--marquee-duration, 3s) ease-in-out infinite;
+}
+
+@keyframes sound-row-name-marquee {
+  0%, 8% {
+    transform: translateX(0);
+  }
+  45%, 55% {
+    transform: translateX(var(--marquee-distance));
+  }
+  92%, 100% {
+    transform: translateX(0);
+  }
+}
+
 .sound-row-name-input {
   font: inherit;
   font-weight: 600;
