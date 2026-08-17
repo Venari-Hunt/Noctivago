@@ -402,6 +402,13 @@ export function createEqEditorController(canvas) {
   let bandEnergy = null
   let liveSpectrum = null
   let freqDataBuffer = null
+  // True while displaying an immutable reference (the A/B Compare "B" slot,
+  // see index.js's switchEqCompareView) rather than the live editable bands
+  // - every mutating interaction below early-returns while this is set, so
+  // the graph stays genuinely read-only (not just "the surrounding buttons
+  // happen to be disabled"). Hover-bloom stays active regardless - it's
+  // just visual feedback, not a mutation.
+  let readOnly = false
   // Which node the mouse is currently over, for the hover-bloom effect -
   // updated by pointerMove whenever it isn't busy dragging (see below).
   let hoveredIndex = -1
@@ -472,6 +479,7 @@ export function createEqEditorController(canvas) {
   }
 
   function pointerDown(evt) {
+    if (readOnly) return
     const { x, y, width, height } = eventPos(evt)
     const idx = nearestBandIndex(x, y, width, height)
     if (idx === -1) return
@@ -551,7 +559,7 @@ export function createEqEditorController(canvas) {
   // wherever the cursor happens to be - the request was specifically for a
   // dedicated + button, not click-anywhere-on-the-graph-to-add.
   function addBand() {
-    if (bands.length >= MAX_BANDS) return
+    if (readOnly || bands.length >= MAX_BANDS) return
     bands.push({ ...NEW_BAND_DEFAULTS })
     selectedIndex = bands.length - 1
     redraw()
@@ -565,7 +573,7 @@ export function createEqEditorController(canvas) {
   // it pointed past the removed index (everything after a spliced-out
   // element shifts left by one).
   function removeSelectedBand() {
-    if (selectedIndex === -1 || !bands[selectedIndex]) return
+    if (readOnly || selectedIndex === -1 || !bands[selectedIndex]) return
     const removedIndex = selectedIndex
     bands.splice(removedIndex, 1)
     if (soloIndex === removedIndex) soloIndex = -1
@@ -588,6 +596,7 @@ export function createEqEditorController(canvas) {
   // caller (see index.js's onDoubleClick wiring) - this controller has no
   // opinion on where a band "started."
   function handleDoubleClick(evt) {
+    if (readOnly) return
     const { x, y, width, height } = eventPos(evt)
     const idx = nearestBandIndex(x, y, width, height)
     if (idx === -1) return
@@ -598,6 +607,7 @@ export function createEqEditorController(canvas) {
   // freq/gain) - mouse wheel while hovering a node is the same convention
   // several real DAW EQ UIs use for exactly this reason.
   function handleWheel(evt) {
+    if (readOnly) return
     const { x, y, width, height } = eventPos(evt)
     const idx = nearestBandIndex(x, y, width, height)
     if (idx === -1) return
@@ -620,6 +630,7 @@ export function createEqEditorController(canvas) {
   // already does - it just goes inert/hidden for a non-slope-capable type
   // rather than being reset.
   function handleContextMenu(evt) {
+    if (readOnly) return
     const { x, y, width, height } = eventPos(evt)
     const idx = nearestBandIndex(x, y, width, height)
     if (idx === -1) return
@@ -724,9 +735,23 @@ export function createEqEditorController(canvas) {
     // draggable handles - a directly-typed value updates the same band the
     // canvas drag would, then redraws so the node visibly jumps to match.
     setSelectedBand(patch) {
-      if (selectedIndex === -1 || !bands[selectedIndex]) return
+      if (readOnly || selectedIndex === -1 || !bands[selectedIndex]) return
       Object.assign(bands[selectedIndex], patch)
       redraw()
+    },
+    // Gates every mutating interaction above (drag, wheel-Q, double-click/
+    // Alt+click reset, right-click type-cycle, add/remove band, precision-
+    // field edits) behind a no-op while true - used while displaying the
+    // A/B Compare "B" slot, which is meant to be an immutable reference
+    // (see index.js's switchEqCompareView). Hover-bloom and redraw() stay
+    // fully functional regardless, since those are read-only by nature.
+    setReadOnly(value) {
+      readOnly = value
+      canvas.style.cursor = readOnly ? 'default' : ''
+      redraw()
+    },
+    isReadOnly() {
+      return readOnly
     },
     onChange(cb) {
       onChange = cb

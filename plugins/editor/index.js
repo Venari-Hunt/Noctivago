@@ -90,12 +90,17 @@ export default class EditorPlugin {
     // always restores exactly whatever the slider was already showing,
     // same convention as the Mixer's own volume mute buttons.
     this.previewMuted = false
-    // A/B Compare: two independent snapshots of the EQ bands the user can
-    // toggle between while tuning, to judge "is this actually better"
-    // against a real reference instead of memory. Per editing session only
-    // (reset in loadSound) - not persisted with the sound, since it's a
-    // workflow aid, not a saved setting.
-    this.eqCompare = { active: 'A', slots: { A: null, B: null } }
+    // A/B Compare - reworked per direct feedback from "two independent
+    // editable snapshots" into "A = current session (live, editable),
+    // B = last saved mix (immutable, display-only)". B is captured once in
+    // loadSound() and never mutated for the rest of the session, even
+    // across an in-session Save (deliberately - "last saved... before the
+    // current session"). eqLiveBandsStash holds A's live bands while B is
+    // being viewed, so switching back restores exactly where editing left
+    // off. Per editing session only, not persisted with the sound.
+    this.eqCompareViewing = 'A'
+    this.savedEqSnapshot = []
+    this.eqLiveBandsStash = null
     this.els = {}
   }
 
@@ -238,9 +243,9 @@ export default class EditorPlugin {
           <div class="editor-eq">
             <div class="editor-eq-header">
               <span class="editor-eq-label">Parametric EQ</span>
-              <div class="editor-eq-compare" role="group" aria-label="Compare slot">
-                <button id="editor-eq-compare-a" class="editor-eq-compare-btn editor-eq-compare-btn-active" type="button" title="Compare slot A">A</button>
-                <button id="editor-eq-compare-b" class="editor-eq-compare-btn" type="button" title="Compare slot B">B</button>
+              <div class="editor-eq-compare" role="group" aria-label="Compare current session vs. last saved">
+                <button id="editor-eq-compare-a" class="editor-eq-compare-btn editor-eq-compare-btn-active" type="button" title="Current session (editable)">A</button>
+                <button id="editor-eq-compare-b" class="editor-eq-compare-btn" type="button" title="Last saved mix (read-only)">B</button>
               </div>
               <button id="editor-eq-add-band" class="btn btn-svg-icon" type="button" title="Add a band">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -253,6 +258,7 @@ export default class EditorPlugin {
                 Reset EQ
               </button>
             </div>
+            <button id="editor-eq-revert-banner" class="editor-eq-revert-banner hidden" type="button">Click to revert to previous session's mix</button>
             <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click a node to reset its gain; Alt+click for a full reset."></canvas>
             <div class="editor-eq-band-controls">
               <label>
@@ -368,6 +374,7 @@ export default class EditorPlugin {
       eqRemoveBand: container.querySelector('#editor-eq-remove-band'),
       eqCompareA: container.querySelector('#editor-eq-compare-a'),
       eqCompareB: container.querySelector('#editor-eq-compare-b'),
+      eqRevertBanner: container.querySelector('#editor-eq-revert-banner'),
       eqType: container.querySelector('#editor-eq-type'),
       eqSlope: container.querySelector('#editor-eq-slope'),
       eqSlopeLabel: container.querySelector('#editor-eq-slope-label'),
@@ -557,8 +564,9 @@ export default class EditorPlugin {
     // (see EqEditor.js's pointerUp).
     this.eqEditorController.setTrashDropTarget(this.els.eqRemoveBand)
 
-    this.els.eqCompareA.addEventListener('click', () => this.switchEqCompareSlot('A'))
-    this.els.eqCompareB.addEventListener('click', () => this.switchEqCompareSlot('B'))
+    this.els.eqCompareA.addEventListener('click', () => this.switchEqCompareView('A'))
+    this.els.eqCompareB.addEventListener('click', () => this.switchEqCompareView('B'))
+    this.els.eqRevertBanner.addEventListener('click', () => this.revertEqToSaved())
 
     this.els.eqMute.addEventListener('click', () => {
       const idx = this.eqEditorController.getSelectedIndex()
@@ -893,15 +901,22 @@ export default class EditorPlugin {
     // (which always clears selection, see EqEditor.js's removeSelectedBand).
     // Disable the precision fields entirely rather than leaving them
     // showing a stale, no-longer-meaningful value from whatever was
-    // previously selected.
+    // previously selected. `disabled` (below) additionally locks the fields
+    // while viewing the read-only B (last saved) reference - "just a display
+    // for the user" - but `hasSelection` alone still governs whether they
+    // show B's real values or blank, so a selected B band reads as a real,
+    // inspectable (if uneditable) value rather than going blank.
+    const readOnly = this.eqEditorController.isReadOnly()
     const hasSelection = Boolean(band)
-    this.els.eqType.disabled = !hasSelection
-    this.els.eqFreq.disabled = !hasSelection
-    this.els.eqGain.disabled = !hasSelection
-    this.els.eqQ.disabled = !hasSelection
-    this.els.eqMute.disabled = !hasSelection
-    this.els.eqSolo.disabled = !hasSelection
-    this.els.eqRemoveBand.disabled = !hasSelection
+    const disabled = readOnly || !hasSelection
+    this.els.eqType.disabled = disabled
+    this.els.eqFreq.disabled = disabled
+    this.els.eqGain.disabled = disabled
+    this.els.eqQ.disabled = disabled
+    this.els.eqMute.disabled = disabled
+    this.els.eqSolo.disabled = disabled
+    this.els.eqRemoveBand.disabled = disabled
+    this.els.eqAddBand.disabled = readOnly
     if (!hasSelection) {
       this.els.eqType.value = 'peaking'
       this.els.eqFreq.value = ''
@@ -924,7 +939,7 @@ export default class EditorPlugin {
     // entirely rather than showing a value with no real effect.
     const slopeCapable = SLOPE_CAPABLE_EQ_TYPES.includes(band.type)
     this.els.eqSlope.value = band.slope ?? 'gentle'
-    this.els.eqSlope.disabled = !slopeCapable
+    this.els.eqSlope.disabled = disabled || !slopeCapable
     this.els.eqSlopeLabel.classList.toggle('hidden', !slopeCapable)
     this.els.eqMute.classList.toggle('editor-eq-mute-active', Boolean(band.muted))
     this.els.eqSolo.classList.toggle('editor-eq-solo-active', this.eqEditorController.getSoloIndex() === index)
@@ -947,37 +962,75 @@ export default class EditorPlugin {
     this.updateEqFieldsFromSelection()
     this.previewSource?.setFilters(this.previewFilters())
     this.updateSaveButtonState()
+    this.updateEqRevertBannerVisibility()
   }
 
-  // Snapshots the live EQ bands into the currently-active slot, then loads
-  // whatever's stored in the target slot (or, the first time that slot's
-  // ever touched, a copy of the current bands - so the very first switch
-  // doesn't jar into silence/flat EQ, it just "arms" an independent copy to
-  // diverge from). A no-op if the target is already active.
-  switchEqCompareSlot(target) {
-    if (target === this.eqCompare.active || !this.eqEditorController) return
-    const currentBands = this.eqEditorController.getBands()
-    this.eqCompare.slots[this.eqCompare.active] = currentBands.map((b) => ({ ...b }))
-    const nextBands = (this.eqCompare.slots[target] ?? currentBands).map((b) => ({ ...b }))
-    this.eqCompare.slots[target] = nextBands.map((b) => ({ ...b }))
-    this.eqCompare.active = target
-    this.eqEditorController.load(nextBands)
+  // True whenever the live EQ bands (A) differ from the immutable saved
+  // snapshot (B) - a plain JSON comparison, same technique the dirty-check
+  // elsewhere in this file already uses, just scoped to EQ only.
+  eqDiffersFromSaved() {
+    if (!this.eqEditorController) return false
+    return JSON.stringify(this.eqEditorController.getBands()) !== JSON.stringify(this.savedEqSnapshot)
+  }
+
+  // The revert prompt only makes sense while actively editing (viewing A)
+  // and only when there's actually something to discard - showing an
+  // actionable "revert" banner when A already matches B would be confusing.
+  updateEqRevertBannerVisibility() {
+    const show = this.eqCompareViewing === 'A' && this.eqDiffersFromSaved()
+    this.els.eqRevertBanner.classList.toggle('hidden', !show)
+  }
+
+  // Switches which side of the compare is being viewed. B is a read-only
+  // reference (see EqEditorController.setReadOnly) - switching to it stashes
+  // A's live bands so editing can resume exactly where it left off when
+  // switching back, rather than losing in-progress work.
+  switchEqCompareView(target) {
+    if (target === this.eqCompareViewing || !this.eqEditorController) return
+    if (target === 'B') {
+      this.eqLiveBandsStash = this.eqEditorController.getBands()
+      this.eqEditorController.load(this.savedEqSnapshot.map((b) => ({ ...b })))
+    } else {
+      this.eqEditorController.load((this.eqLiveBandsStash ?? this.eqEditorController.getBands()).map((b) => ({ ...b })))
+      this.eqLiveBandsStash = null
+    }
+    this.eqCompareViewing = target
+    this.eqEditorController.setReadOnly(target === 'B')
     this.updateEqFieldsFromSelection()
     this.applyEqControls()
     this.updateEqCompareButtonsUI()
   }
 
   updateEqCompareButtonsUI() {
-    this.els.eqCompareA.classList.toggle('editor-eq-compare-btn-active', this.eqCompare.active === 'A')
-    this.els.eqCompareB.classList.toggle('editor-eq-compare-btn-active', this.eqCompare.active === 'B')
+    this.els.eqCompareA.classList.toggle('editor-eq-compare-btn-active', this.eqCompareViewing === 'A')
+    this.els.eqCompareB.classList.toggle('editor-eq-compare-btn-active', this.eqCompareViewing === 'B')
   }
 
-  // Clears both slots and resets to A - A/B state is a per-sound-editing-
-  // session workflow aid, not something a switch to a different sound (or a
-  // freshly loaded one) should carry over.
-  resetEqCompare() {
-    this.eqCompare = { active: 'A', slots: { A: null, B: null } }
+  // The revert banner's action: discards every unsaved EQ edit, replacing
+  // the live (A) bands with an exact copy of the saved (B) snapshot -
+  // switches back to viewing A first if B was on screen, since after this
+  // there's nothing left to distinguish them anyway.
+  revertEqToSaved() {
+    if (!this.eqEditorController) return
+    this.eqLiveBandsStash = null
+    this.eqCompareViewing = 'A'
+    this.eqEditorController.setReadOnly(false)
+    this.eqEditorController.load(this.savedEqSnapshot.map((b) => ({ ...b })))
+    this.updateEqFieldsFromSelection()
+    this.applyEqControls()
     this.updateEqCompareButtonsUI()
+  }
+
+  // Resets compare state for a freshly loaded sound - A/B is a per-editing-
+  // session workflow aid, not something that should carry over between
+  // sounds. savedEqSnapshot itself is captured separately in loadSound()
+  // (needs the just-loaded entry's own filters.eq, not available here).
+  resetEqCompare() {
+    this.eqCompareViewing = 'A'
+    this.eqLiveBandsStash = null
+    this.eqEditorController?.setReadOnly(false)
+    this.updateEqCompareButtonsUI()
+    this.updateEqRevertBannerVisibility()
   }
 
   updateFilterLabels(filters) {
@@ -1141,6 +1194,18 @@ export default class EditorPlugin {
   }
 
   updateSaveButtonState() {
+    // While viewing the read-only B (last saved) reference, currentFilters()
+    // reflects B's data rather than A's real live edits (A's own bands are
+    // stashed in eqLiveBandsStash, not currently loaded into the graph) - the
+    // normal dirty-check would misleadingly compare "B vs. what's actually
+    // saved" (always equal) and hide genuinely pending changes in A. Force
+    // Save disabled with an explicit label instead of trusting that check
+    // while B is on screen.
+    if (this.eqCompareViewing === 'B') {
+      this.els.save.disabled = true
+      this.els.saveLabel.textContent = 'Viewing saved mix'
+      return
+    }
     const dirty = this.hasUnsavedChanges()
     this.els.save.disabled = !dirty
     this.els.saveLabel.textContent = dirty ? 'Save' : 'Nothing to save'
@@ -1218,6 +1283,11 @@ export default class EditorPlugin {
     const filters = { ...NEUTRAL_FILTERS, ...entry.filters, eq: entry.filters?.eq ?? defaultEqBands() }
     this.setFilterSliders(filters)
     this.updateFilterLabels(filters)
+    // A/B Compare's "B" (last saved mix) - captured once here from the
+    // just-loaded entry's own saved data, deliberately never touched again
+    // for the rest of this editing session (not even by an in-session Save -
+    // "last saved... before the current session").
+    this.savedEqSnapshot = filters.eq.map((b) => ({ ...b }))
     this.resetEqCompare()
 
     const crossfadeMs = entry.crossfadeSeconds != null ? Math.round(entry.crossfadeSeconds * 1000) : DEFAULT_CROSSFADE_MS
@@ -1296,7 +1366,11 @@ export default class EditorPlugin {
   }
 
   async save() {
-    if (!this.currentEntry || !this.loopEditorController) return
+    // Defense in depth - the Save button is already disabled while viewing
+    // B (see updateSaveButtonState), but currentFilters() would silently
+    // read B's read-only data instead of A's real live edits if this ever
+    // ran anyway.
+    if (!this.currentEntry || !this.loopEditorController || this.eqCompareViewing === 'B') return
     const id = this.currentEntry.id
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     const filters = this.currentFilters()

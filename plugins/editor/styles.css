@@ -394,6 +394,29 @@
   margin-bottom: 8px;
 }
 
+/* "Click to revert to previous session's mix" - spans the EQ box's full
+   width (a large, easy-to-hit target, not a small link) so it's genuinely
+   easy to click, per direct feedback. Only shown while there's something to
+   revert (see index.js's updateEqRevertBannerVisibility). */
+.editor-eq-revert-banner {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-strong);
+  background: var(--surface-alt);
+  color: var(--accent);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.editor-eq-revert-banner:hover {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
 .editor-eq-label {
   font-size: 12px;
   font-weight: 600;
