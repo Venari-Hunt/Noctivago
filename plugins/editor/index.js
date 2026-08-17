@@ -330,6 +330,20 @@ export default class EditorPlugin {
 
     this.eqEditorController = createEqEditorController(this.els.eqCanvas)
     this.eqEditorController.onChange(() => this.applyEqControls())
+    // "Double-clicking a node on the EQ should reset it" - requested
+    // directly, mirroring the app-wide double-click-resets-a-slider
+    // convention (sliderReset.js) for these custom canvas nodes, which that
+    // delegated listener can't reach. "Default" here means this band's own
+    // starting values (defaultEqBands()[index]), same source Reset EQ
+    // already uses for every band at once - this is just that, scoped to
+    // one band.
+    this.eqEditorController.onDoubleClick((index) => {
+      const defaults = defaultEqBands()[index]
+      if (!defaults) return
+      this.eqEditorController.setSelectedIndex(index)
+      this.eqEditorController.setSelectedBand(defaults)
+      this.applyEqControls()
+    })
 
     this.waveformScrollbar = createWaveformScrollbar(this.els.scrollbarTrack, this.els.scrollbarThumb)
     this.waveformScrollbar.onNavigate((start, end) => this.loopEditorController.setViewport(start, end))

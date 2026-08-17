@@ -17,6 +17,8 @@ Two environment quirks that show up in fresh shells on this machine (both needed
 
 `ffmpeg-static`'s postinstall (which downloads the actual ffmpeg binary) sometimes gets skipped by npm's script-allowlist prompt — if ffmpeg-dependent features (waveform, loop clips) fail, check `node_modules/ffmpeg-static/ffmpeg.exe` exists; if not, run `node node_modules/ffmpeg-static/install.js`.
 
+Under `npm run dev` with more than one display connected, `src/main/index.js`'s `devWindowPosition()` opens the window directly on the highest-numbered display rather than the default (primary, centered) position — the owner keeps working there (gaming, etc.) while a dev session runs and doesn't want a window popping up over whatever's already on screen. Computed *before* window creation (passed as `x`/`y` to the `BrowserWindow` constructor), not moved after the fact — an after-the-fact move still means the window visibly flashes on the primary display first. Gated on `!app.isPackaged`, so a real installed build is never affected.
+
 ## Architecture
 
 - `src/main/` — Electron main process.

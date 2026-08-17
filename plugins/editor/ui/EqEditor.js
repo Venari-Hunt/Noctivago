@@ -212,6 +212,7 @@ export function createEqEditorController(canvas) {
   let liveSpectrum = null
   let freqDataBuffer = null
   let onChange = () => {}
+  let onDoubleClick = () => {}
 
   function redraw() {
     drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum)
@@ -271,6 +272,25 @@ export function createEqEditorController(canvas) {
     dragging = false
   }
 
+  // Mirrors the app-wide "double-click a slider resets it to default"
+  // convention (src/renderer/core/sliderReset.js) - requested directly by
+  // the user for EQ nodes specifically, since they're custom canvas-drawn
+  // shapes rather than real <input type="range"> elements, so that
+  // delegated document-level listener can't reach them. A native `dblclick`
+  // rather than manually tracking click timing - the two mousedown/mouseup
+  // pairs it's built from already ran through pointerDown/pointerMove/
+  // pointerUp above (possibly nudging the node very slightly from real-world
+  // click jitter), but the reset below overwrites that regardless, so it
+  // doesn't matter. What "default" means is intentionally left to the
+  // caller (see index.js's onDoubleClick wiring) - this controller has no
+  // opinion on where a band "started."
+  function handleDoubleClick(evt) {
+    const { x, y, width, height } = eventPos(evt)
+    const idx = nearestBandIndex(x, y, width, height)
+    if (idx === -1) return
+    onDoubleClick(idx)
+  }
+
   // Q has no natural drag axis (both X and Y are already spoken for by
   // freq/gain) - mouse wheel while hovering a node is the same convention
   // several real DAW EQ UIs use for exactly this reason.
@@ -303,6 +323,7 @@ export function createEqEditorController(canvas) {
   window.addEventListener('mousemove', pointerMove)
   window.addEventListener('mouseup', pointerUp)
   canvas.addEventListener('wheel', handleWheel, { passive: false })
+  canvas.addEventListener('dblclick', handleDoubleClick)
   window.addEventListener('resize', handleResize)
 
   return {
@@ -368,10 +389,14 @@ export function createEqEditorController(canvas) {
     onChange(cb) {
       onChange = cb
     },
+    onDoubleClick(cb) {
+      onDoubleClick = cb
+    },
     destroy() {
       window.removeEventListener('mousemove', pointerMove)
       window.removeEventListener('mouseup', pointerUp)
       window.removeEventListener('resize', handleResize)
+      canvas.removeEventListener('dblclick', handleDoubleClick)
     }
   }
 }

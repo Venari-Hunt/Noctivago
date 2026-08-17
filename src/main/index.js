@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, protocol } from 'electron'
+import { app, BrowserWindow, shell, protocol, screen } from 'electron'
 import './devMode.js' // must stay the first local import - see devMode.js
 import path from 'node:path'
 import fs from 'node:fs'
@@ -99,10 +99,38 @@ function registerSoundProtocol() {
   })
 }
 
+const WINDOW_WIDTH = 480
+const WINDOW_HEIGHT = 720
+
+// Dev-only: opens directly on the highest-numbered connected display instead
+// of the default (primary, centered) position - the user keeps working
+// there (gaming, etc.) while a dev/test session runs, and doesn't want a
+// window popping up in the middle of whatever's already on screen there.
+// Only applies under `npm run dev` (never a packaged build, where the OS's
+// own last-position memory or default centering is exactly what a real user
+// expects) and only when more than one display is actually connected - see
+// feedback_window_display_placement memory for the full rationale. Computed
+// BEFORE window creation (passed as x/y to the BrowserWindow constructor)
+// rather than moved after the fact via a separate script, which was the
+// prior approach - an after-the-fact move still means the window visibly
+// appears on the primary display for a moment first, exactly the
+// interruption this exists to avoid, reported directly by the user.
+function devWindowPosition() {
+  if (app.isPackaged) return {}
+  const displays = screen.getAllDisplays()
+  if (displays.length < 2) return {}
+  const target = displays.reduce((best, d) => (d.bounds.x > best.bounds.x ? d : best))
+  return {
+    x: Math.round(target.bounds.x + (target.bounds.width - WINDOW_WIDTH) / 2),
+    y: Math.round(target.bounds.y + (target.bounds.height - WINDOW_HEIGHT) / 2)
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
-    width: 480,
-    height: 720,
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT,
+    ...devWindowPosition(),
     minWidth: 380,
     minHeight: 520,
     // Visually distinct from an installed build at a glance - the window
