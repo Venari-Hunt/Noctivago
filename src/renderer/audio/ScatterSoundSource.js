@@ -192,7 +192,7 @@ export class StreamScatterSource {
     this.scatter = scatter ?? {}
     this.playing = false
     this._timeoutId = null
-    this._endCheckRafId = null
+    this._onShotProgress = this._onShotProgress.bind(this)
 
     this.audioEl = new Audio()
     this.audioEl.crossOrigin = 'anonymous'
@@ -266,15 +266,34 @@ export class StreamScatterSource {
     return this.loopEnd ?? this.audioEl.duration
   }
 
-  _watchForShotEnd() {
-    const end = this._loopEnd()
+  // Detects shot-end via the <audio> element's own native events rather than
+  // a requestAnimationFrame polling loop. rAF is driven by the visual frame
+  // clock, which Chromium throttles to near-zero (confirmed via a live debug
+  // session: 1 callback total over a 2.5s window) once the window is hidden
+  // or unfocused - exactly the normal state for an ambient background-sound
+  // app. `timeupdate`/`pause`/`ended` are driven by the media element's own
+  // playback clock instead, which keeps running so background audio keeps
+  // working - so shot-end detection now does too.
+  _onShotProgress() {
     if (!this.playing) return
+    const end = this._loopEnd()
     if (this.audioEl.paused || (Number.isFinite(end) && this.audioEl.currentTime >= end - 0.03)) {
+      this._stopWatchingShotEnd()
       this.audioEl.pause()
       this._timeoutId = setTimeout(() => this._playOneShot(), randomGapSeconds(this.scatter) * 1000)
-      return
     }
-    this._endCheckRafId = requestAnimationFrame(() => this._watchForShotEnd())
+  }
+
+  _watchForShotEnd() {
+    this.audioEl.addEventListener('timeupdate', this._onShotProgress)
+    this.audioEl.addEventListener('pause', this._onShotProgress)
+    this.audioEl.addEventListener('ended', this._onShotProgress)
+  }
+
+  _stopWatchingShotEnd() {
+    this.audioEl.removeEventListener('timeupdate', this._onShotProgress)
+    this.audioEl.removeEventListener('pause', this._onShotProgress)
+    this.audioEl.removeEventListener('ended', this._onShotProgress)
   }
 
   async _playOneShot() {
@@ -290,7 +309,7 @@ export class StreamScatterSource {
       return
     }
     if (!this.playing) return
-    this._endCheckRafId = requestAnimationFrame(() => this._watchForShotEnd())
+    this._watchForShotEnd()
   }
 
   async play() {
@@ -310,10 +329,7 @@ export class StreamScatterSource {
       clearTimeout(this._timeoutId)
       this._timeoutId = null
     }
-    if (this._endCheckRafId) {
-      cancelAnimationFrame(this._endCheckRafId)
-      this._endCheckRafId = null
-    }
+    this._stopWatchingShotEnd()
     const now = this.engine.context.currentTime
     this.gainNode.gain.cancelScheduledValues(now)
     this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
@@ -333,7 +349,7 @@ export class StreamScatterSource {
   dispose() {
     this.playing = false
     if (this._timeoutId) clearTimeout(this._timeoutId)
-    if (this._endCheckRafId) cancelAnimationFrame(this._endCheckRafId)
+    this._stopWatchingShotEnd()
     this.audioEl.pause()
     this.audioEl.removeAttribute('src')
     this.audioEl.load()
