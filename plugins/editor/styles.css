@@ -151,6 +151,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.editor-sticky-volume {
+  flex-shrink: 0;
+  width: 90px;
+}
+
 .editor-waveform-status {
   margin: 6px 0 0;
   font-size: 11px;

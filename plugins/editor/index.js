@@ -69,6 +69,7 @@ export default class EditorPlugin {
     // sliders' values don't) since it's a preview-workflow preference, not
     // per-sound saved state - nothing about it is written to the library.
     this.looping = true
+    this.previewVolume = 0.7
     this.els = {}
   }
 
@@ -433,12 +434,14 @@ export default class EditorPlugin {
         <div id="editor-sticky-progress-fill" class="editor-sticky-progress-fill"></div>
       </div>
       <span id="editor-sticky-time" class="editor-sticky-time">0:00 / 0:00</span>
+      <input id="editor-sticky-volume" type="range" min="0" max="100" value="${Math.round(this.previewVolume * 100)}" class="editor-sticky-volume" title="Preview volume" />
     `
 
     this.els.playPause = container.querySelector('#editor-play-pause')
     this.els.loopToggle = container.querySelector('#editor-loop-toggle')
     this.els.stickyProgressFill = container.querySelector('#editor-sticky-progress-fill')
     this.els.stickyTime = container.querySelector('#editor-sticky-time')
+    this.els.stickyVolume = container.querySelector('#editor-sticky-volume')
 
     this.els.playPause.addEventListener('click', async () => {
       if (!this.previewSource) return
@@ -462,6 +465,14 @@ export default class EditorPlugin {
       this.looping = !this.looping
       this.updateLoopToggleVisual()
       this.previewSource?.setLooping(this.looping)
+    })
+
+    // Persists across sounds within the tab session, same as looping above -
+    // a preview-workflow preference, not per-sound saved state (unrelated to
+    // the per-sound volume slider in the Mixer, which *is* saved).
+    this.els.stickyVolume.addEventListener('input', () => {
+      this.previewVolume = Number(this.els.stickyVolume.value) / 100
+      this.previewSource?.setVolume(this.previewVolume)
     })
   }
 
@@ -911,7 +922,7 @@ export default class EditorPlugin {
       soundId: entry.id,
       loopStart: entry.loopStart,
       loopEnd: entry.loopEnd,
-      volume: 0.7,
+      volume: this.previewVolume,
       looping: this.looping,
       crossfadeSeconds: crossfadeMs / 1000,
       speedPitch
