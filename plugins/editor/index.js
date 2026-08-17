@@ -450,7 +450,11 @@ export default class EditorPlugin {
         this.renderPickerOptions()
       } else if (evt.key === 'Enter') {
         evt.preventDefault()
-        const picked = options[this.pickerHighlightIndex]
+        // Defaults to the first result when nothing's been arrow-navigated
+        // yet - requested directly: typing a precise search and hitting
+        // Enter shouldn't need an extra arrow-down first, since a precise
+        // query usually narrows straight down to the one sound you meant.
+        const picked = options[this.pickerHighlightIndex] ?? options[0]
         if (picked) this.selectPickerSound(picked.id)
       } else if (evt.key === 'Escape') {
         this.closePicker()
