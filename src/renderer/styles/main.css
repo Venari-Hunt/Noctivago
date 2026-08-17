@@ -155,6 +155,30 @@ main {
   border-color: var(--danger-strong);
 }
 
+/* Icon+text pairing for action buttons where a bare icon alone might
+   confuse (per direct feedback: "if you feel like it's gonna be confusing
+   use icon+text") - distinct from .btn-svg-icon above, which is for
+   icon-ONLY toggle controls (Play/Pause, Mute) where the action is a
+   universally-recognized binary state. */
+.btn-icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Save current mix specifically needs to hold its own width rather than
+   wrapping to two lines in the Presets modal's name-input row - other
+   icon+text buttons (e.g. Remix's Save, which can read "Nothing to save")
+   sit in tighter rows and need to stay free to shrink instead. */
+#save-preset {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.btn-icon-text svg {
+  flex-shrink: 0;
+}
+
 .btn-danger {
   color: var(--danger);
 }

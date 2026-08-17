@@ -189,9 +189,10 @@ export function createSoundRow(entry, { included, loading, error, volume, muted 
     li.appendChild(missingLabel)
 
     const relinkBtn = document.createElement('button')
-    relinkBtn.className = 'btn btn-small'
+    relinkBtn.className = 'btn btn-small btn-icon-text'
     relinkBtn.type = 'button'
-    relinkBtn.textContent = 'Relink'
+    relinkBtn.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Relink'
     relinkBtn.addEventListener('click', () => callbacks.onRelink(entry.id))
     li.appendChild(relinkBtn)
   } else {
@@ -230,9 +231,10 @@ export function createSoundRow(entry, { included, loading, error, volume, muted 
   }
 
   const removeBtn = document.createElement('button')
-  removeBtn.className = 'btn btn-small btn-danger'
+  removeBtn.className = 'btn btn-small btn-danger btn-icon-text'
   removeBtn.type = 'button'
-  removeBtn.textContent = 'Remove'
+  removeBtn.innerHTML =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg> Remove'
   removeBtn.addEventListener('click', () => callbacks.onRemove(entry.id))
   li.appendChild(removeBtn)
 

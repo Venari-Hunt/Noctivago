@@ -241,7 +241,10 @@ export default class EditorPlugin {
                 <button id="editor-eq-compare-a" class="editor-eq-compare-btn editor-eq-compare-btn-active" type="button" title="Compare slot A">A</button>
                 <button id="editor-eq-compare-b" class="editor-eq-compare-btn" type="button" title="Compare slot B">B</button>
               </div>
-              <button id="editor-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
+              <button id="editor-eq-reset" class="btn btn-small btn-icon-text" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Reset EQ
+              </button>
             </div>
             <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it."></canvas>
             <div class="editor-eq-band-controls">
@@ -288,9 +291,15 @@ export default class EditorPlugin {
             <button class="btn btn-small" type="button" data-preset="underwater">Underwater</button>
           </div>
           <div class="editor-actions">
-            <button id="editor-reset-filters" class="btn" type="button">Reset filters</button>
+            <button id="editor-reset-filters" class="btn btn-icon-text" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              Reset filters
+            </button>
             <span class="spacer"></span>
-            <button id="editor-save" class="btn btn-primary" type="button">Save</button>
+            <button id="editor-save" class="btn btn-primary btn-icon-text" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              <span id="editor-save-label">Save</span>
+            </button>
           </div>
           <p id="editor-save-status" class="editor-save-status"></p>
         </div>
@@ -357,6 +366,7 @@ export default class EditorPlugin {
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
       save: container.querySelector('#editor-save'),
+      saveLabel: container.querySelector('#editor-save-label'),
       saveStatus: container.querySelector('#editor-save-status'),
       scrollTop: container.querySelector('#editor-scroll-top')
     }
@@ -1039,7 +1049,7 @@ export default class EditorPlugin {
   updateSaveButtonState() {
     const dirty = this.hasUnsavedChanges()
     this.els.save.disabled = !dirty
-    this.els.save.textContent = dirty ? 'Save' : 'Nothing to save'
+    this.els.saveLabel.textContent = dirty ? 'Save' : 'Nothing to save'
   }
 
   stopPreviewTicking() {
@@ -1237,7 +1247,7 @@ export default class EditorPlugin {
     // the real ffmpeg render to take effect at all.
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
       this.els.save.disabled = true
-      this.els.save.textContent = 'Saving…'
+      this.els.saveLabel.textContent = 'Saving…'
       const result = await this.api.audio.renderLoopClip(id, {
         loopStart,
         loopEnd,
