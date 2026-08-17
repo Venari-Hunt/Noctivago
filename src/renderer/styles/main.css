@@ -16,6 +16,34 @@
   box-sizing: border-box;
 }
 
+/* App-wide scrollbar styling, requested directly: "The app is really
+   crowded with scrolling bars... making them disappear when not hovered or
+   just removing them or maybe using a low opacity for it is better." Thin,
+   low-opacity-by-default, brighter on hover - purely visual (::-webkit-
+   scrollbar is Chromium-only, which is all Electron ever renders with, so
+   no fallback is needed), doesn't touch scroll behavior at all. Unscoped
+   (no element prefix) so it applies to every scrollable element in the
+   document - the shared #tab-content main container every tab's panel
+   scrolls inside, any modal's own overflow, canvas-adjacent scroll areas -
+   without needing a separate copy in any plugin's own stylesheet. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(136, 146, 176, 0.15);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(136, 146, 176, 0.45);
+}
+
 body {
   margin: 0;
   background: var(--bg);
