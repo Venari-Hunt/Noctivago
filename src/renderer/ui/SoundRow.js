@@ -5,6 +5,15 @@ import { formatDuration } from '../util/time.js'
 // a sound back at its untampered default, not silence (0).
 const DEFAULT_VOLUME = 0.7
 
+// Speaker (unmuted) / speaker-with-X (muted) - same icon pair as the global
+// volume mute button in tabs/mixer/index.js (duplicated rather than shared
+// across these two core modules, matching this app's general "small UI
+// constants live next to where they're used" convention).
+const VOLUME_ICON_SVG =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><path d="M16 8a5 5 0 0 1 0 8"/></svg>'
+const MUTE_ICON_SVG =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>'
+
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -113,7 +122,7 @@ function buildTagsRow(entry, callbacks) {
   return tagsRow
 }
 
-export function createSoundRow(entry, { included, loading, error, volume }, callbacks) {
+export function createSoundRow(entry, { included, loading, error, volume, muted }, callbacks) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
@@ -210,6 +219,14 @@ export function createSoundRow(entry, { included, loading, error, volume }, call
       callbacks.onVolumeChange(entry.id, Number(volumeSlider.value) / 100)
     })
     li.appendChild(volumeSlider)
+
+    const muteBtn = document.createElement('button')
+    muteBtn.className = 'btn btn-svg-icon' + (muted ? ' btn-svg-icon-active' : '')
+    muteBtn.type = 'button'
+    muteBtn.title = muted ? 'Unmute' : 'Mute'
+    muteBtn.innerHTML = muted ? MUTE_ICON_SVG : VOLUME_ICON_SVG
+    muteBtn.addEventListener('click', () => callbacks.onToggleMute(entry.id))
+    li.appendChild(muteBtn)
   }
 
   const removeBtn = document.createElement('button')

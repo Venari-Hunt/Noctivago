@@ -136,13 +136,23 @@ main {
   background: var(--accent-strong);
 }
 
-.btn-icon {
+// Distinct from the pre-existing .btn-icon below (a text-glyph/emoji button
+// - the gear and + buttons) - this is for a real inline SVG icon, which
+// needs a fixed square box and zero padding to center cleanly rather than
+// sizing off font-size like a glyph does.
+.btn-svg-icon {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 34px;
   height: 34px;
   padding: 0;
+}
+
+.btn-svg-icon-active {
+  color: var(--danger);
+  border-color: var(--danger-strong);
 }
 
 .btn-danger {

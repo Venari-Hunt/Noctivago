@@ -9,13 +9,19 @@
     <div id="app">
       <header class="toolbar">
         <span id="dev-badge" class="dev-badge hidden" title="This is a development build - separate data from any installed copy">DEV</span>
-        <button id="global-play-pause" class="btn btn-primary btn-icon" type="button" title="Play all">
+        <button id="global-play-pause" class="btn btn-primary btn-svg-icon" type="button" title="Play all">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </button>
         <label class="global-volume-label">
           Volume
           <input id="global-volume" type="range" min="0" max="100" value="100" class="global-volume" />
         </label>
+        <button id="global-mute" class="btn btn-svg-icon" type="button" title="Mute">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/>
+            <path d="M16 8a5 5 0 0 1 0 8"/>
+          </svg>
+        </button>
         <span class="spacer"></span>
         <button id="open-presets" class="btn" type="button">Presets</button>
         <button id="open-settings" class="btn btn-icon" type="button" title="Settings">⚙</button>

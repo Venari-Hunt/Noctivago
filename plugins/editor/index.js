@@ -25,6 +25,14 @@ const PLAY_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="cur
 const PAUSE_ICON_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
 
+// Speaker (unmuted) / speaker-with-X (muted) - same icon pair as the
+// Mixer's own volume mute buttons (duplicated per this plugin's usual
+// "bundle your own copies" convention).
+const VOLUME_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><path d="M16 8a5 5 0 0 1 0 8"/></svg>'
+const MUTE_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>'
+
 // Mirrors library.js's defaultEqBands() exactly (band count, frequencies,
 // neutral gain/Q) - same cross-directory duplication reason as
 // MAX_BUFFER_CLIP_SECONDS above. A fresh function call each time, never a
@@ -77,6 +85,10 @@ export default class EditorPlugin {
     // per-sound saved state - nothing about it is written to the library.
     this.looping = true
     this.previewVolume = 0.7
+    // Layered on top of previewVolume, not destructive to it - unmuting
+    // always restores exactly whatever the slider was already showing,
+    // same convention as the Mixer's own volume mute buttons.
+    this.previewMuted = false
     // A/B Compare: two independent snapshots of the EQ bands the user can
     // toggle between while tuning, to judge "is this actually better"
     // against a real reference instead of memory. Per editing session only
@@ -532,7 +544,7 @@ export default class EditorPlugin {
   // lifecycle mount() itself already has.
   mountSticky(container) {
     container.innerHTML = `
-      <button id="editor-play-pause" class="btn btn-icon" type="button" title="Play">${PLAY_ICON_SVG}</button>
+      <button id="editor-play-pause" class="btn btn-svg-icon" type="button" title="Play">${PLAY_ICON_SVG}</button>
       <button id="editor-loop-toggle" class="editor-loop-icon-btn editor-loop-icon-btn-active" type="button" title="Loop preview" aria-pressed="true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M17 1l4 4-4 4"/>
@@ -546,6 +558,7 @@ export default class EditorPlugin {
       </div>
       <span id="editor-sticky-time" class="editor-sticky-time">0:00 / 0:00</span>
       <input id="editor-sticky-volume" type="range" min="0" max="100" value="${Math.round(this.previewVolume * 100)}" class="editor-sticky-volume" title="Preview volume" />
+      <button id="editor-sticky-mute" class="btn btn-svg-icon" type="button" title="Mute">${VOLUME_ICON_SVG}</button>
     `
 
     this.els.playPause = container.querySelector('#editor-play-pause')
@@ -553,6 +566,7 @@ export default class EditorPlugin {
     this.els.stickyProgressFill = container.querySelector('#editor-sticky-progress-fill')
     this.els.stickyTime = container.querySelector('#editor-sticky-time')
     this.els.stickyVolume = container.querySelector('#editor-sticky-volume')
+    this.els.stickyMute = container.querySelector('#editor-sticky-mute')
 
     this.els.playPause.addEventListener('click', async () => {
       if (!this.previewSource) return
@@ -584,8 +598,31 @@ export default class EditorPlugin {
     // the per-sound volume slider in the Mixer, which *is* saved).
     this.els.stickyVolume.addEventListener('input', () => {
       this.previewVolume = Number(this.els.stickyVolume.value) / 100
-      this.previewSource?.setVolume(this.previewVolume)
+      // Dragging the slider while muted implicitly unmutes - same
+      // convention the Mixer's volume sliders use.
+      if (this.previewMuted) {
+        this.previewMuted = false
+        this.updatePreviewMuteIcon()
+      }
+      this.previewSource?.setVolume(this.effectivePreviewVolume())
     })
+
+    this.els.stickyMute.addEventListener('click', () => {
+      this.previewMuted = !this.previewMuted
+      this.updatePreviewMuteIcon()
+      this.previewSource?.setVolume(this.effectivePreviewVolume())
+    })
+    this.updatePreviewMuteIcon()
+  }
+
+  effectivePreviewVolume() {
+    return this.previewMuted ? 0 : this.previewVolume
+  }
+
+  updatePreviewMuteIcon() {
+    this.els.stickyMute.innerHTML = this.previewMuted ? MUTE_ICON_SVG : VOLUME_ICON_SVG
+    this.els.stickyMute.title = this.previewMuted ? 'Unmute' : 'Mute'
+    this.els.stickyMute.classList.toggle('btn-svg-icon-active', this.previewMuted)
   }
 
   updateLoopToggleVisual() {
@@ -1094,7 +1131,7 @@ export default class EditorPlugin {
       soundId: entry.id,
       loopStart: entry.loopStart,
       loopEnd: entry.loopEnd,
-      volume: this.previewVolume,
+      volume: this.effectivePreviewVolume(),
       looping: this.looping,
       crossfadeSeconds: crossfadeMs / 1000,
       speedPitch

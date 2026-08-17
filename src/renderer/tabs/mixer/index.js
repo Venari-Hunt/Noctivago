@@ -21,7 +21,14 @@ const state = {
   included: new Set(),
   playing: new Set(),
   loading: new Set(),
-  errors: new Map()
+  errors: new Map(),
+  // Mute is a separate on/off flag layered on top of the volume itself
+  // (global or per-sound), not a destructive "set volume to 0" - unmuting
+  // always restores exactly whatever the slider was already showing.
+  // Session-only, like the global volume slider's own current position -
+  // neither is persisted today, so this doesn't add a new persistence gap.
+  globalMuted: false,
+  mutedSounds: new Set()
 }
 
 const els = {
@@ -29,6 +36,7 @@ const els = {
   emptyState: null,
   globalPlayPause: document.getElementById('global-play-pause'),
   globalVolume: document.getElementById('global-volume'),
+  globalMute: document.getElementById('global-mute'),
   addSoundBtn: document.getElementById('add-sound'),
   addSoundMenu: document.getElementById('add-sound-menu'),
   addSoundFileItem: document.getElementById('add-sound-file'),
@@ -98,6 +106,16 @@ const PLAY_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="cur
 const PAUSE_ICON_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
 
+// Speaker (unmuted) / speaker-with-X (muted) - mirrored by SoundRow.js's
+// per-sound mute button and the Remix plugin's preview-volume mute button,
+// same icon pair everywhere a volume slider exists (requested directly:
+// "everywhere there is a volume slider there should be an icon beside it
+// so you can click it to mute/unmute it and the icon should react on it").
+const VOLUME_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><path d="M16 8a5 5 0 0 1 0 8"/></svg>'
+const MUTE_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>'
+
 function refreshGlobalButton() {
   const playing = state.playing.size > 0
   els.globalPlayPause.innerHTML = playing ? PAUSE_ICON_SVG : PLAY_ICON_SVG
@@ -146,6 +164,7 @@ function render() {
     {
       onToggleIncluded: toggleIncluded,
       onVolumeChange: changeVolume,
+      onToggleMute: toggleMute,
       onRemove: removeSound,
       onRelink: relinkSound,
       onRename: renameSound,
@@ -436,6 +455,13 @@ function persistPlayingState() {
 
 // Starts actual playback of a sound and marks it included+playing. Used by
 // the per-sound toggle, "Play all", and preset loading.
+// Muting is a separate on/off flag layered on top of state.volumes, not a
+// destructive "set volume to 0" - unmuting always restores exactly whatever
+// the slider was already showing (see state.mutedSounds above).
+function effectiveVolume(id) {
+  return state.mutedSounds.has(id) ? 0 : (state.volumes.get(id) ?? 0.7)
+}
+
 async function startPlayback(id, entry) {
   state.errors.delete(id)
   state.loading.add(id)
@@ -443,7 +469,7 @@ async function startPlayback(id, entry) {
   try {
     const source = await getOrCreateSource(entry)
     if (!state.volumes.has(id)) state.volumes.set(id, 0.7)
-    source.setVolume(state.volumes.get(id))
+    source.setVolume(effectiveVolume(id))
     await source.play()
     state.playing.add(id)
     state.included.add(id)
@@ -496,7 +522,17 @@ const VOLUME_SAVE_DEBOUNCE_MS = 400
 
 function changeVolume(id, volume) {
   state.volumes.set(id, volume)
-  state.sources.get(id)?.setVolume(volume)
+  // Dragging the slider while muted implicitly unmutes - matches the global
+  // volume slider's own identical convention. Rare relative to a normal
+  // drag (most volume ticks never touch mutedSounds at all), so this is the
+  // only branch of a volume change that triggers a full render() - the
+  // common case stays render()-free, same as before, so dragging never
+  // reorders/redraws the list mid-drag.
+  if (state.mutedSounds.has(id)) {
+    state.mutedSounds.delete(id)
+    render()
+  }
+  state.sources.get(id)?.setVolume(effectiveVolume(id))
 
   clearTimeout(volumeSaveTimers.get(id))
   volumeSaveTimers.set(
@@ -508,12 +544,20 @@ function changeVolume(id, volume) {
   )
 }
 
+function toggleMute(id) {
+  if (state.mutedSounds.has(id)) state.mutedSounds.delete(id)
+  else state.mutedSounds.add(id)
+  state.sources.get(id)?.setVolume(effectiveVolume(id))
+  render()
+}
+
 async function removeSound(id) {
   state.sources.get(id)?.dispose()
   state.sources.delete(id)
   state.playing.delete(id)
   state.included.delete(id)
   state.volumes.delete(id)
+  state.mutedSounds.delete(id)
   await api.library.remove(id)
   await refreshList()
 }
@@ -541,12 +585,38 @@ async function toggleGlobalPlayback() {
 
 els.globalPlayPause.addEventListener('click', toggleGlobalPlayback)
 
-els.globalVolume.addEventListener('input', () => {
-  const volume = Number(els.globalVolume.value) / 100
+function updateGlobalMuteIcon() {
+  els.globalMute.innerHTML = state.globalMuted ? MUTE_ICON_SVG : VOLUME_ICON_SVG
+  els.globalMute.title = state.globalMuted ? 'Unmute' : 'Mute'
+  els.globalMute.classList.toggle('btn-svg-icon-active', state.globalMuted)
+}
+
+function applyGlobalVolume() {
+  const volume = state.globalMuted ? 0 : Number(els.globalVolume.value) / 100
   const now = engine.context.currentTime
   engine.masterGain.gain.cancelScheduledValues(now)
   engine.masterGain.gain.linearRampToValueAtTime(volume, now + 0.05)
+}
+
+// Dragging the slider while muted implicitly unmutes - matches the
+// convention most OS/media-player volume controls already use, so muting
+// doesn't silently "trap" a manual volume change behind an easy-to-miss
+// separate button.
+els.globalVolume.addEventListener('input', () => {
+  if (state.globalMuted) {
+    state.globalMuted = false
+    updateGlobalMuteIcon()
+  }
+  applyGlobalVolume()
 })
+
+els.globalMute.addEventListener('click', () => {
+  state.globalMuted = !state.globalMuted
+  updateGlobalMuteIcon()
+  applyGlobalVolume()
+})
+
+updateGlobalMuteIcon()
 
 function closeAddSoundMenu() {
   els.addSoundMenu.classList.add('hidden')
