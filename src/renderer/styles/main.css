@@ -77,6 +77,18 @@ body {
   border-bottom-color: var(--accent);
 }
 
+.tab-sticky-bar {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tab-sticky-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+
 main {
   flex: 1;
   overflow-y: auto;

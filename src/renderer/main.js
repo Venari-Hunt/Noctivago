@@ -19,7 +19,11 @@ window.noctivago.isPackaged().then((isPackaged) => {
   if (!isPackaged) document.getElementById('dev-badge').classList.remove('hidden')
 })
 
-const tabHost = createTabHost(document.getElementById('tab-bar'), document.getElementById('tab-content'))
+const tabHost = createTabHost(
+  document.getElementById('tab-bar'),
+  document.getElementById('tab-content'),
+  document.getElementById('tab-sticky-bar')
+)
 
 // Registered synchronously, before any plugin loads, so the Mixer tab is
 // always present regardless of plugin state and always becomes tab 0.

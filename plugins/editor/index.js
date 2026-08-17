@@ -77,6 +77,7 @@ export default class EditorPlugin {
       id: 'remix',
       title: 'Remix',
       mount: (container) => this.mount(container),
+      mountSticky: (container) => this.mountSticky(container),
       onShow: () => {
         // Picks up sounds added/removed elsewhere (e.g. the Mixer) since
         // this tab last mounted — mount() only runs once per tab lifetime,
@@ -112,13 +113,6 @@ export default class EditorPlugin {
           <canvas id="editor-canvas" width="640" height="160" title="Scroll to zoom, shift+scroll or middle-drag to pan. Right-click-drag inside the trimmed region to move it."></canvas>
           <div id="editor-scrollbar" class="editor-scrollbar">
             <div id="editor-scrollbar-thumb" class="editor-scrollbar-thumb"></div>
-          </div>
-          <div class="editor-preview-controls">
-            <button id="editor-play-pause" class="btn btn-small" type="button">Play</button>
-            <label class="editor-loop-toggle">
-              <input id="editor-loop-toggle" type="checkbox" checked />
-              Loop preview
-            </label>
           </div>
           <p id="editor-waveform-status" class="editor-waveform-status"></p>
           <div class="editor-times">
@@ -268,7 +262,6 @@ export default class EditorPlugin {
       scrollbarTrack: container.querySelector('#editor-scrollbar'),
       scrollbarThumb: container.querySelector('#editor-scrollbar-thumb'),
       waveformStatus: container.querySelector('#editor-waveform-status'),
-      loopToggle: container.querySelector('#editor-loop-toggle'),
       startInput: container.querySelector('#editor-start-input'),
       endInput: container.querySelector('#editor-end-input'),
       lengthInput: container.querySelector('#editor-length-input'),
@@ -304,7 +297,6 @@ export default class EditorPlugin {
       eqFreq: container.querySelector('#editor-eq-freq'),
       eqGain: container.querySelector('#editor-eq-gain'),
       eqQ: container.querySelector('#editor-eq-q'),
-      playPause: container.querySelector('#editor-play-pause'),
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
       save: container.querySelector('#editor-save'),
@@ -417,6 +409,37 @@ export default class EditorPlugin {
       })
     }
 
+    this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
+  }
+
+  // Builds the sticky bar's own contents - Play/Pause, the loop toggle, and
+  // a progress bar/time readout for the trim preview - kept separate from
+  // wireControls() above because it's mounted into a different container
+  // (the shared #tab-sticky-bar, see TabHost.js's mountSticky), not the
+  // scrollable panel body. Only ever called once, same lazy-mount-once
+  // lifecycle mount() itself already has.
+  mountSticky(container) {
+    container.innerHTML = `
+      <button id="editor-play-pause" class="btn btn-small" type="button">Play</button>
+      <button id="editor-loop-toggle" class="editor-loop-icon-btn editor-loop-icon-btn-active" type="button" title="Loop preview" aria-pressed="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 1l4 4-4 4"/>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <path d="M7 23l-4-4 4-4"/>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </button>
+      <div class="editor-sticky-progress">
+        <div id="editor-sticky-progress-fill" class="editor-sticky-progress-fill"></div>
+      </div>
+      <span id="editor-sticky-time" class="editor-sticky-time">0:00 / 0:00</span>
+    `
+
+    this.els.playPause = container.querySelector('#editor-play-pause')
+    this.els.loopToggle = container.querySelector('#editor-loop-toggle')
+    this.els.stickyProgressFill = container.querySelector('#editor-sticky-progress-fill')
+    this.els.stickyTime = container.querySelector('#editor-sticky-time')
+
     this.els.playPause.addEventListener('click', async () => {
       if (!this.previewSource) return
       if (this.previewSource.playing) {
@@ -435,12 +458,16 @@ export default class EditorPlugin {
       }
     })
 
-    this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
-
-    this.els.loopToggle.addEventListener('change', () => {
-      this.looping = this.els.loopToggle.checked
+    this.els.loopToggle.addEventListener('click', () => {
+      this.looping = !this.looping
+      this.updateLoopToggleVisual()
       this.previewSource?.setLooping(this.looping)
     })
+  }
+
+  updateLoopToggleVisual() {
+    this.els.loopToggle.classList.toggle('editor-loop-icon-btn-active', this.looping)
+    this.els.loopToggle.setAttribute('aria-pressed', String(this.looping))
   }
 
   async refreshLibrary() {
@@ -803,8 +830,25 @@ export default class EditorPlugin {
 
   tickPreviewPlayhead() {
     if (!this.previewSource || !this.loopEditorController) return
-    this.loopEditorController.setPlayhead(this.previewSource.audioEl.currentTime)
+    const currentTime = this.previewSource.audioEl.currentTime
+    this.loopEditorController.setPlayhead(currentTime)
+    this.updateStickyProgress(currentTime)
     this.previewRafId = requestAnimationFrame(() => this.tickPreviewPlayhead())
+  }
+
+  // Progress is relative to the trimmed loop region (loopStart..loopEnd),
+  // not the whole original file - that's what's actually being previewed/
+  // looped, matching what the waveform's own highlighted region already
+  // represents visually. Guarded on stickyProgressFill existing since this
+  // can theoretically be called before mountSticky() has run.
+  updateStickyProgress(currentTime) {
+    if (!this.els.stickyProgressFill || !this.loopEditorController) return
+    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+    const span = Math.max(0, loopEnd - loopStart)
+    const elapsed = Math.min(Math.max(currentTime - loopStart, 0), span)
+    const pct = span > 0 ? (elapsed / span) * 100 : 0
+    this.els.stickyProgressFill.style.width = `${pct}%`
+    this.els.stickyTime.textContent = `${formatDuration(elapsed)} / ${formatDuration(span)}`
   }
 
   disposePreview() {
@@ -813,6 +857,11 @@ export default class EditorPlugin {
     this.previewSource.dispose()
     this.previewSource = null
     this.loopEditorController?.clearPlayhead()
+    if (this.els.stickyProgressFill) {
+      this.els.stickyProgressFill.style.width = '0%'
+      this.els.stickyTime.textContent = '0:00 / 0:00'
+    }
+    if (this.els.playPause) this.els.playPause.textContent = 'Play'
   }
 
   async getWaveformPeaks(id) {
@@ -891,6 +940,7 @@ export default class EditorPlugin {
     this.loopEditorController.load(duration, loopStart, loopEnd)
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
+    this.updateStickyProgress(loopStart)
     this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter)
     this.updateSaveButtonState()
 

@@ -97,20 +97,58 @@
   cursor: grabbing;
 }
 
-.editor-preview-controls {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 8px;
-}
+/* Sticky bar (mounted into the shared #tab-sticky-bar, see TabHost.js/
+   src/renderer/styles/main.css for the outer bar's own styling) - these
+   rules only style this tab's own contents inside it. */
 
-.editor-loop-toggle {
+.editor-loop-icon-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
   color: var(--text-dim);
   cursor: pointer;
+  flex-shrink: 0;
+}
+
+.editor-loop-icon-btn:hover {
+  color: var(--text);
+}
+
+.editor-loop-icon-btn-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.editor-sticky-progress {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  min-width: 60px;
+  background: var(--surface-alt);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.editor-sticky-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+}
+
+.editor-sticky-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 .editor-waveform-status {
