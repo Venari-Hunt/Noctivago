@@ -70,6 +70,12 @@ export default class EditorPlugin {
     // per-sound saved state - nothing about it is written to the library.
     this.looping = true
     this.previewVolume = 0.7
+    // A/B Compare: two independent snapshots of the EQ bands the user can
+    // toggle between while tuning, to judge "is this actually better"
+    // against a real reference instead of memory. Per editing session only
+    // (reset in loadSound) - not persisted with the sound, since it's a
+    // workflow aid, not a saved setting.
+    this.eqCompare = { active: 'A', slots: { A: null, B: null } }
     this.els = {}
   }
 
@@ -211,6 +217,10 @@ export default class EditorPlugin {
           <div class="editor-eq">
             <div class="editor-eq-header">
               <span class="editor-eq-label">Parametric EQ</span>
+              <div class="editor-eq-compare" role="group" aria-label="Compare slot">
+                <button id="editor-eq-compare-a" class="editor-eq-compare-btn editor-eq-compare-btn-active" type="button" title="Compare slot A">A</button>
+                <button id="editor-eq-compare-b" class="editor-eq-compare-btn" type="button" title="Compare slot B">B</button>
+              </div>
               <button id="editor-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
             </div>
             <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain. Scroll over a node to adjust its Q."></canvas>
@@ -308,6 +318,8 @@ export default class EditorPlugin {
       echoDecayValue: container.querySelector('#editor-echo-decay-value'),
       eqCanvas: container.querySelector('#editor-eq-canvas'),
       eqReset: container.querySelector('#editor-eq-reset'),
+      eqCompareA: container.querySelector('#editor-eq-compare-a'),
+      eqCompareB: container.querySelector('#editor-eq-compare-b'),
       eqType: container.querySelector('#editor-eq-type'),
       eqFreq: container.querySelector('#editor-eq-freq'),
       eqGain: container.querySelector('#editor-eq-gain'),
@@ -424,6 +436,9 @@ export default class EditorPlugin {
       this.updateEqFieldsFromSelection()
       this.applyEqControls()
     })
+
+    this.els.eqCompareA.addEventListener('click', () => this.switchEqCompareSlot('A'))
+    this.els.eqCompareB.addEventListener('click', () => this.switchEqCompareSlot('B'))
 
     this.els.resetFilters.addEventListener('click', () => {
       this.setFilterSliders(NEUTRAL_FILTERS)
@@ -705,6 +720,37 @@ export default class EditorPlugin {
     this.updateSaveButtonState()
   }
 
+  // Snapshots the live EQ bands into the currently-active slot, then loads
+  // whatever's stored in the target slot (or, the first time that slot's
+  // ever touched, a copy of the current bands - so the very first switch
+  // doesn't jar into silence/flat EQ, it just "arms" an independent copy to
+  // diverge from). A no-op if the target is already active.
+  switchEqCompareSlot(target) {
+    if (target === this.eqCompare.active || !this.eqEditorController) return
+    const currentBands = this.eqEditorController.getBands()
+    this.eqCompare.slots[this.eqCompare.active] = currentBands.map((b) => ({ ...b }))
+    const nextBands = (this.eqCompare.slots[target] ?? currentBands).map((b) => ({ ...b }))
+    this.eqCompare.slots[target] = nextBands.map((b) => ({ ...b }))
+    this.eqCompare.active = target
+    this.eqEditorController.load(nextBands)
+    this.updateEqFieldsFromSelection()
+    this.applyEqControls()
+    this.updateEqCompareButtonsUI()
+  }
+
+  updateEqCompareButtonsUI() {
+    this.els.eqCompareA.classList.toggle('editor-eq-compare-btn-active', this.eqCompare.active === 'A')
+    this.els.eqCompareB.classList.toggle('editor-eq-compare-btn-active', this.eqCompare.active === 'B')
+  }
+
+  // Clears both slots and resets to A - A/B state is a per-sound-editing-
+  // session workflow aid, not something a switch to a different sound (or a
+  // freshly loaded one) should carry over.
+  resetEqCompare() {
+    this.eqCompare = { active: 'A', slots: { A: null, B: null } }
+    this.updateEqCompareButtonsUI()
+  }
+
   updateFilterLabels(filters) {
     this.els.highpassValue.textContent = filters.highpassHz > 0 ? `${filters.highpassHz} Hz` : 'Off'
     this.els.lowpassValue.textContent = filters.lowpassHz < 20000 ? `${filters.lowpassHz} Hz` : 'Off'
@@ -936,6 +982,7 @@ export default class EditorPlugin {
     const filters = { ...NEUTRAL_FILTERS, ...entry.filters, eq: entry.filters?.eq ?? defaultEqBands() }
     this.setFilterSliders(filters)
     this.updateFilterLabels(filters)
+    this.resetEqCompare()
 
     const crossfadeMs = entry.crossfadeSeconds != null ? Math.round(entry.crossfadeSeconds * 1000) : DEFAULT_CROSSFADE_MS
     this.els.crossfade.value = String(crossfadeMs)
