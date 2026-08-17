@@ -1,6 +1,7 @@
 import { AudioEngine } from './audio/AudioEngine.js'
 import { PreviewSource } from './audio/PreviewSource.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
+import { createEqEditorController, Q_MIN, Q_MAX } from './ui/EqEditor.js'
 import { createWaveformScrollbar } from './ui/WaveformScrollbar.js'
 import { formatDuration, parseDuration } from './util/time.js'
 
@@ -17,7 +18,16 @@ const MAX_BUFFER_CLIP_SECONDS = 600
 // crossfadeSeconds is null).
 const DEFAULT_CROSSFADE_MS = 200
 
-const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 }
+// Mirrors library.js's defaultEqBands() exactly (band count, frequencies,
+// neutral gain/Q) - same cross-directory duplication reason as
+// MAX_BUFFER_CLIP_SECONDS above. A fresh function call each time, never a
+// shared array, since callers mutate the objects they get back (the EQ
+// editor controller clones on load() too, but this is cheap insurance).
+function defaultEqBands() {
+  return [80, 250, 800, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1 }))
+}
+
+const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: defaultEqBands() }
 
 // Curated highpass/lowpass/gain/echo combos for the one-click preset
 // buttons. "Underwater" needs the lowpass slider's range extended below its
@@ -203,6 +213,30 @@ export default class EditorPlugin {
               <span id="editor-echo-decay-value" class="editor-filter-value">Off</span>
             </label>
           </div>
+          <div class="editor-eq">
+            <div class="editor-eq-header">
+              <span class="editor-eq-label">Parametric EQ</span>
+              <button id="editor-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
+            </div>
+            <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain. Scroll over a node to adjust its Q."></canvas>
+            <div class="editor-eq-band-controls">
+              <label>
+                <span>Freq</span>
+                <input id="editor-eq-freq" type="number" min="20" max="20000" step="1" />
+                <span class="editor-filter-value">Hz</span>
+              </label>
+              <label>
+                <span>Gain</span>
+                <input id="editor-eq-gain" type="number" min="-24" max="24" step="0.1" />
+                <span class="editor-filter-value">dB</span>
+              </label>
+              <label>
+                <span>Q</span>
+                <input id="editor-eq-q" type="number" min="0.1" max="10" step="0.1" />
+              </label>
+            </div>
+            <p class="editor-eq-hint">Drag a node on the graph to shape a band, or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q.</p>
+          </div>
           <div class="editor-presets">
             <span class="editor-presets-label">Presets</span>
             <button class="btn btn-small" type="button" data-preset="muffled">Muffled</button>
@@ -265,6 +299,11 @@ export default class EditorPlugin {
       echoDelayValue: container.querySelector('#editor-echo-delay-value'),
       echoDecay: container.querySelector('#editor-echo-decay'),
       echoDecayValue: container.querySelector('#editor-echo-decay-value'),
+      eqCanvas: container.querySelector('#editor-eq-canvas'),
+      eqReset: container.querySelector('#editor-eq-reset'),
+      eqFreq: container.querySelector('#editor-eq-freq'),
+      eqGain: container.querySelector('#editor-eq-gain'),
+      eqQ: container.querySelector('#editor-eq-q'),
       playPause: container.querySelector('#editor-play-pause'),
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
@@ -281,6 +320,9 @@ export default class EditorPlugin {
     this.loopEditorController.onScrub((t) => {
       this.previewSource?.scrubTo(t)
     })
+
+    this.eqEditorController = createEqEditorController(this.els.eqCanvas)
+    this.eqEditorController.onChange(() => this.applyEqControls())
 
     this.waveformScrollbar = createWaveformScrollbar(this.els.scrollbarTrack, this.els.scrollbarThumb)
     this.waveformScrollbar.onNavigate((start, end) => this.loopEditorController.setViewport(start, end))
@@ -351,6 +393,15 @@ export default class EditorPlugin {
     this.els.gain.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDelay.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDecay.addEventListener('input', () => this.applyFilterControls())
+
+    this.els.eqFreq.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
+    this.els.eqGain.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
+    this.els.eqQ.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
+    this.els.eqReset.addEventListener('click', () => {
+      this.eqEditorController.load(defaultEqBands())
+      this.updateEqFieldsFromSelection()
+      this.applyEqControls()
+    })
 
     this.els.resetFilters.addEventListener('click', () => {
       this.setFilterSliders(NEUTRAL_FILTERS)
@@ -524,13 +575,22 @@ export default class EditorPlugin {
   }
 
   // Shared by Reset filters and every preset button, both of which just set
-  // all five slider values from a filters object before re-applying.
+  // all five slider values from a filters object before re-applying. Presets
+  // (see FILTER_PRESETS) don't define .eq at all - the EQ graph is a
+  // separate, more precise tool than a one-click coloration preset, so a
+  // preset click deliberately leaves it untouched; only an explicit
+  // filters.eq (Reset filters' NEUTRAL_FILTERS, or a loaded sound's own
+  // saved bands) actually replaces it.
   setFilterSliders(filters) {
     this.els.highpass.value = String(filters.highpassHz)
     this.els.lowpass.value = String(filters.lowpassHz)
     this.els.gain.value = String(filters.gainDb)
     this.els.echoDelay.value = String(filters.echoDelayMs ?? 0)
     this.els.echoDecay.value = String(filters.echoDecay ?? 0)
+    if (filters.eq) {
+      this.eqEditorController.load(filters.eq)
+      this.updateEqFieldsFromSelection()
+    }
   }
 
   currentFilters() {
@@ -539,8 +599,40 @@ export default class EditorPlugin {
       lowpassHz: Number(this.els.lowpass.value),
       gainDb: Number(this.els.gain.value),
       echoDelayMs: Number(this.els.echoDelay.value),
-      echoDecay: Number(this.els.echoDecay.value)
+      echoDecay: Number(this.els.echoDecay.value),
+      eq: this.eqEditorController.getBands()
     }
+  }
+
+  // Reflects the EQ editor's currently-selected node in the precision-entry
+  // fields (see EqEditor.js's setSelectedBand for the reverse direction) -
+  // called whenever the selection or its values change, whatever the source
+  // (a drag, a wheel Q adjustment, a fresh load, or Reset EQ).
+  updateEqFieldsFromSelection() {
+    const bands = this.eqEditorController.getBands()
+    const index = this.eqEditorController.getSelectedIndex()
+    const band = bands[index]
+    if (!band) return
+    this.els.eqFreq.value = String(Math.round(band.freqHz))
+    this.els.eqGain.value = String(band.gainDb)
+    this.els.eqQ.value = String(band.q)
+  }
+
+  applyEqFieldsToSelectedBand() {
+    const freqHz = Math.min(20000, Math.max(20, Number(this.els.eqFreq.value)))
+    const gainDb = Math.min(24, Math.max(-24, Number(this.els.eqGain.value)))
+    const q = Math.min(Q_MAX, Math.max(Q_MIN, Number(this.els.eqQ.value)))
+    this.eqEditorController.setSelectedBand({ freqHz, gainDb, q })
+    this.applyEqControls()
+  }
+
+  // Fires on every EQ graph change (drag, wheel Q) and every precision-field
+  // edit - same live-preview + dirty-state pattern as applyFilterControls,
+  // since EQ is just another part of the same filters bag now.
+  applyEqControls() {
+    this.updateEqFieldsFromSelection()
+    this.previewSource?.setFilters(this.currentFilters())
+    this.updateSaveButtonState()
   }
 
   updateFilterLabels(filters) {
@@ -661,7 +753,8 @@ export default class EditorPlugin {
         lowpassHz: filters.lowpassHz ?? 20000,
         gainDb: filters.gainDb ?? 0,
         echoDelayMs: filters.echoDelayMs ?? 0,
-        echoDecay: filters.echoDecay ?? 0
+        echoDecay: filters.echoDecay ?? 0,
+        eq: (filters.eq ?? defaultEqBands()).map((b) => ({ freqHz: b.freqHz, gainDb: b.gainDb, q: b.q }))
       },
       crossfadeMs,
       speedPitch: {
@@ -741,7 +834,12 @@ export default class EditorPlugin {
     this.els.playPause.textContent = 'Play'
     this.els.saveStatus.textContent = ''
 
-    const filters = entry.filters ?? { ...NEUTRAL_FILTERS }
+    // entry.filters.eq is undefined on any sound saved before the
+    // parametric EQ existed - explicitly defaulted here (not left to
+    // setFilterSliders' own `if (filters.eq)` guard) so loading an old
+    // sound always resets the EQ editor to flat defaults instead of
+    // silently keeping whatever the previously-loaded sound left on screen.
+    const filters = { ...NEUTRAL_FILTERS, ...entry.filters, eq: entry.filters?.eq ?? defaultEqBands() }
     this.setFilterSliders(filters)
     this.updateFilterLabels(filters)
 

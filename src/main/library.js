@@ -50,6 +50,19 @@ function checkStatus(entry) {
   return fs.existsSync(resolvePlaybackPath(entry)) ? 'ok' : 'missing'
 }
 
+// Six-band parametric EQ, folded into the existing `filters` bag (alongside
+// highpassHz/lowpassHz/gainDb/echoDelayMs/echoDecay) rather than a new
+// top-level field - reuses every bit of existing filters plumbing (Remix's
+// updateFilters, the loopClipFilters staleness comparison, LocalFileSoundSource/
+// PreviewSource's live-update paths) with zero new schema/IPC/staleness code.
+// Roughly log-spaced defaults across the audible range; gainDb: 0 on every
+// band is a true no-op regardless of freqHz/q (matches how every other
+// filter control in this app treats 0/neutral as "off"), so a fresh sound's
+// EQ has no audible effect until a band is actually moved.
+function defaultEqBands() {
+  return [80, 250, 800, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1 }))
+}
+
 // Backfills fields added after some entries already existed (tags, dateAdded,
 // dateCreated, sortIndex) - same in-place-refresh-on-read pattern checkStatus
 // already uses for `status`, so older libraries pick these up transparently
@@ -280,7 +293,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     included: false,
     loopStart: 0,
     loopEnd: null,
-    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: defaultEqBands() },
     crossfadeSeconds: null,
     speedPitch: { speed: 1, pitchSemitones: 0, reversed: false },
     // playMode 'scatter': instead of looping continuously, replay the

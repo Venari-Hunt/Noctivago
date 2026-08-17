@@ -69,6 +69,22 @@ export class LocalFileSoundSource {
     this.lowpassNode.type = 'lowpass'
     this.lowpassNode.frequency.value = this.filters.lowpassHz ?? 20000
 
+    // Parametric EQ: a fixed chain of peaking BiquadFilterNodes, one per
+    // saved band (see library.js's defaultEqBands) - a band left at its
+    // default gainDb:0 is a true no-op node in the chain, so an EQ nobody's
+    // touched costs nothing audible, same convention every other filter
+    // here already follows. Inserted between lowpass and the overall filter
+    // gain, same position ffmpeg's bake applies them (see loopClip.js's
+    // buildFilterChain) so live playback and the baked clip agree.
+    this.eqNodes = (this.filters.eq ?? []).map((band) => {
+      const node = engine.context.createBiquadFilter()
+      node.type = 'peaking'
+      node.frequency.value = band.freqHz
+      node.Q.value = band.q
+      node.gain.value = band.gainDb
+      return node
+    })
+
     this.filterGainNode = engine.context.createGain()
     this.filterGainNode.gain.value = this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1
 
@@ -94,7 +110,11 @@ export class LocalFileSoundSource {
 
     this.sourceNode.connect(this.highpassNode)
     this.highpassNode.connect(this.lowpassNode)
-    this.lowpassNode.connect(this.filterGainNode)
+    const eqChainEnd = this.eqNodes.reduce((prev, node) => {
+      prev.connect(node)
+      return node
+    }, this.lowpassNode)
+    eqChainEnd.connect(this.filterGainNode)
     this.filterGainNode.connect(this.gainNode)
 
     this.filterGainNode.connect(this.echoSendGain)
@@ -193,6 +213,18 @@ export class LocalFileSoundSource {
     this.echoDelayNode.delayTime.setTargetAtTime((this.filters.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
     this.echoSendGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.echoFeedbackGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    // The EQ chain's node count is fixed at construction time (one per band
+    // in the filters this source was built with) - only ever updated in
+    // place here, never resized, since every sound always has the same
+    // fixed band count (see library.js's defaultEqBands).
+    const eq = this.filters.eq ?? []
+    this.eqNodes.forEach((node, i) => {
+      const band = eq[i]
+      if (!band) return
+      node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
+      node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
+      node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+    })
   }
 
   hasFilters(filters) {
@@ -279,6 +311,7 @@ export class LocalFileSoundSource {
     this.sourceNode.disconnect()
     this.highpassNode.disconnect()
     this.lowpassNode.disconnect()
+    for (const node of this.eqNodes) node.disconnect()
     this.filterGainNode.disconnect()
     this.echoDelayNode.disconnect()
     this.echoSendGain.disconnect()

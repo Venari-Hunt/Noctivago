@@ -140,6 +140,12 @@ function buildFilterChain(filters) {
   if (filters.lowpassHz > 0 && filters.lowpassHz < 20000) parts.push(`lowpass=f=${filters.lowpassHz}`)
   if (filters.gainDb) parts.push(`volume=${filters.gainDb}dB`)
   if (filters.echoDelayMs > 0 && filters.echoDecay > 0) parts.push(buildEchoFilter(filters.echoDelayMs, filters.echoDecay))
+  // Parametric EQ bands - a band with gainDb 0 is a true no-op (matches
+  // every other 0/neutral-means-off control in this chain), so only
+  // non-neutral bands actually reach the filter graph.
+  for (const band of filters.eq ?? []) {
+    if (band.gainDb) parts.push(`equalizer=f=${band.freqHz}:width_type=q:w=${band.q}:g=${band.gainDb}`)
+  }
   return parts.length > 0 ? parts.join(',') : null
 }
 

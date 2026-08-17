@@ -1,6 +1,13 @@
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
 const FILTER_SMOOTHING_SECONDS = 0.01
+// Mirrors library.js's defaultEqBands() band count - duplicated per this
+// plugin's own "bundle your own copies" convention (see MAX_BUFFER_CLIP_SECONDS
+// above in index.js). A voice's EQ node count is fixed at creation, before
+// any real sound/filters are known (see createVoice below), so it needs to
+// know the count up front rather than deriving it from the first filters
+// object it's given.
+const EQ_BAND_COUNT = 6
 // Matches src/renderer/audio/SoundSource.js's core-playback copy of this
 // same echo design - see that file for the full rationale (feedback delay
 // tapped off the dry signal, one knob driving both send and feedback gain).
@@ -29,6 +36,22 @@ function createVoice(engine, soundId) {
   lowpassNode.type = 'lowpass'
   lowpassNode.frequency.value = 20000
 
+  // Parametric EQ - fixed chain of peaking BiquadFilterNodes, mirrors core's
+  // LocalFileSoundSource (src/renderer/audio/SoundSource.js) exactly, same
+  // position (between lowpass and the overall filter gain) so this preview
+  // and the real Mixer playback agree. Created with neutral placeholder
+  // values since a voice exists before any sound/filters are actually
+  // loaded - applyFiltersToVoice below updates them in place once real
+  // values are known, same as every other node in this chain.
+  const eqNodes = Array.from({ length: EQ_BAND_COUNT }, () => {
+    const node = engine.context.createBiquadFilter()
+    node.type = 'peaking'
+    node.frequency.value = 1000
+    node.Q.value = 1
+    node.gain.value = 0
+    return node
+  })
+
   const filterGainNode = engine.context.createGain()
   filterGainNode.gain.value = 1
 
@@ -46,7 +69,11 @@ function createVoice(engine, soundId) {
 
   sourceNode.connect(highpassNode)
   highpassNode.connect(lowpassNode)
-  lowpassNode.connect(filterGainNode)
+  const eqChainEnd = eqNodes.reduce((prev, node) => {
+    prev.connect(node)
+    return node
+  }, lowpassNode)
+  eqChainEnd.connect(filterGainNode)
   filterGainNode.connect(crossfadeGain)
 
   filterGainNode.connect(echoSendGain)
@@ -55,10 +82,10 @@ function createVoice(engine, soundId) {
   echoFeedbackGain.connect(echoDelayNode)
   echoDelayNode.connect(crossfadeGain)
 
-  return { audioEl, sourceNode, highpassNode, lowpassNode, filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, crossfadeGain }
+  return { audioEl, sourceNode, highpassNode, lowpassNode, eqNodes, filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, crossfadeGain }
 }
 
-function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0 }) {
+function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0, eq = [] }) {
   const now = context.currentTime
   voice.highpassNode.frequency.setTargetAtTime(highpassHz, now, FILTER_SMOOTHING_SECONDS)
   voice.lowpassNode.frequency.setTargetAtTime(lowpassHz, now, FILTER_SMOOTHING_SECONDS)
@@ -66,6 +93,13 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
   voice.echoDelayNode.delayTime.setTargetAtTime(echoDelayMs / 1000, now, FILTER_SMOOTHING_SECONDS)
   voice.echoSendGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
   voice.echoFeedbackGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
+  voice.eqNodes.forEach((node, i) => {
+    const band = eq[i]
+    if (!band) return
+    node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
+    node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
+    node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+  })
 }
 
 // Speed previews accurately via playbackRate alone (the browser's own
@@ -96,6 +130,7 @@ function disposeVoice(voice) {
   voice.sourceNode.disconnect()
   voice.highpassNode.disconnect()
   voice.lowpassNode.disconnect()
+  for (const node of voice.eqNodes) node.disconnect()
   voice.filterGainNode.disconnect()
   voice.echoDelayNode.disconnect()
   voice.echoSendGain.disconnect()
