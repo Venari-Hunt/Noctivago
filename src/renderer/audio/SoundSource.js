@@ -34,6 +34,21 @@ function eqNodeType(band) {
   return band.muted || band.type === 'off' ? 'allpass' : (band.type ?? 'peaking')
 }
 
+// Only the four filter-*shaped* types have a real "slope" (rolloff
+// steepness) concept - peaking/shelf types are gain-shaped, 'off' does
+// nothing. BiquadFilterNode is inherently one fixed 12dB/octave stage with
+// no slope parameter of its own, so "Steep" is real cascading: N identical
+// stages chained in series, each stage multiplying the rolloff by another
+// ~12dB/octave (feasibility confirmed against both Web Audio and the real
+// bundled ffmpeg binary before implementing - see the ranked backlog's
+// slope research). Mirrors PreviewSource.js's identical helper (and
+// EqEditor.js's copy, used for the response-curve preview).
+const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
+const STEEP_STAGE_COUNT = 4
+function eqBandStageCount(band) {
+  return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
+}
+
 export class LocalFileSoundSource {
   constructor(engine, { soundId, loopStart, loopEnd, volume, filters, speed }) {
     this.engine = engine
@@ -80,11 +95,11 @@ export class LocalFileSoundSource {
     this.lowpassNode.type = 'lowpass'
     this.lowpassNode.frequency.value = this.filters.lowpassHz ?? 20000
 
-    // Parametric EQ: a chain of BiquadFilterNodes, one per band the user has
-    // actually added on the graph (see EqEditor.js's +/trash controls - the
-    // band count is entirely user-managed now, not a fixed preset), each
-    // independently one of Web Audio's native filter types - a lucky
-    // architecture fit, since BiquadFilterNode's own type set (lowpass/
+    // Parametric EQ: a chain of BiquadFilterNodes, one *group* per band the
+    // user has actually added on the graph (see EqEditor.js's +/trash
+    // controls - the band count is entirely user-managed now, not a fixed
+    // preset), each independently one of Web Audio's native filter types - a
+    // lucky architecture fit, since BiquadFilterNode's own type set (lowpass/
     // highpass/bandpass/lowshelf/highshelf/peaking/notch/allpass) already
     // covers 7 of the real FL Studio "Fruity Parametric EQ 2" reference's 8
     // shapes directly. 'off' (the 8th, a pseudo-type - see eqNodeType) maps
@@ -97,11 +112,18 @@ export class LocalFileSoundSource {
     // signal whenever selected, they're never "neutral." Inserted between
     // lowpass and the overall filter gain, same position ffmpeg's bake
     // applies them (see loopClip.js's buildFilterChain) so live playback
-    // and the baked clip agree. Starts empty and is built by _rebuildEqChain
-    // below, the same rebuild path setFilters() uses whenever the band count
-    // changes later - one code path for both initial construction and live
-    // add/remove, so they can't drift apart.
+    // and the baked clip agree. A band's own group is 1 node normally, or
+    // STEEP_STAGE_COUNT identical cascaded nodes when its slope is 'steep'
+    // (see eqBandStageCount) - eqNodes stays the flat, fully-ordered list of
+    // every real node for connect/disconnect purposes, eqNodeGroups is the
+    // same nodes re-grouped per band for per-band parameter updates. Starts
+    // empty and is built by _rebuildEqChain below, the same rebuild path
+    // setFilters() uses whenever the topology changes later - one code path
+    // for both initial construction and live add/remove/type/slope changes,
+    // so they can't drift apart.
     this.eqNodes = []
+    this.eqNodeGroups = []
+    this.eqTopology = ''
 
     this.filterGainNode = engine.context.createGain()
     this.filterGainNode.gain.value = this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1
@@ -227,15 +249,19 @@ export class LocalFileSoundSource {
     this.echoDelayNode.delayTime.setTargetAtTime((this.filters.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
     this.echoSendGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.echoFeedbackGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
-    // The EQ chain's node count now varies with how many bands the user has
-    // actually added on the graph - only rebuild the chain (real work:
-    // disconnecting/recreating nodes) when that count actually changes;
-    // an in-place param update is enough whenever it hasn't, same as before.
+    // The EQ chain's shape now varies with both how many bands exist AND how
+    // many stages each one needs (a plain length check alone can't tell a
+    // type/slope change apart from a same-length no-op) - only rebuild the
+    // chain (real work: disconnecting/recreating nodes) when the per-band
+    // topology fingerprint actually changes; an in-place param update on
+    // every node already in a band's own group is enough whenever it
+    // hasn't, same pattern as before.
     const eq = this.filters.eq ?? []
-    if (eq.length !== this.eqNodes.length) {
+    const topology = eq.map(eqBandStageCount).join(',')
+    if (topology !== this.eqTopology) {
       this._rebuildEqChain(eq)
     } else {
-      this.eqNodes.forEach((node, i) => {
+      this.eqNodeGroups.forEach((group, i) => {
         const band = eq[i]
         // .type isn't an AudioParam - a plain property, so it can't be
         // smoothed like the others below. Only actually reassigned when it
@@ -243,34 +269,47 @@ export class LocalFileSoundSource {
         // the filter's internal state (a small click) even when nothing
         // changed.
         const newType = eqNodeType(band)
-        if (node.type !== newType) node.type = newType
-        node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
-        node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
-        node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+        for (const node of group) {
+          if (node.type !== newType) node.type = newType
+          node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
+          node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
+          node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+        }
       })
     }
   }
 
-  // Tears down and rebuilds the eqNodes chain to match a new band count -
-  // used both at construction (see the constructor, starting from an empty
-  // chain) and whenever setFilters() sees the band count actually change.
-  // .disconnect() with no arguments removes every outgoing connection from a
-  // node, so this is safe regardless of whether the old chain was empty
-  // (lowpassNode wired directly to filterGainNode) or had N nodes in it.
-  // New nodes get their values set directly (no smoothing) since there's no
-  // previous value on a brand-new node to smooth *from* - matches how the
-  // constructor already initializes every other node in this chain.
+  // Tears down and rebuilds the eqNodes chain to match a new band topology
+  // (band count, or any band's own stage count via type/slope) - used both
+  // at construction (see the constructor, starting from an empty chain) and
+  // whenever setFilters() sees the topology actually change. .disconnect()
+  // with no arguments removes every outgoing connection from a node, so
+  // this is safe regardless of whether the old chain was empty (lowpassNode
+  // wired directly to filterGainNode) or had N nodes in it. New nodes get
+  // their values set directly (no smoothing) since there's no previous
+  // value on a brand-new node to smooth *from* - matches how the
+  // constructor already initializes every other node in this chain. Each
+  // band becomes its own internal cascade of eqBandStageCount(band)
+  // identical nodes chained in series (1 normally, 4 for a 'steep'
+  // filter-shaped band) - stacking identical stages is exactly how a
+  // steeper rolloff is achieved, since BiquadFilterNode has no slope
+  // parameter of its own.
   _rebuildEqChain(eq) {
     this.lowpassNode.disconnect()
     for (const node of this.eqNodes) node.disconnect()
-    this.eqNodes = eq.map((band) => {
-      const node = this.engine.context.createBiquadFilter()
-      node.type = eqNodeType(band)
-      node.frequency.value = band.freqHz
-      node.Q.value = band.q
-      node.gain.value = band.gainDb
-      return node
+    this.eqNodeGroups = eq.map((band) => {
+      const stageCount = eqBandStageCount(band)
+      return Array.from({ length: stageCount }, () => {
+        const node = this.engine.context.createBiquadFilter()
+        node.type = eqNodeType(band)
+        node.frequency.value = band.freqHz
+        node.Q.value = band.q
+        node.gain.value = band.gainDb
+        return node
+      })
     })
+    this.eqNodes = this.eqNodeGroups.flat()
+    this.eqTopology = eq.map(eqBandStageCount).join(',')
     const eqChainEnd = this.eqNodes.reduce((prev, node) => {
       prev.connect(node)
       return node

@@ -20,7 +20,22 @@ const Q_WHEEL_STEP = 0.08
 // A new node's starting point - a neutral peaking band, roughly centered on
 // the graph's log-frequency axis so it's immediately visible and draggable
 // regardless of what other bands already exist.
-const NEW_BAND_DEFAULTS = { freqHz: 1000, gainDb: 0, q: 1, type: 'peaking', muted: false }
+const NEW_BAND_DEFAULTS = { freqHz: 1000, gainDb: 0, q: 1, type: 'peaking', slope: 'gentle', muted: false }
+// Only the four filter-*shaped* types have a real "slope" concept (how
+// steeply they roll off) - peaking/shelf types are gain-shaped, not
+// roll-off-shaped, and 'off' does nothing at all. Web Audio's
+// BiquadFilterNode is inherently a single fixed 12dB/octave (2-pole) stage
+// with no slope parameter of its own - "Steep" is achieved the same way
+// ffmpeg's own cascading was verified to work (see the ranked backlog's
+// slope research): chaining STEEP_STAGE_COUNT identical stages in series,
+// each additional stage multiplying the rolloff by another ~12dB/octave.
+// Duplicated in SoundSource.js/PreviewSource.js/loopClip.js for the usual
+// cross-directory-import reason.
+export const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
+export const STEEP_STAGE_COUNT = 4
+export function eqBandStageCount(band) {
+  return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
+}
 // Soft ceiling on band count - mostly a sanity guard against an accidental
 // runaway (each band is a real BiquadFilterNode in the live audio graph),
 // not a meaningful creative constraint; a real parametric EQ project rarely
@@ -173,7 +188,12 @@ function getResponseContext() {
 // Bypassed bands (muted, or a different band is soloed) or 'off'-type bands
 // are excluded entirely, matching the same "honest reflection of what's
 // audible" the node-dimming below already does. Returns null when nothing
-// is actually contributing (nothing to draw a curve for at all).
+// is actually contributing (nothing to draw a curve for at all). A 'steep'
+// band's own stage count (see eqBandStageCount) is folded in here too - the
+// real live chain cascades that many identical stages in series, so the
+// curve multiplies that same single stage's response by its own stage count
+// (in the log domain, i.e. added that many times) to stay an honest
+// reflection of the real cascaded rolloff, not just the single-stage shape.
 function computeResponseCurve(bands, width, soloIndex) {
   const activeBands = bands.filter((band, i) => !band.muted && band.type !== 'off' && (soloIndex === -1 || soloIndex === i))
   if (activeBands.length === 0) return null
@@ -195,8 +215,9 @@ function computeResponseCurve(bands, width, soloIndex) {
     node.Q.value = band.q
     node.gain.value = band.gainDb
     node.getFrequencyResponse(freqs, mag, phase)
+    const stages = eqBandStageCount(band)
     for (let i = 0; i < sampleCount; i++) {
-      totalDb[i] += 20 * Math.log10(Math.max(mag[i], 1e-6))
+      totalDb[i] += stages * 20 * Math.log10(Math.max(mag[i], 1e-6))
     }
   }
   return totalDb

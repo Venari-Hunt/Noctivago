@@ -1,7 +1,7 @@
 import { AudioEngine } from './audio/AudioEngine.js'
 import { PreviewSource } from './audio/PreviewSource.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
-import { createEqEditorController, Q_MIN, Q_MAX } from './ui/EqEditor.js'
+import { createEqEditorController, Q_MIN, Q_MAX, SLOPE_CAPABLE_EQ_TYPES } from './ui/EqEditor.js'
 import { createWaveformScrollbar } from './ui/WaveformScrollbar.js'
 import { formatDuration, parseDuration } from './util/time.js'
 
@@ -268,6 +268,13 @@ export default class EditorPlugin {
                   <option value="peaking" selected>Peaking</option>
                 </select>
               </label>
+              <label id="editor-eq-slope-label">
+                <span>Slope</span>
+                <select id="editor-eq-slope">
+                  <option value="gentle" selected>Gentle</option>
+                  <option value="steep">Steep</option>
+                </select>
+              </label>
               <label>
                 <span>Freq</span>
                 <input id="editor-eq-freq" type="number" min="20" max="20000" step="1" />
@@ -367,6 +374,8 @@ export default class EditorPlugin {
       eqCompareA: container.querySelector('#editor-eq-compare-a'),
       eqCompareB: container.querySelector('#editor-eq-compare-b'),
       eqType: container.querySelector('#editor-eq-type'),
+      eqSlope: container.querySelector('#editor-eq-slope'),
+      eqSlopeLabel: container.querySelector('#editor-eq-slope-label'),
       eqFreq: container.querySelector('#editor-eq-freq'),
       eqGain: container.querySelector('#editor-eq-gain'),
       eqQ: container.querySelector('#editor-eq-q'),
@@ -411,7 +420,7 @@ export default class EditorPlugin {
     })
     this.eqEditorController.onAltClick((index) => {
       this.eqEditorController.setSelectedIndex(index)
-      this.eqEditorController.setSelectedBand({ gainDb: 0, q: 1, type: 'peaking' })
+      this.eqEditorController.setSelectedBand({ gainDb: 0, q: 1, type: 'peaking', slope: 'gentle' })
       this.applyEqControls()
     })
 
@@ -530,6 +539,7 @@ export default class EditorPlugin {
     // bug report ("raising the frequency by the number doesn't change the
     // node's position and doesn't affect the audio").
     this.els.eqType.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
+    this.els.eqSlope.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
     this.els.eqFreq.addEventListener('input', () => this.applyEqFieldsToSelectedBand())
     this.els.eqGain.addEventListener('input', () => this.applyEqFieldsToSelectedBand())
     this.els.eqQ.addEventListener('input', () => this.applyEqFieldsToSelectedBand())
@@ -896,6 +906,9 @@ export default class EditorPlugin {
       this.els.eqFreq.value = ''
       this.els.eqGain.value = ''
       this.els.eqQ.value = ''
+      this.els.eqSlope.value = 'gentle'
+      this.els.eqSlope.disabled = true
+      this.els.eqSlopeLabel.classList.add('hidden')
       this.els.eqMute.classList.remove('editor-eq-mute-active')
       this.els.eqSolo.classList.remove('editor-eq-solo-active')
       return
@@ -904,16 +917,25 @@ export default class EditorPlugin {
     this.els.eqFreq.value = String(Math.round(band.freqHz))
     this.els.eqGain.value = String(band.gainDb)
     this.els.eqQ.value = String(band.q)
+    // Slope only means anything for the four filter-*shaped* types (a
+    // rolloff steepness) - peaking/shelf bands are gain-shaped, not
+    // rolloff-shaped, and 'off' does nothing at all, so the control hides
+    // entirely rather than showing a value with no real effect.
+    const slopeCapable = SLOPE_CAPABLE_EQ_TYPES.includes(band.type)
+    this.els.eqSlope.value = band.slope ?? 'gentle'
+    this.els.eqSlope.disabled = !slopeCapable
+    this.els.eqSlopeLabel.classList.toggle('hidden', !slopeCapable)
     this.els.eqMute.classList.toggle('editor-eq-mute-active', Boolean(band.muted))
     this.els.eqSolo.classList.toggle('editor-eq-solo-active', this.eqEditorController.getSoloIndex() === index)
   }
 
   applyEqFieldsToSelectedBand() {
     const type = this.els.eqType.value
+    const slope = this.els.eqSlope.value
     const freqHz = Math.min(20000, Math.max(20, Number(this.els.eqFreq.value)))
     const gainDb = Math.min(24, Math.max(-24, Number(this.els.eqGain.value)))
     const q = Math.min(Q_MAX, Math.max(Q_MIN, Number(this.els.eqQ.value)))
-    this.eqEditorController.setSelectedBand({ type, freqHz, gainDb, q })
+    this.eqEditorController.setSelectedBand({ type, slope, freqHz, gainDb, q })
     this.applyEqControls()
   }
 
@@ -1076,7 +1098,14 @@ export default class EditorPlugin {
         gainDb: filters.gainDb ?? 0,
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0,
-        eq: (filters.eq ?? defaultEqBands()).map((b) => ({ freqHz: b.freqHz, gainDb: b.gainDb, q: b.q, type: b.type ?? 'peaking', muted: b.muted ?? false }))
+        eq: (filters.eq ?? defaultEqBands()).map((b) => ({
+          freqHz: b.freqHz,
+          gainDb: b.gainDb,
+          q: b.q,
+          type: b.type ?? 'peaking',
+          slope: b.slope ?? 'gentle',
+          muted: b.muted ?? false
+        }))
       },
       crossfadeMs,
       speedPitch: {

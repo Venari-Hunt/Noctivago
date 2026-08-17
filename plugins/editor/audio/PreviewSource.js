@@ -16,6 +16,20 @@ function eqNodeType(band) {
   return band.muted || band.type === 'off' ? 'allpass' : (band.type ?? 'peaking')
 }
 
+// Only the four filter-*shaped* types have a real "slope" (rolloff
+// steepness) concept - peaking/shelf types are gain-shaped, 'off' does
+// nothing. BiquadFilterNode is inherently one fixed 12dB/octave stage with
+// no slope parameter of its own, so "Steep" is real cascading: N identical
+// stages chained in series, each stage multiplying the rolloff by another
+// ~12dB/octave. Mirrors SoundSource.js's identical helper (and EqEditor.js's
+// copy, used for the response-curve preview) - duplicated per this plugin's
+// usual cross-directory-import reason.
+const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
+const STEEP_STAGE_COUNT = 4
+function eqBandStageCount(band) {
+  return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
+}
+
 // One playback "voice": its own <audio> element and full filter chain, so
 // two voices can play simultaneously and be crossfaded against each other -
 // see PreviewSource's _tick()/_startCrossfade() for how they're driven.
@@ -39,16 +53,23 @@ function createVoice(engine, soundId) {
   lowpassNode.type = 'lowpass'
   lowpassNode.frequency.value = 20000
 
-  // Parametric EQ - a chain of BiquadFilterNodes, one per band the user has
-  // actually added on the graph (see EqEditor.js's +/trash controls),
-  // mirrors core's LocalFileSoundSource (src/renderer/audio/SoundSource.js)
-  // exactly, same position (between lowpass and the overall filter gain) so
-  // this preview and the real Mixer playback agree. Starts empty - a voice
-  // exists before any sound/filters are actually known, and the band count
-  // is no longer a fixed preset - applyFiltersToVoice below rebuilds this
-  // chain (via rebuildEqChain) the first time real filters arrive, and again
-  // any time the band count itself changes.
+  // Parametric EQ - a chain of BiquadFilterNodes, one *group* per band the
+  // user has actually added on the graph (see EqEditor.js's +/trash
+  // controls), mirrors core's LocalFileSoundSource
+  // (src/renderer/audio/SoundSource.js) exactly, same position (between
+  // lowpass and the overall filter gain) so this preview and the real Mixer
+  // playback agree. A band's own group is 1 node normally, or
+  // STEEP_STAGE_COUNT identical cascaded nodes when that band's slope is
+  // 'steep' (see eqBandStageCount) - eqNodes stays the flat, fully-ordered
+  // list of every real node for connect/disconnect purposes, eqNodeGroups is
+  // the same nodes re-grouped per band for per-band parameter updates.
+  // Starts empty - a voice exists before any sound/filters are actually
+  // known - applyFiltersToVoice below rebuilds this chain (via
+  // rebuildEqChain) the first time real filters arrive, and again any time
+  // a band's own node count changes (added/removed, or its type/slope
+  // changes how many stages it needs).
   const eqNodes = []
+  const eqNodeGroups = []
 
   const filterGainNode = engine.context.createGain()
   filterGainNode.gain.value = 1
@@ -80,27 +101,37 @@ function createVoice(engine, soundId) {
   echoFeedbackGain.connect(echoDelayNode)
   echoDelayNode.connect(crossfadeGain)
 
-  return { audioEl, sourceNode, highpassNode, lowpassNode, eqNodes, filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, crossfadeGain }
+  return { audioEl, sourceNode, highpassNode, lowpassNode, eqNodes, eqNodeGroups, eqTopology: '', filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, crossfadeGain }
 }
 
-// Tears down and rebuilds a voice's eqNodes chain to match a new band count
-// - mirrors SoundSource.js's identical _rebuildEqChain method. .disconnect()
+// Tears down and rebuilds a voice's eqNodes chain to match a new band
+// topology (band count, or any band's own stage count via type/slope) -
+// mirrors SoundSource.js's identical _rebuildEqChain method. .disconnect()
 // with no arguments removes every outgoing connection from a node, so this
 // is safe whether the old chain was empty (lowpassNode wired directly to
 // filterGainNode) or had N nodes. New nodes get their values set directly
 // (no smoothing) since there's no previous value on a brand-new node to
-// smooth *from*.
+// smooth *from*. Each band becomes its own internal cascade of
+// eqBandStageCount(band) identical nodes chained in series (1 normally, 4
+// for a 'steep' filter-shaped band) - stacking identical stages is exactly
+// how a steeper rolloff is achieved, since BiquadFilterNode has no slope
+// parameter of its own.
 function rebuildEqChain(voice, context, eq) {
   voice.lowpassNode.disconnect()
   for (const node of voice.eqNodes) node.disconnect()
-  voice.eqNodes = eq.map((band) => {
-    const node = context.createBiquadFilter()
-    node.type = eqNodeType(band)
-    node.frequency.value = band.freqHz
-    node.Q.value = band.q
-    node.gain.value = band.gainDb
-    return node
+  voice.eqNodeGroups = eq.map((band) => {
+    const stageCount = eqBandStageCount(band)
+    return Array.from({ length: stageCount }, () => {
+      const node = context.createBiquadFilter()
+      node.type = eqNodeType(band)
+      node.frequency.value = band.freqHz
+      node.Q.value = band.q
+      node.gain.value = band.gainDb
+      return node
+    })
   })
+  voice.eqNodes = voice.eqNodeGroups.flat()
+  voice.eqTopology = eq.map(eqBandStageCount).join(',')
   const eqChainEnd = voice.eqNodes.reduce((prev, node) => {
     prev.connect(node)
     return node
@@ -116,20 +147,26 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
   voice.echoDelayNode.delayTime.setTargetAtTime(echoDelayMs / 1000, now, FILTER_SMOOTHING_SECONDS)
   voice.echoSendGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
   voice.echoFeedbackGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
-  // The EQ chain's node count now varies with how many bands the user has
-  // actually added on the graph - only rebuild the chain (real work:
-  // disconnecting/recreating nodes) when that count actually changes; an
-  // in-place param update is enough whenever it hasn't, same as before.
-  if (eq.length !== voice.eqNodes.length) {
+  // The EQ chain's shape now varies with both how many bands exist AND how
+  // many stages each one needs (a plain length check alone can't tell a
+  // type/slope change apart from a same-length no-op) - only rebuild the
+  // chain (real work: disconnecting/recreating nodes) when the per-band
+  // topology fingerprint actually changes; an in-place param update on every
+  // node already in a band's own group is enough whenever it hasn't, same
+  // pattern as before.
+  const topology = eq.map(eqBandStageCount).join(',')
+  if (topology !== voice.eqTopology) {
     rebuildEqChain(voice, context, eq)
   } else {
-    voice.eqNodes.forEach((node, i) => {
+    voice.eqNodeGroups.forEach((group, i) => {
       const band = eq[i]
       const newType = eqNodeType(band)
-      if (node.type !== newType) node.type = newType
-      node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
-      node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
-      node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+      for (const node of group) {
+        if (node.type !== newType) node.type = newType
+        node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
+        node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
+        node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+      }
     })
   }
 }

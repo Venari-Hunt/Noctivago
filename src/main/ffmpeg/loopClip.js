@@ -141,6 +141,25 @@ function buildEchoFilter(delayMs, decay) {
 // effect is proportional to gain) - lowpass/highpass/bandpass/notch have no
 // gain parameter at all and always shape the signal whenever selected, so
 // they're never skipped just for being "neutral."
+// Only the four filter-*shaped* types have a real "slope" (rolloff
+// steepness) concept - peaking/shelf types are gain-shaped, 'off' does
+// nothing. ffmpeg's highpass/lowpass filters have a real `poles` parameter,
+// but bandpass/bandreject don't (fixed two-pole Butterworth) - to keep
+// "Steep" consistent across all four shaped types (and match the exact same
+// cascading technique Web Audio needs, since BiquadFilterNode has no slope
+// parameter either), steep is real repetition: the same single-stage filter
+// string chained STEEP_STAGE_COUNT times in the -af chain, each stage
+// multiplying the rolloff by another ~12dB/octave. Verified directly against
+// the real bundled ffmpeg binary before implementing (four cascaded
+// highpass=f=1000:poles=2 instances measured ~34dB more attenuation than
+// one, on a real test tone). Mirrors SoundSource.js's/PreviewSource.js's
+// identical helper.
+const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
+const STEEP_STAGE_COUNT = 4
+function eqBandStageCount(band) {
+  return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
+}
+
 function buildEqBandFilter(band) {
   if (band.muted) return null
   const type = band.type ?? 'peaking'
@@ -180,7 +199,9 @@ function buildFilterChain(filters) {
   if (filters.echoDelayMs > 0 && filters.echoDecay > 0) parts.push(buildEchoFilter(filters.echoDelayMs, filters.echoDecay))
   for (const band of filters.eq ?? []) {
     const bandFilter = buildEqBandFilter(band)
-    if (bandFilter) parts.push(bandFilter)
+    if (bandFilter) {
+      for (let stage = 0; stage < eqBandStageCount(band); stage++) parts.push(bandFilter)
+    }
   }
   return parts.length > 0 ? parts.join(',') : null
 }
