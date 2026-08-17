@@ -51,10 +51,38 @@ function formatFreqLabel(freqHz) {
   return freqHz >= 1000 ? `${freqHz / 1000}k` : String(freqHz)
 }
 
+// BUG FIX: the canvas's internal bitmap resolution (its width/height
+// attributes, 640x140) and its actual rendered CSS size (getBoundingClientRect,
+// ~1319x140 here since #editor-eq-canvas is styled `width: 100%`) don't
+// match - the browser stretches the smaller bitmap to fill the larger CSS
+// box, non-uniformly (only horizontally, in this case). Interaction math was
+// already fixed to work in CSS-pixel space (see nearestBandIndex/pointerMove
+// above), but drawEq was still drawing in raw bitmap-pixel space, so every
+// circular node rendered as a stretched ellipse and every text label came
+// out visibly distorted too - reported directly by the user ("why does it
+// seem like the nodes are stretched vertically? And also the numbers").
+// Fixed by resizing the canvas's actual bitmap resolution to match its
+// rendered CSS size (times devicePixelRatio, for crisp non-blurry drawing on
+// high-DPI displays) before every draw, then scaling the context by that
+// same ratio so all the drawing code below can keep working in plain
+// CSS-pixel coordinates - eliminates the stretch entirely rather than
+// working around it.
+function resizeCanvasForDisplay(canvas) {
+  const rect = canvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  const targetWidth = Math.max(1, Math.round(rect.width * dpr))
+  const targetHeight = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+  }
+  return { width: rect.width, height: rect.height, dpr }
+}
+
 function drawEq(canvas, bands, selectedIndex) {
+  const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
-  const width = canvas.width
-  const height = canvas.height
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
 
   ctx.font = '10px sans-serif'
@@ -194,10 +222,19 @@ export function createEqEditorController(canvas) {
     return bands.map((b) => ({ ...b }))
   }
 
+  // Redraws (which also re-syncs the canvas's bitmap resolution to its
+  // current rendered size - see resizeCanvasForDisplay) whenever the panel's
+  // own size might have changed, so the graph doesn't drift back out of
+  // sync with its box after a window resize.
+  function handleResize() {
+    redraw()
+  }
+
   canvas.addEventListener('mousedown', pointerDown)
   window.addEventListener('mousemove', pointerMove)
   window.addEventListener('mouseup', pointerUp)
   canvas.addEventListener('wheel', handleWheel, { passive: false })
+  window.addEventListener('resize', handleResize)
 
   return {
     load(newBands) {
@@ -229,6 +266,7 @@ export function createEqEditorController(canvas) {
     destroy() {
       window.removeEventListener('mousemove', pointerMove)
       window.removeEventListener('mouseup', pointerUp)
+      window.removeEventListener('resize', handleResize)
     }
   }
 }
