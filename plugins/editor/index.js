@@ -501,10 +501,21 @@ export default class EditorPlugin {
     this.els.echoDelay.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDecay.addEventListener('input', () => this.applyFilterControls())
 
+    // 'input' (fires live, on every change) not 'change' (fires only on
+    // blur/Enter) - matches every other numeric field in this app (Scatter
+    // gap min/max, the core filter sliders). BUG FIX: these three were the
+    // one place still using 'change', which meant the app-wide number-box
+    // stepper (hover+scroll/arrow keys, see numberBoxStepper.js - it
+    // dispatches 'input') silently never reached these fields at all -
+    // adjusting Freq/Gain/Q via scroll or arrow keys updated the input's
+    // raw displayed value but never touched the actual band, the node's
+    // position on the graph, or the live audio, exactly matching a direct
+    // bug report ("raising the frequency by the number doesn't change the
+    // node's position and doesn't affect the audio").
     this.els.eqType.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
-    this.els.eqFreq.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
-    this.els.eqGain.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
-    this.els.eqQ.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
+    this.els.eqFreq.addEventListener('input', () => this.applyEqFieldsToSelectedBand())
+    this.els.eqGain.addEventListener('input', () => this.applyEqFieldsToSelectedBand())
+    this.els.eqQ.addEventListener('input', () => this.applyEqFieldsToSelectedBand())
     this.els.eqReset.addEventListener('click', () => {
       this.eqEditorController.load(defaultEqBands())
       this.updateEqFieldsFromSelection()
