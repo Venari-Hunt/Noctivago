@@ -1,7 +1,11 @@
 import { app, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import log from 'electron-log/main'
-import { getSettings, setAutoUpdateEnabled as persistAutoUpdateEnabled } from './settings.js'
+import {
+  getSettings,
+  setAutoUpdateEnabled as persistAutoUpdateEnabled,
+  setAutoUpdateIntervalSeconds as persistAutoUpdateIntervalSeconds
+} from './settings.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -32,10 +36,11 @@ autoUpdater.autoInstallOnAppQuit = false
 // Ambient-sound apps tend to get left running for hours or days at a
 // stretch - the original startup-only check meant anyone who doesn't
 // happen to restart for some other reason could sit on an old version
-// indefinitely without ever learning a new one shipped. Re-checking every
-// few hours closes that gap without being excessive.
-const RECHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
-
+// indefinitely without ever learning a new one shipped. Re-checking
+// periodically closes that gap without being excessive. Was a hardcoded
+// 4-hour constant; now reads getSettings().autoUpdateIntervalSeconds
+// (still defaulting to 4 hours - see settings.js) so the Settings menu's
+// hh:mm:ss field can actually change it.
 let recheckIntervalId = null
 
 // Tracks the version the user already clicked "Not now" on, so the
@@ -59,7 +64,7 @@ function runCheck() {
 
 function startPeriodicChecks() {
   if (recheckIntervalId) return
-  recheckIntervalId = setInterval(runCheck, RECHECK_INTERVAL_MS)
+  recheckIntervalId = setInterval(runCheck, getSettings().autoUpdateIntervalSeconds * 1000)
 }
 
 function stopPeriodicChecks() {
@@ -173,6 +178,19 @@ export function setAutoUpdateEnabled(enabled) {
     } else {
       stopPeriodicChecks()
     }
+  }
+  return settings
+}
+
+// Restarts the running timer immediately against the new interval, rather
+// than waiting for the current interval to elapse once more on the old
+// value first - a live change from the Settings field should take effect
+// right away, not after one more stale-length wait.
+export function setAutoUpdateIntervalSeconds(seconds) {
+  const settings = persistAutoUpdateIntervalSeconds(seconds)
+  if (app.isPackaged && recheckIntervalId) {
+    stopPeriodicChecks()
+    startPeriodicChecks()
   }
   return settings
 }

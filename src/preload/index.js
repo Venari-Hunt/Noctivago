@@ -8,6 +8,7 @@ const api = {
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     setAutoUpdateEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoUpdateEnabled', enabled),
+    setAutoUpdateIntervalSeconds: (seconds) => ipcRenderer.invoke('settings:setAutoUpdateIntervalSeconds', seconds),
     setAutoInstallUpdatesEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoInstallUpdatesEnabled', enabled),
     setMinimizeToTrayEnabled: (enabled) => ipcRenderer.invoke('settings:setMinimizeToTrayEnabled', enabled),
     setWasPlayingOnClose: (wasPlaying) => ipcRenderer.invoke('settings:setWasPlayingOnClose', wasPlaying),

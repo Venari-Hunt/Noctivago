@@ -1,5 +1,17 @@
 import { renderWatchedFolderList } from '../ui/WatchedFolderList.js'
 import { openWatchFolderPicker } from './WatchFolderDialog.js'
+import { parseDuration } from '../util/time.js'
+
+// Always shows all three segments, zero-padded (unlike util/time.js's own
+// formatDuration, which omits the hour segment entirely when h=0) - matches
+// the field's own "hh:mm:ss" placeholder exactly, so what's shown always
+// looks like a valid value to re-type from.
+function formatHms(totalSeconds) {
+  const s = Math.floor(totalSeconds % 60)
+  const m = Math.floor(totalSeconds / 60) % 60
+  const h = Math.floor(totalSeconds / 3600)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
 
 // Wires the toolbar's gear button + Settings modal. Core, not a plugin -
 // mirrors the other app-wide bits (dev badge, slider reset) wired directly
@@ -9,6 +21,7 @@ export function installSettingsMenu() {
   const modal = document.getElementById('settings-modal')
   const closeBtn = document.getElementById('settings-close')
   const autoUpdateCheckbox = document.getElementById('settings-auto-update-enabled')
+  const updateIntervalInput = document.getElementById('settings-auto-update-interval')
   const checkNowBtn = document.getElementById('settings-check-now')
   const checkStatus = document.getElementById('settings-check-status')
   const autoInstallUpdatesCheckbox = document.getElementById('settings-auto-install-updates')
@@ -31,6 +44,7 @@ export function installSettingsMenu() {
   openBtn.addEventListener('click', async () => {
     const settings = await window.noctivago.settings.get()
     autoUpdateCheckbox.checked = settings.autoUpdateEnabled
+    updateIntervalInput.value = formatHms(settings.autoUpdateIntervalSeconds)
     autoInstallUpdatesCheckbox.checked = settings.autoInstallUpdates
     minimizeToTrayCheckbox.checked = settings.minimizeToTrayEnabled
     eagerlyBakeOnImportCheckbox.checked = settings.eagerlyBakeOnImport
@@ -57,6 +71,26 @@ export function installSettingsMenu() {
 
   autoUpdateCheckbox.addEventListener('change', () => {
     window.noctivago.settings.setAutoUpdateEnabled(autoUpdateCheckbox.checked)
+  })
+
+  // Commits on blur/Enter (like the sound-rename field elsewhere in this
+  // app), not on every keystroke - a half-typed "hh:mm:ss" shouldn't get
+  // saved or reformatted mid-entry. An unparseable or non-positive value
+  // just reverts the field to whatever's still actually persisted, rather
+  // than silently accepting garbage.
+  async function commitUpdateInterval() {
+    const seconds = parseDuration(updateIntervalInput.value)
+    if (seconds != null && seconds > 0) {
+      const settings = await window.noctivago.settings.setAutoUpdateIntervalSeconds(seconds)
+      updateIntervalInput.value = formatHms(settings.autoUpdateIntervalSeconds)
+    } else {
+      const settings = await window.noctivago.settings.get()
+      updateIntervalInput.value = formatHms(settings.autoUpdateIntervalSeconds)
+    }
+  }
+  updateIntervalInput.addEventListener('blur', commitUpdateInterval)
+  updateIntervalInput.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Enter') updateIntervalInput.blur()
   })
 
   autoInstallUpdatesCheckbox.addEventListener('change', () => {

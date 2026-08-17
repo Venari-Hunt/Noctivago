@@ -7,7 +7,7 @@ import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled } from './settings.js'
-import { setAutoUpdateEnabled, checkForUpdatesNow } from './autoUpdate.js'
+import { setAutoUpdateEnabled, setAutoUpdateIntervalSeconds, checkForUpdatesNow } from './autoUpdate.js'
 import { setTrayEnabled } from './tray.js'
 import { watchNewFolder, unwatchFolder } from './watchFolders.js'
 
@@ -16,6 +16,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('settings:setAutoUpdateEnabled', (_event, enabled) => setAutoUpdateEnabled(enabled))
+  ipcMain.handle('settings:setAutoUpdateIntervalSeconds', (_event, seconds) => setAutoUpdateIntervalSeconds(seconds))
   ipcMain.handle('settings:setAutoInstallUpdatesEnabled', (_event, enabled) => setAutoInstallUpdatesEnabled(enabled))
   ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
   ipcMain.handle('settings:setMinimizeToTrayEnabled', (_event, enabled) => {

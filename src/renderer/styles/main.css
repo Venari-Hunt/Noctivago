@@ -557,6 +557,17 @@ main {
   color: var(--text-dim);
 }
 
+.settings-interval-input {
+  width: 80px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .settings-section-heading {
   margin: 20px 0 4px;
   font-size: 13px;

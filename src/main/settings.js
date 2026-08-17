@@ -1,9 +1,15 @@
 import Store from 'electron-store'
 
+// Matches autoUpdate.js's original hardcoded RECHECK_INTERVAL_MS (4 hours) -
+// now the default rather than the only option, per a direct request for a
+// configurable hh:mm:ss field in Settings.
+const DEFAULT_AUTO_UPDATE_INTERVAL_SECONDS = 4 * 60 * 60
+
 const store = new Store({
   name: 'settings',
   defaults: {
     autoUpdateEnabled: true,
+    autoUpdateIntervalSeconds: DEFAULT_AUTO_UPDATE_INTERVAL_SECONDS,
     autoInstallUpdates: false,
     minimizeToTrayEnabled: false,
     wasPlayingOnClose: false,
@@ -14,6 +20,7 @@ const store = new Store({
 export function getSettings() {
   return {
     autoUpdateEnabled: store.get('autoUpdateEnabled'),
+    autoUpdateIntervalSeconds: store.get('autoUpdateIntervalSeconds'),
     autoInstallUpdates: store.get('autoInstallUpdates'),
     minimizeToTrayEnabled: store.get('minimizeToTrayEnabled'),
     wasPlayingOnClose: store.get('wasPlayingOnClose'),
@@ -23,6 +30,14 @@ export function getSettings() {
 
 export function setAutoUpdateEnabled(enabled) {
   store.set('autoUpdateEnabled', Boolean(enabled))
+  return getSettings()
+}
+
+// Clamped to a sane minimum (1 minute) so a mistyped/near-zero value can't
+// hammer the update endpoint - the field itself doesn't enforce this, only
+// the persisted value does.
+export function setAutoUpdateIntervalSeconds(seconds) {
+  store.set('autoUpdateIntervalSeconds', Math.max(60, Math.round(seconds)))
   return getSettings()
 }
 
