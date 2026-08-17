@@ -59,8 +59,16 @@ function checkStatus(entry) {
 // band is a true no-op regardless of freqHz/q (matches how every other
 // filter control in this app treats 0/neutral as "off"), so a fresh sound's
 // EQ has no audible effect until a band is actually moved.
+// 7 bands (matches the real FL Studio "Fruity Parametric EQ 2" this was
+// modeled on - researched directly rather than assumed, see
+// noctivago_task_list memory). `type` picks one of Web Audio's native
+// BiquadFilterNode types - 'off' is a pseudo-type (not a real biquad type)
+// mapped to 'allpass' at the audio-node level (see SoundSource.js/
+// PreviewSource.js) since allpass leaves the amplitude spectrum completely
+// unchanged, a true no-op for tone-shaping purposes without needing to
+// dynamically rewire the live filter chain per band.
 function defaultEqBands() {
-  return [80, 250, 800, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1 }))
+  return [60, 150, 400, 1000, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1, type: 'peaking' }))
 }
 
 // Backfills fields added after some entries already existed (tags, dateAdded,

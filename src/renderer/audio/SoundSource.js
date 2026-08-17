@@ -23,6 +23,14 @@ const MAX_ECHO_DELAY_SECONDS = 2.0
 const STALL_RECOVERY_DELAY_MS = 8000
 const MAX_RECOVERY_ATTEMPTS = 3
 
+// 'off' is a pseudo-type (not a real BiquadFilterNode type) - see the
+// eqNodes comment in the constructor below for why 'allpass' is the right
+// stand-in. Shared by both construction and live updates (setFilters) so
+// they can't drift.
+function eqNodeType(type) {
+  return type === 'off' ? 'allpass' : (type ?? 'peaking')
+}
+
 export class LocalFileSoundSource {
   constructor(engine, { soundId, loopStart, loopEnd, volume, filters, speed }) {
     this.engine = engine
@@ -69,16 +77,26 @@ export class LocalFileSoundSource {
     this.lowpassNode.type = 'lowpass'
     this.lowpassNode.frequency.value = this.filters.lowpassHz ?? 20000
 
-    // Parametric EQ: a fixed chain of peaking BiquadFilterNodes, one per
-    // saved band (see library.js's defaultEqBands) - a band left at its
-    // default gainDb:0 is a true no-op node in the chain, so an EQ nobody's
-    // touched costs nothing audible, same convention every other filter
-    // here already follows. Inserted between lowpass and the overall filter
-    // gain, same position ffmpeg's bake applies them (see loopClip.js's
-    // buildFilterChain) so live playback and the baked clip agree.
+    // Parametric EQ: a fixed chain of BiquadFilterNodes, one per saved band
+    // (see library.js's defaultEqBands), each independently one of Web
+    // Audio's native filter types - a lucky architecture fit, since
+    // BiquadFilterNode's own type set (lowpass/highpass/bandpass/lowshelf/
+    // highshelf/peaking/notch/allpass) already covers 7 of the real FL
+    // Studio "Fruity Parametric EQ 2" reference's 8 shapes directly. 'off'
+    // (the 8th, a pseudo-type - see eqNodeType) maps to 'allpass', which
+    // leaves the amplitude spectrum completely unchanged - a true no-op for
+    // tone-shaping without needing to dynamically rewire this fixed chain
+    // per band. A peaking/lowshelf/highshelf band left at its default
+    // gainDb:0 is also a true no-op regardless of type, matching every
+    // other 0/neutral-means-off control here - but lowpass/highpass/
+    // bandpass/notch have no gain parameter at all and always shape the
+    // signal whenever selected, they're never "neutral." Inserted between
+    // lowpass and the overall filter gain, same position ffmpeg's bake
+    // applies them (see loopClip.js's buildFilterChain) so live playback
+    // and the baked clip agree.
     this.eqNodes = (this.filters.eq ?? []).map((band) => {
       const node = engine.context.createBiquadFilter()
-      node.type = 'peaking'
+      node.type = eqNodeType(band.type)
       node.frequency.value = band.freqHz
       node.Q.value = band.q
       node.gain.value = band.gainDb
@@ -221,6 +239,12 @@ export class LocalFileSoundSource {
     this.eqNodes.forEach((node, i) => {
       const band = eq[i]
       if (!band) return
+      // .type isn't an AudioParam - a plain property, so it can't be smoothed
+      // like the others below. Only actually reassigned when it changes,
+      // since setting it unconditionally every call would reset the filter's
+      // internal state (a small click) even when nothing changed.
+      const newType = eqNodeType(band.type)
+      if (node.type !== newType) node.type = newType
       node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
       node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
       node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)

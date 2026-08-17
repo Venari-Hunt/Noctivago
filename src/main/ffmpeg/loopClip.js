@@ -129,10 +129,47 @@ function buildEchoFilter(delayMs, decay) {
   return `aecho=1.0:1.0:${delays.join('|')}:${decays.join('|')}`
 }
 
+// Maps one EQ band's chosen type to the real ffmpeg filter that implements
+// it, verified against the real bundled binary before writing this (all six
+// filter types chained together in one real invocation, exit 0, real
+// output). 'off' is a pseudo-type (not a real biquad shape) - returns null,
+// simply omitted from the chain, which is a cleaner and cheaper "no
+// processing" than baking a real no-op filter like allpass. `type` is
+// nullable for backward compat - a band saved before this field existed
+// defaults to 'peaking', matching its only previous behavior. Only
+// peaking/lowshelf/highshelf are true no-ops at gainDb 0 (their entire
+// effect is proportional to gain) - lowpass/highpass/bandpass/notch have no
+// gain parameter at all and always shape the signal whenever selected, so
+// they're never skipped just for being "neutral."
+function buildEqBandFilter(band) {
+  const type = band.type ?? 'peaking'
+  const { freqHz: f, q, gainDb: g } = band
+  switch (type) {
+    case 'off':
+      return null
+    case 'peaking':
+      return g ? `equalizer=f=${f}:width_type=q:w=${q}:g=${g}` : null
+    case 'lowshelf':
+      return g ? `bass=f=${f}:width_type=q:w=${q}:g=${g}` : null
+    case 'highshelf':
+      return g ? `treble=f=${f}:width_type=q:w=${q}:g=${g}` : null
+    case 'lowpass':
+      return `lowpass=f=${f}:width_type=q:w=${q}`
+    case 'highpass':
+      return `highpass=f=${f}:width_type=q:w=${q}`
+    case 'bandpass':
+      return `bandpass=f=${f}:width_type=q:w=${q}`
+    case 'notch':
+      return `bandreject=f=${f}:width_type=q:w=${q}`
+    default:
+      return null
+  }
+}
+
 // Builds an ffmpeg filter chain fragment from a {highpassHz, lowpassHz,
-// gainDb, echoDelayMs, echoDecay} filter set, skipping any band left at its
-// neutral/no-op value. Returns null if every band is neutral (nothing to
-// apply).
+// gainDb, echoDelayMs, echoDecay, eq} filter set, skipping any band left at
+// its neutral/no-op value. Returns null if every band is neutral (nothing
+// to apply).
 function buildFilterChain(filters) {
   if (!filters) return null
   const parts = []
@@ -140,11 +177,9 @@ function buildFilterChain(filters) {
   if (filters.lowpassHz > 0 && filters.lowpassHz < 20000) parts.push(`lowpass=f=${filters.lowpassHz}`)
   if (filters.gainDb) parts.push(`volume=${filters.gainDb}dB`)
   if (filters.echoDelayMs > 0 && filters.echoDecay > 0) parts.push(buildEchoFilter(filters.echoDelayMs, filters.echoDecay))
-  // Parametric EQ bands - a band with gainDb 0 is a true no-op (matches
-  // every other 0/neutral-means-off control in this chain), so only
-  // non-neutral bands actually reach the filter graph.
   for (const band of filters.eq ?? []) {
-    if (band.gainDb) parts.push(`equalizer=f=${band.freqHz}:width_type=q:w=${band.q}:g=${band.gainDb}`)
+    const bandFilter = buildEqBandFilter(band)
+    if (bandFilter) parts.push(bandFilter)
   }
   return parts.length > 0 ? parts.join(',') : null
 }

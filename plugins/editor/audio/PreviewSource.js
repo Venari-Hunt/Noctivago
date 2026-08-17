@@ -7,11 +7,19 @@ const FILTER_SMOOTHING_SECONDS = 0.01
 // any real sound/filters are known (see createVoice below), so it needs to
 // know the count up front rather than deriving it from the first filters
 // object it's given.
-const EQ_BAND_COUNT = 6
+const EQ_BAND_COUNT = 7
 // Matches src/renderer/audio/SoundSource.js's core-playback copy of this
 // same echo design - see that file for the full rationale (feedback delay
 // tapped off the dry signal, one knob driving both send and feedback gain).
 const MAX_ECHO_DELAY_SECONDS = 2.0
+
+// 'off' is a pseudo-type (not a real BiquadFilterNode type) - mapped to
+// 'allpass' (leaves the amplitude spectrum unchanged, a true no-op for
+// tone-shaping) rather than dynamically rewiring the fixed eqNodes chain
+// per band. Mirrors SoundSource.js's identical helper.
+function eqNodeType(type) {
+  return type === 'off' ? 'allpass' : (type ?? 'peaking')
+}
 
 // One playback "voice": its own <audio> element and full filter chain, so
 // two voices can play simultaneously and be crossfaded against each other -
@@ -96,6 +104,8 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
   voice.eqNodes.forEach((node, i) => {
     const band = eq[i]
     if (!band) return
+    const newType = eqNodeType(band.type)
+    if (node.type !== newType) node.type = newType
     node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
     node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
     node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)

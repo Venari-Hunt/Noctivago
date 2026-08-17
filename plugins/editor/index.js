@@ -24,7 +24,7 @@ const DEFAULT_CROSSFADE_MS = 200
 // shared array, since callers mutate the objects they get back (the EQ
 // editor controller clones on load() too, but this is cheap insurance).
 function defaultEqBands() {
-  return [80, 250, 800, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1 }))
+  return [60, 150, 400, 1000, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1, type: 'peaking' }))
 }
 
 const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: defaultEqBands() }
@@ -216,6 +216,19 @@ export default class EditorPlugin {
             <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain. Scroll over a node to adjust its Q."></canvas>
             <div class="editor-eq-band-controls">
               <label>
+                <span>Type</span>
+                <select id="editor-eq-type">
+                  <option value="off">Off</option>
+                  <option value="lowpass">Low Pass</option>
+                  <option value="highpass">High Pass</option>
+                  <option value="bandpass">Band Pass</option>
+                  <option value="notch">Notch</option>
+                  <option value="lowshelf">Low Shelf</option>
+                  <option value="highshelf">High Shelf</option>
+                  <option value="peaking" selected>Peaking</option>
+                </select>
+              </label>
+              <label>
                 <span>Freq</span>
                 <input id="editor-eq-freq" type="number" min="20" max="20000" step="1" />
                 <span class="editor-filter-value">Hz</span>
@@ -295,6 +308,7 @@ export default class EditorPlugin {
       echoDecayValue: container.querySelector('#editor-echo-decay-value'),
       eqCanvas: container.querySelector('#editor-eq-canvas'),
       eqReset: container.querySelector('#editor-eq-reset'),
+      eqType: container.querySelector('#editor-eq-type'),
       eqFreq: container.querySelector('#editor-eq-freq'),
       eqGain: container.querySelector('#editor-eq-gain'),
       eqQ: container.querySelector('#editor-eq-q'),
@@ -387,6 +401,7 @@ export default class EditorPlugin {
     this.els.echoDelay.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDecay.addEventListener('input', () => this.applyFilterControls())
 
+    this.els.eqType.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
     this.els.eqFreq.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
     this.els.eqGain.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
     this.els.eqQ.addEventListener('change', () => this.applyEqFieldsToSelectedBand())
@@ -652,16 +667,18 @@ export default class EditorPlugin {
     const index = this.eqEditorController.getSelectedIndex()
     const band = bands[index]
     if (!band) return
+    this.els.eqType.value = band.type ?? 'peaking'
     this.els.eqFreq.value = String(Math.round(band.freqHz))
     this.els.eqGain.value = String(band.gainDb)
     this.els.eqQ.value = String(band.q)
   }
 
   applyEqFieldsToSelectedBand() {
+    const type = this.els.eqType.value
     const freqHz = Math.min(20000, Math.max(20, Number(this.els.eqFreq.value)))
     const gainDb = Math.min(24, Math.max(-24, Number(this.els.eqGain.value)))
     const q = Math.min(Q_MAX, Math.max(Q_MIN, Number(this.els.eqQ.value)))
-    this.eqEditorController.setSelectedBand({ freqHz, gainDb, q })
+    this.eqEditorController.setSelectedBand({ type, freqHz, gainDb, q })
     this.applyEqControls()
   }
 
@@ -793,7 +810,7 @@ export default class EditorPlugin {
         gainDb: filters.gainDb ?? 0,
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0,
-        eq: (filters.eq ?? defaultEqBands()).map((b) => ({ freqHz: b.freqHz, gainDb: b.gainDb, q: b.q }))
+        eq: (filters.eq ?? defaultEqBands()).map((b) => ({ freqHz: b.freqHz, gainDb: b.gainDb, q: b.q, type: b.type ?? 'peaking' }))
       },
       crossfadeMs,
       speedPitch: {
