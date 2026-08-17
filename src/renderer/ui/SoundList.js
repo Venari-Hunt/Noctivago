@@ -130,6 +130,28 @@ function buildRow(entry, rowState, draggable, callbacks) {
   return row
 }
 
+// Floats currently-playing sounds to their own group at the top, loudest
+// (highest per-sound volume) first - restores the old "what's actually
+// making noise right now" ordering the owner wanted back, framed as an
+// automatic group rather than a manual sort/toggle so there's nothing to
+// remember to turn on. Only kicks in with no explicit groupMode chosen
+// (matches how drag-reorder similarly defers to an explicit group choice
+// above) and only when something's actually playing - an idle mixer renders
+// exactly as before. Volume ties fall back to sortedEntries' own existing
+// order (already sorted by viewState.sortMode) rather than being reshuffled
+// arbitrarily, since Array.prototype.sort is a stable sort.
+function splitNowPlaying(sortedEntries, playbackState) {
+  const playing = []
+  const rest = []
+  for (const entry of sortedEntries) {
+    if (playbackState.playing.has(entry.id)) playing.push(entry)
+    else rest.push(entry)
+  }
+  if (playing.length === 0) return null
+  playing.sort((a, b) => (playbackState.volumes.get(b.id) ?? 0.7) - (playbackState.volumes.get(a.id) ?? 0.7))
+  return { playing, rest }
+}
+
 export function renderSoundList(listEl, emptyStateEl, entries, playbackState, viewState, callbacks) {
   listEl.innerHTML = ''
 
@@ -143,12 +165,16 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
   listEl.classList.remove('hidden')
 
   const sorted = sortForDisplay(entries, viewState.sortMode)
-  // Disabled while grouped: a tag-grouped entry can appear in more than one
-  // section (see groupEntries), which makes "which row did you actually
-  // drag" ambiguous - simpler to require "No grouping" to reorder, matching
-  // how most file explorers don't support a fully custom order combined
-  // with grouping either.
-  const draggable = viewState.sortMode === 'custom' && viewState.groupMode === 'none'
+  const nowPlaying = viewState.groupMode === 'none' ? splitNowPlaying(sorted, playbackState) : null
+  // Disabled while grouped (explicitly, or by the automatic Now Playing
+  // split below): a row can end up in a different section than where it was
+  // dragged from/to (a tag-grouped entry can appear in more than one
+  // section, see groupEntries; a Now-Playing row could move to Everything
+  // Else on the very next render if it stops playing), which makes "which
+  // row did you actually drag" ambiguous - simpler to require a single flat
+  // "No grouping, nothing playing" list to reorder, matching how most file
+  // explorers don't support a fully custom order combined with grouping.
+  const draggable = viewState.sortMode === 'custom' && viewState.groupMode === 'none' && !nowPlaying
 
   function appendRow(entry) {
     const included = playbackState.included.has(entry.id)
@@ -158,16 +184,29 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     listEl.appendChild(buildRow(entry, { included, loading, error, volume }, draggable, callbacks))
   }
 
+  function appendHeader(label) {
+    const header = document.createElement('li')
+    header.className = 'sound-group-header'
+    header.textContent = label
+    listEl.appendChild(header)
+  }
+
   if (viewState.groupMode === 'none') {
-    for (const entry of sorted) appendRow(entry)
+    if (!nowPlaying) {
+      for (const entry of sorted) appendRow(entry)
+      return
+    }
+    appendHeader('Now Playing')
+    for (const entry of nowPlaying.playing) appendRow(entry)
+    if (nowPlaying.rest.length > 0) {
+      appendHeader('Everything Else')
+      for (const entry of nowPlaying.rest) appendRow(entry)
+    }
     return
   }
 
   for (const group of groupEntries(sorted, viewState.groupMode)) {
-    const header = document.createElement('li')
-    header.className = 'sound-group-header'
-    header.textContent = group.label
-    listEl.appendChild(header)
+    appendHeader(group.label)
     for (const entry of group.entries) appendRow(entry)
   }
 }
