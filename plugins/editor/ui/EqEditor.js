@@ -252,6 +252,16 @@ export function createEqEditorController(canvas) {
     const { x, y, width, height } = eventPos(evt)
     const idx = nearestBandIndex(x, y, width, height)
     if (idx === -1) return
+    // Alt+click resets the band instead of starting a drag - a faster
+    // alternative to double-click for the same "reset this band" gesture
+    // (mirrors the reference's own Alt+click-to-reset convention), reusing
+    // the identical onDoubleClick callback since both are just different
+    // triggers for the same reset action.
+    if (evt.altKey) {
+      selectedIndex = idx
+      onDoubleClick(idx)
+      return
+    }
     selectedIndex = idx
     dragging = true
     redraw()
