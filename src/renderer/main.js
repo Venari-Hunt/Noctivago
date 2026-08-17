@@ -1,11 +1,13 @@
 import { createTabHost } from './core/TabHost.js'
 import { loadPlugins } from './core/PluginLoader.js'
 import { installSliderDoubleClickReset } from './core/sliderReset.js'
+import { installNumberBoxStepper } from './core/numberBoxStepper.js'
 import { installSettingsMenu } from './core/SettingsMenu.js'
 import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
 installSliderDoubleClickReset()
+installNumberBoxStepper()
 installWatchFolderDialog()
 installSettingsMenu()
 
