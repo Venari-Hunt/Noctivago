@@ -106,8 +106,8 @@ function groupEntries(sortedEntries, groupMode) {
   return [{ label: null, entries: sortedEntries }]
 }
 
-function buildRow(entry, rowState, draggable, callbacks) {
-  const row = createSoundRow(entry, rowState, callbacks)
+function buildRow(entry, rowState, draggable, callbacks, allTags) {
+  const row = createSoundRow(entry, rowState, callbacks, allTags)
   if (!draggable) return row
 
   row.draggable = true
@@ -160,7 +160,11 @@ function splitNowPlaying(sortedEntries, playbackState) {
   return { playing, inMix, rest }
 }
 
-export function renderSoundList(listEl, emptyStateEl, entries, playbackState, viewState, callbacks) {
+// allTags is every tag used anywhere in the *full* library (not just
+// entries, which may already be search/tag-filtered down by the caller) -
+// drives the "+ tag" input's autocomplete in SoundRow.js. Defaults to []
+// for callers that don't have/need it, so this stays an additive parameter.
+export function renderSoundList(listEl, emptyStateEl, entries, playbackState, viewState, callbacks, allTags = []) {
   listEl.innerHTML = ''
 
   if (entries.length === 0) {
@@ -190,7 +194,7 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     const error = playbackState.errors.get(entry.id) ?? null
     const volume = playbackState.volumes.get(entry.id) ?? 0.7
     const muted = playbackState.mutedSounds.has(entry.id)
-    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted }, draggable, callbacks))
+    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted }, draggable, callbacks, allTags))
   }
 
   function appendHeader(label) {

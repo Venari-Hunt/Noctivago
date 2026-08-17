@@ -155,6 +155,11 @@ function render() {
   const filtering = state.searchQuery.trim() || state.activeTagFilter
   els.emptyState.textContent = filtering && state.library.length > 0 ? NO_SEARCH_MATCHES_TEXT : EMPTY_LIBRARY_TEXT
   renderTagFilterBar()
+  // Every tag used anywhere in the *full* library (not just visible, which
+  // may already be search/tag-filtered) - drives each row's "+ tag"
+  // autocomplete, same computation renderTagFilterBar() already does for
+  // its own chip bar.
+  const allTags = [...new Set(state.library.flatMap((entry) => entry.tags ?? []))].sort((a, b) => a.localeCompare(b))
   renderSoundList(
     els.soundList,
     els.emptyState,
@@ -170,7 +175,8 @@ function render() {
       onRename: renameSound,
       onTagsChange: changeTags,
       onReorderDrop: reorderByDrop
-    }
+    },
+    allTags
   )
   refreshGlobalButton()
 }

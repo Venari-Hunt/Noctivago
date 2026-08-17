@@ -56,11 +56,27 @@ function wireMarquee(name) {
   })
 }
 
+// Case-insensitive lookup against every tag already used anywhere in the
+// library - returns the *existing* tag's own stored casing if there's a
+// match, or the typed text unchanged otherwise. Used both by autocomplete
+// suggestions and by final-commit normalization, so "rain" always becomes
+// "Rain" (matching however it was first capitalized) rather than adding a
+// silently-duplicate near-tag.
+function normalizeTagCasing(typed, allTags) {
+  const match = allTags.find((t) => t.toLowerCase() === typed.toLowerCase())
+  return match ?? typed
+}
+
 // Tag chips (each removable via its own ×) plus a "+ tag" control that
 // turns into a text input on click - comma-separated so several tags can be
 // added in one go, mirroring the name field's double-click-to-edit pattern
-// elsewhere in this row.
-function buildTagsRow(entry, callbacks) {
+// elsewhere in this row. allTags (every tag used anywhere in the library,
+// deduped) drives Obsidian-style autocomplete: a filtered dropdown of
+// existing tags as you type, and casing normalized against an existing
+// match on commit - requested directly ("when you start typing a tag name
+// it suggests an autocomplete and when you hit enter it formats the tag the
+// same way the other tagged items are").
+function buildTagsRow(entry, callbacks, allTags) {
   const tagsRow = document.createElement('div')
   tagsRow.className = 'sound-row-tags'
 
@@ -87,34 +103,122 @@ function buildTagsRow(entry, callbacks) {
   addTagBtn.className = 'tag-chip tag-chip-add'
   addTagBtn.textContent = '+ tag'
   addTagBtn.addEventListener('click', () => {
+    const wrapper = document.createElement('div')
+    wrapper.className = 'tag-input-wrapper'
+
     const input = document.createElement('input')
     input.type = 'text'
     input.className = 'tag-input'
     input.placeholder = 'tag, tag…'
-    addTagBtn.replaceWith(input)
+
+    const options = document.createElement('ul')
+    options.className = 'tag-autocomplete-options hidden'
+
+    wrapper.appendChild(input)
+    wrapper.appendChild(options)
+    addTagBtn.replaceWith(wrapper)
     input.focus()
 
     let settled = false
+    let highlightIndex = -1
+
+    // Autocomplete only ever operates on the *current* (last) comma-segment
+    // being typed - earlier, already-comma-separated segments are left
+    // alone, matching how the plain comma-separated entry already worked.
+    function currentSegment() {
+      const parts = input.value.split(',')
+      return parts[parts.length - 1].trim()
+    }
+
+    function matchingTags() {
+      const query = currentSegment().toLowerCase()
+      if (!query) return []
+      return allTags.filter((t) => t.toLowerCase().includes(query) && !(entry.tags ?? []).includes(t))
+    }
+
+    function renderOptions() {
+      const matches = matchingTags()
+      options.innerHTML = ''
+      options.classList.toggle('hidden', matches.length === 0)
+      highlightIndex = Math.min(highlightIndex, matches.length - 1)
+      matches.forEach((tag, i) => {
+        const li = document.createElement('li')
+        li.className = 'tag-autocomplete-option' + (i === highlightIndex ? ' tag-autocomplete-option-highlighted' : '')
+        li.textContent = tag
+        // mousedown (not click) fires before the input's own blur, so
+        // selecting a suggestion doesn't first trigger a blur-commit on
+        // whatever's currently typed - same trick the Remix sound picker's
+        // dropdown already uses for its own options.
+        li.addEventListener('mousedown', (evt) => {
+          evt.preventDefault()
+          applySuggestion(tag)
+        })
+        options.appendChild(li)
+      })
+    }
+
+    // Replaces just the current (last) segment with the picked suggestion's
+    // own exact casing, leaving any already-typed earlier segments (and
+    // their trailing ", ") intact - then arms the input for typing another
+    // tag right after, matching how comma-separated multi-tag entry already
+    // works elsewhere in this control.
+    function applySuggestion(tag) {
+      const parts = input.value.split(',')
+      parts[parts.length - 1] = ` ${tag}`
+      input.value = parts.map((p, i) => (i === 0 ? p.trim() : p)).join(',') + ', '
+      highlightIndex = -1
+      renderOptions()
+      input.focus()
+    }
+
     const commit = () => {
       if (settled) return
       settled = true
-      const newTags = input.value.split(',').map((t) => t.trim()).filter(Boolean)
+      const newTags = input.value
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .map((t) => normalizeTagCasing(t, allTags))
       if (newTags.length > 0) {
         const merged = [...new Set([...(entry.tags ?? []), ...newTags])]
         callbacks.onTagsChange(entry.id, merged)
       } else {
-        input.replaceWith(addTagBtn)
+        wrapper.replaceWith(addTagBtn)
       }
     }
     const cancel = () => {
       if (settled) return
       settled = true
-      input.replaceWith(addTagBtn)
+      wrapper.replaceWith(addTagBtn)
     }
     input.addEventListener('blur', commit)
+    input.addEventListener('input', () => {
+      highlightIndex = -1
+      renderOptions()
+    })
     input.addEventListener('keydown', (evt) => {
-      if (evt.key === 'Enter') input.blur()
-      else if (evt.key === 'Escape') cancel()
+      const matches = matchingTags()
+      if (evt.key === 'ArrowDown' && matches.length > 0) {
+        evt.preventDefault()
+        highlightIndex = (highlightIndex + 1) % matches.length
+        renderOptions()
+      } else if (evt.key === 'ArrowUp' && matches.length > 0) {
+        evt.preventDefault()
+        highlightIndex = (highlightIndex - 1 + matches.length) % matches.length
+        renderOptions()
+      } else if (evt.key === 'Enter') {
+        // A highlighted suggestion completes just that segment (so a comma
+        // can start the next tag) rather than committing the whole field -
+        // only commits outright when nothing's highlighted.
+        if (highlightIndex >= 0 && matches[highlightIndex]) {
+          evt.preventDefault()
+          applySuggestion(matches[highlightIndex])
+        } else {
+          input.blur()
+        }
+      } else if (evt.key === 'Escape') {
+        cancel()
+      }
     })
   })
   tagsRow.appendChild(addTagBtn)
@@ -122,7 +226,7 @@ function buildTagsRow(entry, callbacks) {
   return tagsRow
 }
 
-export function createSoundRow(entry, { included, loading, error, volume, muted }, callbacks) {
+export function createSoundRow(entry, { included, loading, error, volume, muted }, callbacks, allTags = []) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
@@ -178,7 +282,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted 
     info.appendChild(errorLabel)
   }
 
-  info.appendChild(buildTagsRow(entry, callbacks))
+  info.appendChild(buildTagsRow(entry, callbacks, allTags))
 
   li.appendChild(info)
 
