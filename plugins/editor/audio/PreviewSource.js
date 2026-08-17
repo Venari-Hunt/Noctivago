@@ -1,13 +1,6 @@
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
 const FILTER_SMOOTHING_SECONDS = 0.01
-// Mirrors library.js's defaultEqBands() band count - duplicated per this
-// plugin's own "bundle your own copies" convention (see MAX_BUFFER_CLIP_SECONDS
-// above in index.js). A voice's EQ node count is fixed at creation, before
-// any real sound/filters are known (see createVoice below), so it needs to
-// know the count up front rather than deriving it from the first filters
-// object it's given.
-const EQ_BAND_COUNT = 7
 // Matches src/renderer/audio/SoundSource.js's core-playback copy of this
 // same echo design - see that file for the full rationale (feedback delay
 // tapped off the dry signal, one knob driving both send and feedback gain).
@@ -15,10 +8,10 @@ const MAX_ECHO_DELAY_SECONDS = 2.0
 
 // 'off' is a pseudo-type (not a real BiquadFilterNode type) - mapped to
 // 'allpass' (leaves the amplitude spectrum unchanged, a true no-op for
-// tone-shaping) rather than dynamically rewiring the fixed eqNodes chain
-// per band. A muted band takes the same bypass regardless of its own real
-// type, non-destructively (mute never touches band.type). Mirrors
-// SoundSource.js's identical helper.
+// tone-shaping) rather than special-casing it out of the chain entirely.
+// A muted band takes the same bypass regardless of its own real type,
+// non-destructively (mute never touches band.type). Mirrors SoundSource.js's
+// identical helper.
 function eqNodeType(band) {
   return band.muted || band.type === 'off' ? 'allpass' : (band.type ?? 'peaking')
 }
@@ -46,21 +39,16 @@ function createVoice(engine, soundId) {
   lowpassNode.type = 'lowpass'
   lowpassNode.frequency.value = 20000
 
-  // Parametric EQ - fixed chain of peaking BiquadFilterNodes, mirrors core's
-  // LocalFileSoundSource (src/renderer/audio/SoundSource.js) exactly, same
-  // position (between lowpass and the overall filter gain) so this preview
-  // and the real Mixer playback agree. Created with neutral placeholder
-  // values since a voice exists before any sound/filters are actually
-  // loaded - applyFiltersToVoice below updates them in place once real
-  // values are known, same as every other node in this chain.
-  const eqNodes = Array.from({ length: EQ_BAND_COUNT }, () => {
-    const node = engine.context.createBiquadFilter()
-    node.type = 'peaking'
-    node.frequency.value = 1000
-    node.Q.value = 1
-    node.gain.value = 0
-    return node
-  })
+  // Parametric EQ - a chain of BiquadFilterNodes, one per band the user has
+  // actually added on the graph (see EqEditor.js's +/trash controls),
+  // mirrors core's LocalFileSoundSource (src/renderer/audio/SoundSource.js)
+  // exactly, same position (between lowpass and the overall filter gain) so
+  // this preview and the real Mixer playback agree. Starts empty - a voice
+  // exists before any sound/filters are actually known, and the band count
+  // is no longer a fixed preset - applyFiltersToVoice below rebuilds this
+  // chain (via rebuildEqChain) the first time real filters arrive, and again
+  // any time the band count itself changes.
+  const eqNodes = []
 
   const filterGainNode = engine.context.createGain()
   filterGainNode.gain.value = 1
@@ -95,6 +83,31 @@ function createVoice(engine, soundId) {
   return { audioEl, sourceNode, highpassNode, lowpassNode, eqNodes, filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, crossfadeGain }
 }
 
+// Tears down and rebuilds a voice's eqNodes chain to match a new band count
+// - mirrors SoundSource.js's identical _rebuildEqChain method. .disconnect()
+// with no arguments removes every outgoing connection from a node, so this
+// is safe whether the old chain was empty (lowpassNode wired directly to
+// filterGainNode) or had N nodes. New nodes get their values set directly
+// (no smoothing) since there's no previous value on a brand-new node to
+// smooth *from*.
+function rebuildEqChain(voice, context, eq) {
+  voice.lowpassNode.disconnect()
+  for (const node of voice.eqNodes) node.disconnect()
+  voice.eqNodes = eq.map((band) => {
+    const node = context.createBiquadFilter()
+    node.type = eqNodeType(band)
+    node.frequency.value = band.freqHz
+    node.Q.value = band.q
+    node.gain.value = band.gainDb
+    return node
+  })
+  const eqChainEnd = voice.eqNodes.reduce((prev, node) => {
+    prev.connect(node)
+    return node
+  }, voice.lowpassNode)
+  eqChainEnd.connect(voice.filterGainNode)
+}
+
 function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0, eq = [] }) {
   const now = context.currentTime
   voice.highpassNode.frequency.setTargetAtTime(highpassHz, now, FILTER_SMOOTHING_SECONDS)
@@ -103,15 +116,22 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
   voice.echoDelayNode.delayTime.setTargetAtTime(echoDelayMs / 1000, now, FILTER_SMOOTHING_SECONDS)
   voice.echoSendGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
   voice.echoFeedbackGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
-  voice.eqNodes.forEach((node, i) => {
-    const band = eq[i]
-    if (!band) return
-    const newType = eqNodeType(band)
-    if (node.type !== newType) node.type = newType
-    node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
-    node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
-    node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
-  })
+  // The EQ chain's node count now varies with how many bands the user has
+  // actually added on the graph - only rebuild the chain (real work:
+  // disconnecting/recreating nodes) when that count actually changes; an
+  // in-place param update is enough whenever it hasn't, same as before.
+  if (eq.length !== voice.eqNodes.length) {
+    rebuildEqChain(voice, context, eq)
+  } else {
+    voice.eqNodes.forEach((node, i) => {
+      const band = eq[i]
+      const newType = eqNodeType(band)
+      if (node.type !== newType) node.type = newType
+      node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
+      node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
+      node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+    })
+  }
 }
 
 // Speed previews accurately via playbackRate alone (the browser's own

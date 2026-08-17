@@ -80,31 +80,28 @@ export class LocalFileSoundSource {
     this.lowpassNode.type = 'lowpass'
     this.lowpassNode.frequency.value = this.filters.lowpassHz ?? 20000
 
-    // Parametric EQ: a fixed chain of BiquadFilterNodes, one per saved band
-    // (see library.js's defaultEqBands), each independently one of Web
-    // Audio's native filter types - a lucky architecture fit, since
-    // BiquadFilterNode's own type set (lowpass/highpass/bandpass/lowshelf/
-    // highshelf/peaking/notch/allpass) already covers 7 of the real FL
-    // Studio "Fruity Parametric EQ 2" reference's 8 shapes directly. 'off'
-    // (the 8th, a pseudo-type - see eqNodeType) maps to 'allpass', which
-    // leaves the amplitude spectrum completely unchanged - a true no-op for
-    // tone-shaping without needing to dynamically rewire this fixed chain
-    // per band. A peaking/lowshelf/highshelf band left at its default
+    // Parametric EQ: a chain of BiquadFilterNodes, one per band the user has
+    // actually added on the graph (see EqEditor.js's +/trash controls - the
+    // band count is entirely user-managed now, not a fixed preset), each
+    // independently one of Web Audio's native filter types - a lucky
+    // architecture fit, since BiquadFilterNode's own type set (lowpass/
+    // highpass/bandpass/lowshelf/highshelf/peaking/notch/allpass) already
+    // covers 7 of the real FL Studio "Fruity Parametric EQ 2" reference's 8
+    // shapes directly. 'off' (the 8th, a pseudo-type - see eqNodeType) maps
+    // to 'allpass', which leaves the amplitude spectrum completely unchanged
+    // - a true no-op for tone-shaping without needing to special-case it out
+    // of the chain. A peaking/lowshelf/highshelf band left at its default
     // gainDb:0 is also a true no-op regardless of type, matching every
     // other 0/neutral-means-off control here - but lowpass/highpass/
     // bandpass/notch have no gain parameter at all and always shape the
     // signal whenever selected, they're never "neutral." Inserted between
     // lowpass and the overall filter gain, same position ffmpeg's bake
     // applies them (see loopClip.js's buildFilterChain) so live playback
-    // and the baked clip agree.
-    this.eqNodes = (this.filters.eq ?? []).map((band) => {
-      const node = engine.context.createBiquadFilter()
-      node.type = eqNodeType(band)
-      node.frequency.value = band.freqHz
-      node.Q.value = band.q
-      node.gain.value = band.gainDb
-      return node
-    })
+    // and the baked clip agree. Starts empty and is built by _rebuildEqChain
+    // below, the same rebuild path setFilters() uses whenever the band count
+    // changes later - one code path for both initial construction and live
+    // add/remove, so they can't drift apart.
+    this.eqNodes = []
 
     this.filterGainNode = engine.context.createGain()
     this.filterGainNode.gain.value = this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1
@@ -131,11 +128,7 @@ export class LocalFileSoundSource {
 
     this.sourceNode.connect(this.highpassNode)
     this.highpassNode.connect(this.lowpassNode)
-    const eqChainEnd = this.eqNodes.reduce((prev, node) => {
-      prev.connect(node)
-      return node
-    }, this.lowpassNode)
-    eqChainEnd.connect(this.filterGainNode)
+    this._rebuildEqChain(this.filters.eq ?? [])
     this.filterGainNode.connect(this.gainNode)
 
     this.filterGainNode.connect(this.echoSendGain)
@@ -234,24 +227,55 @@ export class LocalFileSoundSource {
     this.echoDelayNode.delayTime.setTargetAtTime((this.filters.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
     this.echoSendGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.echoFeedbackGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
-    // The EQ chain's node count is fixed at construction time (one per band
-    // in the filters this source was built with) - only ever updated in
-    // place here, never resized, since every sound always has the same
-    // fixed band count (see library.js's defaultEqBands).
+    // The EQ chain's node count now varies with how many bands the user has
+    // actually added on the graph - only rebuild the chain (real work:
+    // disconnecting/recreating nodes) when that count actually changes;
+    // an in-place param update is enough whenever it hasn't, same as before.
     const eq = this.filters.eq ?? []
-    this.eqNodes.forEach((node, i) => {
-      const band = eq[i]
-      if (!band) return
-      // .type isn't an AudioParam - a plain property, so it can't be smoothed
-      // like the others below. Only actually reassigned when it changes,
-      // since setting it unconditionally every call would reset the filter's
-      // internal state (a small click) even when nothing changed.
-      const newType = eqNodeType(band)
-      if (node.type !== newType) node.type = newType
-      node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
-      node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
-      node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+    if (eq.length !== this.eqNodes.length) {
+      this._rebuildEqChain(eq)
+    } else {
+      this.eqNodes.forEach((node, i) => {
+        const band = eq[i]
+        // .type isn't an AudioParam - a plain property, so it can't be
+        // smoothed like the others below. Only actually reassigned when it
+        // changes, since setting it unconditionally every call would reset
+        // the filter's internal state (a small click) even when nothing
+        // changed.
+        const newType = eqNodeType(band)
+        if (node.type !== newType) node.type = newType
+        node.frequency.setTargetAtTime(band.freqHz, now, FILTER_SMOOTHING_SECONDS)
+        node.Q.setTargetAtTime(band.q, now, FILTER_SMOOTHING_SECONDS)
+        node.gain.setTargetAtTime(band.gainDb, now, FILTER_SMOOTHING_SECONDS)
+      })
+    }
+  }
+
+  // Tears down and rebuilds the eqNodes chain to match a new band count -
+  // used both at construction (see the constructor, starting from an empty
+  // chain) and whenever setFilters() sees the band count actually change.
+  // .disconnect() with no arguments removes every outgoing connection from a
+  // node, so this is safe regardless of whether the old chain was empty
+  // (lowpassNode wired directly to filterGainNode) or had N nodes in it.
+  // New nodes get their values set directly (no smoothing) since there's no
+  // previous value on a brand-new node to smooth *from* - matches how the
+  // constructor already initializes every other node in this chain.
+  _rebuildEqChain(eq) {
+    this.lowpassNode.disconnect()
+    for (const node of this.eqNodes) node.disconnect()
+    this.eqNodes = eq.map((band) => {
+      const node = this.engine.context.createBiquadFilter()
+      node.type = eqNodeType(band)
+      node.frequency.value = band.freqHz
+      node.Q.value = band.q
+      node.gain.value = band.gainDb
+      return node
     })
+    const eqChainEnd = this.eqNodes.reduce((prev, node) => {
+      prev.connect(node)
+      return node
+    }, this.lowpassNode)
+    eqChainEnd.connect(this.filterGainNode)
   }
 
   hasFilters(filters) {

@@ -1,16 +1,13 @@
 // Draggable-node parametric EQ editor - a scoped-down take on FL Studio's
 // "Fruity Parametric EQ 2" (the reference the user showed a screenshot of,
-// see noctivago_remix_eq_future memory): fixed band count (matches
-// library.js's defaultEqBands - no add/remove-node UI, a deliberate scope
-// cut to keep this buildable in one pass rather than a fully dynamic node
-// system), each band draggable by frequency (X, log scale) and gain (Y),
-// with Q adjustable via mouse wheel while hovering a node. The connecting
-// line between nodes is a straight polyline through each band's own
-// (freq, gain) point, not the true composite biquad response curve (that
-// needs evaluating each peaking filter's transfer function and summing in
-// dB - a real enhancement, deliberately skipped for this pass) - still an
-// honest, useful visual of what the six control points are doing, just not
-// pixel-accurate to the actual filtered sound.
+// see noctivago_remix_eq_future memory). Band count is fully user-managed -
+// a fresh/reset EQ starts blank (library.js's defaultEqBands() returns []),
+// a "+" button adds a node, a trash-can button (or dragging a node onto it)
+// removes the selected one (see index.js's wiring) - this reverses an
+// earlier deliberate scope cut (originally a fixed 7-band set with no add/
+// remove UI) after direct feedback that the fixed set felt "too crowded."
+// Each band is draggable by frequency (X, log scale) and gain (Y), with Q
+// adjustable via mouse wheel while hovering a node.
 
 const FREQ_MIN = 20
 const FREQ_MAX = 20000
@@ -20,6 +17,15 @@ export const Q_MIN = 0.1
 export const Q_MAX = 10
 const HIT_PX = 14
 const Q_WHEEL_STEP = 0.08
+// A new node's starting point - a neutral peaking band, roughly centered on
+// the graph's log-frequency axis so it's immediately visible and draggable
+// regardless of what other bands already exist.
+const NEW_BAND_DEFAULTS = { freqHz: 1000, gainDb: 0, q: 1, type: 'peaking', muted: false }
+// Soft ceiling on band count - mostly a sanity guard against an accidental
+// runaway (each band is a real BiquadFilterNode in the live audio graph),
+// not a meaningful creative constraint; a real parametric EQ project rarely
+// needs anywhere near this many bands.
+const MAX_BANDS = 20
 // How much a Ctrl-held drag shrinks mouse movement into parameter movement -
 // matches the reference's own Ctrl+click fine-tune convention. Applied to
 // the per-frame *delta*, not the absolute cursor position (see pointerMove),
@@ -142,7 +148,61 @@ function drawLiveSpectrum(ctx, width, height, freqData, sampleRate) {
   ctx.fill()
 }
 
-function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex) {
+// A dedicated, never-rendered OfflineAudioContext used purely as a
+// coefficient-computation utility - creating a real BiquadFilterNode and
+// reading its own native getFrequencyResponse() is the exact response the
+// live audio graph will actually produce (same browser implementation,
+// zero risk of a hand-derived biquad formula subtly disagreeing with it),
+// rather than re-deriving the RBJ cookbook filter math by hand. Lazily
+// created once and reused - constructing an (Offline)AudioContext has real
+// overhead, and this needs to run on every drag frame.
+let responseContext = null
+function getResponseContext() {
+  if (!responseContext) responseContext = new OfflineAudioContext(1, 1, 44100)
+  return responseContext
+}
+
+// The real composite frequency-response curve - requested directly after
+// the straight-polyline-through-node-points version shipped ("the line
+// should draw the whole segment of the frequencies it is affecting...
+// start at the left edge... end at the right edge"). Each active band's own
+// transfer function is evaluated across every visible frequency (one sample
+// per horizontal pixel) and summed in dB - correct because the real audio
+// chain connects bands in *series*, and a series/cascaded chain's combined
+// transfer function is the product of each stage's own (log-domain sum).
+// Bypassed bands (muted, or a different band is soloed) or 'off'-type bands
+// are excluded entirely, matching the same "honest reflection of what's
+// audible" the node-dimming below already does. Returns null when nothing
+// is actually contributing (nothing to draw a curve for at all).
+function computeResponseCurve(bands, width, soloIndex) {
+  const activeBands = bands.filter((band, i) => !band.muted && band.type !== 'off' && (soloIndex === -1 || soloIndex === i))
+  if (activeBands.length === 0) return null
+
+  const sampleCount = Math.max(2, Math.round(width))
+  const freqs = new Float32Array(sampleCount)
+  for (let i = 0; i < sampleCount; i++) {
+    freqs[i] = xToFreq((i / (sampleCount - 1)) * width, width)
+  }
+
+  const context = getResponseContext()
+  const totalDb = new Float32Array(sampleCount)
+  const mag = new Float32Array(sampleCount)
+  const phase = new Float32Array(sampleCount)
+  for (const band of activeBands) {
+    const node = context.createBiquadFilter()
+    node.type = band.type ?? 'peaking'
+    node.frequency.value = band.freqHz
+    node.Q.value = band.q
+    node.gain.value = band.gainDb
+    node.getFrequencyResponse(freqs, mag, phase)
+    for (let i = 0; i < sampleCount; i++) {
+      totalDb[i] += 20 * Math.log10(Math.max(mag[i], 1e-6))
+    }
+  }
+  return totalDb
+}
+
+function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, responseCurve) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -182,18 +242,24 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloInde
   if (liveSpectrum) drawLiveSpectrum(ctx, width, height, liveSpectrum.freqData, liveSpectrum.sampleRate)
   else if (bandEnergy) drawBandEnergyBackdrop(ctx, width, height, bandEnergy.freqs, bandEnergy.energies)
 
-  if (bands.length > 0) {
-    const sorted = [...bands].sort((a, b) => a.freqHz - b.freqHz)
+  if (responseCurve) {
     ctx.strokeStyle = '#7aa2f7'
     ctx.lineWidth = 2
     ctx.beginPath()
-    sorted.forEach((band, i) => {
-      const x = freqToX(band.freqHz, width)
-      const y = gainToY(band.gainDb, height)
-      if (i === 0) ctx.moveTo(x, y)
+    for (let x = 0; x < responseCurve.length; x++) {
+      const gainDb = Math.min(GAIN_MAX, Math.max(GAIN_MIN, responseCurve[x]))
+      const y = gainToY(gainDb, height)
+      if (x === 0) ctx.moveTo(x, y)
       else ctx.lineTo(x, y)
-    })
+    }
     ctx.stroke()
+  } else if (bands.length === 0) {
+    ctx.fillStyle = '#8892b0'
+    ctx.font = '12px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('Click + to add a band', width / 2, height / 2)
+    ctx.textAlign = 'left'
+    ctx.font = '10px sans-serif'
   }
 
   // A band renders dimmed whenever it's not actually contributing to the
@@ -236,11 +302,40 @@ export function createEqEditorController(canvas) {
   let bandEnergy = null
   let liveSpectrum = null
   let freqDataBuffer = null
+  // Registered via setTrashDropTarget (see index.js) - hit-tested in
+  // pointerUp against the real button's own bounding rect, so "drag a node
+  // onto the trash can" doesn't need this controller to know anything about
+  // the surrounding page layout beyond one element reference.
+  let trashDropTarget = null
   let onChange = () => {}
+  // Two distinct gestures, two distinct callbacks - deliberately split apart
+  // (they used to fire the identical callback) after direct feedback: double
+  // -click should be a lighter "reset just this band's position" while
+  // Alt+click is the fuller reset. Same "this controller has no opinion on
+  // what reset actually means" boundary as before - index.js's own
+  // registrations decide what each gesture actually resets.
   let onDoubleClick = () => {}
+  let onAltClick = () => {}
+  // Cache for the computed response curve, keyed on whatever actually
+  // affects it - avoids recomputing on every redraw() call, since
+  // tickSpectrum() alone (see index.js) already triggers one on every
+  // animation frame during playback purely to update the live spectrum
+  // overlay, with the bands themselves usually unchanged frame to frame.
+  let cachedCurveKey = null
+  let cachedCurve = null
+
+  function getResponseCurve(width) {
+    const key = JSON.stringify(bands) + '|' + soloIndex + '|' + Math.round(width)
+    if (key !== cachedCurveKey) {
+      cachedCurveKey = key
+      cachedCurve = computeResponseCurve(bands, width, soloIndex)
+    }
+    return cachedCurve
+  }
 
   function redraw() {
-    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex)
+    const { width } = canvas.getBoundingClientRect()
+    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, getResponseCurve(width))
   }
 
   // Interaction math (hit-testing, drag, wheel) works in the canvas's
@@ -277,14 +372,12 @@ export function createEqEditorController(canvas) {
     const { x, y, width, height } = eventPos(evt)
     const idx = nearestBandIndex(x, y, width, height)
     if (idx === -1) return
-    // Alt+click resets the band instead of starting a drag - a faster
-    // alternative to double-click for the same "reset this band" gesture
-    // (mirrors the reference's own Alt+click-to-reset convention), reusing
-    // the identical onDoubleClick callback since both are just different
-    // triggers for the same reset action.
+    // Alt+click resets the band instead of starting a drag - the fuller
+    // reset gesture (see onAltClick above), distinct from a plain
+    // double-click's lighter "just the position" reset.
     if (evt.altKey) {
       selectedIndex = idx
-      onDoubleClick(idx)
+      onAltClick(idx)
       return
     }
     selectedIndex = idx
@@ -319,8 +412,52 @@ export function createEqEditorController(canvas) {
     onChange(getBands(), selectedIndex)
   }
 
-  function pointerUp() {
+  // Dragging a node onto the registered trash target deletes it, in
+  // addition to the trash button's own click-to-delete-selected path (see
+  // index.js's wiring) - both trigger the identical removeSelectedBand()
+  // below, since a drag always keeps the dragged node selected throughout
+  // (see pointerDown). Native mouseup events already carry clientX/clientY,
+  // so this signature change is safe even though pointerUp was previously
+  // called with no argument used.
+  function pointerUp(evt) {
+    if (dragging && trashDropTarget && selectedIndex !== -1 && evt) {
+      const rect = trashDropTarget.getBoundingClientRect()
+      const overTrash = evt.clientX >= rect.left && evt.clientX <= rect.right && evt.clientY >= rect.top && evt.clientY <= rect.bottom
+      if (overTrash) {
+        dragging = false
+        removeSelectedBand()
+        return
+      }
+    }
     dragging = false
+  }
+
+  // New node lands at a fixed, neutral default position rather than
+  // wherever the cursor happens to be - the request was specifically for a
+  // dedicated + button, not click-anywhere-on-the-graph-to-add.
+  function addBand() {
+    if (bands.length >= MAX_BANDS) return
+    bands.push({ ...NEW_BAND_DEFAULTS })
+    selectedIndex = bands.length - 1
+    redraw()
+    onChange(getBands(), selectedIndex)
+  }
+
+  // Deletes whichever band is currently selected - the one shared deletion
+  // path for both the trash button's click and dragging a node onto it.
+  // soloIndex needs care since it's a raw array index into bands: clear it
+  // if the soloed band was the one just removed, or shift it down by one if
+  // it pointed past the removed index (everything after a spliced-out
+  // element shifts left by one).
+  function removeSelectedBand() {
+    if (selectedIndex === -1 || !bands[selectedIndex]) return
+    const removedIndex = selectedIndex
+    bands.splice(removedIndex, 1)
+    if (soloIndex === removedIndex) soloIndex = -1
+    else if (soloIndex > removedIndex) soloIndex -= 1
+    selectedIndex = -1
+    redraw()
+    onChange(getBands(), selectedIndex)
   }
 
   // Mirrors the app-wide "double-click a slider resets it to default"
@@ -458,6 +595,18 @@ export function createEqEditorController(canvas) {
     },
     onDoubleClick(cb) {
       onDoubleClick = cb
+    },
+    onAltClick(cb) {
+      onAltClick = cb
+    },
+    addBand,
+    removeSelectedBand,
+    // Registers the real trash-can button element for drag-to-delete
+    // hit-testing (see pointerUp) - a plain setter rather than something
+    // passed at construction time, since the canvas and its surrounding
+    // buttons are wired up separately in index.js's mount().
+    setTrashDropTarget(el) {
+      trashDropTarget = el
     },
     destroy() {
       window.removeEventListener('mousemove', pointerMove)

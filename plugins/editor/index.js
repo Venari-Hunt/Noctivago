@@ -33,13 +33,14 @@ const VOLUME_ICON_SVG =
 const MUTE_ICON_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>'
 
-// Mirrors library.js's defaultEqBands() exactly (band count, frequencies,
-// neutral gain/Q) - same cross-directory duplication reason as
+// Mirrors library.js's defaultEqBands() exactly - a fresh/reset EQ starts
+// with zero bands now (user-managed via the graph's own +/trash controls),
+// not a fixed preset. Same cross-directory duplication reason as
 // MAX_BUFFER_CLIP_SECONDS above. A fresh function call each time, never a
 // shared array, since callers mutate the objects they get back (the EQ
 // editor controller clones on load() too, but this is cheap insurance).
 function defaultEqBands() {
-  return [60, 150, 400, 1000, 2500, 6000, 14000].map((freqHz) => ({ freqHz, gainDb: 0, q: 1, type: 'peaking', muted: false }))
+  return []
 }
 
 const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: defaultEqBands() }
@@ -241,12 +242,18 @@ export default class EditorPlugin {
                 <button id="editor-eq-compare-a" class="editor-eq-compare-btn editor-eq-compare-btn-active" type="button" title="Compare slot A">A</button>
                 <button id="editor-eq-compare-b" class="editor-eq-compare-btn" type="button" title="Compare slot B">B</button>
               </div>
+              <button id="editor-eq-add-band" class="btn btn-svg-icon" type="button" title="Add a band">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <button id="editor-eq-remove-band" class="btn btn-svg-icon" type="button" title="Delete the selected band (or drag a node here)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg>
+              </button>
               <button id="editor-eq-reset" class="btn btn-small btn-icon-text" type="button">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 Reset EQ
               </button>
             </div>
-            <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it."></canvas>
+            <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click a node to reset its gain; Alt+click for a full reset."></canvas>
             <div class="editor-eq-band-controls">
               <label>
                 <span>Type</span>
@@ -278,7 +285,7 @@ export default class EditorPlugin {
               <button id="editor-eq-mute" class="editor-eq-toggle-btn" type="button" title="Mute this band (keeps its settings, just stops applying it)">Mute</button>
               <button id="editor-eq-solo" class="editor-eq-toggle-btn" type="button" title="Solo this band (hear only its effect, for auditioning while tuning)">Solo</button>
             </div>
-            <p class="editor-eq-hint">Drag a node on the graph to shape a band (hold Ctrl while dragging for finer control), or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it to default. Mute silences a band without losing its settings; Solo hears only that band while tuning.</p>
+            <p class="editor-eq-hint">Click + to add a band, drag it to shape it (hold Ctrl while dragging for finer control), or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click resets just its gain; Alt+click fully resets it. The trash button (or dragging a node onto it) deletes the selected band. Mute silences a band without losing its settings; Solo hears only that band while tuning.</p>
           </div>
           <div class="editor-presets">
             <span class="editor-presets-label">Presets</span>
@@ -355,6 +362,8 @@ export default class EditorPlugin {
       echoDecayValue: container.querySelector('#editor-echo-decay-value'),
       eqCanvas: container.querySelector('#editor-eq-canvas'),
       eqReset: container.querySelector('#editor-eq-reset'),
+      eqAddBand: container.querySelector('#editor-eq-add-band'),
+      eqRemoveBand: container.querySelector('#editor-eq-remove-band'),
       eqCompareA: container.querySelector('#editor-eq-compare-a'),
       eqCompareB: container.querySelector('#editor-eq-compare-b'),
       eqType: container.querySelector('#editor-eq-type'),
@@ -383,18 +392,26 @@ export default class EditorPlugin {
 
     this.eqEditorController = createEqEditorController(this.els.eqCanvas)
     this.eqEditorController.onChange(() => this.applyEqControls())
-    // "Double-clicking a node on the EQ should reset it" - requested
-    // directly, mirroring the app-wide double-click-resets-a-slider
-    // convention (sliderReset.js) for these custom canvas nodes, which that
-    // delegated listener can't reach. "Default" here means this band's own
-    // starting values (defaultEqBands()[index]), same source Reset EQ
-    // already uses for every band at once - this is just that, scoped to
-    // one band.
+    // Double-click and Alt+click used to fire the identical full reset -
+    // split apart after direct feedback ("double clicking shouldn't reset
+    // the node completely just position. Alt clicking should be the full
+    // reset"). There's no longer a canonical "default" per node to reset
+    // *back to* (bands are user-added now, not a fixed preset set - see
+    // library.js's defaultEqBands()), so both are redefined as "what does
+    // resetting a node mean when there's nothing to reset it back to":
+    // double-click resets just gainDb to 0 (the node's vertical "position"
+    // on the graph, the literal reading of "just position"); Alt+click is
+    // the fuller reset - gainDb:0, q:1, type back to 'peaking' - while still
+    // preserving the node's own frequency, its horizontal identity, not
+    // something a reset should relocate.
     this.eqEditorController.onDoubleClick((index) => {
-      const defaults = defaultEqBands()[index]
-      if (!defaults) return
       this.eqEditorController.setSelectedIndex(index)
-      this.eqEditorController.setSelectedBand(defaults)
+      this.eqEditorController.setSelectedBand({ gainDb: 0 })
+      this.applyEqControls()
+    })
+    this.eqEditorController.onAltClick((index) => {
+      this.eqEditorController.setSelectedIndex(index)
+      this.eqEditorController.setSelectedBand({ gainDb: 0, q: 1, type: 'peaking' })
       this.applyEqControls()
     })
 
@@ -521,6 +538,21 @@ export default class EditorPlugin {
       this.updateEqFieldsFromSelection()
       this.applyEqControls()
     })
+
+    this.els.eqAddBand.addEventListener('click', () => {
+      this.eqEditorController.addBand()
+      this.updateEqFieldsFromSelection()
+      this.applyEqControls()
+    })
+    this.els.eqRemoveBand.addEventListener('click', () => {
+      this.eqEditorController.removeSelectedBand()
+      this.updateEqFieldsFromSelection()
+      this.applyEqControls()
+    })
+    // Registers the trash button as a drag-and-drop target too - dragging a
+    // node onto it deletes it, same as clicking it with a band selected
+    // (see EqEditor.js's pointerUp).
+    this.eqEditorController.setTrashDropTarget(this.els.eqRemoveBand)
 
     this.els.eqCompareA.addEventListener('click', () => this.switchEqCompareSlot('A'))
     this.els.eqCompareB.addEventListener('click', () => this.switchEqCompareSlot('B'))
@@ -846,7 +878,28 @@ export default class EditorPlugin {
     const bands = this.eqEditorController.getBands()
     const index = this.eqEditorController.getSelectedIndex()
     const band = bands[index]
-    if (!band) return
+    // Nothing selected - either a blank EQ, or a band was just deleted
+    // (which always clears selection, see EqEditor.js's removeSelectedBand).
+    // Disable the precision fields entirely rather than leaving them
+    // showing a stale, no-longer-meaningful value from whatever was
+    // previously selected.
+    const hasSelection = Boolean(band)
+    this.els.eqType.disabled = !hasSelection
+    this.els.eqFreq.disabled = !hasSelection
+    this.els.eqGain.disabled = !hasSelection
+    this.els.eqQ.disabled = !hasSelection
+    this.els.eqMute.disabled = !hasSelection
+    this.els.eqSolo.disabled = !hasSelection
+    this.els.eqRemoveBand.disabled = !hasSelection
+    if (!hasSelection) {
+      this.els.eqType.value = 'peaking'
+      this.els.eqFreq.value = ''
+      this.els.eqGain.value = ''
+      this.els.eqQ.value = ''
+      this.els.eqMute.classList.remove('editor-eq-mute-active')
+      this.els.eqSolo.classList.remove('editor-eq-solo-active')
+      return
+    }
     this.els.eqType.value = band.type ?? 'peaking'
     this.els.eqFreq.value = String(Math.round(band.freqHz))
     this.els.eqGain.value = String(band.gainDb)
