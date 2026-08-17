@@ -90,6 +90,7 @@ export default class EditorPlugin {
         // this tab last mounted — mount() only runs once per tab lifetime,
         // so without this the picker would silently go stale.
         if (this.els.soundSearch) this.refreshLibrary().catch((err) => console.error('Editor: failed to refresh library', err))
+        this._syncScrollTopVisibility?.()
       },
       onHide: () => {
         this.previewSource?.pause()
@@ -276,6 +277,12 @@ export default class EditorPlugin {
         </div>
         <p id="editor-empty" class="editor-empty">Select a sound above to trim and apply filters.</p>
       </div>
+      <button id="editor-scroll-top" class="editor-scroll-top-btn hidden" type="button" title="Scroll to top">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19V5"/>
+          <path d="M5 12l7-7 7 7"/>
+        </svg>
+      </button>
     `
 
     this.els = {
@@ -331,7 +338,8 @@ export default class EditorPlugin {
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
       save: container.querySelector('#editor-save'),
-      saveStatus: container.querySelector('#editor-save-status')
+      saveStatus: container.querySelector('#editor-save-status'),
+      scrollTop: container.querySelector('#editor-scroll-top')
     }
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
@@ -368,7 +376,36 @@ export default class EditorPlugin {
     })
 
     this.wireControls()
+    this.wireScrollTop()
     this.refreshLibrary().catch((err) => console.error('Editor: failed to load library', err))
+  }
+
+  // Floating "scroll to top" button, requested directly since this panel has
+  // grown long (waveform, times, playmode, crossfade/scatter, speed/pitch,
+  // filters, 7-band EQ, presets) - a real trip back to the top otherwise
+  // needs a lot of manual scrolling. #tab-content is the *shared* scroll
+  // container every tab's panel lives inside (see main.css's `main {
+  // overflow-y: auto }`) - only the active tab's own <section> is ever
+  // visible at a time (TabHost.js toggles a hidden class on the rest), so
+  // this button - appended inside Remix's own panel markup - automatically
+  // hides itself whenever a different tab is active, the same way the rest
+  // of this tab's content already does, with zero extra onShow/onHide
+  // bookkeeping needed just for that.
+  wireScrollTop() {
+    const scrollContainer = document.getElementById('tab-content')
+    const THRESHOLD_PX = 300
+    const updateVisibility = () => {
+      this.els.scrollTop.classList.toggle('hidden', scrollContainer.scrollTop < THRESHOLD_PX)
+    }
+    scrollContainer.addEventListener('scroll', updateVisibility)
+    this.els.scrollTop.addEventListener('click', () => {
+      scrollContainer.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+    // Re-syncs on every tab switch back to Remix - the shared container's
+    // scrollTop reflects whatever the previously-active tab's content left
+    // it at, not necessarily anything meaningful for this tab's own layout.
+    this._syncScrollTopVisibility = updateVisibility
+    updateVisibility()
   }
 
   wireControls() {
