@@ -455,6 +455,14 @@ export function createLoopEditorController(canvas) {
     evt.preventDefault()
   }
 
+  // Redraws (which also re-syncs the canvas's bitmap resolution to its
+  // current rendered size - see waveform.js's resizeCanvasForDisplay)
+  // whenever the panel's own size might have changed, matching the same
+  // fix/reasoning on EqEditor.js's own resize handler.
+  function handleResize() {
+    redraw()
+  }
+
   canvas.addEventListener('mousedown', pointerDown)
   window.addEventListener('mousemove', pointerMove)
   window.addEventListener('mouseup', pointerUp)
@@ -462,6 +470,7 @@ export function createLoopEditorController(canvas) {
   window.addEventListener('keydown', handleCtrlKeyChange)
   window.addEventListener('keyup', handleCtrlKeyChange)
   canvas.addEventListener('contextmenu', preventContextMenu)
+  window.addEventListener('resize', handleResize)
 
   return {
     load(totalDuration, initialLoopStart, initialLoopEnd) {
@@ -522,6 +531,7 @@ export function createLoopEditorController(canvas) {
       window.removeEventListener('keydown', handleCtrlKeyChange)
       window.removeEventListener('keyup', handleCtrlKeyChange)
       canvas.removeEventListener('contextmenu', preventContextMenu)
+      window.removeEventListener('resize', handleResize)
     }
   }
 }

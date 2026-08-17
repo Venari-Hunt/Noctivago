@@ -3,6 +3,7 @@ import * as library from './library.js'
 import * as presets from './presets.js'
 import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
+import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled } from './settings.js'
@@ -77,6 +78,17 @@ export function registerIpcHandlers() {
       return await extractWaveformPeaks({ inputPath, durationSeconds: entry.durationSeconds, targetWidth })
     } catch (err) {
       console.error('Waveform extraction failed', id, err)
+      return null
+    }
+  })
+
+  ipcMain.handle('audio:getBandEnergy', async (_event, id, { loopStart, loopEnd, freqs }) => {
+    const inputPath = library.getPlaybackPathForId(id)
+    if (!inputPath) return null
+    try {
+      return await computeBandEnergy(inputPath, { loopStart, loopEnd, freqs })
+    } catch (err) {
+      console.error('Band energy analysis failed', id, err)
       return null
     }
   })

@@ -952,6 +952,21 @@ export default class EditorPlugin {
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
     this.updateStickyProgress(loopStart)
+
+    // Fire-and-forget: a real ffmpeg round-trip (six bandpass-filtered
+    // passes, see src/main/ffmpeg/bandEnergy.js), so this arrives well after
+    // everything else above already rendered. Fixed reference frequencies
+    // (defaultEqBands' own, not this sound's possibly-customized bands) -
+    // see EqEditor.js's setBandEnergy for why the backdrop is deliberately
+    // decoupled from wherever the user later drags a node to.
+    const bandFreqs = defaultEqBands().map((b) => b.freqHz)
+    this.api.audio
+      .getBandEnergy(id, { loopStart, loopEnd, freqs: bandFreqs })
+      .then((energies) => {
+        if (this.currentEntry?.id !== id || !energies) return
+        this.eqEditorController.setBandEnergy(bandFreqs, energies)
+      })
+      .catch((err) => console.error('Editor: band energy analysis failed', err))
     this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter)
     this.updateSaveButtonState()
 

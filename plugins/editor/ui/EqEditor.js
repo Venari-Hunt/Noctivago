@@ -79,7 +79,31 @@ function resizeCanvasForDisplay(canvas) {
   return { width: rect.width, height: rect.height, dpr }
 }
 
-function drawEq(canvas, bands, selectedIndex) {
+// Backdrop bars showing roughly how much energy the sound actually has
+// around a handful of fixed reference frequencies (see index.js's
+// loadSound(), which computes this once via a bandpass-filtered ffmpeg pass
+// per frequency - src/main/ffmpeg/bandEnergy.js). Deliberately NOT the true
+// composite biquad response curve or a live spectrum analyzer (either would
+// need real-time playback + an AnalyserNode, meaningfully more scope) - a
+// static, load-time-only reference instead, closer in spirit to "what does
+// this file's spectrum roughly look like" than to a literal FL Studio-style
+// live analyzer. Drawn at FIXED positions (whatever frequencies were passed
+// to setBandEnergy, independent of where the user later drags any EQ node)
+// so there's no ambiguity about a bar "belonging" to a draggable node.
+function drawBandEnergyBackdrop(ctx, width, height, freqs, energies) {
+  if (!freqs || !energies || freqs.length === 0) return
+  const maxEnergy = Math.max(...energies, 0.0001)
+  const barWidth = 28
+  ctx.fillStyle = 'rgba(122, 162, 247, 0.16)'
+  freqs.forEach((freqHz, i) => {
+    const x = freqToX(freqHz, width)
+    const normalized = Math.min(1, energies[i] / maxEnergy)
+    const barHeight = normalized * height * 0.92
+    ctx.fillRect(x - barWidth / 2, height - barHeight, barWidth, barHeight)
+  })
+}
+
+function drawEq(canvas, bands, selectedIndex, bandEnergy) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -110,6 +134,8 @@ function drawEq(canvas, bands, selectedIndex) {
     ctx.fillStyle = '#8892b0'
     ctx.fillText(formatFreqLabel(f), x + 3, height - 10)
   }
+
+  if (bandEnergy) drawBandEnergyBackdrop(ctx, width, height, bandEnergy.freqs, bandEnergy.energies)
 
   if (bands.length > 0) {
     const sorted = [...bands].sort((a, b) => a.freqHz - b.freqHz)
@@ -142,10 +168,11 @@ export function createEqEditorController(canvas) {
   let bands = []
   let selectedIndex = -1
   let dragging = false
+  let bandEnergy = null
   let onChange = () => {}
 
   function redraw() {
-    drawEq(canvas, bands, selectedIndex)
+    drawEq(canvas, bands, selectedIndex, bandEnergy)
   }
 
   // Interaction math (hit-testing, drag, wheel) works in the canvas's
@@ -240,9 +267,22 @@ export function createEqEditorController(canvas) {
     load(newBands) {
       bands = newBands.map((b) => ({ ...b }))
       selectedIndex = bands.length > 0 ? 0 : -1
+      // A fresh sound's band-energy analysis hasn't arrived yet (it's an
+      // async ffmpeg round-trip, see index.js's loadSound()) - clear any
+      // previous sound's backdrop immediately rather than leaving it up
+      // showing stale data until the new one resolves.
+      bandEnergy = null
       redraw()
     },
     getBands,
+    // freqs/energies are parallel arrays - see bandEnergy.js's
+    // computeBandEnergy for where energies comes from. Passing freqs
+    // alongside rather than assuming they match the current bands keeps
+    // this backdrop decoupled from whatever the user has dragged nodes to.
+    setBandEnergy(freqs, energies) {
+      bandEnergy = freqs && energies ? { freqs, energies } : null
+      redraw()
+    },
     getSelectedIndex() {
       return selectedIndex
     },

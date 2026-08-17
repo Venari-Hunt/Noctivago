@@ -15,6 +15,36 @@ function pickTickStep(span, width) {
   return steps.find((s) => s >= rawStep) ?? steps[steps.length - 1]
 }
 
+// BUG FIX: this canvas's internal bitmap resolution (its width/height HTML
+// attributes, 640x160) didn't match its actual rendered CSS size
+// (getBoundingClientRect - #editor-canvas is styled `width: 100%`, so it
+// stretches to fill the panel, well past 640px on any normal window width).
+// The browser scales the smaller bitmap up non-uniformly to fill the larger
+// box, which is exactly what "stretched and blurry" looks like - reported
+// directly by the user. Same root cause and same fix as the EQ graph's own
+// identical bug (see EqEditor.js's resizeCanvasForDisplay, added first) -
+// this canvas just never got the equivalent fix when the EQ one shipped,
+// since it predates that work and nobody had reported it yet. Resizes the
+// canvas's actual bitmap resolution to its rendered CSS size (times
+// devicePixelRatio, for crisp non-blurry drawing on high-DPI displays too,
+// not just non-stretched) before every draw, then scales the context so all
+// the drawing code below keeps working in plain CSS-pixel coordinates
+// unchanged. A useful side effect: the per-column waveform loop below now
+// draws one segment per real screen pixel instead of per bitmap pixel, so
+// the line is measurably smoother/more detailed on a wide window too, not
+// just non-stretched.
+function resizeCanvasForDisplay(canvas) {
+  const rect = canvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  const targetWidth = Math.max(1, Math.round(rect.width * dpr))
+  const targetHeight = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth
+    canvas.height = targetHeight
+  }
+  return { width: rect.width, height: rect.height, dpr }
+}
+
 // viewStart/viewEnd (defaulting to the full [0, duration] range) let the
 // zoomed-in LoopEditor draw just a window of the waveform instead of the
 // whole file. peaks itself stays a fixed-resolution array spanning the
@@ -25,9 +55,9 @@ function pickTickStep(span, width) {
 // blockier the further you zoom in, since there's no more real detail to
 // show past the original resolution - accepted for v1.
 export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration }) {
+  const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
-  const width = canvas.width
-  const height = canvas.height
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   const mid = height / 2
 
   ctx.clearRect(0, 0, width, height)
