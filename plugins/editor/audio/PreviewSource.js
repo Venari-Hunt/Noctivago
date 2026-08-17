@@ -178,6 +178,16 @@ export class PreviewSource {
     this.outputGainNode.gain.value = 0
     for (const voice of this.voices) voice.crossfadeGain.connect(this.outputGainNode)
     this.outputGainNode.connect(engine.masterGain)
+
+    // Real-time spectrum analyzer tap for the Remix EQ graph's live backdrop
+    // (see EqEditor.js's tickSpectrum) - connected in parallel off the same
+    // combined signal both voices feed into, so it reflects whichever voice
+    // is actually audible right now regardless of crossfade state. Never
+    // connected onward - an AnalyserNode doesn't need an output connection
+    // to analyze what's fed into it, this is a pure read tap.
+    this.analyserNode = engine.context.createAnalyser()
+    this.analyserNode.fftSize = 2048
+    this.outputGainNode.connect(this.analyserNode)
   }
 
   // LoopEditor's playhead tracking and manual currentTime pokes only ever
@@ -361,5 +371,6 @@ export class PreviewSource {
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     for (const voice of this.voices) disposeVoice(voice)
     this.outputGainNode.disconnect()
+    this.analyserNode.disconnect()
   }
 }

@@ -449,6 +449,7 @@ export default class EditorPlugin {
         this.previewSource.pause()
         this.stopPreviewTicking()
         this.els.playPause.textContent = 'Play'
+        this.eqEditorController.clearSpectrum()
       } else {
         try {
           await this.engine.resume()
@@ -844,6 +845,7 @@ export default class EditorPlugin {
     const currentTime = this.previewSource.audioEl.currentTime
     this.loopEditorController.setPlayhead(currentTime)
     this.updateStickyProgress(currentTime)
+    this.eqEditorController.tickSpectrum(this.previewSource.analyserNode)
     this.previewRafId = requestAnimationFrame(() => this.tickPreviewPlayhead())
   }
 
@@ -864,6 +866,7 @@ export default class EditorPlugin {
 
   disposePreview() {
     this.stopPreviewTicking()
+    this.eqEditorController?.clearSpectrum()
     if (!this.previewSource) return
     this.previewSource.dispose()
     this.previewSource = null
@@ -933,6 +936,7 @@ export default class EditorPlugin {
     this.previewSource.onEnded = () => {
       this.stopPreviewTicking()
       this.els.playPause.textContent = 'Play'
+      this.eqEditorController.clearSpectrum()
     }
     const duration = await this.previewSource.waitForMetadata()
     if (this.currentEntry?.id !== id) return // switched sounds while loading

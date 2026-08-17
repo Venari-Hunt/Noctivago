@@ -82,14 +82,13 @@ function resizeCanvasForDisplay(canvas) {
 // Backdrop bars showing roughly how much energy the sound actually has
 // around a handful of fixed reference frequencies (see index.js's
 // loadSound(), which computes this once via a bandpass-filtered ffmpeg pass
-// per frequency - src/main/ffmpeg/bandEnergy.js). Deliberately NOT the true
-// composite biquad response curve or a live spectrum analyzer (either would
-// need real-time playback + an AnalyserNode, meaningfully more scope) - a
-// static, load-time-only reference instead, closer in spirit to "what does
-// this file's spectrum roughly look like" than to a literal FL Studio-style
-// live analyzer. Drawn at FIXED positions (whatever frequencies were passed
-// to setBandEnergy, independent of where the user later drags any EQ node)
-// so there's no ambiguity about a bar "belonging" to a draggable node.
+// per frequency - src/main/ffmpeg/bandEnergy.js). A static, load-time-only
+// reference - shown whenever the live spectrum below isn't (i.e. whenever
+// nothing is actively playing), so there's still useful visual context
+// before ever pressing Play. Drawn at FIXED positions (whatever frequencies
+// were passed to setBandEnergy, independent of where the user later drags
+// any EQ node) so there's no ambiguity about a bar "belonging" to a
+// draggable node.
 function drawBandEnergyBackdrop(ctx, width, height, freqs, energies) {
   if (!freqs || !energies || freqs.length === 0) return
   const maxEnergy = Math.max(...energies, 0.0001)
@@ -103,7 +102,42 @@ function drawBandEnergyBackdrop(ctx, width, height, freqs, energies) {
   })
 }
 
-function drawEq(canvas, bands, selectedIndex, bandEnergy) {
+// The real, live-reacting spectrum analyzer (what the user was actually
+// referencing by "the frequencies light up in pink" - the static backdrop
+// above was a reasonable-looking but fundamentally different thing, a
+// one-time snapshot rather than something that responds to playback).
+// freqData is a Uint8Array from AnalyserNode.getByteFrequencyData() - each
+// bin already dB-scaled to 0-255 by the Web Audio API itself (mapped from
+// the analyser's minDecibels/maxDecibels), so no extra scaling is needed
+// here for it to look perceptually reasonable, unlike a raw linear FFT
+// magnitude array. Bins are linearly spaced in frequency (unlike this
+// graph's log-frequency X axis) - drawn as a filled area connecting each
+// bin's (freq, magnitude) point via freqToX, which naturally compresses
+// many high-frequency bins into few pixels and spreads low-frequency bins
+// out, same as any real log-frequency spectrum display built from a linear
+// FFT. Pink/red (var(--danger) elsewhere in this app) to match the FL
+// Studio reference this was modeled on.
+function drawLiveSpectrum(ctx, width, height, freqData, sampleRate) {
+  if (!freqData) return
+  const binHz = sampleRate / 2 / freqData.length
+  ctx.beginPath()
+  ctx.moveTo(0, height)
+  for (let i = 0; i < freqData.length; i++) {
+    const freqHz = (i + 0.5) * binHz
+    if (freqHz < FREQ_MIN) continue
+    if (freqHz > FREQ_MAX) break
+    const x = freqToX(freqHz, width)
+    const magnitude = freqData[i] / 255
+    const y = height - magnitude * height * 0.92
+    ctx.lineTo(x, y)
+  }
+  ctx.lineTo(width, height)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(247, 118, 142, 0.4)'
+  ctx.fill()
+}
+
+function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -135,7 +169,13 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy) {
     ctx.fillText(formatFreqLabel(f), x + 3, height - 10)
   }
 
-  if (bandEnergy) drawBandEnergyBackdrop(ctx, width, height, bandEnergy.freqs, bandEnergy.energies)
+  // Live spectrum takes over from the static backdrop whenever it's
+  // actually available (i.e. something's playing) - it's strictly more
+  // informative once there's real signal to show, matching the FL Studio
+  // reference behavior directly rather than leaving the static bars up
+  // during playback too.
+  if (liveSpectrum) drawLiveSpectrum(ctx, width, height, liveSpectrum.freqData, liveSpectrum.sampleRate)
+  else if (bandEnergy) drawBandEnergyBackdrop(ctx, width, height, bandEnergy.freqs, bandEnergy.energies)
 
   if (bands.length > 0) {
     const sorted = [...bands].sort((a, b) => a.freqHz - b.freqHz)
@@ -169,10 +209,12 @@ export function createEqEditorController(canvas) {
   let selectedIndex = -1
   let dragging = false
   let bandEnergy = null
+  let liveSpectrum = null
+  let freqDataBuffer = null
   let onChange = () => {}
 
   function redraw() {
-    drawEq(canvas, bands, selectedIndex, bandEnergy)
+    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum)
   }
 
   // Interaction math (hit-testing, drag, wheel) works in the canvas's
@@ -272,6 +314,7 @@ export function createEqEditorController(canvas) {
       // previous sound's backdrop immediately rather than leaving it up
       // showing stale data until the new one resolves.
       bandEnergy = null
+      liveSpectrum = null
       redraw()
     },
     getBands,
@@ -281,6 +324,28 @@ export function createEqEditorController(canvas) {
     // this backdrop decoupled from whatever the user has dragged nodes to.
     setBandEnergy(freqs, energies) {
       bandEnergy = freqs && energies ? { freqs, energies } : null
+      redraw()
+    },
+    // Called once per frame from index.js's existing tickPreviewPlayhead()
+    // rAF loop while the preview is actually playing - reads the live
+    // AnalyserNode tapped off PreviewSource's combined output (see
+    // PreviewSource.js) and redraws. Reuses a single Uint8Array across calls
+    // rather than allocating a fresh one every frame.
+    tickSpectrum(analyserNode) {
+      if (!analyserNode) return
+      if (!freqDataBuffer || freqDataBuffer.length !== analyserNode.frequencyBinCount) {
+        freqDataBuffer = new Uint8Array(analyserNode.frequencyBinCount)
+      }
+      analyserNode.getByteFrequencyData(freqDataBuffer)
+      liveSpectrum = { freqData: freqDataBuffer, sampleRate: analyserNode.context.sampleRate }
+      redraw()
+    },
+    // Falls back to the static band-energy backdrop (if any) - called when
+    // playback stops, so the graph doesn't freeze on the last live frame
+    // forever.
+    clearSpectrum() {
+      if (!liveSpectrum) return
+      liveSpectrum = null
       redraw()
     },
     getSelectedIndex() {
