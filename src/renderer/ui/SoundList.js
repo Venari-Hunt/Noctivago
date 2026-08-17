@@ -130,26 +130,34 @@ function buildRow(entry, rowState, draggable, callbacks) {
   return row
 }
 
-// Floats currently-playing sounds to their own group at the top, loudest
-// (highest per-sound volume) first - restores the old "what's actually
-// making noise right now" ordering the owner wanted back, framed as an
-// automatic group rather than a manual sort/toggle so there's nothing to
-// remember to turn on. Only kicks in with no explicit groupMode chosen
-// (matches how drag-reorder similarly defers to an explicit group choice
-// above) and only when something's actually playing - an idle mixer renders
-// exactly as before. Volume ties fall back to sortedEntries' own existing
-// order (already sorted by viewState.sortMode) rather than being reshuffled
-// arbitrarily, since Array.prototype.sort is a stable sort.
+// Splits into three ordered groups - Now Playing (actually audible),
+// Current Mix (included but not currently playing, e.g. paused via the
+// global toggle), Everything Else - restoring the old "what's actually
+// making noise right now" ordering plus a requested middle tier for "what's
+// checked into the mix but silent right now". `included` stays true through
+// a global pause (see toggleIncluded's own comment), so it's the right
+// signal for "in the mix" independent of whether audio is actually flowing.
+// Framed as an automatic grouping rather than a manual sort/toggle so
+// there's nothing to remember to turn on. Only kicks in with no explicit
+// groupMode chosen (matches how drag-reorder similarly defers to an
+// explicit group choice above) and only when at least one sound is playing
+// or included - a fully idle mixer renders exactly as before. Each bucket's
+// own order falls back to sortedEntries' existing order (already sorted by
+// viewState.sortMode) rather than being reshuffled arbitrarily, since
+// Array.prototype.sort is a stable sort; Now Playing additionally sorts
+// loudest (highest per-sound volume) first.
 function splitNowPlaying(sortedEntries, playbackState) {
   const playing = []
+  const inMix = []
   const rest = []
   for (const entry of sortedEntries) {
     if (playbackState.playing.has(entry.id)) playing.push(entry)
+    else if (playbackState.included.has(entry.id)) inMix.push(entry)
     else rest.push(entry)
   }
-  if (playing.length === 0) return null
+  if (playing.length === 0 && inMix.length === 0) return null
   playing.sort((a, b) => (playbackState.volumes.get(b.id) ?? 0.7) - (playbackState.volumes.get(a.id) ?? 0.7))
-  return { playing, rest }
+  return { playing, inMix, rest }
 }
 
 export function renderSoundList(listEl, emptyStateEl, entries, playbackState, viewState, callbacks) {
@@ -197,8 +205,14 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
       for (const entry of sorted) appendRow(entry)
       return
     }
-    appendHeader('Now Playing')
-    for (const entry of nowPlaying.playing) appendRow(entry)
+    if (nowPlaying.playing.length > 0) {
+      appendHeader('Now Playing')
+      for (const entry of nowPlaying.playing) appendRow(entry)
+    }
+    if (nowPlaying.inMix.length > 0) {
+      appendHeader('Current Mix')
+      for (const entry of nowPlaying.inMix) appendRow(entry)
+    }
     if (nowPlaying.rest.length > 0) {
       appendHeader('Everything Else')
       for (const entry of nowPlaying.rest) appendRow(entry)

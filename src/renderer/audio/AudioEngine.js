@@ -1,8 +1,11 @@
+import { routeDevAudioOutput } from '../core/devAudioOutput.js'
+
 export class AudioEngine {
   constructor() {
     this.context = new AudioContext()
     this.masterGain = this.context.createGain()
     this.masterGain.connect(this.context.destination)
+    routeDevAudioOutput(this.context)
   }
 
   async resume() {
