@@ -20,6 +20,11 @@ export const Q_MIN = 0.1
 export const Q_MAX = 10
 const HIT_PX = 14
 const Q_WHEEL_STEP = 0.08
+// How much a Ctrl-held drag shrinks mouse movement into parameter movement -
+// matches the reference's own Ctrl+click fine-tune convention. Applied to
+// the per-frame *delta*, not the absolute cursor position (see pointerMove),
+// so toggling Ctrl mid-drag never causes a jump.
+const FINE_TUNE_SCALE = 0.2
 
 function freqToX(freqHz, width) {
   const logMin = Math.log10(FREQ_MIN)
@@ -208,6 +213,14 @@ export function createEqEditorController(canvas) {
   let bands = []
   let selectedIndex = -1
   let dragging = false
+  // "Virtual" drag position in canvas-pixel space, decoupled from the raw
+  // cursor position once Ctrl fine-tune is in play (see pointerMove) - starts
+  // at the node's own actual pixel position on pointerDown, then accumulates
+  // scaled per-frame mouse deltas rather than tracking the cursor 1:1.
+  let dragVirtualX = 0
+  let dragVirtualY = 0
+  let lastMouseX = 0
+  let lastMouseY = 0
   let bandEnergy = null
   let liveSpectrum = null
   let freqDataBuffer = null
@@ -264,16 +277,32 @@ export function createEqEditorController(canvas) {
     }
     selectedIndex = idx
     dragging = true
+    dragVirtualX = freqToX(bands[idx].freqHz, width)
+    dragVirtualY = gainToY(bands[idx].gainDb, height)
+    lastMouseX = x
+    lastMouseY = y
     redraw()
     onChange(getBands(), selectedIndex)
   }
 
+  // Normally 1:1 with the cursor. While Ctrl is held, the raw per-frame
+  // mouse delta is shrunk by FINE_TUNE_SCALE before being applied to the
+  // virtual drag position - matches the reference's own Ctrl+click
+  // fine-tune convention for small, precise adjustments. Working in deltas
+  // (rather than re-deriving an absolute position from the cursor every
+  // frame) means holding/releasing Ctrl mid-drag never causes a jump - only
+  // the scale of movement going forward changes.
   function pointerMove(evt) {
     if (!dragging || selectedIndex === -1) return
     const { x, y, width, height } = eventPos(evt)
+    const scale = evt.ctrlKey ? FINE_TUNE_SCALE : 1
+    dragVirtualX = Math.min(Math.max(dragVirtualX + (x - lastMouseX) * scale, 0), width)
+    dragVirtualY = Math.min(Math.max(dragVirtualY + (y - lastMouseY) * scale, 0), height)
+    lastMouseX = x
+    lastMouseY = y
     const band = bands[selectedIndex]
-    band.freqHz = Math.round(xToFreq(x, width))
-    band.gainDb = Math.round(yToGain(y, height) * 10) / 10
+    band.freqHz = Math.round(xToFreq(dragVirtualX, width))
+    band.gainDb = Math.round(yToGain(dragVirtualY, height) * 10) / 10
     redraw()
     onChange(getBands(), selectedIndex)
   }

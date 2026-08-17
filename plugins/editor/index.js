@@ -223,7 +223,7 @@ export default class EditorPlugin {
               </div>
               <button id="editor-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
             </div>
-            <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain. Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it."></canvas>
+            <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it."></canvas>
             <div class="editor-eq-band-controls">
               <label>
                 <span>Type</span>
@@ -253,7 +253,7 @@ export default class EditorPlugin {
                 <input id="editor-eq-q" type="number" min="0.1" max="10" step="0.1" />
               </label>
             </div>
-            <p class="editor-eq-hint">Drag a node on the graph to shape a band, or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it to default.</p>
+            <p class="editor-eq-hint">Drag a node on the graph to shape a band (hold Ctrl while dragging for finer control), or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click or Alt+click a node to reset it to default.</p>
           </div>
           <div class="editor-presets">
             <span class="editor-presets-label">Presets</span>
