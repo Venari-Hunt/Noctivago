@@ -136,6 +136,15 @@ main {
   background: var(--accent-strong);
 }
 
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
 .btn-danger {
   color: var(--danger);
 }

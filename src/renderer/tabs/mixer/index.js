@@ -89,8 +89,19 @@ function hideModal(el) {
   el.classList.add('hidden')
 }
 
+// Play (triangle) / Pause (two bars) - the one pair of icons universal
+// enough to convert from text with no ambiguity (per the icon-conversion
+// survey this was scoped from), mirrored by Remix's own sticky Play/Pause
+// button. `title` keeps the "all" scope (vs. a single sound) available on
+// hover even though the glyph itself doesn't say it.
+const PLAY_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+const PAUSE_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
+
 function refreshGlobalButton() {
-  els.globalPlayPause.textContent = state.playing.size > 0 ? 'Pause all' : 'Play all'
+  const playing = state.playing.size > 0
+  els.globalPlayPause.innerHTML = playing ? PAUSE_ICON_SVG : PLAY_ICON_SVG
+  els.globalPlayPause.title = playing ? 'Pause all' : 'Play all'
 }
 
 const EMPTY_LIBRARY_TEXT = 'No sounds yet. Click "Add Sound" to import one.'

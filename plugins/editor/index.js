@@ -18,6 +18,13 @@ const MAX_BUFFER_CLIP_SECONDS = 600
 // crossfadeSeconds is null).
 const DEFAULT_CROSSFADE_MS = 200
 
+// Play (triangle) / Pause (two bars) - mirrors the Mixer's own identical
+// icon pair (src/renderer/tabs/mixer/index.js), duplicated here for the same
+// cross-directory-import reason as MAX_BUFFER_CLIP_SECONDS above.
+const PLAY_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+const PAUSE_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
+
 // Mirrors library.js's defaultEqBands() exactly (band count, frequencies,
 // neutral gain/Q) - same cross-directory duplication reason as
 // MAX_BUFFER_CLIP_SECONDS above. A fresh function call each time, never a
@@ -95,7 +102,7 @@ export default class EditorPlugin {
       onHide: () => {
         this.previewSource?.pause()
         this.stopPreviewTicking()
-        if (this.els.playPause) this.els.playPause.textContent = 'Play'
+        this.setPlayPauseIcon(false)
       },
       onDestroy: () => this.disposePreview()
     })
@@ -525,7 +532,7 @@ export default class EditorPlugin {
   // lifecycle mount() itself already has.
   mountSticky(container) {
     container.innerHTML = `
-      <button id="editor-play-pause" class="btn btn-small" type="button">Play</button>
+      <button id="editor-play-pause" class="btn btn-icon" type="button" title="Play">${PLAY_ICON_SVG}</button>
       <button id="editor-loop-toggle" class="editor-loop-icon-btn editor-loop-icon-btn-active" type="button" title="Loop preview" aria-pressed="true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M17 1l4 4-4 4"/>
@@ -552,13 +559,13 @@ export default class EditorPlugin {
       if (this.previewSource.playing) {
         this.previewSource.pause()
         this.stopPreviewTicking()
-        this.els.playPause.textContent = 'Play'
+        this.setPlayPauseIcon(false)
         this.eqEditorController.clearSpectrum()
       } else {
         try {
           await this.engine.resume()
           await this.previewSource.play()
-          this.els.playPause.textContent = 'Pause'
+          this.setPlayPauseIcon(true)
           this.tickPreviewPlayhead()
         } catch (err) {
           console.error('Failed to preview sound', err)
@@ -584,6 +591,12 @@ export default class EditorPlugin {
   updateLoopToggleVisual() {
     this.els.loopToggle.classList.toggle('editor-loop-icon-btn-active', this.looping)
     this.els.loopToggle.setAttribute('aria-pressed', String(this.looping))
+  }
+
+  setPlayPauseIcon(playing) {
+    if (!this.els.playPause) return
+    this.els.playPause.innerHTML = playing ? PAUSE_ICON_SVG : PLAY_ICON_SVG
+    this.els.playPause.title = playing ? 'Pause' : 'Play'
   }
 
   async refreshLibrary() {
@@ -1030,7 +1043,7 @@ export default class EditorPlugin {
       this.els.stickyProgressFill.style.width = '0%'
       this.els.stickyTime.textContent = '0:00 / 0:00'
     }
-    if (this.els.playPause) this.els.playPause.textContent = 'Play'
+    this.setPlayPauseIcon(false)
   }
 
   async getWaveformPeaks(id) {
@@ -1049,7 +1062,7 @@ export default class EditorPlugin {
     this.els.empty.classList.add('hidden')
     this.els.panel.classList.remove('hidden')
     this.els.soundName.textContent = entry.name
-    this.els.playPause.textContent = 'Play'
+    this.setPlayPauseIcon(false)
     this.els.saveStatus.textContent = ''
 
     // entry.filters.eq is undefined on any sound saved before the
@@ -1091,7 +1104,7 @@ export default class EditorPlugin {
     // the explicit Play/Pause click handler below.
     this.previewSource.onEnded = () => {
       this.stopPreviewTicking()
-      this.els.playPause.textContent = 'Play'
+      this.setPlayPauseIcon(false)
       this.eqEditorController.clearSpectrum()
     }
     const duration = await this.previewSource.waitForMetadata()
