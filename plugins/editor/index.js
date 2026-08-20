@@ -671,6 +671,10 @@ export default class EditorPlugin {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         <span id="editor-save-label">Save</span>
       </button>
+      <button id="editor-save-as-copy" class="btn btn-icon-text" type="button" title="Trim out just this segment and save it as a brand-new sound, without touching this one's own saved trim - for cutting several segments out of one longer recording">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Save as copy
+      </button>
     `
 
     this.els.playPause = container.querySelector('#editor-play-pause')
@@ -683,6 +687,8 @@ export default class EditorPlugin {
     this.els.save = container.querySelector('#editor-save')
     this.els.saveLabel = container.querySelector('#editor-save-label')
     this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
+    this.els.saveAsCopy = container.querySelector('#editor-save-as-copy')
+    this.els.saveAsCopy.addEventListener('click', () => this.saveAsCopy().catch((err) => console.error('Editor: save as copy failed', err)))
 
     this.els.playPause.addEventListener('click', async () => {
       if (!this.previewSource) return
@@ -1289,11 +1295,16 @@ export default class EditorPlugin {
     if (this.eqCompareViewing === 'B') {
       this.els.save.disabled = true
       this.els.saveLabel.textContent = 'Viewing saved mix'
+      if (this.els.saveAsCopy) this.els.saveAsCopy.disabled = true
       return
     }
     const dirty = this.hasUnsavedChanges()
     this.els.save.disabled = !dirty
     this.els.saveLabel.textContent = dirty ? 'Save' : 'Nothing to save'
+    // Unlike Save, always enabled while viewing A regardless of dirty state -
+    // saving a copy of the *current* (even unchanged) trim under a new name
+    // is still a meaningful action, not just a no-op.
+    if (this.els.saveAsCopy) this.els.saveAsCopy.disabled = false
   }
 
   stopPreviewTicking() {
@@ -1553,5 +1564,77 @@ export default class EditorPlugin {
           : 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
       this.updateSaveButtonState()
     }
+  }
+
+  // Picks "<name> copy", then "<name> copy 2", "<name> copy 3"... against
+  // whatever's currently in the library - names aren't enforced unique
+  // elsewhere in this app, but a distinct default avoids two identical-
+  // looking rows in the Mixer's own list right after saving.
+  nextCopyName(baseName) {
+    const existing = new Set(this.library.map((e) => e.name))
+    let candidate = `${baseName} copy`
+    let n = 2
+    while (existing.has(candidate)) {
+      candidate = `${baseName} copy ${n}`
+      n += 1
+    }
+    return candidate
+  }
+
+  // "Save as copy" - trims a segment out of a longer recording (the owner's
+  // own use case: several distinct bird calls in one field recording) into
+  // its own independent sound, without touching the source's own saved
+  // trim/filters at all. Deliberately does *not* run this.save() first or
+  // touch this.currentEntry/this.savedSnapshot in any way - the workflow is
+  // trim to segment 1, Save as copy, adjust the trim to segment 2 (still on
+  // the *same* open sound), Save as copy again, and so on, so the sound
+  // staying open in Remix must keep behaving exactly like nothing happened.
+  // Mirrors save()'s own structure closely (same field reads, same bake
+  // call, same MAX_BUFFER_CLIP_SECONDS cap) but targets the brand-new id
+  // library.duplicateSound() hands back instead of this.currentEntry.id.
+  async saveAsCopy() {
+    if (!this.currentEntry || !this.loopEditorController || this.eqCompareViewing === 'B') return
+    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+    const filters = this.currentFilters()
+    const crossfadeMs = this.currentCrossfadeMs()
+    const crossfadeSeconds = crossfadeMs / 1000
+    const speedPitch = this.currentSpeedPitch()
+    const playMode = this.currentPlayMode()
+    const scatter = this.currentScatterConfig()
+    const effectiveCrossfadeSeconds = playMode === 'scatter' ? 0 : crossfadeSeconds
+
+    const name = this.nextCopyName(this.currentEntry.name)
+    this.els.saveAsCopy.disabled = true
+    this.els.saveStatus.textContent = `Saving a copy as "${name}"…`
+    const newEntry = await this.api.library.duplicateSound(this.currentEntry.id, { name })
+    if (!newEntry) {
+      this.els.saveAsCopy.disabled = false
+      this.els.saveStatus.textContent = 'Save as copy failed — could not create the new sound.'
+      return
+    }
+
+    await this.api.library.updateLoopPoints(newEntry.id, { loopStart, loopEnd })
+    await this.api.library.updateFilters(newEntry.id, filters)
+    await this.api.library.updateCrossfade(newEntry.id, crossfadeSeconds)
+    await this.api.library.updateSpeedPitch(newEntry.id, speedPitch)
+    await this.api.library.updatePlayMode(newEntry.id, playMode)
+    await this.api.library.updateScatterConfig(newEntry.id, scatter)
+
+    let baked = false
+    if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
+      const result = await this.api.audio.renderLoopClip(newEntry.id, {
+        loopStart,
+        loopEnd,
+        filters,
+        crossfadeSeconds: effectiveCrossfadeSeconds,
+        speedPitch
+      })
+      baked = result.ok
+    }
+    this.els.saveAsCopy.disabled = false
+    this.els.saveStatus.textContent = baked
+      ? `Saved a copy: "${name}".`
+      : `Saved a copy: "${name}" (streams directly - trim over 10 minutes, or the clip render failed).`
+    await this.refreshLibrary()
   }
 }

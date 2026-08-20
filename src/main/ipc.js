@@ -44,6 +44,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:updateScatterConfig', (_event, id, scatter) => library.updateScatterConfig(id, scatter))
   ipcMain.handle('library:reorderSounds', (_event, orderedIds) => library.reorderSounds(orderedIds))
   ipcMain.handle('library:rename', (_event, id, name) => library.rename(id, name))
+  ipcMain.handle('library:duplicateSound', (_event, id, options) => library.duplicateSound(id, options))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))
   ipcMain.handle('library:listWatchedFolders', () => library.listWatchedFolders())

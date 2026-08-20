@@ -358,6 +358,45 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
   return entry
 }
 
+// "Save as copy" in the Remix plugin - trims a segment out of a longer
+// recording (e.g. one bird call out of a field recording with several) into
+// its own independent sound, without touching the source entry's own saved
+// trim/filters. Shares the same originalPath/storageMode/storedFileName as
+// the source rather than copying the underlying audio file - never a
+// problem, since this app never writes to a sound's original file anyway
+// (every trim/filter is metadata + a derived clip cache keyed by id, so a
+// fresh id naturally gets its own fresh, independent bake slot with zero
+// file duplication needed). loopClip* fields reset to "not yet baked" -
+// the caller (Remix's saveAsCopy) immediately follows up with its own
+// update*/renderLoopClip calls using the *current live* trim/filters,
+// mirroring exactly how a normal Save persists+bakes, just against this new
+// id instead of the currently-open one.
+export function duplicateSound(id, { name }) {
+  const sounds = store.get('sounds')
+  const source = sounds.find((s) => s.id === id)
+  if (!source) return null
+  const now = Date.now()
+  const entry = {
+    ...source,
+    id: crypto.randomUUID(),
+    name,
+    included: false,
+    loopClipReady: false,
+    loopClipStart: null,
+    loopClipEnd: null,
+    loopClipFilters: null,
+    loopClipCrossfadeSeconds: null,
+    loopClipSpeedPitch: null,
+    tags: [...(source.tags ?? [])],
+    dateAdded: now,
+    sortIndex: now,
+    status: 'ok'
+  }
+  sounds.push(entry)
+  store.set('sounds', sounds)
+  return entry
+}
+
 function updateEntry(id, patch) {
   const sounds = store.get('sounds')
   const idx = sounds.findIndex((s) => s.id === id)

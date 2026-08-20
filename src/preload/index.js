@@ -47,6 +47,7 @@ const api = {
     updateScatterConfig: (id, scatter) => ipcRenderer.invoke('library:updateScatterConfig', id, scatter),
     reorderSounds: (orderedIds) => ipcRenderer.invoke('library:reorderSounds', orderedIds),
     rename: (id, name) => ipcRenderer.invoke('library:rename', id, name),
+    duplicateSound: (id, options) => ipcRenderer.invoke('library:duplicateSound', id, options),
     relink: (id) => ipcRenderer.invoke('library:relink', id),
     remove: (id) => ipcRenderer.invoke('library:remove', id),
     listWatchedFolders: () => ipcRenderer.invoke('library:listWatchedFolders'),
