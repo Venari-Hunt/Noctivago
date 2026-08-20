@@ -45,6 +45,7 @@ const api = {
     updateSpeedPitch: (id, speedPitch) => ipcRenderer.invoke('library:updateSpeedPitch', id, speedPitch),
     updatePlayMode: (id, playMode) => ipcRenderer.invoke('library:updatePlayMode', id, playMode),
     updateScatterConfig: (id, scatter) => ipcRenderer.invoke('library:updateScatterConfig', id, scatter),
+    updateSchedule: (id, schedule) => ipcRenderer.invoke('library:updateSchedule', id, schedule),
     reorderSounds: (orderedIds) => ipcRenderer.invoke('library:reorderSounds', orderedIds),
     rename: (id, name) => ipcRenderer.invoke('library:rename', id, name),
     duplicateSound: (id, options) => ipcRenderer.invoke('library:duplicateSound', id, options),

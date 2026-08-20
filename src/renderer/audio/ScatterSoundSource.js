@@ -183,18 +183,31 @@ export class BufferScatterSource {
     this.currentShotGain = shotGain
   }
 
-  // Skips whatever gap is currently pending and fires a shot right now -
-  // the Mixer's per-row "test fire" button, for a scatter sound already
-  // live in the mix (see tabs/mixer/index.js's testFireScatter). Normal
+  // The Mixer's per-row "test fire" button (tabs/mixer/index.js's
+  // testFireOneShot, shared with scheduled mode). If already live, skips
+  // whatever gap is currently pending and fires a shot right now - normal
   // continuous cycling resumes afterward via the usual _scheduleNext() path
-  // once this shot ends, same as any other shot - this only ever skips the
-  // *current* wait, it doesn't switch the source into one-shot mode.
+  // once this shot ends, same as any other shot. If not currently playing
+  // at all (the ephemeral, not-included-in-the-mix test-fire case), starts
+  // the envelope and fires immediately - play() would do the same thing
+  // here since scatter shots never wait before the first one, but fireNow()
+  // covers this case explicitly so callers can treat it identically to
+  // scheduled mode's fireNow(), whose play() *does* wait for the first
+  // trigger and so genuinely needs this second branch.
   fireNow() {
-    if (!this.playing) return
-    if (this._timeoutId) {
-      clearTimeout(this._timeoutId)
-      this._timeoutId = null
+    if (this.playing) {
+      if (this._timeoutId) {
+        clearTimeout(this._timeoutId)
+        this._timeoutId = null
+      }
+      this._playOneShot()
+      return
     }
+    this.playing = true
+    const now = this.engine.context.currentTime
+    this.gainNode.gain.cancelScheduledValues(now)
+    this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
+    this.gainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
     this._playOneShot()
   }
 
@@ -402,14 +415,21 @@ export class StreamScatterSource {
     }
   }
 
-  // See BufferScatterSource.fireNow's identical comment - skips the current
-  // gap and fires a shot right now, normal cycling resumes afterward.
+  // See BufferScatterSource.fireNow's identical comment.
   fireNow() {
-    if (!this.playing) return
-    if (this._timeoutId) {
-      clearTimeout(this._timeoutId)
-      this._timeoutId = null
+    if (this.playing) {
+      if (this._timeoutId) {
+        clearTimeout(this._timeoutId)
+        this._timeoutId = null
+      }
+      this._playOneShot()
+      return
     }
+    this.playing = true
+    const now = this.engine.context.currentTime
+    this.gainNode.gain.cancelScheduledValues(now)
+    this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
+    this.gainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
     this._playOneShot()
   }
 

@@ -171,7 +171,11 @@ export default class EditorPlugin {
               <input type="radio" name="editor-playmode" id="editor-playmode-scatter" value="scatter" />
               Random interval
             </label>
-            <p class="editor-playmode-hint">Random interval replays this clip at a random gap instead of looping it back-to-back — good for a short, event-like sound (a creak, a bird call) inside a longer ambient mix.</p>
+            <label class="editor-playmode-option">
+              <input type="radio" name="editor-playmode" id="editor-playmode-scheduled" value="scheduled" />
+              Scheduled
+            </label>
+            <p class="editor-playmode-hint">Random interval replays this clip at a random gap instead of looping it back-to-back — good for a short, event-like sound (a creak, a bird call) inside a longer ambient mix. Scheduled instead plays it once at real-world clock times you set — a church bell at noon, an hourly chime.</p>
           </div>
           <div id="editor-crossfade-section" class="editor-crossfade">
             <label>
@@ -223,6 +227,26 @@ export default class EditorPlugin {
               <span class="editor-filter-value">ms</span>
             </label>
             <p class="editor-scatter-hint">Each replay picks a random gap, pitch, and volume within these ranges. Leave both pitch bounds at 0 for a fully random pitch each time; leave both volume bounds at 100% for no volume variation. Fade in/out eases each shot's start/end instead of a hard cut.</p>
+          </div>
+          <div id="editor-schedule-section" class="editor-scatter-controls hidden">
+            <label class="editor-playmode-option">
+              <input type="radio" name="editor-schedule-type" id="editor-schedule-type-times" value="times" checked />
+              Fixed times
+            </label>
+            <label class="editor-playmode-option">
+              <input type="radio" name="editor-schedule-type" id="editor-schedule-type-interval" value="interval" />
+              Recurring interval
+            </label>
+            <label id="editor-schedule-times-row">
+              <span>Times (24h, comma-separated)</span>
+              <input id="editor-schedule-times" type="text" inputmode="numeric" placeholder="12:00, 00:00" />
+            </label>
+            <label id="editor-schedule-interval-row" class="hidden">
+              <span>Every</span>
+              <input id="editor-schedule-interval" type="number" min="1" max="1440" step="1" value="60" />
+              <span class="editor-filter-value">minutes</span>
+            </label>
+            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -371,6 +395,7 @@ export default class EditorPlugin {
       lengthInput: container.querySelector('#editor-length-input'),
       playModeLoop: container.querySelector('#editor-playmode-loop'),
       playModeScatter: container.querySelector('#editor-playmode-scatter'),
+      playModeScheduled: container.querySelector('#editor-playmode-scheduled'),
       crossfadeSection: container.querySelector('#editor-crossfade-section'),
       crossfade: container.querySelector('#editor-crossfade'),
       crossfadeValue: container.querySelector('#editor-crossfade-value'),
@@ -387,6 +412,13 @@ export default class EditorPlugin {
       scatterVolumeMaxValue: container.querySelector('#editor-scatter-volume-max-value'),
       scatterFadeIn: container.querySelector('#editor-scatter-fade-in'),
       scatterFadeOut: container.querySelector('#editor-scatter-fade-out'),
+      scheduleSection: container.querySelector('#editor-schedule-section'),
+      scheduleTypeTimes: container.querySelector('#editor-schedule-type-times'),
+      scheduleTypeInterval: container.querySelector('#editor-schedule-type-interval'),
+      scheduleTimesRow: container.querySelector('#editor-schedule-times-row'),
+      scheduleTimes: container.querySelector('#editor-schedule-times'),
+      scheduleIntervalRow: container.querySelector('#editor-schedule-interval-row'),
+      scheduleInterval: container.querySelector('#editor-schedule-interval'),
       speed: container.querySelector('#editor-speed'),
       speedValue: container.querySelector('#editor-speed-value'),
       pitch: container.querySelector('#editor-pitch'),
@@ -544,6 +576,7 @@ export default class EditorPlugin {
 
     this.els.playModeLoop.addEventListener('change', () => this.applyPlayModeControl())
     this.els.playModeScatter.addEventListener('change', () => this.applyPlayModeControl())
+    this.els.playModeScheduled.addEventListener('change', () => this.applyPlayModeControl())
     this.els.scatterGapMin.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterGapMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterPitchMin.addEventListener('input', () => this.applyScatterControls())
@@ -552,6 +585,11 @@ export default class EditorPlugin {
     this.els.scatterVolumeMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeIn.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeOut.addEventListener('input', () => this.applyScatterControls())
+
+    this.els.scheduleTypeTimes.addEventListener('change', () => this.applyScheduleControls())
+    this.els.scheduleTypeInterval.addEventListener('change', () => this.applyScheduleControls())
+    this.els.scheduleTimes.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleInterval.addEventListener('input', () => this.applyScheduleControls())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
 
@@ -1132,14 +1170,18 @@ export default class EditorPlugin {
   }
 
   currentPlayMode() {
-    return this.els.playModeScatter.checked ? 'scatter' : 'loop'
+    if (this.els.playModeScatter.checked) return 'scatter'
+    if (this.els.playModeScheduled.checked) return 'scheduled'
+    return 'loop'
   }
 
   setPlayModeControls(playMode) {
-    this.els.playModeLoop.checked = playMode !== 'scatter'
+    this.els.playModeLoop.checked = playMode !== 'scatter' && playMode !== 'scheduled'
     this.els.playModeScatter.checked = playMode === 'scatter'
-    this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter')
+    this.els.playModeScheduled.checked = playMode === 'scheduled'
+    this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
+    this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
   }
 
   currentScatterConfig() {
@@ -1184,14 +1226,44 @@ export default class EditorPlugin {
 
   applyPlayModeControl() {
     const playMode = this.currentPlayMode()
-    this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter')
+    this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
+    this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
     this.updateSaveButtonState()
   }
 
   applyScatterControls() {
     const scatter = this.currentScatterConfig()
     this.updateScatterLabels(scatter)
+    this.updateSaveButtonState()
+  }
+
+  currentScheduleConfig() {
+    const type = this.els.scheduleTypeInterval.checked ? 'interval' : 'times'
+    const times = this.els.scheduleTimes.value
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+    return {
+      type,
+      times,
+      intervalMinutes: Number(this.els.scheduleInterval.value)
+    }
+  }
+
+  setScheduleControls({ type = 'times', times = [], intervalMinutes = 60 }) {
+    this.els.scheduleTypeTimes.checked = type !== 'interval'
+    this.els.scheduleTypeInterval.checked = type === 'interval'
+    this.els.scheduleTimes.value = times.join(', ')
+    this.els.scheduleInterval.value = String(intervalMinutes)
+    this.els.scheduleTimesRow.classList.toggle('hidden', type === 'interval')
+    this.els.scheduleIntervalRow.classList.toggle('hidden', type !== 'interval')
+  }
+
+  applyScheduleControls() {
+    const schedule = this.currentScheduleConfig()
+    this.els.scheduleTimesRow.classList.toggle('hidden', schedule.type === 'interval')
+    this.els.scheduleIntervalRow.classList.toggle('hidden', schedule.type !== 'interval')
     this.updateSaveButtonState()
   }
 
@@ -1229,7 +1301,7 @@ export default class EditorPlugin {
   // has changed. crossfadeMs is compared as the rounded integer the slider
   // itself produces, not the seconds value it's persisted as, so float
   // round-tripping (ms -> seconds -> ms) can't cause a false "dirty" flag.
-  snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter) {
+  snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter, schedule) {
     return JSON.stringify({
       loopStart,
       loopEnd,
@@ -1264,6 +1336,11 @@ export default class EditorPlugin {
         maxVolume: scatter.maxVolume ?? 1,
         fadeInMs: scatter.fadeInMs ?? 0,
         fadeOutMs: scatter.fadeOutMs ?? 0
+      },
+      schedule: {
+        type: schedule?.type ?? 'times',
+        times: [...(schedule?.times ?? [])],
+        intervalMinutes: schedule?.intervalMinutes ?? 60
       }
     })
   }
@@ -1279,7 +1356,8 @@ export default class EditorPlugin {
         this.currentCrossfadeMs(),
         this.currentSpeedPitch(),
         this.currentPlayMode(),
-        this.currentScatterConfig()
+        this.currentScatterConfig(),
+        this.currentScheduleConfig()
       ) !== this.savedSnapshot
     )
   }
@@ -1410,9 +1488,11 @@ export default class EditorPlugin {
       fadeInMs: 0,
       fadeOutMs: 0
     }
+    const schedule = entry.schedule ?? { type: 'times', times: [], intervalMinutes: 60 }
     this.setPlayModeControls(playMode)
     this.setScatterControls(scatter)
     this.updateScatterLabels(scatter)
+    this.setScheduleControls(schedule)
 
     await this.engine.resume()
     this.previewSource = new PreviewSource(this.engine, {
@@ -1465,7 +1545,7 @@ export default class EditorPlugin {
         this.eqEditorController.setBandEnergy(bandFreqs, energies)
       })
       .catch((err) => console.error('Editor: band energy analysis failed', err))
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter)
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter, schedule)
     this.updateSaveButtonState()
 
     this.els.waveformStatus.textContent = this.waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
@@ -1489,13 +1569,15 @@ export default class EditorPlugin {
     const speedPitch = this.currentSpeedPitch()
     const playMode = this.currentPlayMode()
     const scatter = this.currentScatterConfig()
-    // Random-interval playback replays the clip as one-shots, never
-    // back-to-back — the crossfade+rotation a looped clip needs to hide its
-    // own wrap point would be wrong here, so the bake below always uses 0
-    // (plain trim) for a scatter-mode sound regardless of the crossfade
-    // slider's own saved value. Mirrors library.js/tabs/mixer's own
-    // effectiveCrossfadeSeconds exactly — keep in sync if this ever changes.
-    const effectiveCrossfadeSeconds = playMode === 'scatter' ? 0 : crossfadeSeconds
+    const schedule = this.currentScheduleConfig()
+    // Random-interval and Scheduled playback both replay the clip as
+    // one-shots, never back-to-back — the crossfade+rotation a looped clip
+    // needs to hide its own wrap point would be wrong for either, so the
+    // bake below always uses 0 (plain trim) for both regardless of the
+    // crossfade slider's own saved value. Mirrors library.js/tabs/mixer's
+    // own effectiveCrossfadeSeconds exactly — keep in sync if this ever
+    // changes.
+    const effectiveCrossfadeSeconds = playMode === 'scatter' || playMode === 'scheduled' ? 0 : crossfadeSeconds
 
     await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
     await this.api.library.updateFilters(id, filters)
@@ -1503,6 +1585,7 @@ export default class EditorPlugin {
     await this.api.library.updateSpeedPitch(id, speedPitch)
     await this.api.library.updatePlayMode(id, playMode)
     await this.api.library.updateScatterConfig(id, scatter)
+    await this.api.library.updateSchedule(id, schedule)
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd
     this.currentEntry.filters = filters
@@ -1510,7 +1593,8 @@ export default class EditorPlugin {
     this.currentEntry.speedPitch = speedPitch
     this.currentEntry.playMode = playMode
     this.currentEntry.scatter = scatter
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter)
+    this.currentEntry.schedule = schedule
+    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter, schedule)
 
     // This never touches the original audio file: trim points and filters
     // are stored as metadata, applied live whenever the Mixer streams the
@@ -1543,7 +1627,9 @@ export default class EditorPlugin {
         this.els.saveStatus.textContent =
           playMode === 'scatter'
             ? 'Saved — original file untouched. Rendered a clip for random-interval playback.'
-            : 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
+            : playMode === 'scheduled'
+              ? 'Saved — original file untouched. Rendered a clip for scheduled playback.'
+              : 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
       } else {
         this.currentEntry.loopClipReady = false
         this.currentEntry.loopClipStart = null
@@ -1554,14 +1640,18 @@ export default class EditorPlugin {
         this.els.saveStatus.textContent =
           playMode === 'scatter'
             ? 'Saved — original file untouched. Clip render failed, so this will stream directly for random-interval playback.'
-            : 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
+            : playMode === 'scheduled'
+              ? 'Saved — original file untouched. Clip render failed, so this will stream directly for scheduled playback.'
+              : 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
       }
       this.updateSaveButtonState()
     } else {
       this.els.saveStatus.textContent =
         playMode === 'scatter'
           ? 'Saved — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.'
-          : 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
+          : playMode === 'scheduled'
+            ? 'Saved — original file untouched. This trim is over 10 minutes, so scheduled playback will stream directly.'
+            : 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
       this.updateSaveButtonState()
     }
   }
@@ -1601,7 +1691,8 @@ export default class EditorPlugin {
     const speedPitch = this.currentSpeedPitch()
     const playMode = this.currentPlayMode()
     const scatter = this.currentScatterConfig()
-    const effectiveCrossfadeSeconds = playMode === 'scatter' ? 0 : crossfadeSeconds
+    const schedule = this.currentScheduleConfig()
+    const effectiveCrossfadeSeconds = playMode === 'scatter' || playMode === 'scheduled' ? 0 : crossfadeSeconds
 
     const name = this.nextCopyName(this.currentEntry.name)
     this.els.saveAsCopy.disabled = true
@@ -1619,6 +1710,7 @@ export default class EditorPlugin {
     await this.api.library.updateSpeedPitch(newEntry.id, speedPitch)
     await this.api.library.updatePlayMode(newEntry.id, playMode)
     await this.api.library.updateScatterConfig(newEntry.id, scatter)
+    await this.api.library.updateSchedule(newEntry.id, schedule)
 
     let baked = false
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {

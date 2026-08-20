@@ -320,6 +320,17 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     // playback-time schedule, never baked into the clip itself - see
     // effectiveCrossfadeSeconds below for the one thing about scatter mode
     // that *does* affect baking.
+    // playMode 'scheduled': instead of looping or scattering, replay the
+    // trimmed clip once at each real-world wall-clock trigger (a church bell
+    // at 12:00/00:00, an hourly chime) - schedule.type 'times' lists one or
+    // more daily HH:MM (24h) triggers, 'interval' fires every
+    // intervalMinutes, aligned to midnight (60 => on the hour, 30 => on the
+    // hour and half-hour, "like a digital clock" rather than counting from
+    // whenever the app happened to start). Deliberately no randomization
+    // (pitch/volume/fade) unlike scatter - the point is a deterministic cue
+    // at a known time. See plugins/editor/index.js's Playback Mode section,
+    // the only place this gets edited, and
+    // src/renderer/audio/ScheduledSoundSource.js for the playback engine.
     playMode: 'loop',
     scatter: {
       minGapSeconds: 5,
@@ -330,6 +341,11 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
       maxVolume: 1,
       fadeInMs: 0,
       fadeOutMs: 0
+    },
+    schedule: {
+      type: 'times',
+      times: [],
+      intervalMinutes: 60
     },
     loopClipReady: false,
     loopClipStart: null,
@@ -447,6 +463,10 @@ export function updatePlayMode(id, playMode) {
 
 export function updateScatterConfig(id, scatter) {
   return updateEntry(id, { scatter })
+}
+
+export function updateSchedule(id, schedule) {
+  return updateEntry(id, { schedule })
 }
 
 // Nullable - null means "use the app default" (see loopClip.js's
@@ -570,7 +590,7 @@ function normalizeSpeedPitch(speedPitch) {
 // loopClipCrossfadeSeconds staleness check every other trim/filter change
 // already goes through.
 function effectiveCrossfadeSeconds(entry) {
-  return entry.playMode === 'scatter' ? 0 : entry.crossfadeSeconds
+  return entry.playMode === 'scatter' || entry.playMode === 'scheduled' ? 0 : entry.crossfadeSeconds
 }
 
 export function getLoopClipPathForId(id) {

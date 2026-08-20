@@ -357,15 +357,17 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     soloBtn.addEventListener('click', () => callbacks.onToggleSolo(entry.id))
     li.appendChild(soloBtn)
 
-    // Test-fire, scatter-mode sounds only - requested directly ("an
-    // override play button on the mixer tab for audios that are played at
-    // random intervals... play the audio once when pressed so you can test
-    // the configuration you set up without having to remove and re-add").
-    // Works whether or not the sound is currently included (see
-    // tabs/mixer/index.js's testFireScatter for the two cases), so it's
-    // shown regardless of `included` - the whole point is not needing to
-    // add it first just to hear it.
-    if (entry.playMode === 'scatter') {
+    // Test-fire, scatter and scheduled sounds - requested directly for
+    // scatter ("an override play button on the mixer tab for audios that
+    // are played at random intervals... play the audio once when pressed
+    // so you can test the configuration you set up without having to
+    // remove and re-add"), extended to scheduled sounds too (same one-shot-
+    // then-wait shape, same benefit from "let me hear it now" instead of
+    // waiting for a real clock trigger). Works whether or not the sound is
+    // currently included (see tabs/mixer/index.js's testFireOneShot for the
+    // two cases), so it's shown regardless of `included` - the whole point
+    // is not needing to add it first just to hear it.
+    if (entry.playMode === 'scatter' || entry.playMode === 'scheduled') {
       const testFireBtn = document.createElement('button')
       testFireBtn.className = 'btn btn-svg-icon'
       testFireBtn.type = 'button'

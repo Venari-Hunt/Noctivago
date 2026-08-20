@@ -2,6 +2,7 @@ import { AudioEngine } from '../../audio/AudioEngine.js'
 import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
+import { BufferScheduledSource, StreamScheduledSource } from '../../audio/ScheduledSoundSource.js'
 import { renderSoundList, sortForDisplay, SORT_MODES, GROUP_MODES } from '../../ui/SoundList.js'
 import { renderPresetList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
@@ -177,7 +178,7 @@ function render() {
       onVolumeChange: changeVolume,
       onToggleMute: toggleMute,
       onToggleSolo: toggleSolo,
-      onTestFire: testFireScatter,
+      onTestFire: testFireOneShot,
       onRemove: removeSound,
       onRelink: relinkSound,
       onRename: renameSound,
@@ -241,7 +242,7 @@ function normalizeSpeedPitch(speedPitch) {
 // rotation") instead of a second bake pipeline. Mirrors library.js's own
 // effectiveCrossfadeSeconds exactly - keep both in sync if this ever changes.
 function effectiveCrossfadeSeconds(entry) {
-  return entry.playMode === 'scatter' ? 0 : entry.crossfadeSeconds
+  return entry.playMode === 'scatter' || entry.playMode === 'scheduled' ? 0 : entry.crossfadeSeconds
 }
 
 function bufferBakeSnapshot(entry) {
@@ -275,6 +276,7 @@ function bufferBakeSnapshot(entry) {
 function desiredSourceKind(entry) {
   const buffer = loopClipEligible(entry)
   if (entry.playMode === 'scatter') return buffer ? 'scatter-buffer' : 'scatter-stream'
+  if (entry.playMode === 'scheduled') return buffer ? 'scheduled-buffer' : 'scheduled-stream'
   return buffer ? 'loop-buffer' : 'loop-stream'
 }
 
@@ -283,7 +285,7 @@ function reconcileSource(entry) {
   if (!source) return
 
   const desiredKind = desiredSourceKind(entry)
-  const isBuffer = desiredKind === 'loop-buffer' || desiredKind === 'scatter-buffer'
+  const isBuffer = desiredKind === 'loop-buffer' || desiredKind === 'scatter-buffer' || desiredKind === 'scheduled-buffer'
   const bufferIsStale = isBuffer && source.kind === desiredKind && source.bakeSnapshot !== bufferBakeSnapshot(entry)
 
   if (desiredKind !== source.kind || bufferIsStale) {
@@ -301,6 +303,12 @@ function reconcileSource(entry) {
     if (!source.hasScatterConfig(entry.scatter)) source.setScatterConfig(entry.scatter)
   } else if (desiredKind === 'scatter-buffer') {
     if (!source.hasScatterConfig(entry.scatter)) source.setScatterConfig(entry.scatter)
+  } else if (desiredKind === 'scheduled-stream') {
+    if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
+    if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
+    if (!source.hasScheduleConfig(entry.schedule)) source.setScheduleConfig(entry.schedule)
+  } else if (desiredKind === 'scheduled-buffer') {
+    if (!source.hasScheduleConfig(entry.schedule)) source.setScheduleConfig(entry.schedule)
   }
 }
 
@@ -383,16 +391,22 @@ function maybeAutoBake(entry) {
 // the clip is corrupt.
 async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
   const isScatter = entry.playMode === 'scatter'
+  const isScheduled = entry.playMode === 'scheduled'
   try {
     const response = await fetch(`sound://${entry.id}?variant=clip`)
     if (!response.ok) return null
     const arrayBuffer = await response.arrayBuffer()
     const audioBuffer = await engine.context.decodeAudioData(arrayBuffer)
     const volume = state.volumes.get(entry.id) ?? 0.7
-    const source = isScatter
-      ? new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter, oneShot })
-      : new BufferSoundSource(engine, { audioBuffer, volume })
-    source.kind = isScatter ? 'scatter-buffer' : 'loop-buffer'
+    let source
+    if (isScatter) {
+      source = new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter, oneShot })
+    } else if (isScheduled) {
+      source = new BufferScheduledSource(engine, { audioBuffer, volume, schedule: entry.schedule })
+    } else {
+      source = new BufferSoundSource(engine, { audioBuffer, volume })
+    }
+    source.kind = isScatter ? 'scatter-buffer' : isScheduled ? 'scheduled-buffer' : 'loop-buffer'
     source.bakeSnapshot = bufferBakeSnapshot(entry)
     return source
   } catch (err) {
@@ -411,6 +425,7 @@ async function getOrCreateSource(entry) {
 
   if (!source) {
     const isScatter = entry.playMode === 'scatter'
+    const isScheduled = entry.playMode === 'scheduled'
     const volume = state.volumes.get(entry.id) ?? 0.7
     source = isScatter
       ? new StreamScatterSource(engine, {
@@ -421,15 +436,24 @@ async function getOrCreateSource(entry) {
           filters: entry.filters,
           scatter: entry.scatter
         })
-      : new LocalFileSoundSource(engine, {
-          soundId: entry.id,
-          loopStart: entry.loopStart,
-          loopEnd: entry.loopEnd,
-          volume,
-          filters: entry.filters,
-          speed: entry.speedPitch?.speed
-        })
-    source.kind = isScatter ? 'scatter-stream' : 'loop-stream'
+      : isScheduled
+        ? new StreamScheduledSource(engine, {
+            soundId: entry.id,
+            loopStart: entry.loopStart,
+            loopEnd: entry.loopEnd,
+            volume,
+            filters: entry.filters,
+            schedule: entry.schedule
+          })
+        : new LocalFileSoundSource(engine, {
+            soundId: entry.id,
+            loopStart: entry.loopStart,
+            loopEnd: entry.loopEnd,
+            volume,
+            filters: entry.filters,
+            speed: entry.speedPitch?.speed
+          })
+    source.kind = isScatter ? 'scatter-stream' : isScheduled ? 'scheduled-stream' : 'loop-stream'
 
     const duration = await source.waitForMetadata()
     if (!Number.isFinite(duration)) {
@@ -619,28 +643,37 @@ function toggleSolo(id) {
   applySolo(id, state.soloedSoundId !== id)
 }
 
-// "Test fire" button, scatter-mode sounds only (SoundRow.js gates it on
-// entry.playMode === 'scatter') - requested directly: "an override play
-// button on the mixer tab for audios that are played at random intervals...
-// to play the audio once when pressed so you can test the configuration
-// you set up without having to remove and re-add the audio." Two cases:
+// "Test fire" button, scatter and scheduled sounds (SoundRow.js gates it on
+// entry.playMode being one of those two) - requested directly for scatter
+// ("an override play button on the mixer tab for audios that are played at
+// random intervals... to play the audio once when pressed so you can test
+// the configuration you set up without having to remove and re-add the
+// audio"), extended to scheduled sounds too since they're architecturally
+// the same "one-shot, then wait, then repeat" shape and benefit from the
+// identical "let me hear it now" need - waiting for a real clock trigger
+// just to check a scheduled sound's trim/filters would be far worse. Two
+// cases:
 //
 // - Already live in the mix: fireNow() on the existing source just skips
-//   whatever gap is currently pending and plays a shot immediately - normal
-//   continuous cycling resumes on its own right after, same as any other
-//   shot.
+//   whatever wait is currently pending (a random gap, or time until the
+//   next scheduled trigger) and plays a shot immediately - normal cycling
+//   resumes on its own right after, same as any other shot.
 // - Not currently included at all: builds a throwaway source (same
 //   buffer/stream eligibility check real playback uses, so the test
 //   accurately reflects what the sound will actually do once added) with
-//   oneShot: true, plays exactly one shot, then disposes itself via
+//   oneShot: true, fires exactly one shot, then disposes itself via
 //   onOneShotComplete - never touches state.included/state.playing/
-//   state.sources, so there's nothing left to remove afterward. Always at
-//   the sound's own real volume regardless of any lingering mute flag from
-//   a previous include - a "let me hear it" action should always be
-//   audible, that's the whole point of testing it.
-async function testFireScatter(id) {
+//   state.sources, so there's nothing left to remove afterward. Uses
+//   fireNow() rather than play() here specifically because a fresh
+//   scheduled source's own play() deliberately *waits* for the next real
+//   trigger (correct for actually joining the mix) - fireNow() is the one
+//   method both source families guarantee fires immediately regardless of
+//   whether they were already playing. Always at the sound's own real
+//   volume regardless of any lingering mute flag from a previous include -
+//   a "let me hear it" action should always be audible.
+async function testFireOneShot(id) {
   const entry = state.library.find((s) => s.id === id)
-  if (!entry || entry.playMode !== 'scatter' || entry.status === 'missing') return
+  if (!entry || (entry.playMode !== 'scatter' && entry.playMode !== 'scheduled') || entry.status === 'missing') return
 
   const existing = state.sources.get(id)
   if (existing) {
@@ -650,24 +683,35 @@ async function testFireScatter(id) {
 
   await engine.resume()
   const volume = state.volumes.get(id) ?? entry.volume ?? 0.7
+  const isScatter = entry.playMode === 'scatter'
   let source = null
   if (loopClipEligible(entry)) {
     source = await tryCreateBufferSource(entry, { oneShot: true })
   }
   if (!source) {
-    source = new StreamScatterSource(engine, {
-      soundId: entry.id,
-      loopStart: entry.loopStart,
-      loopEnd: entry.loopEnd,
-      volume,
-      filters: entry.filters,
-      scatter: entry.scatter,
-      oneShot: true
-    })
+    source = isScatter
+      ? new StreamScatterSource(engine, {
+          soundId: entry.id,
+          loopStart: entry.loopStart,
+          loopEnd: entry.loopEnd,
+          volume,
+          filters: entry.filters,
+          scatter: entry.scatter,
+          oneShot: true
+        })
+      : new StreamScheduledSource(engine, {
+          soundId: entry.id,
+          loopStart: entry.loopStart,
+          loopEnd: entry.loopEnd,
+          volume,
+          filters: entry.filters,
+          schedule: entry.schedule,
+          oneShot: true
+        })
   }
   source.onOneShotComplete = () => source.dispose()
   try {
-    await source.play()
+    await source.fireNow()
   } catch (err) {
     console.error('Test-fire playback failed', entry.name, err)
     source.dispose()
