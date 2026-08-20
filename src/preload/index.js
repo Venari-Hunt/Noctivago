@@ -82,6 +82,10 @@ const api = {
   export: {
     pickDestination: (options) => ipcRenderer.invoke('export:pickDestination', options),
     run: (payload) => ipcRenderer.invoke('export:run', payload)
+  },
+  composite: {
+    create: (payload) => ipcRenderer.invoke('composite:create', payload),
+    rebake: (payload) => ipcRenderer.invoke('composite:rebake', payload)
   }
 }
 

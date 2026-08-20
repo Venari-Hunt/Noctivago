@@ -1,0 +1,94 @@
+.composite-tab {
+  padding: 16px;
+  max-width: 520px;
+}
+
+.composite-tab h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.composite-hint {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.composite-tab > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.composite-tab > label > span:first-child {
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.composite-tab input[type='text'],
+.composite-tab select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  flex: 1;
+}
+
+#composite-members {
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.composite-member-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.composite-member-row select {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.composite-member-row input[type='number'] {
+  width: 70px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.composite-value {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+#composite-add-member {
+  margin-bottom: 16px;
+}
+
+#composite-bake {
+  display: block;
+  margin-top: 8px;
+}
+
+.composite-status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}

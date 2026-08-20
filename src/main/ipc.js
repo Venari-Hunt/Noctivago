@@ -1,10 +1,14 @@
 import { app, ipcMain, dialog } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
 import * as library from './library.js'
 import * as presets from './presets.js'
 import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { exportMix } from './ffmpeg/exportMix.js'
+import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled } from './settings.js'
@@ -127,6 +131,62 @@ export function registerIpcHandlers() {
       .filter((s) => s.inputPath)
     if (resolvedSounds.length === 0) return { ok: false, error: 'No exportable sounds in this preset' }
     return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath })
+  })
+
+  // members: [{soundId, delayMs}] - resolves each to the real, current data
+  // (filters/trim/speedPitch) the Composite bake needs, mirroring
+  // export:run's own id -> path/data resolution boundary.
+  function resolveCompositeMembers(members) {
+    return members
+      .map((m) => {
+        const entry = library.listSounds().find((s) => s.id === m.soundId)
+        const inputPath = library.getPlaybackPathForId(m.soundId)
+        if (!entry || !inputPath) return null
+        return {
+          inputPath,
+          loopStart: entry.loopStart ?? 0,
+          loopEnd: entry.loopEnd ?? entry.durationSeconds ?? 0,
+          filters: entry.filters ?? {},
+          speedPitch: entry.speedPitch ?? null,
+          delayMs: m.delayMs ?? 0
+        }
+      })
+      .filter(Boolean)
+  }
+
+  ipcMain.handle('composite:create', async (_event, { name, members }) => {
+    const resolved = resolveCompositeMembers(members)
+    if (resolved.length < 2) return { ok: false, error: 'Choose at least two sounds' }
+
+    const tmpDir = path.join(app.getPath('userData'), 'export-tmp')
+    fs.mkdirSync(tmpDir, { recursive: true })
+    const tmpOutputPath = path.join(tmpDir, `${crypto.randomUUID()}.wav`)
+    const result = await renderComposite({ members: resolved, outputPath: tmpOutputPath })
+    if (!result.ok) return result
+
+    try {
+      const entry = library.addSound({ path: tmpOutputPath, name, keepCopy: true })
+      library.markAsComposite(entry.id, members)
+      return { ok: true, entry: library.listSounds().find((s) => s.id === entry.id) }
+    } finally {
+      try {
+        if (fs.existsSync(tmpOutputPath)) fs.unlinkSync(tmpOutputPath)
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  })
+
+  ipcMain.handle('composite:rebake', async (_event, { id, name, members }) => {
+    const resolved = resolveCompositeMembers(members)
+    if (resolved.length < 2) return { ok: false, error: 'Choose at least two sounds' }
+    const outputPath = library.getPlaybackPathForId(id)
+    if (!outputPath) return { ok: false, error: 'Composite sound not found' }
+
+    const result = await renderComposite({ members: resolved, outputPath })
+    if (!result.ok) return result
+    library.updateComposite(id, { name, members })
+    return { ok: true, entry: library.listSounds().find((s) => s.id === id) }
   })
 
   ipcMain.handle('plugins:list', () => getPlugins().map((p) => ({ id: p.id, manifest: p.manifest })))

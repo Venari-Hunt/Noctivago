@@ -444,6 +444,40 @@ export function duplicateSound(id, { name }) {
   return entry
 }
 
+// The Composite tab ("compose multiple sounds into one baked file") calls
+// this right after library.addSound has created the entry from the freshly-
+// rendered composite audio - marks it as composite-derived purely for
+// display (a badge) and so the Composite tab can find + re-edit it later.
+// Deliberately doesn't touch playback/eligibility/staleness fields at all -
+// once baked, this is a completely normal sound, per the owner's own
+// framing ("it is in fact a new audio file... the existing infrastructure
+// is still valid for it").
+export function markAsComposite(id, members) {
+  return updateEntry(id, { compositeSource: { members, createdAt: Date.now() } })
+}
+
+// Re-editing an existing composite (the Composite tab reopened it, the user
+// changed members/timing, re-baked). The caller has already overwritten the
+// entry's own real audio file in place (same storedFileName - see
+// getPlaybackPathForId) before calling this; this just updates the recipe
+// metadata and resets the same "not yet baked" loop-clip fields a fresh
+// import would have, since the underlying audio content just changed out
+// from under any existing trim.
+export function updateComposite(id, { name, members }) {
+  return updateEntry(id, {
+    name,
+    compositeSource: { members, createdAt: Date.now() },
+    loopStart: 0,
+    loopEnd: null,
+    loopClipReady: false,
+    loopClipStart: null,
+    loopClipEnd: null,
+    loopClipFilters: null,
+    loopClipCrossfadeSeconds: null,
+    loopClipSpeedPitch: null
+  })
+}
+
 function updateEntry(id, patch) {
   const sounds = store.get('sounds')
   const idx = sounds.findIndex((s) => s.id === id)

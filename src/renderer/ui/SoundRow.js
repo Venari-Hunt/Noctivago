@@ -276,6 +276,19 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
   wireMarquee(name)
   info.appendChild(name)
 
+  // Purely a display marker - a composite-derived sound (see the Composite
+  // plugin) is otherwise a completely normal entry with no different
+  // playback behavior, but it's baked from multiple other sounds and can be
+  // re-opened in the Composite tab to change its recipe, so it's worth
+  // flagging at a glance rather than looking identical to a plain import.
+  if (entry.compositeSource) {
+    const badge = document.createElement('span')
+    badge.className = 'sound-row-composite-badge'
+    badge.textContent = 'Composite'
+    badge.title = `Baked from ${entry.compositeSource.members.length} sounds - open the Composite tab to edit`
+    info.appendChild(badge)
+  }
+
   const meta = document.createElement('span')
   meta.className = 'sound-row-meta'
   meta.textContent = formatMeta(entry)
