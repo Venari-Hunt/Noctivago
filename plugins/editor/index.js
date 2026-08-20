@@ -256,7 +256,37 @@ export default class EditorPlugin {
               <input id="editor-schedule-interval" type="number" min="1" max="1440" step="1" value="60" />
               <span class="editor-filter-value">minutes</span>
             </label>
-            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started.</p>
+            <label>
+              <span>Pitch (min)</span>
+              <input id="editor-schedule-pitch-min" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="editor-schedule-pitch-min-value" class="editor-filter-value">0 st</span>
+            </label>
+            <label>
+              <span>Pitch (max)</span>
+              <input id="editor-schedule-pitch-max" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="editor-schedule-pitch-max-value" class="editor-filter-value">0 st</span>
+            </label>
+            <label>
+              <span>Volume (min)</span>
+              <input id="editor-schedule-volume-min" type="range" min="0" max="100" value="100" step="1" />
+              <span id="editor-schedule-volume-min-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
+              <span>Volume (max)</span>
+              <input id="editor-schedule-volume-max" type="range" min="0" max="100" value="100" step="1" />
+              <span id="editor-schedule-volume-max-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
+              <span>Fade in</span>
+              <input id="editor-schedule-fade-in" type="number" min="0" max="10000" step="50" value="0" />
+              <span class="editor-filter-value">ms</span>
+            </label>
+            <label>
+              <span>Fade out</span>
+              <input id="editor-schedule-fade-out" type="number" min="0" max="10000" step="50" value="0" />
+              <span class="editor-filter-value">ms</span>
+            </label>
+            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch and volume within these ranges, same as Random Interval - leave both pitch bounds at 0 for a fully random pitch each time; leave both volume bounds at 100% for no volume variation. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -430,6 +460,16 @@ export default class EditorPlugin {
       scheduleTimes: container.querySelector('#editor-schedule-times'),
       scheduleIntervalRow: container.querySelector('#editor-schedule-interval-row'),
       scheduleInterval: container.querySelector('#editor-schedule-interval'),
+      schedulePitchMin: container.querySelector('#editor-schedule-pitch-min'),
+      schedulePitchMinValue: container.querySelector('#editor-schedule-pitch-min-value'),
+      schedulePitchMax: container.querySelector('#editor-schedule-pitch-max'),
+      schedulePitchMaxValue: container.querySelector('#editor-schedule-pitch-max-value'),
+      scheduleVolumeMin: container.querySelector('#editor-schedule-volume-min'),
+      scheduleVolumeMinValue: container.querySelector('#editor-schedule-volume-min-value'),
+      scheduleVolumeMax: container.querySelector('#editor-schedule-volume-max'),
+      scheduleVolumeMaxValue: container.querySelector('#editor-schedule-volume-max-value'),
+      scheduleFadeIn: container.querySelector('#editor-schedule-fade-in'),
+      scheduleFadeOut: container.querySelector('#editor-schedule-fade-out'),
       speed: container.querySelector('#editor-speed'),
       speedValue: container.querySelector('#editor-speed-value'),
       pitch: container.querySelector('#editor-pitch'),
@@ -605,6 +645,12 @@ export default class EditorPlugin {
     this.els.scheduleTypeInterval.addEventListener('change', () => this.applyScheduleControls())
     this.els.scheduleTimes.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleInterval.addEventListener('input', () => this.applyScheduleControls())
+    this.els.schedulePitchMin.addEventListener('input', () => this.applyScheduleControls())
+    this.els.schedulePitchMax.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleVolumeMin.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleVolumeMax.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleFadeIn.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleFadeOut.addEventListener('input', () => this.applyScheduleControls())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
 
@@ -1266,23 +1312,54 @@ export default class EditorPlugin {
     return {
       type,
       times,
-      intervalMinutes: Number(this.els.scheduleInterval.value)
+      intervalMinutes: Number(this.els.scheduleInterval.value),
+      minPitchSemitones: Number(this.els.schedulePitchMin.value),
+      maxPitchSemitones: Number(this.els.schedulePitchMax.value),
+      minVolume: Number(this.els.scheduleVolumeMin.value) / 100,
+      maxVolume: Number(this.els.scheduleVolumeMax.value) / 100,
+      fadeInMs: Number(this.els.scheduleFadeIn.value),
+      fadeOutMs: Number(this.els.scheduleFadeOut.value)
     }
   }
 
-  setScheduleControls({ type = 'times', times = [], intervalMinutes = 60 }) {
+  setScheduleControls({
+    type = 'times',
+    times = [],
+    intervalMinutes = 60,
+    minPitchSemitones = 0,
+    maxPitchSemitones = 0,
+    minVolume = 1,
+    maxVolume = 1,
+    fadeInMs = 0,
+    fadeOutMs = 0
+  }) {
     this.els.scheduleTypeTimes.checked = type !== 'interval'
     this.els.scheduleTypeInterval.checked = type === 'interval'
     this.els.scheduleTimes.value = times.join(', ')
     this.els.scheduleInterval.value = String(intervalMinutes)
     this.els.scheduleTimesRow.classList.toggle('hidden', type === 'interval')
     this.els.scheduleIntervalRow.classList.toggle('hidden', type !== 'interval')
+    this.els.schedulePitchMin.value = String(minPitchSemitones)
+    this.els.schedulePitchMax.value = String(maxPitchSemitones)
+    this.els.scheduleVolumeMin.value = String(Math.round(minVolume * 100))
+    this.els.scheduleVolumeMax.value = String(Math.round(maxVolume * 100))
+    this.els.scheduleFadeIn.value = String(fadeInMs)
+    this.els.scheduleFadeOut.value = String(fadeOutMs)
+    this.updateScheduleLabels({ minPitchSemitones, maxPitchSemitones, minVolume, maxVolume })
+  }
+
+  updateScheduleLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1 }) {
+    this.els.schedulePitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
+    this.els.schedulePitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
+    this.els.scheduleVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
+    this.els.scheduleVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
   }
 
   applyScheduleControls() {
     const schedule = this.currentScheduleConfig()
     this.els.scheduleTimesRow.classList.toggle('hidden', schedule.type === 'interval')
     this.els.scheduleIntervalRow.classList.toggle('hidden', schedule.type !== 'interval')
+    this.updateScheduleLabels(schedule)
     this.updateSaveButtonState()
   }
 
@@ -1366,7 +1443,13 @@ export default class EditorPlugin {
       schedule: {
         type: schedule?.type ?? 'times',
         times: [...(schedule?.times ?? [])],
-        intervalMinutes: schedule?.intervalMinutes ?? 60
+        intervalMinutes: schedule?.intervalMinutes ?? 60,
+        minPitchSemitones: schedule?.minPitchSemitones ?? 0,
+        maxPitchSemitones: schedule?.maxPitchSemitones ?? 0,
+        minVolume: schedule?.minVolume ?? 1,
+        maxVolume: schedule?.maxVolume ?? 1,
+        fadeInMs: schedule?.fadeInMs ?? 0,
+        fadeOutMs: schedule?.fadeOutMs ?? 0
       }
     })
   }
@@ -1554,7 +1637,17 @@ export default class EditorPlugin {
       fadeOutMs: 0,
       syncGroup: ''
     }
-    const schedule = entry.schedule ?? { type: 'times', times: [], intervalMinutes: 60 }
+    const schedule = entry.schedule ?? {
+      type: 'times',
+      times: [],
+      intervalMinutes: 60,
+      minPitchSemitones: 0,
+      maxPitchSemitones: 0,
+      minVolume: 1,
+      maxVolume: 1,
+      fadeInMs: 0,
+      fadeOutMs: 0
+    }
     this.setPlayModeControls(playMode)
     this.setScatterControls(scatter)
     this.updateScatterLabels(scatter)

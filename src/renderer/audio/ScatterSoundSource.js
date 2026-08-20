@@ -20,7 +20,12 @@ function randomGapSeconds(scatter) {
   return min + Math.random() * (max - min)
 }
 
-function randomPitchSemitones(scatter) {
+// Exported so ScheduledSoundSource.js (same directory, no cross-plugin
+// import restriction - unlike the Export plugin's own necessarily-duplicated
+// copy) can reuse the exact same randomization/envelope math rather than a
+// third copy, now that Scheduled sounds get the same per-shot pitch/volume/
+// fade controls Scatter already has.
+export function randomPitchSemitones(scatter) {
   let min = scatter?.minPitchSemitones ?? 0
   let max = scatter?.maxPitchSemitones ?? 0
   // Explicit user-requested special case: both bounds left at their neutral
@@ -39,7 +44,7 @@ function randomPitchSemitones(scatter) {
 // default is both bounds at 1 (always full volume, today's existing
 // behavior), and a user who explicitly wants full random variation can
 // already get it directly by setting min to 0.
-function randomVolumeScale(scatter) {
+export function randomVolumeScale(scatter) {
   const min = Math.max(0, scatter?.minVolume ?? 1)
   const max = Math.max(min, scatter?.maxVolume ?? 1)
   return min + Math.random() * (max - min)
@@ -49,7 +54,7 @@ function randomVolumeScale(scatter) {
 // fade-out can never overlap/invert on a short shot (same "clamp to a
 // fraction of the clip's own duration" pattern loopClip.js's crossfade
 // already uses for the same reason).
-function fadeSeconds(scatter, durationSeconds) {
+export function fadeSeconds(scatter, durationSeconds) {
   const maxFade = Math.max(0, durationSeconds) / 2
   const fadeInSeconds = Math.min(Math.max(0, (scatter?.fadeInMs ?? 0) / 1000), maxFade)
   const fadeOutSeconds = Math.min(Math.max(0, (scatter?.fadeOutMs ?? 0) / 1000), maxFade)
@@ -61,7 +66,7 @@ function fadeSeconds(scatter, durationSeconds) {
 // or both may be 0, meaning an instant hard on/off edge at that end - the
 // pre-fade-feature default). Shared by both source variants below since the
 // envelope math is identical regardless of what's producing the audio.
-function scheduleShotEnvelope(gainParam, target, startTime, durationSeconds, fadeInSeconds, fadeOutSeconds) {
+export function scheduleShotEnvelope(gainParam, target, startTime, durationSeconds, fadeInSeconds, fadeOutSeconds) {
   gainParam.cancelScheduledValues(startTime)
   if (fadeInSeconds > 0) {
     gainParam.setValueAtTime(0, startTime)

@@ -365,7 +365,18 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     schedule: {
       type: 'times',
       times: [],
-      intervalMinutes: 60
+      intervalMinutes: 60,
+      // Per direct owner request: a scheduled shot's own character - pitch,
+      // volume, fade in/out - gets the exact same controls a scatter shot
+      // already has (only the *timing* stays deterministic clock math,
+      // unlike scatter's random gap). Same field names/defaults as
+      // entry.scatter's own copies, reused directly rather than reinvented.
+      minPitchSemitones: 0,
+      maxPitchSemitones: 0,
+      minVolume: 1,
+      maxVolume: 1,
+      fadeInMs: 0,
+      fadeOutMs: 0
     },
     loopClipReady: false,
     loopClipStart: null,

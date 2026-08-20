@@ -96,6 +96,12 @@ function simulateScatterEvents(entry, durationSeconds) {
 // distinction rarely matters in practice.
 function simulateScheduledEvents(entry, durationSeconds, now) {
   const schedule = entry.schedule ?? {}
+  // Per direct owner request, a scheduled trigger's own character is
+  // randomized exactly the same way a scatter shot's is - only the *timing*
+  // stays deterministic. Reuses the same nominal-shot-duration/pitch-rate
+  // math simulateScatterEvents uses, so exportMix.js's fade-out (which
+  // needs a real, finite shot duration) works correctly here too.
+  const nominalShotDuration = Math.max(0, (entry.loopEnd ?? 0) - (entry.loopStart ?? 0))
   const events = []
   let cursor = new Date(now)
   let offset = 0
@@ -104,7 +110,16 @@ function simulateScheduledEvents(entry, durationSeconds, now) {
     if (seconds === null) break
     offset += seconds
     if (offset >= durationSeconds) break
-    events.push({ offsetSeconds: offset, pitchSemitones: 0, volumeScale: 1, fadeInMs: 0, fadeOutMs: 0, shotDurationSeconds: Infinity })
+    const pitchSemitones = randomPitchSemitones(schedule)
+    const effectiveRate = Math.pow(2, pitchSemitones / 12)
+    events.push({
+      offsetSeconds: offset,
+      pitchSemitones,
+      volumeScale: randomVolumeScale(schedule),
+      fadeInMs: schedule.fadeInMs ?? 0,
+      fadeOutMs: schedule.fadeOutMs ?? 0,
+      shotDurationSeconds: nominalShotDuration / effectiveRate
+    })
     cursor = new Date(cursor.getTime() + seconds * 1000)
   }
   return events

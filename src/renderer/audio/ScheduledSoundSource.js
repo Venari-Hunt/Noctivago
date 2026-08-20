@@ -1,19 +1,23 @@
 import log from 'electron-log/renderer'
+import { randomPitchSemitones, randomVolumeScale, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
 
 const RAMP_SECONDS = 0.15
 
 // Real-world wall-clock playback ("a church's bell at 12:00 and 00:00", "an
 // hourly chime, like a digital clock") - the trimmed clip plays once at each
-// scheduled moment, then waits for the next one. Deliberately much simpler
-// than ScatterSoundSource's sibling classes: no pitch/volume randomization
-// or fade envelope, since the whole point here is a *deterministic* cue at
-// a known time, not ambient variation - a user who wants a randomized bell
-// already has Random Interval for that. Shares the buffer/stream fallback
-// split and the general shot-then-wait shape with ScatterSoundSource, but
-// is its own file rather than a parametrized variant of it - the two modes
-// diverge enough (deterministic clock math vs. random gaps, no per-shot
-// envelope here) that forcing a shared base class would cost more than it
-// saves, and this keeps the well-tested scatter code untouched.
+// scheduled moment, then waits for the next one. The *when* is deterministic
+// clock math (unlike Scatter's random gap), but per direct owner request
+// ("the scheduled audios should have the exact same controls... as the
+// random interval sounds have... it still needs fading, randomization and
+// whatever") each shot's own character - pitch, volume, fade in/out - is
+// randomized exactly the same way, reusing Scatter's own randomPitchSemitones/
+// randomVolumeScale/fadeSeconds/scheduleShotEnvelope (exported from
+// ScatterSoundSource.js) rather than a third copy of that math. Shares the
+// buffer/stream fallback split and the general shot-then-wait shape with
+// ScatterSoundSource, but stays its own file rather than a parametrized
+// variant of it - the trigger-timing logic (deterministic clock vs. random
+// gap) is different enough that forcing a shared base class would cost more
+// than it saves.
 //
 // schedule shape: { type: 'times', times: ['12:00', '00:00'] } for one or
 // more fixed daily HH:MM (24h) triggers, or { type: 'interval',
@@ -49,7 +53,13 @@ function normalizeSchedule(schedule) {
   return JSON.stringify({
     type: schedule?.type ?? 'times',
     times: [...(schedule?.times ?? [])].sort(),
-    intervalMinutes: schedule?.intervalMinutes ?? 60
+    intervalMinutes: schedule?.intervalMinutes ?? 60,
+    minPitchSemitones: schedule?.minPitchSemitones ?? 0,
+    maxPitchSemitones: schedule?.maxPitchSemitones ?? 0,
+    minVolume: schedule?.minVolume ?? 1,
+    maxVolume: schedule?.maxVolume ?? 1,
+    fadeInMs: schedule?.fadeInMs ?? 0,
+    fadeOutMs: schedule?.fadeOutMs ?? 0
   })
 }
 
@@ -64,6 +74,7 @@ export class BufferScheduledSource {
     this.schedule = schedule ?? {}
     this.playing = false
     this.currentNode = null
+    this.currentShotGain = null
     this._timeoutId = null
     this._stopTimeoutId = null
     // Test-fire mode (tabs/mixer/index.js's per-row "play one now" button,
@@ -105,10 +116,25 @@ export class BufferScheduledSource {
     if (!this.playing) return
     const node = this.engine.context.createBufferSource()
     node.buffer = this.audioBuffer
-    node.connect(this.gainNode)
+    const detuneCents = randomPitchSemitones(this.schedule) * 100
+    node.detune.value = detuneCents
+    // Same real coupling BufferScatterSource already accounts for: detune
+    // combines into computedPlaybackRate, so a pitched shot genuinely
+    // finishes sooner/later - the fade envelope below needs the real,
+    // pitch-adjusted duration to land at the shot's actual end.
+    const effectiveRate = Math.pow(2, detuneCents / 1200)
+    const durationSeconds = this.audioBuffer.duration / effectiveRate
+    const shotGain = this.engine.context.createGain()
+    node.connect(shotGain)
+    shotGain.connect(this.gainNode)
+    const target = randomVolumeScale(this.schedule)
+    const { fadeInSeconds, fadeOutSeconds } = fadeSeconds(this.schedule, durationSeconds)
+    scheduleShotEnvelope(shotGain.gain, target, this.engine.context.currentTime, durationSeconds, fadeInSeconds, fadeOutSeconds)
     node.onended = () => {
       if (node !== this.currentNode) return
       this.currentNode = null
+      this.currentShotGain = null
+      shotGain.disconnect()
       if (this.oneShot) {
         this.playing = false
         this.onOneShotComplete?.()
@@ -118,6 +144,7 @@ export class BufferScheduledSource {
     }
     node.start()
     this.currentNode = node
+    this.currentShotGain = shotGain
   }
 
   async play() {
@@ -167,7 +194,9 @@ export class BufferScheduledSource {
     this.gainNode.gain.linearRampToValueAtTime(0, now + RAMP_SECONDS)
 
     const node = this.currentNode
+    const shotGain = this.currentShotGain
     this.currentNode = null
+    this.currentShotGain = null
     if (node) {
       node.onended = null
       if (this._stopTimeoutId) clearTimeout(this._stopTimeoutId)
@@ -179,6 +208,7 @@ export class BufferScheduledSource {
           // already stopped
         }
         node.disconnect()
+        shotGain?.disconnect()
       }, RAMP_SECONDS * 1000 + 20)
     }
   }
@@ -205,6 +235,8 @@ export class BufferScheduledSource {
       }
       this.currentNode.disconnect()
       this.currentNode = null
+      this.currentShotGain?.disconnect()
+      this.currentShotGain = null
     }
     this.gainNode.disconnect()
   }
@@ -256,13 +288,21 @@ export class StreamScheduledSource {
     this.filterGainNode = engine.context.createGain()
     this.filterGainNode.gain.value = this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1
 
+    // Per-shot fade in/out + volume-randomization envelope, separate from
+    // gainNode's own play/pause envelope below - same split
+    // StreamScatterSource already has, and for the same reason: this one
+    // resets every shot, gainNode only moves on play()/pause()/setVolume().
+    this.shotGainNode = engine.context.createGain()
+    this.shotGainNode.gain.value = 1
+
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
     this.sourceNode.connect(this.highpassNode)
     this.highpassNode.connect(this.lowpassNode)
     this.lowpassNode.connect(this.filterGainNode)
-    this.filterGainNode.connect(this.gainNode)
+    this.filterGainNode.connect(this.shotGainNode)
+    this.shotGainNode.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -342,7 +382,8 @@ export class StreamScheduledSource {
   async _playOneShot() {
     this._timeoutId = null
     if (!this.playing) return
-    this.audioEl.playbackRate = 1
+    const playbackRate = Math.pow(2, randomPitchSemitones(this.schedule) / 12)
+    this.audioEl.playbackRate = playbackRate
     this.audioEl.currentTime = this.loopStart
     try {
       await this.audioEl.play()
@@ -357,6 +398,15 @@ export class StreamScheduledSource {
       return
     }
     if (!this.playing) return
+    // playbackRate already stretches/compresses real-time shot duration -
+    // same coupling StreamScatterSource already accounts for - divide it
+    // out so the fade envelope lands at the shot's real end.
+    const end = this._loopEnd()
+    const nominalDuration = Number.isFinite(end) ? Math.max(0, end - this.loopStart) : this.audioEl.duration - this.loopStart
+    const durationSeconds = nominalDuration / playbackRate
+    const target = randomVolumeScale(this.schedule)
+    const { fadeInSeconds, fadeOutSeconds } = fadeSeconds(this.schedule, durationSeconds)
+    scheduleShotEnvelope(this.shotGainNode.gain, target, this.engine.context.currentTime, durationSeconds, fadeInSeconds, fadeOutSeconds)
     this._watchForShotEnd()
   }
 
@@ -423,6 +473,7 @@ export class StreamScheduledSource {
     this.highpassNode.disconnect()
     this.lowpassNode.disconnect()
     this.filterGainNode.disconnect()
+    this.shotGainNode.disconnect()
     this.gainNode.disconnect()
   }
 }
