@@ -49,11 +49,18 @@ function resizeCanvasForDisplay(canvas) {
 // zoomed-in LoopEditor draw just a window of the waveform instead of the
 // whole file. peaks itself stays a fixed-resolution array spanning the
 // *full* duration (one entry per pixel column at full zoom-out) - zooming
-// in resamples that same array (nearest-neighbor) rather than fetching
-// finer-grained peaks from ffmpeg, the simpler of the two options noted
-// when this feature was scoped. Trade-off: the waveform gets visibly
-// blockier the further you zoom in, since there's no more real detail to
-// show past the original resolution - accepted for v1.
+// in resamples that same array rather than fetching finer-grained peaks
+// from ffmpeg (a bigger, separately-tracked backlog item: real detail past
+// the original resolution needs new data, not just a smarter draw). What
+// changed here (researched against how DAWs/waveform libraries actually
+// render - see CLAUDE.md's Status entry) is *how* that resampling is drawn:
+// linearly interpolating between neighboring peak points (instead of
+// flooring to the nearest one) and connecting them as one continuous filled
+// polygon (instead of independent per-column line segments) removes the
+// visible staircase/blocky look at high zoom. This is honestly cosmetic
+// smoothing of the same coarse data, not new precision - past the original
+// resolution there's still no more *real* detail to show, it just no longer
+// looks like discrete blocks while there isn't.
 export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration }) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
@@ -74,15 +81,30 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   ctx.fillRect(startX, 0, endX - startX, height)
 
   if (peaks && peaks.length > 0) {
-    ctx.strokeStyle = '#7aa2f7'
-    ctx.beginPath()
+    const maxY = new Array(width)
+    const minY = new Array(width)
     for (let x = 0; x < width; x++) {
       const t = viewStart + (x / width) * viewSpan
-      const peakIndex = Math.min(peaks.length - 1, Math.max(0, Math.floor((t / duration) * peaks.length)))
-      const [min, max] = peaks[peakIndex]
-      ctx.moveTo(x + 0.5, mid + min * mid * 0.9)
-      ctx.lineTo(x + 0.5, mid + max * mid * 0.9)
+      const idx = Math.min(peaks.length - 1, Math.max(0, (t / duration) * peaks.length))
+      const i0 = Math.min(peaks.length - 1, Math.floor(idx))
+      const i1 = Math.min(peaks.length - 1, i0 + 1)
+      const frac = idx - i0
+      const [min0, max0] = peaks[i0]
+      const [min1, max1] = peaks[i1]
+      const min = min0 + (min1 - min0) * frac
+      const max = max0 + (max1 - max0) * frac
+      maxY[x] = mid + max * mid * 0.9
+      minY[x] = mid + min * mid * 0.9
     }
+    ctx.beginPath()
+    ctx.moveTo(0.5, maxY[0])
+    for (let x = 1; x < width; x++) ctx.lineTo(x + 0.5, maxY[x])
+    for (let x = width - 1; x >= 0; x--) ctx.lineTo(x + 0.5, minY[x])
+    ctx.closePath()
+    ctx.fillStyle = 'rgba(122, 162, 247, 0.55)'
+    ctx.fill()
+    ctx.strokeStyle = '#7aa2f7'
+    ctx.lineWidth = 1
     ctx.stroke()
   } else {
     ctx.strokeStyle = '#3b3f58'

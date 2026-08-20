@@ -7,6 +7,9 @@ const SAMPLE_RATE = 4000
 // never buffers the decoded audio, so this works for files of any length
 // without the memory blowup that broke long-file decodeAudioData earlier.
 export async function extractWaveformPeaks({ inputPath, durationSeconds, targetWidth }) {
+  if (!Number.isInteger(targetWidth) || targetWidth < 1) {
+    throw new Error(`extractWaveformPeaks: invalid targetWidth ${targetWidth}`)
+  }
   const totalSamples = Math.max(1, Math.round(durationSeconds * SAMPLE_RATE))
   const samplesPerBucket = Math.max(1, Math.floor(totalSamples / targetWidth))
 

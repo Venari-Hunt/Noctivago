@@ -34,7 +34,24 @@ export function runFfmpegPipe(args, onChunk) {
     const child = spawn(resolveFfmpegPath(), args, { windowsHide: true })
     const getStderrTail = captureStderrTail(child.stderr)
 
-    child.stdout.on('data', onChunk)
+    // onChunk runs synchronously inside the stdout stream's own 'data' emit
+    // - a throw in there propagates straight up through Node's stream
+    // internals as an uncaught main-process exception (confirmed via a real
+    // crash: Electron's "JavaScript error in the main process" dialog,
+    // re-triggered on every subsequent chunk since the ffmpeg child was
+    // never killed and kept streaming). That bypasses every caller's own
+    // try/catch around this promise entirely, since the throw happens well
+    // after this executor has already returned. Caught here and turned into
+    // a normal rejection instead, with the child killed so a bad chunk
+    // can't keep re-triggering itself forever.
+    child.stdout.on('data', (chunk) => {
+      try {
+        onChunk(chunk)
+      } catch (err) {
+        child.kill()
+        reject(err)
+      }
+    })
     child.on('error', (err) => reject(err))
     child.on('close', (code) => {
       if (code === 0) resolve()
