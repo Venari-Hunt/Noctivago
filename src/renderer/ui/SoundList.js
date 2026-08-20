@@ -194,7 +194,8 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     const error = playbackState.errors.get(entry.id) ?? null
     const volume = playbackState.volumes.get(entry.id) ?? 0.7
     const muted = playbackState.mutedSounds.has(entry.id)
-    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted }, draggable, callbacks, allTags))
+    const soloed = playbackState.soloedSoundId === entry.id
+    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed }, draggable, callbacks, allTags))
   }
 
   function appendHeader(label) {

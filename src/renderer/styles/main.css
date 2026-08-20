@@ -185,6 +185,16 @@ main {
   border-color: var(--danger-strong);
 }
 
+.sound-row-solo {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.btn-svg-icon-solo-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Icon+text pairing for action buttons where a bare icon alone might
    confuse (per direct feedback: "if you feel like it's gonna be confusing
    use icon+text") - distinct from .btn-svg-icon above, which is for

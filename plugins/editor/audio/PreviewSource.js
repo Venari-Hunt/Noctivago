@@ -169,6 +169,12 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
       }
     })
   }
+  // Re-establish the spectrum analyser's pre-EQ tap every call, not just
+  // once - see the constructor's own comment on voice.analyserFeed for why
+  // (rebuildEqChain's lowpassNode.disconnect() above would otherwise sever
+  // it whenever the topology branch runs). A no-op when it's already
+  // connected.
+  voice.lowpassNode.connect(voice.analyserFeed)
 }
 
 // Speed previews accurately via playbackRate alone (the browser's own
@@ -249,22 +255,33 @@ export class PreviewSource {
     this.outputGainNode.connect(engine.masterGain)
 
     // Real-time spectrum analyzer tap for the Remix EQ graph's live backdrop
-    // (see EqEditor.js's tickSpectrum). BUG FIX: this used to tap
+    // (see EqEditor.js's tickSpectrum). BUG FIX (v0.1.51): this used to tap
     // outputGainNode directly, which carries the preview volume slider's
-    // level AND the play/pause fade envelope (both ramp outputGainNode.gain
-    // itself) - reported directly by the user ("Remix tab general volume
-    // messes with the live spectrogram... it's just a control of volume for
-    // the tab and shouldn't tamper with tools for editing the audio"), and
-    // correct: the spectrum should reflect the audio content/filtering, not
-    // an arbitrary listening level. Fixed by giving both voices a SECOND,
-    // parallel connection into a dedicated fixed-at-1 gain node (never
-    // touched by setVolume/play/pause), tapping the analyser from that
-    // instead - still reflects whichever voice is actually audible
-    // (crossfade state) and any EQ/filter changes (both happen upstream, in
-    // each voice's own filter chain), just decoupled from the volume slider.
+    // level AND the play/pause fade envelope - fixed by giving both voices a
+    // second, parallel connection into a dedicated fixed-at-1 gain node
+    // instead, decoupled from the volume slider.
+    // BUG FIX (this pass): the tap point was crossfadeGain - *after* the EQ
+    // chain - so the spectrum visibly shrank/reshaped as a band was dragged,
+    // reported directly ("This creates a false sense that you're not cutting
+    // out the frequencies" - the live-reacting display made it hard to judge
+    // "how much of the original signal is actually there" against a moving
+    // target). Retapped from lowpassNode instead - after the app's other two
+    // filter controls (highpass/lowpass, which the user did *not* ask to
+    // exclude) but *before* the parametric EQ bands - so the spectrum now
+    // shows a stable reference of what's arriving at the EQ, while
+    // drawEq's separate "will be cut" overlay (computed from the same
+    // response-curve data already used for the curve line) shows what the
+    // *current* band config would do to it. voice.analyserFeed is set once
+    // here, then (re-)connected at the end of every applyFiltersToVoice call
+    // rather than just once - rebuildEqChain's own `lowpassNode.disconnect()`
+    // (needed to re-wire the EQ chain itself on a topology change) would
+    // otherwise silently sever this tap too, since .disconnect() with no
+    // arguments clears *every* outgoing connection from a node. Re-connecting
+    // an already-connected pair is a harmless no-op, so this stays correct
+    // whether or not a rebuild actually happened on a given call.
     this.analyserFeedNode = engine.context.createGain()
     this.analyserFeedNode.gain.value = 1
-    for (const voice of this.voices) voice.crossfadeGain.connect(this.analyserFeedNode)
+    for (const voice of this.voices) voice.analyserFeed = this.analyserFeedNode
 
     this.analyserNode = engine.context.createAnalyser()
     this.analyserNode.fftSize = 2048

@@ -13,6 +13,14 @@ const FREQ_MIN = 20
 const FREQ_MAX = 20000
 const GAIN_MIN = -24
 const GAIN_MAX = 24
+// How much attenuation counts as "this frequency range is effectively gone"
+// for the cut-overlay below - -18dB is roughly an 8x amplitude reduction,
+// deep enough to read as "cut" rather than merely "quieter" without being
+// all the way down at the graph's own -24dB floor (which would only flag
+// the most extreme settings). A reasoned round number, not measured against
+// any specific reference - there's no universal "this is inaudible" dB
+// figure, since that depends on the rest of the mix and listening level.
+const CUT_THRESHOLD_DB = -18
 export const Q_MIN = 0.1
 // Was 10 - raised per direct feedback ("Feels like nodes Q value cap at 10
 // is too little"). Checked the FL Studio "Fruity Parametric EQ 2" reference
@@ -204,6 +212,31 @@ function drawLiveSpectrum(ctx, width, height, freqData, sampleRate) {
   ctx.fill()
 }
 
+// Shades every contiguous pixel range where the *current* composite EQ
+// response drops at or below CUT_THRESHOLD_DB - a direct visual answer to
+// "which frequencies is this actually about to remove," decoupled from the
+// (now frozen-pre-EQ, see PreviewSource.js) live spectrum fill above it, so
+// dragging a band no longer has to be inferred from a shrinking spectrum.
+// Reuses the exact same responseCurve data the curve line itself is drawn
+// from - no separate computation, so the two can never disagree. Full
+// height (not scaled to the curve's own depth at that point) since the
+// point is "this range is gone," not "by how much" - the curve line right
+// on top of it already shows the precise depth for anyone who wants it.
+function drawCutOverlay(ctx, width, height, responseCurve) {
+  if (!responseCurve) return
+  ctx.fillStyle = 'rgba(239, 68, 68, 0.16)'
+  let rangeStart = -1
+  for (let x = 0; x <= responseCurve.length; x++) {
+    const cut = x < responseCurve.length && responseCurve[x] <= CUT_THRESHOLD_DB
+    if (cut && rangeStart === -1) {
+      rangeStart = x
+    } else if (!cut && rangeStart !== -1) {
+      ctx.fillRect(rangeStart, 0, x - rangeStart, height)
+      rangeStart = -1
+    }
+  }
+}
+
 // A dedicated, never-rendered OfflineAudioContext used purely as a
 // coefficient-computation utility - creating a real BiquadFilterNode and
 // reading its own native getFrequencyResponse() is the exact response the
@@ -303,6 +336,8 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloInde
   // during playback too.
   if (liveSpectrum) drawLiveSpectrum(ctx, width, height, liveSpectrum.freqData, liveSpectrum.sampleRate)
   else if (bandEnergy) drawBandEnergyBackdrop(ctx, width, height, bandEnergy.freqs, bandEnergy.energies)
+
+  drawCutOverlay(ctx, width, height, responseCurve)
 
   if (responseCurve) {
     ctx.strokeStyle = '#7aa2f7'

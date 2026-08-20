@@ -326,7 +326,7 @@ export default class EditorPlugin {
               <button id="editor-eq-mute" class="editor-eq-toggle-btn" type="button" title="Mute this band (keeps its settings, just stops applying it)">Mute</button>
               <button id="editor-eq-solo" class="editor-eq-toggle-btn" type="button" title="Solo this band (hear only its effect, for auditioning while tuning)">Solo</button>
             </div>
-            <p class="editor-eq-hint">Click + to add a band, drag it to shape it (hold Ctrl while dragging for finer control), or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click resets just its gain; Alt+click fully resets it. The trash button (or dragging a node onto it) deletes the selected band. Mute silences a band without losing its settings; Solo hears only that band while tuning.</p>
+            <p class="editor-eq-hint">Click + to add a band, drag it to shape it (hold Ctrl while dragging for finer control), or type exact values above for the selected (highlighted) band. Scroll over a node to adjust its Q. Double-click resets just its gain; Alt+click fully resets it. The trash button (or dragging a node onto it) deletes the selected band. Mute silences a band without losing its settings; Solo hears only that band while tuning. The pink spectrum shows the sound's own content and doesn't change as you drag bands; the red-shaded regions show which frequencies your current bands would actually cut.</p>
           </div>
           <div class="editor-presets">
             <span class="editor-presets-label">Presets</span>
@@ -764,7 +764,7 @@ export default class EditorPlugin {
     this.soloActive = active
     this.els.stickySolo?.classList.toggle('editor-sticky-solo-active', active)
     if (this.currentEntry) {
-      window.dispatchEvent(new CustomEvent('noctivago:remix-solo', { detail: { soundId: this.currentEntry.id, active } }))
+      window.dispatchEvent(new CustomEvent('noctivago:solo', { detail: { soundId: this.currentEntry.id, active } }))
     }
   }
 

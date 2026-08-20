@@ -29,12 +29,12 @@ const state = {
   // neither is persisted today, so this doesn't add a new persistence gap.
   globalMuted: false,
   mutedSounds: new Set(),
-  // Tracks exactly which ids Remix's Solo toggle muted on our behalf, so
-  // un-soloing only reverts those - a sound the user had already muted
-  // themselves before soloing stays muted afterward instead of being
-  // incorrectly unmuted. See the window 'noctivago:remix-solo' listener in
-  // mount() below.
-  soloMutedByRemix: new Set()
+  // Single-target solo (the currently-soloed sound's id, or null) and
+  // exactly which other ids got muted *by* soloing it - see applySolo's own
+  // comment for why this needs to be tracked separately from mutedSounds
+  // itself. Session-only, like mute itself.
+  soloedSoundId: null,
+  soloMutedIds: new Set()
 }
 
 const els = {
@@ -176,6 +176,7 @@ function render() {
       onToggleIncluded: toggleIncluded,
       onVolumeChange: changeVolume,
       onToggleMute: toggleMute,
+      onToggleSolo: toggleSolo,
       onRemove: removeSound,
       onRelink: relinkSound,
       onRename: renameSound,
@@ -563,31 +564,58 @@ function toggleMute(id) {
   render()
 }
 
-// Remix's Solo button (plugins/editor/index.js) has no direct access to core's
+// Shared by two entry points: each sound row's own Solo button (added
+// directly per the owner's own correction - "I meant a solo button for the
+// mixer tab. So you can single one audio out vs the multiple that are
+// playing," after an initial pass mistakenly scoped this to the Remix tab
+// instead) and Remix's Solo button (kept - genuinely still useful for
+// auditioning the sound currently open there against the rest of the mix,
+// just not the primary ask). Remix has no direct access to this
 // module-scoped state - plugins only get the curated window.noctivago IPC
-// surface, and mute is deliberately session-only/unpersisted (same as
-// globalMuted), so there's no library data to read either. A plain window
-// CustomEvent is the simplest bridge that doesn't require either side to
-// import the other. Only mutes sounds actually in state.included (muting an
-// excluded sound would do nothing audible and could confuse the un-solo
-// step), and only ones not already muted - re-entrant safe if Remix fires
-// two 'true' events in a row without a 'false' between them.
-function applyRemixSolo(soloId, active) {
+// surface, and mute is deliberately session-only/unpersisted, so there's no
+// library data to bridge through either - a plain window CustomEvent
+// ('noctivago:solo') is the simplest connection that doesn't require either
+// side to import the other.
+//
+// Single-target solo (like a DAW's own solo buttons, not a solo *group*):
+// soloing a second sound while one's already soloed switches the target
+// rather than stacking. releaseSolo() is the one path that ever un-mutes
+// what solo itself muted, called both by a plain toggle-off and by
+// applySolo() itself when the target changes - this makes applySolo(id,
+// true) safe to call from either entry point at any time, even mid-solo
+// from the *other* one, without ever leaving the new target itself stuck
+// muted from the previous solo's own mute pass.
+function releaseSolo() {
+  for (const id of state.soloMutedIds) {
+    state.mutedSounds.delete(id)
+    state.sources.get(id)?.setVolume(effectiveVolume(id))
+  }
+  state.soloMutedIds.clear()
+  state.soloedSoundId = null
+}
+
+// Only mutes sounds actually in state.included (muting an excluded sound
+// would do nothing audible and could confuse the un-solo step), and only
+// ones not already muted - so a sound the user muted by hand stays muted
+// after solo releases, and this stays safe to call repeatedly.
+function applySolo(soloId, active) {
   if (active) {
+    if (state.soloedSoundId && state.soloedSoundId !== soloId) releaseSolo()
+    state.soloedSoundId = soloId
     for (const id of state.included) {
       if (id === soloId || state.mutedSounds.has(id)) continue
       state.mutedSounds.add(id)
-      state.soloMutedByRemix.add(id)
+      state.soloMutedIds.add(id)
       state.sources.get(id)?.setVolume(effectiveVolume(id))
     }
-  } else {
-    for (const id of state.soloMutedByRemix) {
-      state.mutedSounds.delete(id)
-      state.sources.get(id)?.setVolume(effectiveVolume(id))
-    }
-    state.soloMutedByRemix.clear()
+  } else if (state.soloedSoundId === soloId) {
+    releaseSolo()
   }
   render()
+}
+
+function toggleSolo(id) {
+  applySolo(id, state.soloedSoundId !== id)
 }
 
 async function removeSound(id) {
@@ -960,10 +988,9 @@ export function mount(container) {
   // if the user never leaves the Mixer tab (onShow's refresh alone would
   // only catch it on the next tab switch).
   window.noctivago.library.onChanged(refreshList)
-  // See applyRemixSolo's own comment for why this is a window event rather
-  // than a direct call - Remix's Solo button dispatches
-  // { soundId, active }.
-  window.addEventListener('noctivago:remix-solo', (e) => {
-    applyRemixSolo(e.detail.soundId, e.detail.active)
+  // See applySolo's own comment for why this is a window event rather than a
+  // direct call - Remix's Solo button dispatches { soundId, active }.
+  window.addEventListener('noctivago:solo', (e) => {
+    applySolo(e.detail.soundId, e.detail.active)
   })
 }

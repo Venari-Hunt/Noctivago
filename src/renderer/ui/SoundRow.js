@@ -226,7 +226,7 @@ function buildTagsRow(entry, callbacks, allTags) {
   return tagsRow
 }
 
-export function createSoundRow(entry, { included, loading, error, volume, muted }, callbacks, allTags = []) {
+export function createSoundRow(entry, { included, loading, error, volume, muted, soloed }, callbacks, allTags = []) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
@@ -332,6 +332,24 @@ export function createSoundRow(entry, { included, loading, error, volume, muted 
     muteBtn.innerHTML = muted ? MUTE_ICON_SVG : VOLUME_ICON_SVG
     muteBtn.addEventListener('click', () => callbacks.onToggleMute(entry.id))
     li.appendChild(muteBtn)
+
+    // Single-target solo (like a DAW's own Solo button) - mutes every other
+    // currently-playing sound so this one can be heard on its own, requested
+    // directly ("a solo button for the mixer tab. So you can single one
+    // audio out vs the multiple that are playing"). Plain "S" badge rather
+    // than an SVG glyph - there's no single universal solo icon the way
+    // mute/speaker already has one, and DAWs (Ableton, FL Studio, Reaper)
+    // converge on the same letter convention themselves. Accent-colored
+    // when active (.btn-svg-icon-solo-active), deliberately not the same
+    // red .btn-svg-icon-active uses for mute - soloed means "audible, on
+    // purpose," the opposite of what red/danger would suggest here.
+    const soloBtn = document.createElement('button')
+    soloBtn.className = 'btn btn-svg-icon sound-row-solo' + (soloed ? ' btn-svg-icon-solo-active' : '')
+    soloBtn.type = 'button'
+    soloBtn.title = soloed ? 'Unsolo' : 'Solo (mute every other sound)'
+    soloBtn.textContent = 'S'
+    soloBtn.addEventListener('click', () => callbacks.onToggleSolo(entry.id))
+    li.appendChild(soloBtn)
   }
 
   const removeBtn = document.createElement('button')
