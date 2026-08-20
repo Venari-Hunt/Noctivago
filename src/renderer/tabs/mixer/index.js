@@ -28,7 +28,13 @@ const state = {
   // Session-only, like the global volume slider's own current position -
   // neither is persisted today, so this doesn't add a new persistence gap.
   globalMuted: false,
-  mutedSounds: new Set()
+  mutedSounds: new Set(),
+  // Tracks exactly which ids Remix's Solo toggle muted on our behalf, so
+  // un-soloing only reverts those - a sound the user had already muted
+  // themselves before soloing stays muted afterward instead of being
+  // incorrectly unmuted. See the window 'noctivago:remix-solo' listener in
+  // mount() below.
+  soloMutedByRemix: new Set()
 }
 
 const els = {
@@ -557,6 +563,33 @@ function toggleMute(id) {
   render()
 }
 
+// Remix's Solo button (plugins/editor/index.js) has no direct access to core's
+// module-scoped state - plugins only get the curated window.noctivago IPC
+// surface, and mute is deliberately session-only/unpersisted (same as
+// globalMuted), so there's no library data to read either. A plain window
+// CustomEvent is the simplest bridge that doesn't require either side to
+// import the other. Only mutes sounds actually in state.included (muting an
+// excluded sound would do nothing audible and could confuse the un-solo
+// step), and only ones not already muted - re-entrant safe if Remix fires
+// two 'true' events in a row without a 'false' between them.
+function applyRemixSolo(soloId, active) {
+  if (active) {
+    for (const id of state.included) {
+      if (id === soloId || state.mutedSounds.has(id)) continue
+      state.mutedSounds.add(id)
+      state.soloMutedByRemix.add(id)
+      state.sources.get(id)?.setVolume(effectiveVolume(id))
+    }
+  } else {
+    for (const id of state.soloMutedByRemix) {
+      state.mutedSounds.delete(id)
+      state.sources.get(id)?.setVolume(effectiveVolume(id))
+    }
+    state.soloMutedByRemix.clear()
+  }
+  render()
+}
+
 async function removeSound(id) {
   state.sources.get(id)?.dispose()
   state.sources.delete(id)
@@ -927,4 +960,10 @@ export function mount(container) {
   // if the user never leaves the Mixer tab (onShow's refresh alone would
   // only catch it on the next tab switch).
   window.noctivago.library.onChanged(refreshList)
+  // See applyRemixSolo's own comment for why this is a window event rather
+  // than a direct call - Remix's Solo button dispatches
+  // { soundId, active }.
+  window.addEventListener('noctivago:remix-solo', (e) => {
+    applyRemixSolo(e.detail.soundId, e.detail.active)
+  })
 }

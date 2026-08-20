@@ -90,6 +90,13 @@ export default class EditorPlugin {
     // always restores exactly whatever the slider was already showing,
     // same convention as the Mixer's own volume mute buttons.
     this.previewMuted = false
+    // Solo: mutes every other already-playing Mixer sound while this one is
+    // open in Remix, so it's audible against silence instead of the full
+    // mix. Scoped to "the sound currently being edited," same as the EQ
+    // graph's own per-band Solo (EqEditor.js) - reset on every fresh load()
+    // and on leaving the tab (onHide below), never persisted, so it can
+    // never silently linger and leave other sounds muted after the fact.
+    this.soloActive = false
     // A/B Compare - reworked per direct feedback from "two independent
     // editable snapshots" into "A = current session (live, editable),
     // B = last saved mix (immutable, display-only)". B is captured once in
@@ -121,6 +128,7 @@ export default class EditorPlugin {
         this.previewSource?.pause()
         this.stopPreviewTicking()
         this.setPlayPauseIcon(false)
+        this.setSolo(false)
       },
       onDestroy: () => this.disposePreview()
     })
@@ -658,6 +666,7 @@ export default class EditorPlugin {
       <span id="editor-sticky-time" class="editor-sticky-time">0:00 / 0:00</span>
       <input id="editor-sticky-volume" type="range" min="0" max="100" value="${Math.round(this.previewVolume * 100)}" class="editor-sticky-volume" title="Preview volume" />
       <button id="editor-sticky-mute" class="btn btn-svg-icon" type="button" title="Mute">${VOLUME_ICON_SVG}</button>
+      <button id="editor-sticky-solo" class="editor-sticky-solo" type="button" title="Solo: mute every other sound already playing in the Mixer while you audition this one">Solo</button>
       <button id="editor-save" class="btn btn-primary btn-icon-text editor-sticky-save" type="button">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         <span id="editor-save-label">Save</span>
@@ -670,6 +679,7 @@ export default class EditorPlugin {
     this.els.stickyTime = container.querySelector('#editor-sticky-time')
     this.els.stickyVolume = container.querySelector('#editor-sticky-volume')
     this.els.stickyMute = container.querySelector('#editor-sticky-mute')
+    this.els.stickySolo = container.querySelector('#editor-sticky-solo')
     this.els.save = container.querySelector('#editor-save')
     this.els.saveLabel = container.querySelector('#editor-save-label')
     this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
@@ -718,6 +728,8 @@ export default class EditorPlugin {
       this.updatePreviewMuteIcon()
       this.previewSource?.setVolume(this.effectivePreviewVolume())
     })
+
+    this.els.stickySolo.addEventListener('click', () => this.toggleSolo())
     this.updatePreviewMuteIcon()
   }
 
@@ -734,6 +746,26 @@ export default class EditorPlugin {
   updateLoopToggleVisual() {
     this.els.loopToggle.classList.toggle('editor-loop-icon-btn-active', this.looping)
     this.els.loopToggle.setAttribute('aria-pressed', String(this.looping))
+  }
+
+  // Core's Mixer has no direct access to this plugin's state (or vice
+  // versa) - plugins only get the curated window.noctivago IPC surface, and
+  // mute is deliberately session-only/unpersisted, so there's no library
+  // data to round-trip through either. A plain window CustomEvent is the
+  // simplest bridge that doesn't require either side to import the other;
+  // see tabs/mixer/index.js's own 'noctivago:remix-solo' listener.
+  toggleSolo() {
+    if (!this.currentEntry) return
+    this.setSolo(!this.soloActive)
+  }
+
+  setSolo(active) {
+    if (this.soloActive === active) return
+    this.soloActive = active
+    this.els.stickySolo?.classList.toggle('editor-sticky-solo-active', active)
+    if (this.currentEntry) {
+      window.dispatchEvent(new CustomEvent('noctivago:remix-solo', { detail: { soundId: this.currentEntry.id, active } }))
+    }
   }
 
   setPlayPauseIcon(playing) {
@@ -1319,6 +1351,11 @@ export default class EditorPlugin {
   async loadSound(id) {
     const entry = this.library.find((s) => s.id === id)
     if (!entry) return
+    // Solo is scoped to whichever sound was previously open, not the one
+    // about to load - un-solo it first (targeting the old id) before
+    // switching currentEntry, same "fresh load = fresh arrangement" logic
+    // the EQ graph's own per-band Solo already uses.
+    this.setSolo(false)
     this.currentEntry = entry
     this.disposePreview()
 

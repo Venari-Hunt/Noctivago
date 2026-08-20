@@ -518,6 +518,26 @@
   border-color: var(--accent);
 }
 
+.editor-sticky-solo {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.editor-sticky-solo:hover {
+  color: var(--text);
+}
+
+.editor-sticky-solo-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .editor-eq-hint {
   margin: 0;
   font-size: 11px;
