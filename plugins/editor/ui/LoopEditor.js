@@ -49,6 +49,17 @@ export function createLoopEditorController(canvas) {
   let loopEnd = 0
   let playhead = null
   let peaks = null
+  // A single finer-grained peaks fetch for whatever narrow window the caller
+  // last requested (see plugins/editor/index.js's maybeFetchDetailPeaks) -
+  // just one slot, not a cache of every window ever visited, so re-zooming
+  // back into an earlier area refetches rather than growing unbounded state
+  // for a session that might zoom all over a long file. Only used while the
+  // current viewport is fully covered by it (see redraw) - falls back to the
+  // base full-file peaks the instant the view moves past its edges, so
+  // there's never a moment showing stale detail for the wrong range.
+  let detailPeaks = null
+  let detailPeaksStart = 0
+  let detailPeaksEnd = 0
   let dragging = null
   let panStartX = 0
   let panStartViewStart = 0
@@ -99,7 +110,17 @@ export function createLoopEditorController(canvas) {
   }
 
   function redraw() {
-    drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart, viewEnd })
+    const useDetail = detailPeaks && viewStart >= detailPeaksStart && viewEnd <= detailPeaksEnd
+    drawWaveform(canvas, duration, {
+      loopStart,
+      loopEnd,
+      playhead,
+      peaks: useDetail ? detailPeaks : peaks,
+      viewStart,
+      viewEnd,
+      peaksStart: useDetail ? detailPeaksStart : 0,
+      peaksEnd: useDetail ? detailPeaksEnd : duration
+    })
   }
 
   // Single place that actually commits a new viewport - clamps to
@@ -479,6 +500,7 @@ export function createLoopEditorController(canvas) {
       loopEnd = initialLoopEnd ?? totalDuration
       playhead = null
       peaks = null
+      detailPeaks = null
       viewStart = 0
       viewEnd = totalDuration
       redraw()
@@ -486,6 +508,17 @@ export function createLoopEditorController(canvas) {
     },
     setPeaks(newPeaks) {
       peaks = newPeaks
+      redraw()
+    },
+    // Called once a finer-grained fetch for a specific [rangeStart, rangeEnd]
+    // window resolves (see maybeFetchDetailPeaks) - only takes effect while
+    // the viewport is still inside that range (redraw checks this every
+    // frame), so a fetch that resolves after the user has already zoomed/
+    // panned elsewhere just gets silently ignored rather than drawn wrong.
+    setDetailPeaks(newPeaks, rangeStart, rangeEnd) {
+      detailPeaks = newPeaks
+      detailPeaksStart = rangeStart
+      detailPeaksEnd = rangeEnd
       redraw()
     },
     getLoopPoints() {

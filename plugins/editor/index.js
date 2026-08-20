@@ -81,6 +81,7 @@ export default class EditorPlugin {
     this.previewRafId = null
     this.loopEditorController = null
     this.waveformPeaksCache = new Map()
+    this.detailPeaksDebounceTimer = null
     // Persists across sounds within one tab session (like the filter
     // sliders' values don't) since it's a preview-workflow preference, not
     // per-sound saved state - nothing about it is written to the library.
@@ -494,6 +495,7 @@ export default class EditorPlugin {
     this.waveformScrollbar.onNavigate((start, end) => this.loopEditorController.setViewport(start, end))
     this.loopEditorController.onViewportChange(({ viewStart, viewEnd, duration }) => {
       this.waveformScrollbar.update(duration, viewStart, viewEnd)
+      this.maybeFetchDetailPeaks(viewStart, viewEnd, duration)
     })
 
     this.wireControls()
@@ -1437,7 +1439,45 @@ export default class EditorPlugin {
     return peaks
   }
 
+  // The base peaks fetched above always cover the whole file at a fixed
+  // width - once the user zooms in past what that resolution can actually
+  // show (the current view's own seconds-per-pixel drops below the base
+  // array's seconds-per-bucket), a real, finer-grained ffmpeg pass over just
+  // the visible window gets genuinely more detail rather than resampling the
+  // same coarse data (see the rendering-only smoothing already in
+  // waveform.js for that other, cheaper half of this same complaint).
+  // Debounced so a zoom gesture (many wheel ticks in quick succession)
+  // doesn't spawn a new ffmpeg process per tick - only the settled end state
+  // gets fetched.
+  maybeFetchDetailPeaks(viewStart, viewEnd, duration) {
+    clearTimeout(this.detailPeaksDebounceTimer)
+    const id = this.currentEntry?.id
+    const basePeaks = id ? this.waveformPeaksCache.get(id) : null
+    if (!id || !basePeaks || !duration) return
+
+    const baseSecondsPerBucket = duration / basePeaks.length
+    const viewSecondsPerPixel = (viewEnd - viewStart) / this.els.canvas.getBoundingClientRect().width
+    if (viewSecondsPerPixel >= baseSecondsPerBucket) return
+
+    this.detailPeaksDebounceTimer = setTimeout(async () => {
+      const width = Math.max(1, Math.round(this.els.canvas.getBoundingClientRect().width))
+      try {
+        const detail = await this.api.audio.getWaveformPeaks(id, width, viewStart, viewEnd)
+        // The user may have switched sounds, or zoomed/panned away from this
+        // exact window, by the time the fetch resolves - setDetailPeaks
+        // itself also re-checks the viewport is still covered before using
+        // it, but there's no point handing a different sound's data over at
+        // all.
+        if (!detail || this.currentEntry?.id !== id) return
+        this.loopEditorController.setDetailPeaks(detail, viewStart, viewEnd)
+      } catch (err) {
+        console.error('Editor: detail waveform peaks fetch failed', err)
+      }
+    }, 250)
+  }
+
   async loadSound(id) {
+    clearTimeout(this.detailPeaksDebounceTimer)
     const entry = this.library.find((s) => s.id === id)
     if (!entry) return
     // Solo is scoped to whichever sound was previously open, not the one

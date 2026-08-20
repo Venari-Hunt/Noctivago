@@ -73,12 +73,18 @@ export function registerIpcHandlers() {
     return result
   })
 
-  ipcMain.handle('audio:getWaveformPeaks', async (_event, id, targetWidth) => {
+  ipcMain.handle('audio:getWaveformPeaks', async (_event, id, targetWidth, windowStart, windowEnd) => {
     const entry = library.listSounds().find((s) => s.id === id)
     const inputPath = library.getPlaybackPathForId(id)
     if (!inputPath || entry?.durationSeconds == null) return null
     try {
-      return await extractWaveformPeaks({ inputPath, durationSeconds: entry.durationSeconds, targetWidth })
+      return await extractWaveformPeaks({
+        inputPath,
+        durationSeconds: entry.durationSeconds,
+        targetWidth,
+        windowStart,
+        windowEnd
+      })
     } catch (err) {
       console.error('Waveform extraction failed', id, err)
       return null

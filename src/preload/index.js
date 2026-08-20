@@ -71,7 +71,8 @@ const api = {
   },
   audio: {
     renderLoopClip: (id, points) => ipcRenderer.invoke('audio:renderLoopClip', id, points),
-    getWaveformPeaks: (id, targetWidth) => ipcRenderer.invoke('audio:getWaveformPeaks', id, targetWidth),
+    getWaveformPeaks: (id, targetWidth, windowStart, windowEnd) =>
+      ipcRenderer.invoke('audio:getWaveformPeaks', id, targetWidth, windowStart, windowEnd),
     getBandEnergy: (id, options) => ipcRenderer.invoke('audio:getBandEnergy', id, options)
   },
   plugins: {

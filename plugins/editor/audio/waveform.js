@@ -61,7 +61,12 @@ function resizeCanvasForDisplay(canvas) {
 // smoothing of the same coarse data, not new precision - past the original
 // resolution there's still no more *real* detail to show, it just no longer
 // looks like discrete blocks while there isn't.
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration }) {
+// peaksStart/peaksEnd describe what time range `peaks` itself spans - default
+// [0, duration] for the base full-file array, but a finer-grained detail
+// fetch (see waveformPeaks.js) covers just a narrow zoomed window instead,
+// so the caller passes that window's own bounds here rather than this
+// function assuming peaks always covers the whole file.
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration }) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -81,11 +86,12 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   ctx.fillRect(startX, 0, endX - startX, height)
 
   if (peaks && peaks.length > 0) {
+    const peaksSpan = peaksEnd - peaksStart
     const maxY = new Array(width)
     const minY = new Array(width)
     for (let x = 0; x < width; x++) {
       const t = viewStart + (x / width) * viewSpan
-      const idx = Math.min(peaks.length - 1, Math.max(0, (t / duration) * peaks.length))
+      const idx = Math.min(peaks.length - 1, Math.max(0, ((t - peaksStart) / peaksSpan) * peaks.length))
       const i0 = Math.min(peaks.length - 1, Math.floor(idx))
       const i1 = Math.min(peaks.length - 1, i0 + 1)
       const frac = idx - i0
