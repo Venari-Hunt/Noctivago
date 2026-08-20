@@ -227,7 +227,11 @@ export default class EditorPlugin {
               <input id="editor-scatter-fade-out" type="number" min="0" max="10000" step="50" value="0" />
               <span class="editor-filter-value">ms</span>
             </label>
-            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, and volume within these ranges. Leave both pitch bounds at 0 for a fully random pitch each time; leave both volume bounds at 100% for no volume variation. Fade in/out eases each shot's start/end instead of a hard cut.</p>
+            <label>
+              <span>Sync group</span>
+              <input id="editor-scatter-sync-group" type="text" placeholder="e.g. door-effects" />
+            </label>
+            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, and volume within these ranges. Leave both pitch bounds at 0 for a fully random pitch each time; leave both volume bounds at 100% for no volume variation. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
           </div>
           <div id="editor-schedule-section" class="editor-scatter-controls hidden">
             <label class="editor-playmode-option">
@@ -413,6 +417,7 @@ export default class EditorPlugin {
       scatterVolumeMaxValue: container.querySelector('#editor-scatter-volume-max-value'),
       scatterFadeIn: container.querySelector('#editor-scatter-fade-in'),
       scatterFadeOut: container.querySelector('#editor-scatter-fade-out'),
+      scatterSyncGroup: container.querySelector('#editor-scatter-sync-group'),
       scheduleSection: container.querySelector('#editor-schedule-section'),
       scheduleTypeTimes: container.querySelector('#editor-schedule-type-times'),
       scheduleTypeInterval: container.querySelector('#editor-schedule-type-interval'),
@@ -587,6 +592,7 @@ export default class EditorPlugin {
     this.els.scatterVolumeMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeIn.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeOut.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterSyncGroup.addEventListener('input', () => this.applyScatterControls())
 
     this.els.scheduleTypeTimes.addEventListener('change', () => this.applyScheduleControls())
     this.els.scheduleTypeInterval.addEventListener('change', () => this.applyScheduleControls())
@@ -1195,7 +1201,8 @@ export default class EditorPlugin {
       minVolume: Number(this.els.scatterVolumeMin.value) / 100,
       maxVolume: Number(this.els.scatterVolumeMax.value) / 100,
       fadeInMs: Number(this.els.scatterFadeIn.value),
-      fadeOutMs: Number(this.els.scatterFadeOut.value)
+      fadeOutMs: Number(this.els.scatterFadeOut.value),
+      syncGroup: this.els.scatterSyncGroup.value.trim()
     }
   }
 
@@ -1207,7 +1214,8 @@ export default class EditorPlugin {
     minVolume = 1,
     maxVolume = 1,
     fadeInMs = 0,
-    fadeOutMs = 0
+    fadeOutMs = 0,
+    syncGroup = ''
   }) {
     this.els.scatterGapMin.value = String(minGapSeconds)
     this.els.scatterGapMax.value = String(maxGapSeconds)
@@ -1217,6 +1225,7 @@ export default class EditorPlugin {
     this.els.scatterVolumeMax.value = String(Math.round(maxVolume * 100))
     this.els.scatterFadeIn.value = String(fadeInMs)
     this.els.scatterFadeOut.value = String(fadeOutMs)
+    this.els.scatterSyncGroup.value = syncGroup
   }
 
   updateScatterLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1 }) {
@@ -1337,7 +1346,8 @@ export default class EditorPlugin {
         minVolume: scatter.minVolume ?? 1,
         maxVolume: scatter.maxVolume ?? 1,
         fadeInMs: scatter.fadeInMs ?? 0,
-        fadeOutMs: scatter.fadeOutMs ?? 0
+        fadeOutMs: scatter.fadeOutMs ?? 0,
+        syncGroup: scatter.syncGroup ?? ''
       },
       schedule: {
         type: schedule?.type ?? 'times',
@@ -1526,7 +1536,8 @@ export default class EditorPlugin {
       minVolume: 1,
       maxVolume: 1,
       fadeInMs: 0,
-      fadeOutMs: 0
+      fadeOutMs: 0,
+      syncGroup: ''
     }
     const schedule = entry.schedule ?? { type: 'times', times: [], intervalMinutes: 60 }
     this.setPlayModeControls(playMode)

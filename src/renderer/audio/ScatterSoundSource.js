@@ -85,7 +85,8 @@ function normalizeScatter(scatter) {
     minVolume: scatter?.minVolume ?? 1,
     maxVolume: scatter?.maxVolume ?? 1,
     fadeInMs: scatter?.fadeInMs ?? 0,
-    fadeOutMs: scatter?.fadeOutMs ?? 0
+    fadeOutMs: scatter?.fadeOutMs ?? 0,
+    syncGroup: scatter?.syncGroup ?? ''
   })
 }
 
@@ -120,6 +121,12 @@ export class BufferScatterSource {
     // every other caller.
     this.oneShot = oneShot
     this.onOneShotComplete = null
+    // "Sync it up with" (tabs/mixer/index.js's propagateSync): fired once
+    // per shot that actually started, unless that shot was itself a silent
+    // sync-triggered fire from another group member (see fireNow/
+    // _playOneShot's silent option) - that guard is what keeps a sync group
+    // from cascading into an infinite ping-pong between its own members.
+    this.onShotStart = null
 
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
@@ -146,9 +153,10 @@ export class BufferScatterSource {
     this._timeoutId = setTimeout(() => this._playOneShot(), randomGapSeconds(this.scatter) * 1000)
   }
 
-  _playOneShot() {
+  _playOneShot({ silent = false } = {}) {
     this._timeoutId = null
     if (!this.playing) return
+    if (!silent) this.onShotStart?.()
     const node = this.engine.context.createBufferSource()
     node.buffer = this.audioBuffer
     const detuneCents = randomPitchSemitones(this.scatter) * 100
@@ -194,13 +202,13 @@ export class BufferScatterSource {
   // covers this case explicitly so callers can treat it identically to
   // scheduled mode's fireNow(), whose play() *does* wait for the first
   // trigger and so genuinely needs this second branch.
-  fireNow() {
+  fireNow({ silent = false } = {}) {
     if (this.playing) {
       if (this._timeoutId) {
         clearTimeout(this._timeoutId)
         this._timeoutId = null
       }
-      this._playOneShot()
+      this._playOneShot({ silent })
       return
     }
     this.playing = true
@@ -208,7 +216,7 @@ export class BufferScatterSource {
     this.gainNode.gain.cancelScheduledValues(now)
     this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
     this.gainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
-    this._playOneShot()
+    this._playOneShot({ silent })
   }
 
   async play() {
@@ -311,6 +319,8 @@ export class StreamScatterSource {
     // scheduling another.
     this.oneShot = oneShot
     this.onOneShotComplete = null
+    // See BufferScatterSource's identical field for the full rationale.
+    this.onShotStart = null
 
     this.audioEl = new Audio()
     this.audioEl.crossOrigin = 'anonymous'
@@ -416,13 +426,13 @@ export class StreamScatterSource {
   }
 
   // See BufferScatterSource.fireNow's identical comment.
-  fireNow() {
+  fireNow({ silent = false } = {}) {
     if (this.playing) {
       if (this._timeoutId) {
         clearTimeout(this._timeoutId)
         this._timeoutId = null
       }
-      this._playOneShot()
+      this._playOneShot({ silent })
       return
     }
     this.playing = true
@@ -430,7 +440,7 @@ export class StreamScatterSource {
     this.gainNode.gain.cancelScheduledValues(now)
     this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
     this.gainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
-    this._playOneShot()
+    this._playOneShot({ silent })
   }
 
   _watchForShotEnd() {
@@ -445,9 +455,10 @@ export class StreamScatterSource {
     this.audioEl.removeEventListener('ended', this._onShotProgress)
   }
 
-  async _playOneShot() {
+  async _playOneShot({ silent = false } = {}) {
     this._timeoutId = null
     if (!this.playing) return
+    if (!silent) this.onShotStart?.()
     const playbackRate = Math.pow(2, randomPitchSemitones(this.scatter) / 12)
     this.audioEl.playbackRate = playbackRate
     this.audioEl.currentTime = this.loopStart

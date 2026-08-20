@@ -340,7 +340,18 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
       minVolume: 1,
       maxVolume: 1,
       fadeInMs: 0,
-      fadeOutMs: 0
+      fadeOutMs: 0,
+      // Two or more scatter sounds sharing a non-empty, case-sensitive group
+      // name always fire together ("Sync it up with" - one starts, all
+      // start): whenever any member fires a shot (natural gap-elapsed cycle
+      // or an explicit test-fire), every other currently-included member of
+      // the same group fires immediately too, resetting its own gap cycle
+      // from that shared moment. Empty string (the default) means "not
+      // synced" - a free-text field rather than a picker, so any number of
+      // sounds can join a group just by typing the same name, no separate
+      // membership UI needed. See tabs/mixer/index.js's propagateSync and
+      // ScatterSoundSource.js's onShotStart hook for the playback mechanism.
+      syncGroup: ''
     },
     schedule: {
       type: 'times',

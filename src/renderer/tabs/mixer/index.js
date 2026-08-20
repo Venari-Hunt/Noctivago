@@ -280,6 +280,27 @@ function desiredSourceKind(entry) {
   return buffer ? 'loop-buffer' : 'loop-stream'
 }
 
+// "Sync it up with" - two or more scatter sounds sharing a non-empty
+// scatter.syncGroup always fire together (one starts, all start). Wired as
+// each real (non-ephemeral) scatter source's onShotStart callback at
+// construction (see tryCreateBufferSource/getOrCreateSource), fired for
+// both a natural gap-elapsed shot and an explicit test-fire click - the
+// silent:true fireNow() call below deliberately skips the fired source's
+// own onShotStart, which is what keeps a sync group from cascading into an
+// infinite ping-pong between its own members instead of a single, one-level
+// propagation from whichever member actually triggered it.
+function propagateSync(firedId) {
+  const firedEntry = state.library.find((e) => e.id === firedId)
+  const group = firedEntry?.scatter?.syncGroup
+  if (!group) return
+  for (const id of state.included) {
+    if (id === firedId) continue
+    const entry = state.library.find((e) => e.id === id)
+    if (entry?.playMode !== 'scatter' || entry.scatter?.syncGroup !== group) continue
+    state.sources.get(id)?.fireNow?.({ silent: true })
+  }
+}
+
 function reconcileSource(entry) {
   const source = state.sources.get(entry.id)
   if (!source) return
@@ -401,6 +422,7 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
     let source
     if (isScatter) {
       source = new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter, oneShot })
+      if (!oneShot) source.onShotStart = () => propagateSync(entry.id)
     } else if (isScheduled) {
       source = new BufferScheduledSource(engine, { audioBuffer, volume, schedule: entry.schedule })
     } else {
@@ -454,6 +476,7 @@ async function getOrCreateSource(entry) {
             speed: entry.speedPitch?.speed
           })
     source.kind = isScatter ? 'scatter-stream' : isScheduled ? 'scheduled-stream' : 'loop-stream'
+    if (isScatter) source.onShotStart = () => propagateSync(entry.id)
 
     const duration = await source.waitForMetadata()
     if (!Number.isFinite(duration)) {
