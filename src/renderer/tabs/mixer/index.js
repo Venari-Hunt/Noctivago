@@ -177,6 +177,7 @@ function render() {
       onVolumeChange: changeVolume,
       onToggleMute: toggleMute,
       onToggleSolo: toggleSolo,
+      onTestFire: testFireScatter,
       onRemove: removeSound,
       onRelink: relinkSound,
       onRename: renameSound,
@@ -380,7 +381,7 @@ function maybeAutoBake(entry) {
 // null on any failure so the caller falls back to streaming the original
 // file — this is what keeps the feature safe even if ffmpeg is missing or
 // the clip is corrupt.
-async function tryCreateBufferSource(entry) {
+async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
   const isScatter = entry.playMode === 'scatter'
   try {
     const response = await fetch(`sound://${entry.id}?variant=clip`)
@@ -389,7 +390,7 @@ async function tryCreateBufferSource(entry) {
     const audioBuffer = await engine.context.decodeAudioData(arrayBuffer)
     const volume = state.volumes.get(entry.id) ?? 0.7
     const source = isScatter
-      ? new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter })
+      ? new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter, oneShot })
       : new BufferSoundSource(engine, { audioBuffer, volume })
     source.kind = isScatter ? 'scatter-buffer' : 'loop-buffer'
     source.bakeSnapshot = bufferBakeSnapshot(entry)
@@ -616,6 +617,61 @@ function applySolo(soloId, active) {
 
 function toggleSolo(id) {
   applySolo(id, state.soloedSoundId !== id)
+}
+
+// "Test fire" button, scatter-mode sounds only (SoundRow.js gates it on
+// entry.playMode === 'scatter') - requested directly: "an override play
+// button on the mixer tab for audios that are played at random intervals...
+// to play the audio once when pressed so you can test the configuration
+// you set up without having to remove and re-add the audio." Two cases:
+//
+// - Already live in the mix: fireNow() on the existing source just skips
+//   whatever gap is currently pending and plays a shot immediately - normal
+//   continuous cycling resumes on its own right after, same as any other
+//   shot.
+// - Not currently included at all: builds a throwaway source (same
+//   buffer/stream eligibility check real playback uses, so the test
+//   accurately reflects what the sound will actually do once added) with
+//   oneShot: true, plays exactly one shot, then disposes itself via
+//   onOneShotComplete - never touches state.included/state.playing/
+//   state.sources, so there's nothing left to remove afterward. Always at
+//   the sound's own real volume regardless of any lingering mute flag from
+//   a previous include - a "let me hear it" action should always be
+//   audible, that's the whole point of testing it.
+async function testFireScatter(id) {
+  const entry = state.library.find((s) => s.id === id)
+  if (!entry || entry.playMode !== 'scatter' || entry.status === 'missing') return
+
+  const existing = state.sources.get(id)
+  if (existing) {
+    existing.fireNow()
+    return
+  }
+
+  await engine.resume()
+  const volume = state.volumes.get(id) ?? entry.volume ?? 0.7
+  let source = null
+  if (loopClipEligible(entry)) {
+    source = await tryCreateBufferSource(entry, { oneShot: true })
+  }
+  if (!source) {
+    source = new StreamScatterSource(engine, {
+      soundId: entry.id,
+      loopStart: entry.loopStart,
+      loopEnd: entry.loopEnd,
+      volume,
+      filters: entry.filters,
+      scatter: entry.scatter,
+      oneShot: true
+    })
+  }
+  source.onOneShotComplete = () => source.dispose()
+  try {
+    await source.play()
+  } catch (err) {
+    console.error('Test-fire playback failed', entry.name, err)
+    source.dispose()
+  }
 }
 
 async function removeSound(id) {

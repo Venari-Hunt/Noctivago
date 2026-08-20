@@ -101,7 +101,7 @@ function normalizeScatter(scatter) {
 // fade envelope below accounts for this. Mirrors BufferSoundSource's
 // structure otherwise.
 export class BufferScatterSource {
-  constructor(engine, { audioBuffer, volume, scatter }) {
+  constructor(engine, { audioBuffer, volume, scatter, oneShot = false }) {
     this.engine = engine
     this.audioBuffer = audioBuffer
     this.volume = volume
@@ -111,6 +111,15 @@ export class BufferScatterSource {
     this.currentShotGain = null
     this._timeoutId = null
     this._stopTimeoutId = null
+    // Test-fire mode (tabs/mixer/index.js's per-row "play one now" button
+    // for a scatter sound not currently in the mix): plays exactly one shot
+    // then calls onOneShotComplete instead of scheduling another - lets the
+    // caller build a throwaway source, hear one shot, and dispose it without
+    // ever touching state.included/state.playing, so there's nothing to
+    // remove afterward. False (the normal, continuous-cycling default) for
+    // every other caller.
+    this.oneShot = oneShot
+    this.onOneShotComplete = null
 
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
@@ -162,11 +171,31 @@ export class BufferScatterSource {
       this.currentNode = null
       this.currentShotGain = null
       shotGain.disconnect()
-      if (this.playing) this._scheduleNext()
+      if (this.oneShot) {
+        this.playing = false
+        this.onOneShotComplete?.()
+      } else if (this.playing) {
+        this._scheduleNext()
+      }
     }
     node.start()
     this.currentNode = node
     this.currentShotGain = shotGain
+  }
+
+  // Skips whatever gap is currently pending and fires a shot right now -
+  // the Mixer's per-row "test fire" button, for a scatter sound already
+  // live in the mix (see tabs/mixer/index.js's testFireScatter). Normal
+  // continuous cycling resumes afterward via the usual _scheduleNext() path
+  // once this shot ends, same as any other shot - this only ever skips the
+  // *current* wait, it doesn't switch the source into one-shot mode.
+  fireNow() {
+    if (!this.playing) return
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId)
+      this._timeoutId = null
+    }
+    this._playOneShot()
   }
 
   async play() {
@@ -254,7 +283,7 @@ export class BufferScatterSource {
 // AudioSource.pitch is exactly a playback-rate scalar), just not how the
 // buffer variant above does it.
 export class StreamScatterSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume, filters, scatter }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, filters, scatter, oneShot = false }) {
     this.engine = engine
     this.soundId = soundId
     this.loopStart = loopStart ?? 0
@@ -264,6 +293,11 @@ export class StreamScatterSource {
     this.playing = false
     this._timeoutId = null
     this._onShotProgress = this._onShotProgress.bind(this)
+    // See BufferScatterSource's identical fields for the full rationale -
+    // plays exactly one shot then calls onOneShotComplete instead of
+    // scheduling another.
+    this.oneShot = oneShot
+    this.onOneShotComplete = null
 
     this.audioEl = new Audio()
     this.audioEl.crossOrigin = 'anonymous'
@@ -359,8 +393,24 @@ export class StreamScatterSource {
     if (this.audioEl.paused || (Number.isFinite(end) && this.audioEl.currentTime >= end - 0.03)) {
       this._stopWatchingShotEnd()
       this.audioEl.pause()
-      this._timeoutId = setTimeout(() => this._playOneShot(), randomGapSeconds(this.scatter) * 1000)
+      if (this.oneShot) {
+        this.playing = false
+        this.onOneShotComplete?.()
+      } else {
+        this._timeoutId = setTimeout(() => this._playOneShot(), randomGapSeconds(this.scatter) * 1000)
+      }
     }
+  }
+
+  // See BufferScatterSource.fireNow's identical comment - skips the current
+  // gap and fires a shot right now, normal cycling resumes afterward.
+  fireNow() {
+    if (!this.playing) return
+    if (this._timeoutId) {
+      clearTimeout(this._timeoutId)
+      this._timeoutId = null
+    }
+    this._playOneShot()
   }
 
   _watchForShotEnd() {

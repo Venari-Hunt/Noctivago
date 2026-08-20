@@ -13,6 +13,12 @@ const VOLUME_ICON_SVG =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><path d="M16 8a5 5 0 0 1 0 8"/></svg>'
 const MUTE_ICON_SVG =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>'
+// Plain play triangle - the "test fire" button for a scatter-mode sound
+// (plays one shot right now, overriding its gap timer). Reuses the same
+// glyph shape the app already uses for Play/Pause elsewhere rather than
+// inventing a new "test" icon, since the action fundamentally *is* "play."
+const TEST_FIRE_ICON_SVG =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>'
 
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
@@ -350,6 +356,24 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     soloBtn.textContent = 'S'
     soloBtn.addEventListener('click', () => callbacks.onToggleSolo(entry.id))
     li.appendChild(soloBtn)
+
+    // Test-fire, scatter-mode sounds only - requested directly ("an
+    // override play button on the mixer tab for audios that are played at
+    // random intervals... play the audio once when pressed so you can test
+    // the configuration you set up without having to remove and re-add").
+    // Works whether or not the sound is currently included (see
+    // tabs/mixer/index.js's testFireScatter for the two cases), so it's
+    // shown regardless of `included` - the whole point is not needing to
+    // add it first just to hear it.
+    if (entry.playMode === 'scatter') {
+      const testFireBtn = document.createElement('button')
+      testFireBtn.className = 'btn btn-svg-icon'
+      testFireBtn.type = 'button'
+      testFireBtn.title = 'Play one shot now (test this configuration)'
+      testFireBtn.innerHTML = TEST_FIRE_ICON_SVG
+      testFireBtn.addEventListener('click', () => callbacks.onTestFire(entry.id))
+      li.appendChild(testFireBtn)
+    }
   }
 
   const removeBtn = document.createElement('button')
