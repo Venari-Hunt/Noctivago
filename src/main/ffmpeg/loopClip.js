@@ -471,10 +471,10 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
   fs.renameSync(tmpPath, outputPath)
 }
 
-async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }) {
-  const outputPath = getLoopClipPath(id)
+async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, outputPath: explicitOutputPath }) {
+  const outputPath = explicitOutputPath ?? getLoopClipPath(id)
   const tmpPath = `${outputPath}.tmp`
-  fs.mkdirSync(clipsDir(), { recursive: true })
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
   const speedPitchChain = buildSpeedPitchReverseChain(speedPitch, loopEnd - loopStart)
 
@@ -555,6 +555,19 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
       }
     }
   }
+}
+
+// Renders [loopStart, loopEnd) with filters/speedPitch/crossfade baked in to
+// an arbitrary caller-supplied path instead of the sound's own id-keyed
+// managed clip slot - used by the Export feature (exportMix.js) to build
+// throwaway per-sound/per-shot tracks without disturbing a sound's real
+// cached buffer-mode clip. Shares doRender's exact same logic (filter chain,
+// speed/pitch/reverse pre-pass ordering, crossfade+rotation), not a parallel
+// reimplementation - and deliberately bypasses the `pending` id-keyed dedup
+// map above, which exists to collapse concurrent Saves of the *same sound*,
+// not relevant for one-off exports to their own unique temp paths.
+export function renderClipToPath({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, outputPath }) {
+  return doRender({ id: null, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, outputPath })
 }
 
 export function deleteLoopClip(id) {

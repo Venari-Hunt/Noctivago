@@ -1,9 +1,10 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, dialog } from 'electron'
 import * as library from './library.js'
 import * as presets from './presets.js'
 import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
+import { exportMix } from './ffmpeg/exportMix.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled } from './settings.js'
@@ -100,6 +101,32 @@ export function registerIpcHandlers() {
       console.error('Band energy analysis failed', id, err)
       return null
     }
+  })
+
+  ipcMain.handle('export:pickDestination', async (_event, { defaultName, format }) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Export mix',
+      defaultPath: `${defaultName}.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    return result.filePath
+  })
+
+  // sounds: [{ soundId, playMode, loopStart, loopEnd, filters, speedPitch,
+  // crossfadeSeconds, volume, events }] - the renderer's Export plugin
+  // already resolved playMode/filters/etc from the library and ran the
+  // event simulation (pure JS, no IPC needed for that part); this handler
+  // only resolves each soundId to a real file path (the one thing the
+  // renderer shouldn't need direct filesystem knowledge for, matching
+  // audio:renderLoopClip's own id -> path boundary) before handing
+  // everything to the actual ffmpeg pipeline.
+  ipcMain.handle('export:run', async (_event, { sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath }) => {
+    const resolvedSounds = sounds
+      .map((s) => ({ ...s, inputPath: library.getPlaybackPathForId(s.soundId) }))
+      .filter((s) => s.inputPath)
+    if (resolvedSounds.length === 0) return { ok: false, error: 'No exportable sounds in this preset' }
+    return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath })
   })
 
   ipcMain.handle('plugins:list', () => getPlugins().map((p) => ({ id: p.id, manifest: p.manifest })))

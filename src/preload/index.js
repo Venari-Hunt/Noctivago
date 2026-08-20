@@ -78,6 +78,10 @@ const api = {
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),
     invoke: (pluginId, method, ...args) => ipcRenderer.invoke('plugin:invoke', pluginId, method, args)
+  },
+  export: {
+    pickDestination: (options) => ipcRenderer.invoke('export:pickDestination', options),
+    run: (payload) => ipcRenderer.invoke('export:run', payload)
   }
 }
 
