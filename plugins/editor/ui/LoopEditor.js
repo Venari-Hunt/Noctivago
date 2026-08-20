@@ -49,6 +49,7 @@ export function createLoopEditorController(canvas) {
   let loopEnd = 0
   let playhead = null
   let peaks = null
+  let dopplerEnabled = false
   // A single finer-grained peaks fetch for whatever narrow window the caller
   // last requested (see plugins/editor/index.js's maybeFetchDetailPeaks) -
   // just one slot, not a cache of every window ever visited, so re-zooming
@@ -119,7 +120,8 @@ export function createLoopEditorController(canvas) {
       viewStart,
       viewEnd,
       peaksStart: useDetail ? detailPeaksStart : 0,
-      peaksEnd: useDetail ? detailPeaksEnd : duration
+      peaksEnd: useDetail ? detailPeaksEnd : duration,
+      dopplerEnabled
     })
   }
 
@@ -501,6 +503,7 @@ export function createLoopEditorController(canvas) {
       playhead = null
       peaks = null
       detailPeaks = null
+      dopplerEnabled = false
       viewStart = 0
       viewEnd = totalDuration
       redraw()
@@ -508,6 +511,10 @@ export function createLoopEditorController(canvas) {
     },
     setPeaks(newPeaks) {
       peaks = newPeaks
+      redraw()
+    },
+    setDopplerEnabled(enabled) {
+      dopplerEnabled = enabled
       redraw()
     },
     // Called once a finer-grained fetch for a specific [rangeStart, rangeEnd]

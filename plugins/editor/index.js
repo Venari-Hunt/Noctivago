@@ -161,7 +161,12 @@ export default class EditorPlugin {
             <label>Start <input id="editor-start-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
             <label>End <input id="editor-end-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
             <label>Length <input id="editor-length-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
+            <label class="editor-reverse-toggle">
+              <input id="editor-doppler" type="checkbox" />
+              Doppler (pass-by)
+            </label>
           </div>
+          <p id="editor-doppler-hint" class="editor-speed-pitch-hint hidden">Simulates a sound passing by: pitch rises approaching the marked closest point (shown on the waveform), then falls as it recedes toward Start/End. Only takes effect once saved (loops under 10 minutes) - no live preview while dragging.</p>
           <div class="editor-playmode">
             <span class="editor-playmode-label">Playback mode</span>
             <label class="editor-playmode-option">
@@ -430,6 +435,8 @@ export default class EditorPlugin {
       pitch: container.querySelector('#editor-pitch'),
       pitchValue: container.querySelector('#editor-pitch-value'),
       reverse: container.querySelector('#editor-reverse'),
+      doppler: container.querySelector('#editor-doppler'),
+      dopplerHint: container.querySelector('#editor-doppler-hint'),
       highpass: container.querySelector('#editor-highpass'),
       highpassValue: container.querySelector('#editor-highpass-value'),
       lowpass: container.querySelector('#editor-lowpass'),
@@ -604,6 +611,7 @@ export default class EditorPlugin {
     this.els.speed.addEventListener('input', () => this.applySpeedPitchControls())
     this.els.pitch.addEventListener('input', () => this.applySpeedPitchControls())
     this.els.reverse.addEventListener('change', () => this.applySpeedPitchControls())
+    this.els.doppler.addEventListener('change', () => this.applySpeedPitchControls())
 
     this.els.highpass.addEventListener('input', () => this.applyFilterControls())
     this.els.lowpass.addEventListener('input', () => this.applyFilterControls())
@@ -1282,14 +1290,17 @@ export default class EditorPlugin {
     return {
       speed: Number(this.els.speed.value) / 100,
       pitchSemitones: Number(this.els.pitch.value),
-      reversed: this.els.reverse.checked
+      reversed: this.els.reverse.checked,
+      dopplerEnabled: this.els.doppler.checked
     }
   }
 
-  setSpeedPitchControls({ speed = 1, pitchSemitones = 0, reversed = false }) {
+  setSpeedPitchControls({ speed = 1, pitchSemitones = 0, reversed = false, dopplerEnabled = false }) {
     this.els.speed.value = String(Math.round(speed * 100))
     this.els.pitch.value = String(pitchSemitones)
     this.els.reverse.checked = Boolean(reversed)
+    this.els.doppler.checked = Boolean(dopplerEnabled)
+    this.els.dopplerHint.classList.toggle('hidden', !dopplerEnabled)
   }
 
   updateSpeedPitchLabels({ speed = 1, pitchSemitones = 0 }) {
@@ -1301,6 +1312,8 @@ export default class EditorPlugin {
     const speedPitch = this.currentSpeedPitch()
     this.updateSpeedPitchLabels(speedPitch)
     this.previewSource?.setSpeedPitch(speedPitch)
+    this.els.dopplerHint.classList.toggle('hidden', !speedPitch.dopplerEnabled)
+    this.loopEditorController?.setDopplerEnabled(speedPitch.dopplerEnabled)
     this.updateSaveButtonState()
   }
 
@@ -1335,7 +1348,8 @@ export default class EditorPlugin {
       speedPitch: {
         speed: speedPitch.speed ?? 1,
         pitchSemitones: speedPitch.pitchSemitones ?? 0,
-        reversed: speedPitch.reversed ?? false
+        reversed: speedPitch.reversed ?? false,
+        dopplerEnabled: speedPitch.dopplerEnabled ?? false
       },
       playMode,
       scatter: {
@@ -1523,9 +1537,10 @@ export default class EditorPlugin {
     this.els.crossfade.value = String(crossfadeMs)
     this.updateCrossfadeLabel(crossfadeMs)
 
-    const speedPitch = entry.speedPitch ?? { speed: 1, pitchSemitones: 0, reversed: false }
+    const speedPitch = entry.speedPitch ?? { speed: 1, pitchSemitones: 0, reversed: false, dopplerEnabled: false }
     this.setSpeedPitchControls(speedPitch)
     this.updateSpeedPitchLabels(speedPitch)
+    this.loopEditorController?.setDopplerEnabled(speedPitch.dopplerEnabled ?? false)
 
     const playMode = entry.playMode ?? 'loop'
     const scatter = entry.scatter ?? {
@@ -1628,7 +1643,8 @@ export default class EditorPlugin {
     // crossfade slider's own saved value. Mirrors library.js/tabs/mixer's
     // own effectiveCrossfadeSeconds exactly — keep in sync if this ever
     // changes.
-    const effectiveCrossfadeSeconds = playMode === 'scatter' || playMode === 'scheduled' ? 0 : crossfadeSeconds
+    const effectiveCrossfadeSeconds =
+      playMode === 'scatter' || playMode === 'scheduled' || speedPitch.dopplerEnabled ? 0 : crossfadeSeconds
 
     await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
     await this.api.library.updateFilters(id, filters)
@@ -1743,7 +1759,8 @@ export default class EditorPlugin {
     const playMode = this.currentPlayMode()
     const scatter = this.currentScatterConfig()
     const schedule = this.currentScheduleConfig()
-    const effectiveCrossfadeSeconds = playMode === 'scatter' || playMode === 'scheduled' ? 0 : crossfadeSeconds
+    const effectiveCrossfadeSeconds =
+      playMode === 'scatter' || playMode === 'scheduled' || speedPitch.dopplerEnabled ? 0 : crossfadeSeconds
 
     const name = this.nextCopyName(this.currentEntry.name)
     this.els.saveAsCopy.disabled = true

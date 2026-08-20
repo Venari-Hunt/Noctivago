@@ -66,7 +66,7 @@ function resizeCanvasForDisplay(canvas) {
 // fetch (see waveformPeaks.js) covers just a narrow zoomed window instead,
 // so the caller passes that window's own bounds here rather than this
 // function assuming peaks always covers the whole file.
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration }) {
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false }) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -84,6 +84,22 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
 
   ctx.fillStyle = 'rgba(122, 162, 247, 0.35)'
   ctx.fillRect(startX, 0, endX - startX, height)
+
+  // Doppler visual: the loop region's own midpoint is the "closest" point
+  // (pitch bends back to natural exactly there), Start/End are both
+  // "furthest" (maximally pitch-shifted, up at Start, down at End) - a soft
+  // warm glow peaking at the midpoint and fading toward both edges reads as
+  // "closeness" at a glance, backed by an explicit marker line + pin so it's
+  // unambiguous even without the gradient. Drawn under the waveform fill (so
+  // the waveform stays fully legible on top) but over the plain trim tint.
+  if (dopplerEnabled && loopEnd > loopStart) {
+    const gradient = ctx.createLinearGradient(startX, 0, endX, 0)
+    gradient.addColorStop(0, 'rgba(224, 175, 104, 0)')
+    gradient.addColorStop(0.5, 'rgba(224, 175, 104, 0.45)')
+    gradient.addColorStop(1, 'rgba(224, 175, 104, 0)')
+    ctx.fillStyle = gradient
+    ctx.fillRect(startX, 0, endX - startX, height)
+  }
 
   if (peaks && peaks.length > 0) {
     const peaksSpan = peaksEnd - peaksStart
@@ -148,6 +164,20 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   ctx.moveTo(endX, 0)
   ctx.lineTo(endX, height)
   ctx.stroke()
+
+  if (dopplerEnabled && loopEnd > loopStart) {
+    const midX = timeToX((loopStart + loopEnd) / 2)
+    ctx.strokeStyle = '#e0af68'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(midX, 0)
+    ctx.lineTo(midX, height)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(midX, 8, 4, 0, Math.PI * 2)
+    ctx.fillStyle = '#e0af68'
+    ctx.fill()
+  }
 
   if (Number.isFinite(playhead)) {
     const playX = timeToX(Math.min(Math.max(playhead, 0), duration))

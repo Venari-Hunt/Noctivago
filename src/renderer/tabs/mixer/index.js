@@ -231,7 +231,8 @@ function normalizeSpeedPitch(speedPitch) {
   return JSON.stringify({
     speed: speedPitch?.speed ?? 1,
     pitchSemitones: speedPitch?.pitchSemitones ?? 0,
-    reversed: speedPitch?.reversed ?? false
+    reversed: speedPitch?.reversed ?? false,
+    dopplerEnabled: speedPitch?.dopplerEnabled ?? false
   })
 }
 
@@ -242,7 +243,8 @@ function normalizeSpeedPitch(speedPitch) {
 // rotation") instead of a second bake pipeline. Mirrors library.js's own
 // effectiveCrossfadeSeconds exactly - keep both in sync if this ever changes.
 function effectiveCrossfadeSeconds(entry) {
-  return entry.playMode === 'scatter' || entry.playMode === 'scheduled' ? 0 : entry.crossfadeSeconds
+  if (entry.playMode === 'scatter' || entry.playMode === 'scheduled' || entry.speedPitch?.dopplerEnabled) return 0
+  return entry.crossfadeSeconds
 }
 
 function bufferBakeSnapshot(entry) {

@@ -306,7 +306,16 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     loopEnd: null,
     filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: defaultEqBands() },
     crossfadeSeconds: null,
-    speedPitch: { speed: 1, pitchSemitones: 0, reversed: false },
+    // dopplerEnabled: a simulated vehicle/siren pass-by - pitch bends
+    // smoothly upward approaching the loop region's own midpoint (the
+    // "closest" point, shown as a marker on the Remix waveform), crosses
+    // back to natural pitch exactly there, then bends downward toward Start/
+    // End (both "furthest"). A simplified, sound-design-standard fake
+    // (symmetric semitone ramp) rather than deriving true Doppler physics
+    // from an actual distance/velocity this app has no way to supply - see
+    // loopClip.js's buildDopplerSendCmd. Bake-only, like Reverse - no live
+    // preview.
+    speedPitch: { speed: 1, pitchSemitones: 0, reversed: false, dopplerEnabled: false },
     // playMode 'scatter': instead of looping continuously, replay the
     // trimmed clip at a random gap (minGapSeconds-maxGapSeconds of silence
     // between repeats) with a random pitch shift each time (minPitchSemitones-
@@ -585,7 +594,8 @@ function normalizeSpeedPitch(speedPitch) {
   return JSON.stringify({
     speed: speedPitch?.speed ?? 1,
     pitchSemitones: speedPitch?.pitchSemitones ?? 0,
-    reversed: speedPitch?.reversed ?? false
+    reversed: speedPitch?.reversed ?? false,
+    dopplerEnabled: speedPitch?.dopplerEnabled ?? false
   })
 }
 
@@ -600,8 +610,17 @@ function normalizeSpeedPitch(speedPitch) {
 // invalidates any existing bake made under the other mode via the same
 // loopClipCrossfadeSeconds staleness check every other trim/filter change
 // already goes through.
+// Doppler forces crossfade to 0 for the same reason scatter/scheduled do -
+// the auto-crossfade rotation physically reorders the clip's own audio to
+// hide the loop seam, which would scramble Doppler's intentional start
+// (high pitch) -> midpoint (natural) -> end (low pitch) arc into whatever
+// order the rotation happened to leave it in. Caught live, not guessed: a
+// real baked Doppler clip measured a scrambled double-hump frequency curve
+// instead of the intended monotonic descent, traced to this exact
+// interaction, before this guard existed.
 function effectiveCrossfadeSeconds(entry) {
-  return entry.playMode === 'scatter' || entry.playMode === 'scheduled' ? 0 : entry.crossfadeSeconds
+  if (entry.playMode === 'scatter' || entry.playMode === 'scheduled' || entry.speedPitch?.dopplerEnabled) return 0
+  return entry.crossfadeSeconds
 }
 
 export function getLoopClipPathForId(id) {

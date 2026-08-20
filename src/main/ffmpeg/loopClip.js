@@ -206,18 +206,62 @@ function buildFilterChain(filters) {
   return parts.length > 0 ? parts.join(',') : null
 }
 
+// How far the pitch swings (in semitones) from the loop region's Start
+// (highest, "furthest" - approaching from a distance) through its midpoint
+// (natural pitch, "closest") to End (lowest, "furthest" again, now
+// receding) - a fixed, reasoned constant rather than a user-exposed slider,
+// per the owner's own framing ("should be a toggle," not another dial to
+// tune). Chosen as a clearly audible pass-by without tipping into "obviously
+// fake siren" territory.
+const DOPPLER_SWING_SEMITONES = 5
+
+// Generates a sequence of timestamped `rubberband pitch <value>;` commands
+// (ffmpeg's asendcmd syntax) spanning [0, durationSeconds] - the trimmed
+// loop region's own duration, matching what this pre-processing pass
+// actually reads via -ss/-t before any of this runs. Ramps *linearly in
+// semitones* (not in the raw pitch-ratio rubberband itself takes) from
+// +DOPPLER_SWING_SEMITONES at t=0, crossing exactly 0 at the midpoint
+// (t=durationSeconds/2), down to -DOPPLER_SWING_SEMITONES at the end -
+// composed multiplicatively with whatever static pitchSemitones is already
+// set, so the two controls stack correctly rather than one silently
+// overriding the other. ~10 commands/second is dense enough that rubberband
+// (which does its own internal smoothing between commands) produces a
+// genuinely continuous-sounding bend rather than audible discrete steps -
+// verified directly against the real bundled binary (measured a real,
+// monotonic frequency shift across a synthetic test tone) before this was
+// ever wired into the app.
+function buildDopplerSendCmd(basePitchRatio, durationSeconds) {
+  if (durationSeconds <= 0) return null
+  const steps = Math.max(8, Math.min(400, Math.round(durationSeconds * 10)))
+  const parts = []
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * durationSeconds
+    const frac = i / steps
+    const semitoneOffset = DOPPLER_SWING_SEMITONES - 2 * DOPPLER_SWING_SEMITONES * frac
+    const pitch = basePitchRatio * Math.pow(2, semitoneOffset / 12)
+    parts.push(`${t.toFixed(3)} rubberband pitch ${pitch.toFixed(6)};`)
+  }
+  return parts.join('')
+}
+
 // rubberband's tempo/pitch are scale factors, not the semitone/percent units
 // the UI works in - pitchSemitones converts via the standard equal-
 // temperament ratio (2^(semitones/12)); speed is already a plain multiplier.
-// Returns null when both are neutral (1 and 0) and reversed is false, so
-// callers can skip the whole pre-processing pass entirely for the default,
-// most-common case.
-function buildSpeedPitchReverseChain(speedPitch) {
+// durationSeconds is the trimmed loop region's own length (loopEnd -
+// loopStart), needed only to compute the Doppler sweep's midpoint - unused
+// otherwise. Returns null when speed/pitch/doppler are all neutral and
+// reversed is false, so callers can skip the whole pre-processing pass
+// entirely for the default, most-common case.
+function buildSpeedPitchReverseChain(speedPitch, durationSeconds) {
   if (!speedPitch) return null
-  const { speed = 1, pitchSemitones = 0, reversed = false } = speedPitch
+  const { speed = 1, pitchSemitones = 0, reversed = false, dopplerEnabled = false } = speedPitch
   const parts = []
-  if (speed !== 1 || pitchSemitones !== 0) {
+  if (speed !== 1 || pitchSemitones !== 0 || dopplerEnabled) {
     const pitchRatio = Math.pow(2, pitchSemitones / 12)
+    if (dopplerEnabled) {
+      const sendCmd = buildDopplerSendCmd(pitchRatio, durationSeconds)
+      if (sendCmd) parts.push(`asendcmd=c='${sendCmd}'`)
+    }
     parts.push(`rubberband=tempo=${speed}:pitch=${pitchRatio.toFixed(6)}`)
   }
   if (reversed) parts.push('areverse')
@@ -432,7 +476,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   const tmpPath = `${outputPath}.tmp`
   fs.mkdirSync(clipsDir(), { recursive: true })
 
-  const speedPitchChain = buildSpeedPitchReverseChain(speedPitch)
+  const speedPitchChain = buildSpeedPitchReverseChain(speedPitch, loopEnd - loopStart)
 
   if (!speedPitchChain) {
     try {
