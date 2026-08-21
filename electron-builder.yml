@@ -18,6 +18,13 @@ extraResources:
     to: tray-icon.png
   - from: resources/icon.ico
     to: icon.ico
+  # Same reason as tray-icon.png above - the Windows taskbar thumbnail
+  # preview toolbar buttons (src/main/thumbar.js) need their own icon files
+  # at runtime, not just at build time.
+  - from: resources/thumbar-play.png
+    to: thumbar-play.png
+  - from: resources/thumbar-pause.png
+    to: thumbar-pause.png
 win:
   target: nsis
   # A hand-built .ico, not a plain PNG - electron-builder's own PNG->ICO

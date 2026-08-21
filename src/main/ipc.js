@@ -14,10 +14,17 @@ import { invokePlugin } from './plugins/invoke.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled } from './settings.js'
 import { setAutoUpdateEnabled, setAutoUpdateIntervalSeconds, checkForUpdatesNow } from './autoUpdate.js'
 import { setTrayEnabled } from './tray.js'
+import { setThumbarPlaying } from './thumbar.js'
 import { watchNewFolder, unwatchFolder } from './watchFolders.js'
 
 export function registerIpcHandlers() {
   ipcMain.handle('app:isPackaged', () => app.isPackaged)
+
+  // One-way: the renderer reports every play/pause transition so the
+  // Windows taskbar thumbnail toolbar button (src/main/thumbar.js) can keep
+  // its icon in sync, mirroring how settings:setWasPlayingOnClose is
+  // already called from the same call sites for resume-on-launch.
+  ipcMain.on('playback:reportState', (_event, playing) => setThumbarPlaying(playing))
 
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('settings:setAutoUpdateEnabled', (_event, enabled) => setAutoUpdateEnabled(enabled))

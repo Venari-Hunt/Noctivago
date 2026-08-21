@@ -513,7 +513,9 @@ function persistIncluded(id, included) {
 }
 
 function persistPlayingState() {
-  api.settings.setWasPlayingOnClose(state.playing.size > 0)
+  const playing = state.playing.size > 0
+  api.settings.setWasPlayingOnClose(playing)
+  window.noctivago.playback.reportState(playing)
 }
 
 // Starts actual playback of a sound and marks it included+playing. Used by

@@ -18,6 +18,11 @@ const api = {
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow')
   },
+  playback: {
+    // One-way, no response expected - see ipc.js's 'playback:reportState'
+    // handler for what this drives (the taskbar thumbnail toolbar button).
+    reportState: (playing) => ipcRenderer.send('playback:reportState', playing)
+  },
   tray: {
     // The tray's "Play / Pause" menu item has no direct line to renderer
     // playback state (that's Mixer-only, in tabs/mixer/index.js) - it just

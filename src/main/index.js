@@ -11,6 +11,7 @@ import { registerPluginProtocol } from './plugins/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
 import { getSettings } from './settings.js'
 import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
+import { initThumbar } from './thumbar.js'
 import { initWatchFolders, startWatching, stopWatching } from './watchFolders.js'
 
 log.initialize()
@@ -187,6 +188,7 @@ app.whenReady().then(() => {
   const win = createWindow()
   initAutoUpdate()
   initTray(win)
+  initThumbar(win)
   setTrayEnabled(getSettings().minimizeToTrayEnabled)
   initWatchFolders(win)
   startWatching()
