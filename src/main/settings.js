@@ -13,7 +13,8 @@ const store = new Store({
     autoInstallUpdates: false,
     minimizeToTrayEnabled: false,
     wasPlayingOnClose: false,
-    eagerlyBakeOnImport: false
+    eagerlyBakeOnImport: false,
+    skipRemixLeaveConfirm: false
   }
 })
 
@@ -24,7 +25,8 @@ export function getSettings() {
     autoInstallUpdates: store.get('autoInstallUpdates'),
     minimizeToTrayEnabled: store.get('minimizeToTrayEnabled'),
     wasPlayingOnClose: store.get('wasPlayingOnClose'),
-    eagerlyBakeOnImport: store.get('eagerlyBakeOnImport')
+    eagerlyBakeOnImport: store.get('eagerlyBakeOnImport'),
+    skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm')
   }
 }
 
@@ -65,6 +67,15 @@ export function setMinimizeToTrayEnabled(enabled) {
 // waste CPU/disk on sounds that might never get played.
 export function setEagerlyBakeOnImportEnabled(enabled) {
   store.set('eagerlyBakeOnImport', Boolean(enabled))
+  return getSettings()
+}
+
+// Set from the Remix plugin's own leave-confirmation prompt's "Don't ask
+// again" button (Ctrl+Z/Redo/Cancel/leave-prompt feature) - once on, leaving
+// Remix with unsaved changes no longer prompts, it just discards them
+// silently the way it always would have if the user clicked "Yes."
+export function setSkipRemixLeaveConfirmEnabled(enabled) {
+  store.set('skipRemixLeaveConfirm', Boolean(enabled))
   return getSettings()
 }
 

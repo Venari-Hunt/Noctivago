@@ -14,16 +14,32 @@
 // section is ever visible, and the shared bar itself hides entirely for a
 // tab that doesn't provide one (e.g. the Mixer, which has no single
 // "current preview" the way Remix does).
+//
+// A tab can also register `onBeforeHide` - an optional async veto hook,
+// checked right before switching *away* from that tab, that can cancel the
+// switch by resolving `false` (any other return value, including nothing,
+// allows it). Built for the Remix plugin's unsaved-changes leave prompt
+// (Yes/No/Don't ask again) - `onHide` alone can't do this, since it's a
+// fire-and-forget cleanup call, not a gate the switch itself waits on.
 export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
   const tabs = new Map()
   let activeId = null
 
-  function activate(id) {
+  // async so a tab can veto leaving it (onBeforeHide, e.g. Remix's unsaved-
+  // changes prompt) - callers (the button click handler, register()'s
+  // first-tab auto-activate) don't await this, which is fine: they're all
+  // fire-and-forget UI triggers, not code that depends on the switch having
+  // already happened by the time they return.
+  async function activate(id) {
     const tab = tabs.get(id)
     if (!tab) return
 
     if (activeId && activeId !== id) {
       const prev = tabs.get(activeId)
+      if (prev?.onBeforeHide) {
+        const allowed = await prev.onBeforeHide()
+        if (allowed === false) return // vetoed - stay on the current tab
+      }
       if (prev) {
         prev.button.classList.remove('tab-button-active')
         prev.section.classList.add('hidden')
@@ -61,7 +77,7 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     tab.onShow?.()
   }
 
-  function register({ id, title, mount, mountSticky, onShow, onHide, onDestroy }) {
+  function register({ id, title, mount, mountSticky, onShow, onHide, onBeforeHide, onDestroy }) {
     if (tabs.has(id)) throw new Error(`Tab "${id}" is already registered`)
 
     const button = document.createElement('button')
@@ -84,7 +100,7 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
       stickyBarEl.appendChild(stickySection)
     }
 
-    tabs.set(id, { id, title, mount, mountSticky, onShow, onHide, onDestroy, button, section, stickySection, mounted: false })
+    tabs.set(id, { id, title, mount, mountSticky, onShow, onHide, onBeforeHide, onDestroy, button, section, stickySection, mounted: false })
 
     if (!activeId) activate(id)
 

@@ -18,6 +18,15 @@ const MAX_BUFFER_CLIP_SECONDS = 600
 // crossfadeSeconds is null).
 const DEFAULT_CROSSFADE_MS = 200
 
+// Undo/Redo: how long to wait after the last change before recording a
+// history point, and how many points to keep. A live drag or a rapid burst
+// of wheel/keyboard nudges keeps resetting this timer, so only the settled
+// end state gets recorded - not every intermediate frame - matching how a
+// text editor's own undo groups fast typing into one step rather than one
+// per keystroke.
+const HISTORY_COMMIT_DEBOUNCE_MS = 500
+const HISTORY_LIMIT = 100
+
 // Play (triangle) / Pause (two bars) - mirrors the Mixer's own identical
 // icon pair (src/renderer/tabs/mixer/index.js), duplicated here for the same
 // cross-directory-import reason as MAX_BUFFER_CLIP_SECONDS above.
@@ -110,22 +119,71 @@ export default class EditorPlugin {
     this.savedEqSnapshot = []
     this.eqLiveBandsStash = null
     this.els = {}
+
+    // Undo/Redo: a plain array of full-state snapshots (the exact same
+    // normalized shape snapshotOf() already produces for the dirty-check,
+    // just parsed back into an object) plus an index into it - Ctrl+Z/
+    // Ctrl+Shift+Z move the index and reapply that entry's state to every
+    // control. Pushed on a debounced "settled" checkpoint (see
+    // scheduleHistoryCommit), not every drag frame - see its own comment for
+    // why. Reset fresh on every loadSound(), never persisted - undo history
+    // is a per-editing-session aid, same scope as A/B Compare.
+    this.historyStack = []
+    this.historyIndex = -1
+    this._historyCommitTimer = null
+    // Set while applyEditorState() is pushing a past/future snapshot back
+    // onto the live controls, so that itself doesn't get recorded as a new
+    // history entry (which would corrupt the stack - undoing would then
+    // just push right back onto what it undid).
+    this._restoringHistory = false
+    // Cached from Settings once on load - the leave-confirmation prompt's
+    // own "Don't ask again" button, not a general Settings toggle (per the
+    // original request: the prompt itself carries the opt-out).
+    this.skipLeaveConfirm = false
   }
 
   async onload() {
+    this.api.settings
+      .get()
+      .then((settings) => {
+        this.skipLeaveConfirm = Boolean(settings.skipRemixLeaveConfirm)
+      })
+      .catch((err) => console.error('Editor: failed to load settings', err))
+
+    // Ctrl+Z/Ctrl+Shift+Z - document-scoped since the tab bar has no notion
+    // of "this specific tab's own keyboard shortcuts," but gated on
+    // _tabActive (set by onShow/onHide below) so it's a no-op while a
+    // different tab is on screen, and on the focused element not being a
+    // free-text field (Start/End/Length/Times/Sync group) so native text-
+    // undo inside those still works as expected.
+    this._onKeyDown = (evt) => {
+      if (!this._tabActive || !this.currentEntry) return
+      if (!evt.ctrlKey || (evt.key !== 'z' && evt.key !== 'Z')) return
+      const active = document.activeElement
+      if (active && active.tagName === 'INPUT' && active.type === 'text') return
+      if (active && active.tagName === 'TEXTAREA') return
+      evt.preventDefault()
+      if (evt.shiftKey) this.redo()
+      else this.undo()
+    }
+    document.addEventListener('keydown', this._onKeyDown)
+
     this.unregister = this.app.tabs.register({
       id: 'remix',
       title: 'Remix',
       mount: (container) => this.mount(container),
       mountSticky: (container) => this.mountSticky(container),
       onShow: () => {
+        this._tabActive = true
         // Picks up sounds added/removed elsewhere (e.g. the Mixer) since
         // this tab last mounted — mount() only runs once per tab lifetime,
         // so without this the picker would silently go stale.
         if (this.els.soundSearch) this.refreshLibrary().catch((err) => console.error('Editor: failed to refresh library', err))
         this._syncScrollTopVisibility?.()
       },
+      onBeforeHide: () => this.confirmLeaveIfDirty(),
       onHide: () => {
+        this._tabActive = false
         this.previewSource?.pause()
         this.stopPreviewTicking()
         this.setPlayPauseIcon(false)
@@ -136,6 +194,7 @@ export default class EditorPlugin {
   }
 
   async onunload() {
+    if (this._onKeyDown) document.removeEventListener('keydown', this._onKeyDown)
     this.disposePreview()
     this.unregister?.()
   }
@@ -418,6 +477,17 @@ export default class EditorPlugin {
           <path d="M5 12l7-7 7 7"/>
         </svg>
       </button>
+      <div id="editor-leave-confirm" class="modal hidden">
+        <div class="modal-card">
+          <h2>Leave with unsaved changes?</h2>
+          <p class="modal-hint">Whatever's changed since you opened this sound in Remix hasn't been saved - leaving now discards it.</p>
+          <div class="modal-actions">
+            <button id="editor-leave-confirm-dont-ask" class="btn" type="button">Don't ask again</button>
+            <button id="editor-leave-confirm-no" class="btn" type="button">No</button>
+            <button id="editor-leave-confirm-yes" class="btn btn-primary" type="button">Yes</button>
+          </div>
+        </div>
+      </div>
     `
 
     this.els = {
@@ -505,7 +575,11 @@ export default class EditorPlugin {
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
       saveStatus: container.querySelector('#editor-save-status'),
-      scrollTop: container.querySelector('#editor-scroll-top')
+      scrollTop: container.querySelector('#editor-scroll-top'),
+      leaveConfirmDialog: container.querySelector('#editor-leave-confirm'),
+      leaveConfirmYes: container.querySelector('#editor-leave-confirm-yes'),
+      leaveConfirmNo: container.querySelector('#editor-leave-confirm-no'),
+      leaveConfirmDontAsk: container.querySelector('#editor-leave-confirm-dont-ask')
     }
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
@@ -552,6 +626,7 @@ export default class EditorPlugin {
 
     this.wireControls()
     this.wireScrollTop()
+    this.wireLeaveConfirmDialog()
     this.refreshLibrary().catch((err) => console.error('Editor: failed to load library', err))
   }
 
@@ -767,6 +842,16 @@ export default class EditorPlugin {
       <input id="editor-sticky-volume" type="range" min="0" max="100" value="${Math.round(this.previewVolume * 100)}" class="editor-sticky-volume" title="Preview volume" />
       <button id="editor-sticky-mute" class="btn btn-svg-icon" type="button" title="Mute">${VOLUME_ICON_SVG}</button>
       <button id="editor-sticky-solo" class="editor-sticky-solo" type="button" title="Solo: mute every other sound already playing in the Mixer while you audition this one">Solo</button>
+      <button id="editor-undo" class="btn btn-svg-icon" type="button" title="Undo (Ctrl+Z)" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      </button>
+      <button id="editor-redo" class="btn btn-svg-icon" type="button" title="Redo (Ctrl+Shift+Z)" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-9.36 2.13L23 10"/></svg>
+      </button>
+      <button id="editor-cancel" class="btn btn-icon-text" type="button" title="Discard every change made since this sound was opened in Remix">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        Cancel
+      </button>
       <button id="editor-save" class="btn btn-primary btn-icon-text editor-sticky-save" type="button">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         <span id="editor-save-label">Save</span>
@@ -784,6 +869,12 @@ export default class EditorPlugin {
     this.els.stickyVolume = container.querySelector('#editor-sticky-volume')
     this.els.stickyMute = container.querySelector('#editor-sticky-mute')
     this.els.stickySolo = container.querySelector('#editor-sticky-solo')
+    this.els.undo = container.querySelector('#editor-undo')
+    this.els.redo = container.querySelector('#editor-redo')
+    this.els.cancel = container.querySelector('#editor-cancel')
+    this.els.undo.addEventListener('click', () => this.undo())
+    this.els.redo.addEventListener('click', () => this.redo())
+    this.els.cancel.addEventListener('click', () => this.cancelEdits())
     this.els.save = container.querySelector('#editor-save')
     this.els.saveLabel = container.querySelector('#editor-save-label')
     this.els.save.addEventListener('click', () => this.save().catch((err) => console.error('Editor: save failed', err)))
@@ -976,6 +1067,10 @@ export default class EditorPlugin {
     this.disposePreview()
     this.els.panel.classList.add('hidden')
     this.els.empty.classList.remove('hidden')
+    clearTimeout(this._historyCommitTimer)
+    this.historyStack = []
+    this.historyIndex = -1
+    this.updateUndoRedoButtonsUI()
   }
 
   updateLoopTimeInputs(loopStart, loopEnd) {
@@ -1492,6 +1587,154 @@ export default class EditorPlugin {
     // saving a copy of the *current* (even unchanged) trim under a new name
     // is still a meaningful action, not just a no-op.
     if (this.els.saveAsCopy) this.els.saveAsCopy.disabled = false
+    // Every field-change handler in this file ends by calling this method
+    // (see applyFilterControls/applyEqControls/applyCrossfadeControl/
+    // applySpeedPitchControls/applyPlayModeControl/applyScatterControls/
+    // applyScheduleControls, plus the loop-point onLoopChange listener) -
+    // the single place every kind of edit already funnels through, so it's
+    // also the one hook point undo/redo history needs, without touching
+    // each of those call sites individually. Only reached while viewing A
+    // (the early-return above skips this while viewing B, since B's data
+    // isn't the user's own editable state and shouldn't be recorded as one).
+    this.scheduleHistoryCommit()
+  }
+
+  // The exact same normalized shape snapshotOf() already builds for the
+  // dirty-check, just returned as a plain object instead of a JSON string so
+  // it can actually be restored later, not just compared against.
+  captureEditorState() {
+    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+    return JSON.parse(
+      this.snapshotOf(
+        loopStart,
+        loopEnd,
+        this.currentFilters(),
+        this.currentCrossfadeMs(),
+        this.currentSpeedPitch(),
+        this.currentPlayMode(),
+        this.currentScatterConfig(),
+        this.currentScheduleConfig()
+      )
+    )
+  }
+
+  scheduleHistoryCommit() {
+    if (this._restoringHistory || !this.currentEntry) return
+    clearTimeout(this._historyCommitTimer)
+    this._historyCommitTimer = setTimeout(() => this.commitHistoryPoint(), HISTORY_COMMIT_DEBOUNCE_MS)
+  }
+
+  commitHistoryPoint() {
+    if (!this.currentEntry || !this.loopEditorController) return
+    const state = this.captureEditorState()
+    const serialized = JSON.stringify(state)
+    // No-op if nothing actually changed since the last recorded point (e.g.
+    // a field was focused/blurred with no real edit) - avoids padding the
+    // stack with identical entries.
+    if (this.historyIndex >= 0 && JSON.stringify(this.historyStack[this.historyIndex]) === serialized) return
+    // A fresh edit after undoing discards whatever redo branch existed -
+    // same convention every text editor's own undo stack uses.
+    this.historyStack = this.historyStack.slice(0, this.historyIndex + 1)
+    this.historyStack.push(state)
+    if (this.historyStack.length > HISTORY_LIMIT) this.historyStack.shift()
+    this.historyIndex = this.historyStack.length - 1
+    this.updateUndoRedoButtonsUI()
+  }
+
+  // Pushes a past/future history entry back onto every live control -
+  // deliberately reuses the exact same setXControls()+applyXControls() pairs
+  // each field's own change handler already calls (setFilterSliders+
+  // applyFilterControls, setSpeedPitchControls+applySpeedPitchControls,
+  // etc.), rather than re-deriving how to push state into the UI/live
+  // preview a second time. _restoringHistory suppresses the history-commit
+  // this would otherwise trigger via updateSaveButtonState().
+  applyEditorState(state) {
+    this._restoringHistory = true
+    try {
+      this.loopEditorController.setLoopPoints(state.loopStart, state.loopEnd)
+
+      this.setFilterSliders(state.filters)
+      this.applyFilterControls()
+      this.updateEqRevertBannerVisibility()
+
+      this.els.crossfade.value = String(state.crossfadeMs)
+      this.applyCrossfadeControl()
+
+      this.setSpeedPitchControls(state.speedPitch)
+      this.applySpeedPitchControls()
+
+      this.setPlayModeControls(state.playMode)
+      this.applyPlayModeControl()
+
+      this.setScatterControls(state.scatter)
+      this.applyScatterControls()
+
+      this.setScheduleControls(state.schedule)
+      this.applyScheduleControls()
+    } finally {
+      this._restoringHistory = false
+    }
+    this.updateUndoRedoButtonsUI()
+  }
+
+  undo() {
+    // A pending debounced commit represents an edit that hasn't been
+    // recorded yet - flush it first so Ctrl+Z's first press undoes the most
+    // recent *real* change instead of silently discarding it unrecorded.
+    clearTimeout(this._historyCommitTimer)
+    this.commitHistoryPoint()
+    if (this.historyIndex <= 0) return
+    this.historyIndex -= 1
+    this.applyEditorState(this.historyStack[this.historyIndex])
+  }
+
+  redo() {
+    if (this.historyIndex >= this.historyStack.length - 1) return
+    this.historyIndex += 1
+    this.applyEditorState(this.historyStack[this.historyIndex])
+  }
+
+  updateUndoRedoButtonsUI() {
+    if (this.els.undo) this.els.undo.disabled = this.historyIndex <= 0
+    if (this.els.redo) this.els.redo.disabled = this.historyIndex >= this.historyStack.length - 1
+  }
+
+  // Reloading the current sound from its own saved library data already
+  // resets every control back to last-saved (the same path used repeatedly
+  // during this feature's own testing to discard edits) - Cancel just wires
+  // that existing path to a button instead of requiring a re-pick.
+  cancelEdits() {
+    if (!this.currentEntry) return
+    this.selectPickerSound(this.currentEntry.id)
+  }
+
+  // The leave-confirmation prompt (Yes/No/Don't ask again) - TabHost's
+  // onBeforeHide hook awaits this before actually switching away from the
+  // Remix tab, so returning false here keeps the user on Remix. Nothing to
+  // confirm (no unsaved changes, or the user already opted out) resolves
+  // true immediately with no dialog shown at all.
+  confirmLeaveIfDirty() {
+    if (!this.hasUnsavedChanges() || this.skipLeaveConfirm) return true
+    return new Promise((resolve) => {
+      this._resolveLeaveConfirm = resolve
+      this.els.leaveConfirmDialog.classList.remove('hidden')
+    })
+  }
+
+  resolveLeaveConfirm(allowed) {
+    this.els.leaveConfirmDialog.classList.add('hidden')
+    this._resolveLeaveConfirm?.(allowed)
+    this._resolveLeaveConfirm = null
+  }
+
+  wireLeaveConfirmDialog() {
+    this.els.leaveConfirmYes.addEventListener('click', () => this.resolveLeaveConfirm(true))
+    this.els.leaveConfirmNo.addEventListener('click', () => this.resolveLeaveConfirm(false))
+    this.els.leaveConfirmDontAsk.addEventListener('click', () => {
+      this.skipLeaveConfirm = true
+      this.api.settings.setSkipRemixLeaveConfirmEnabled(true).catch((err) => console.error('Editor: failed to persist leave-confirm setting', err))
+      this.resolveLeaveConfirm(true)
+    })
   }
 
   stopPreviewTicking() {
@@ -1705,6 +1948,13 @@ export default class EditorPlugin {
       })
       .catch((err) => console.error('Editor: band energy analysis failed', err))
     this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter, schedule)
+    // Undo history is per-editing-session, same scope as A/B Compare - a
+    // fresh load starts a fresh stack seeded with the just-loaded state, so
+    // Ctrl+Z on the very first edit reverts to exactly what was loaded.
+    clearTimeout(this._historyCommitTimer)
+    this.historyStack = [JSON.parse(this.savedSnapshot)]
+    this.historyIndex = 0
+    this.updateUndoRedoButtonsUI()
     this.updateSaveButtonState()
 
     this.els.waveformStatus.textContent = this.waveformPeaksCache.has(id) ? '' : 'Loading waveform…'
