@@ -225,7 +225,7 @@ export default class EditorPlugin {
               Doppler (pass-by)
             </label>
           </div>
-          <p id="editor-doppler-hint" class="editor-speed-pitch-hint hidden">Simulates a sound passing by: pitch rises approaching the marked closest point (shown on the waveform), then falls as it recedes toward Start/End. Only takes effect once saved (loops under 10 minutes) - no live preview while dragging.</p>
+          <p id="editor-doppler-hint" class="editor-speed-pitch-hint hidden">Simulates a sound passing by: pitch rises approaching the closest point (the gold marker on the waveform - drag it to control how fast each side ramps, double-click to re-center), then falls as it recedes toward Start/End. Only takes effect once saved (loops under 10 minutes) - no live preview while dragging.</p>
           <div class="editor-playmode">
             <span class="editor-playmode-label">Playback mode</span>
             <label class="editor-playmode-option">
@@ -591,6 +591,11 @@ export default class EditorPlugin {
     this.loopEditorController.onScrub((t) => {
       this.previewSource?.scrubTo(t)
     })
+    // Dragging (or double-click-resetting) the Doppler "closest point"
+    // marker - no live preview to update (Doppler is bake-only, see
+    // speedPitch's own doc comment), just the dirty-check/history hook every
+    // other field-change handler already ends with.
+    this.loopEditorController.onDopplerChange(() => this.updateSaveButtonState())
 
     this.eqEditorController = createEqEditorController(this.els.eqCanvas)
     this.eqEditorController.onChange(() => this.applyEqControls())
@@ -1463,16 +1468,21 @@ export default class EditorPlugin {
       speed: Number(this.els.speed.value) / 100,
       pitchSemitones: Number(this.els.pitch.value),
       reversed: this.els.reverse.checked,
-      dopplerEnabled: this.els.doppler.checked
+      dopplerEnabled: this.els.doppler.checked,
+      // Lives on the LoopEditor controller, not a form control - it's a
+      // canvas-drawn drag position, same reasoning as loopStart/loopEnd
+      // themselves.
+      dopplerClosestFraction: this.loopEditorController?.getDopplerClosestFraction() ?? 0.5
     }
   }
 
-  setSpeedPitchControls({ speed = 1, pitchSemitones = 0, reversed = false, dopplerEnabled = false }) {
+  setSpeedPitchControls({ speed = 1, pitchSemitones = 0, reversed = false, dopplerEnabled = false, dopplerClosestFraction = 0.5 }) {
     this.els.speed.value = String(Math.round(speed * 100))
     this.els.pitch.value = String(pitchSemitones)
     this.els.reverse.checked = Boolean(reversed)
     this.els.doppler.checked = Boolean(dopplerEnabled)
     this.els.dopplerHint.classList.toggle('hidden', !dopplerEnabled)
+    this.loopEditorController?.setDopplerClosestFraction(dopplerClosestFraction)
   }
 
   updateSpeedPitchLabels({ speed = 1, pitchSemitones = 0 }) {
@@ -1521,7 +1531,8 @@ export default class EditorPlugin {
         speed: speedPitch.speed ?? 1,
         pitchSemitones: speedPitch.pitchSemitones ?? 0,
         reversed: speedPitch.reversed ?? false,
-        dopplerEnabled: speedPitch.dopplerEnabled ?? false
+        dopplerEnabled: speedPitch.dopplerEnabled ?? false,
+        dopplerClosestFraction: speedPitch.dopplerClosestFraction ?? 0.5
       },
       playMode,
       scatter: {
@@ -1863,9 +1874,14 @@ export default class EditorPlugin {
     this.els.crossfade.value = String(crossfadeMs)
     this.updateCrossfadeLabel(crossfadeMs)
 
-    const speedPitch = entry.speedPitch ?? { speed: 1, pitchSemitones: 0, reversed: false, dopplerEnabled: false }
+    const speedPitch = entry.speedPitch ?? { speed: 1, pitchSemitones: 0, reversed: false, dopplerEnabled: false, dopplerClosestFraction: 0.5 }
     this.setSpeedPitchControls(speedPitch)
     this.updateSpeedPitchLabels(speedPitch)
+    // setDopplerEnabled/setDopplerClosestFraction are called again below,
+    // after loopEditorController.load() - load() resets both to their
+    // neutral defaults (a fresh sound shouldn't inherit the previous one's
+    // Doppler state), which would otherwise immediately clobber what
+    // setSpeedPitchControls just set here.
     this.loopEditorController?.setDopplerEnabled(speedPitch.dopplerEnabled ?? false)
 
     const playMode = entry.playMode ?? 'loop'
@@ -1929,6 +1945,8 @@ export default class EditorPlugin {
     this.previewSource.setFilters(this.previewFilters())
     this.previewSource.audioEl.currentTime = loopStart
     this.loopEditorController.load(duration, loopStart, loopEnd)
+    this.loopEditorController.setDopplerEnabled(speedPitch.dopplerEnabled ?? false)
+    this.loopEditorController.setDopplerClosestFraction(speedPitch.dopplerClosestFraction ?? 0.5)
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
     this.updateStickyProgress(loopStart)

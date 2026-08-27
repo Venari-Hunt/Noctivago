@@ -3,6 +3,11 @@ import { drawWaveform } from '../audio/waveform.js'
 const HANDLE_HIT_PX = 8
 const SNAP_PX = 12
 const MIN_LOOP_SECONDS = 0.05
+// How close the draggable Doppler "closest point" marker can get to either
+// edge of the loop region - matches the identical floor in loopClip.js's
+// buildDopplerSendCmd (duplicated for the usual cross-process reason), so
+// what you can drag to on screen is exactly what the actual bake can render.
+const MIN_DOPPLER_FRACTION = 0.05
 // Floor on how far a scroll-zoom can shrink the visible window - without
 // this, zooming keeps halving the span forever with no real detail left to
 // show past the peaks array's own fixed resolution (see waveform.js).
@@ -50,6 +55,11 @@ export function createLoopEditorController(canvas) {
   let playhead = null
   let peaks = null
   let dopplerEnabled = false
+  // Where the "closest point" (natural pitch, pitch bend crosses zero) sits
+  // between loopStart (0) and loopEnd (1) - draggable via the gold pin drawn
+  // on the waveform (see waveform.js), only interactive while dopplerEnabled.
+  // Defaults to the midpoint, matching the original fixed-midpoint behavior.
+  let dopplerClosestFraction = 0.5
   // A single finer-grained peaks fetch for whatever narrow window the caller
   // last requested (see plugins/editor/index.js's maybeFetchDetailPeaks) -
   // just one slot, not a cache of every window ever visited, so re-zooming
@@ -92,6 +102,7 @@ export function createLoopEditorController(canvas) {
   let onChange = () => {}
   let onScrub = () => {}
   let onViewportChange = () => {}
+  let onDopplerChange = () => {}
 
   // The currently visible time window - [0, duration] at full zoom-out.
   // Everything below maps time<->x through this, not through [0, duration]
@@ -121,8 +132,13 @@ export function createLoopEditorController(canvas) {
       viewEnd,
       peaksStart: useDetail ? detailPeaksStart : 0,
       peaksEnd: useDetail ? detailPeaksEnd : duration,
-      dopplerEnabled
+      dopplerEnabled,
+      dopplerClosestFraction
     })
+  }
+
+  function dopplerMarkerTime() {
+    return loopStart + dopplerClosestFraction * (loopEnd - loopStart)
   }
 
   // Single place that actually commits a new viewport - clamps to
@@ -243,6 +259,9 @@ export function createLoopEditorController(canvas) {
     if (playhead != null) {
       candidates.push({ type: 'playhead', dist: Math.abs(x - timeToX(playhead, rect.width)) })
     }
+    if (dopplerEnabled && loopEnd > loopStart) {
+      candidates.push({ type: 'doppler', dist: Math.abs(x - timeToX(dopplerMarkerTime(), rect.width)) })
+    }
     const closest = candidates.reduce((a, b) => (a.dist <= b.dist ? a : b))
     if (closest.dist <= HANDLE_HIT_PX) {
       dragging = closest.type
@@ -252,6 +271,20 @@ export function createLoopEditorController(canvas) {
         scheduleHoldZoom(evt.clientX)
       }
     }
+  }
+
+  // Double-click the Doppler marker resets it back to the loop region's
+  // midpoint - same "double-click resets a control" convention used
+  // app-wide elsewhere (sliders, EQ nodes), applied to this canvas-drawn
+  // marker the same way EqEditor.js's own nodes already do it.
+  function pointerDoubleClick(evt) {
+    if (!dopplerEnabled || loopEnd <= loopStart) return
+    const rect = canvas.getBoundingClientRect()
+    const x = evt.clientX - rect.left
+    if (Math.abs(x - timeToX(dopplerMarkerTime(), rect.width)) > HANDLE_HIT_PX) return
+    dopplerClosestFraction = 0.5
+    redraw()
+    onDopplerChange(dopplerClosestFraction)
   }
 
   // Shared by pointerMove (real mouse movement) and tickEdgeScroll (the
@@ -275,6 +308,12 @@ export function createLoopEditorController(canvas) {
       playhead = t
       redraw()
       onScrub(t)
+    } else if (dragging === 'doppler') {
+      const span = loopEnd - loopStart
+      const rawFraction = span > 0 ? (t - loopStart) / span : 0.5
+      dopplerClosestFraction = Math.min(Math.max(rawFraction, MIN_DOPPLER_FRACTION), 1 - MIN_DOPPLER_FRACTION)
+      redraw()
+      onDopplerChange(dopplerClosestFraction)
     } else if (dragging === 'moveRegion') {
       // Pixel-delta based (mirrors 'pan' above), not a difference of two
       // xToTime() calls - the region's own length must stay exactly fixed
@@ -487,6 +526,7 @@ export function createLoopEditorController(canvas) {
   }
 
   canvas.addEventListener('mousedown', pointerDown)
+  canvas.addEventListener('dblclick', pointerDoubleClick)
   window.addEventListener('mousemove', pointerMove)
   window.addEventListener('mouseup', pointerUp)
   canvas.addEventListener('wheel', handleWheel, { passive: false })
@@ -504,6 +544,7 @@ export function createLoopEditorController(canvas) {
       peaks = null
       detailPeaks = null
       dopplerEnabled = false
+      dopplerClosestFraction = 0.5
       viewStart = 0
       viewEnd = totalDuration
       redraw()
@@ -515,6 +556,13 @@ export function createLoopEditorController(canvas) {
     },
     setDopplerEnabled(enabled) {
       dopplerEnabled = enabled
+      redraw()
+    },
+    getDopplerClosestFraction() {
+      return dopplerClosestFraction
+    },
+    setDopplerClosestFraction(fraction) {
+      dopplerClosestFraction = Math.min(Math.max(fraction ?? 0.5, MIN_DOPPLER_FRACTION), 1 - MIN_DOPPLER_FRACTION)
       redraw()
     },
     // Called once a finer-grained fetch for a specific [rangeStart, rangeEnd]
@@ -554,6 +602,9 @@ export function createLoopEditorController(canvas) {
     onLoopChange(fn) {
       onChange = fn
     },
+    onDopplerChange(fn) {
+      onDopplerChange = fn
+    },
     onScrub(fn) {
       onScrub = fn
     },
@@ -565,6 +616,7 @@ export function createLoopEditorController(canvas) {
       clearHoldZoom()
       cancelViewportAnim()
       canvas.removeEventListener('mousedown', pointerDown)
+      canvas.removeEventListener('dblclick', pointerDoubleClick)
       window.removeEventListener('mousemove', pointerMove)
       window.removeEventListener('mouseup', pointerUp)
       canvas.removeEventListener('wheel', handleWheel)
