@@ -35,6 +35,7 @@
             <button id="add-sound-folder-preset" class="dropdown-item" type="button">Add folder as preset…</button>
             <button id="add-sound-folder-tag" class="dropdown-item" type="button">Add folder as tag…</button>
             <button id="add-sound-watch-folder" class="dropdown-item" type="button">Watch a folder…</button>
+            <button id="add-sound-record" class="dropdown-item" type="button">Record audio…</button>
           </div>
         </div>
       </header>
@@ -115,6 +116,39 @@
           <button id="add-folder-tag-confirm" class="btn btn-primary btn-icon-text" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             Add
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="record-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Record audio</h2>
+        <p class="modal-hint">Records from your default microphone. Start, then Stop when you're done, then Save to add it to your library.</p>
+        <div class="record-controls">
+          <button id="record-start" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+            Start
+          </button>
+          <button id="record-stop" class="btn btn-icon-text hidden" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+            Stop
+          </button>
+          <span id="record-indicator" class="record-indicator hidden"></span>
+          <span id="record-timer" class="record-timer">0:00</span>
+        </div>
+        <label class="field-label">Name
+          <input id="record-name" type="text" placeholder="Recording" />
+        </label>
+        <p id="record-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="record-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="record-save" class="btn btn-primary btn-icon-text" type="button" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save
           </button>
         </div>
       </div>

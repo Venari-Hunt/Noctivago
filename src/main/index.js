@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, protocol, screen } from 'electron'
+import { app, BrowserWindow, shell, protocol, screen, session } from 'electron'
 import './devMode.js' // must stay the first local import - see devMode.js
 import path from 'node:path'
 import fs from 'node:fs'
@@ -100,6 +100,25 @@ function registerSoundProtocol() {
   })
 }
 
+// Electron blocks getUserMedia (microphone/camera) by default unless the
+// main process explicitly grants it - a real, documented gotcha (see
+// library.js's addRecordedSound for the feature this exists for). Grants
+// only 'media' (what an audio-only getUserMedia call actually requests),
+// unconditionally: this is trusted first-party renderer code, not arbitrary
+// web content, matching the same trust reasoning already applied to
+// autoplayPolicy above. Registered on defaultSession before the window
+// loads, so it's in place before the renderer could ever call
+// getUserMedia. Doesn't (and can't) bypass the OS's own privacy toggle -
+// if Windows itself has microphone access disabled, getUserMedia still
+// rejects; nothing to grant in-app for that case beyond a clear error
+// message where the recording is actually started.
+function grantMicrophonePermission() {
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media')
+  })
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === 'media')
+}
+
 const WINDOW_WIDTH = 480
 const WINDOW_HEIGHT = 720
 
@@ -184,6 +203,7 @@ function createWindow() {
 app.whenReady().then(() => {
   registerSoundProtocol()
   registerPluginProtocol()
+  grantMicrophonePermission()
   registerIpcHandlers()
   const win = createWindow()
   initAutoUpdate()

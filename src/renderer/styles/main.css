@@ -599,6 +599,32 @@ main {
   min-height: 14px;
 }
 
+.record-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.record-timer {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.record-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f7768e;
+  animation: record-pulse 1s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 .field-label {
   display: block;
   font-size: 12px;

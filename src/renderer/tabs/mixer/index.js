@@ -6,6 +6,7 @@ import { BufferScheduledSource, StreamScheduledSource } from '../../audio/Schedu
 import { renderSoundList, sortForDisplay, SORT_MODES, GROUP_MODES } from '../../ui/SoundList.js'
 import { renderPresetList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
+import { openRecordDialog } from '../../core/RecordDialog.js'
 import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
 
 const api = window.noctivago
@@ -50,6 +51,7 @@ const els = {
   addSoundFolderPresetItem: document.getElementById('add-sound-folder-preset'),
   addSoundFolderTagItem: document.getElementById('add-sound-folder-tag'),
   addSoundWatchFolderItem: document.getElementById('add-sound-watch-folder'),
+  addSoundRecordItem: document.getElementById('add-sound-record'),
   openPresetsBtn: document.getElementById('open-presets'),
 
   addSoundDialog: document.getElementById('add-sound-dialog'),
@@ -868,6 +870,11 @@ els.addSoundWatchFolderItem.addEventListener('click', () => {
   openWatchFolderPicker()
 })
 
+els.addSoundRecordItem.addEventListener('click', () => {
+  closeAddSoundMenu()
+  openRecordDialog()
+})
+
 els.addSoundFolderPresetItem.addEventListener('click', async () => {
   closeAddSoundMenu()
   const folder = await api.library.pickFolder()
@@ -1115,6 +1122,11 @@ export function mount(container) {
   // if the user never leaves the Mixer tab (onShow's refresh alone would
   // only catch it on the next tab switch).
   window.noctivago.library.onChanged(refreshList)
+  // RecordDialog.js dispatches this on the document (rather than a direct
+  // call) since it has no import path back into this module - same "core
+  // module talks to the Mixer via a DOM event" pattern the Solo bridge below
+  // already established.
+  document.addEventListener('library:recorded', refreshList)
   // See applySolo's own comment for why this is a window event rather than a
   // direct call - Remix's Solo button dispatches { soundId, active }.
   window.addEventListener('noctivago:solo', (e) => {

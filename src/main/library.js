@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { getLoopClipPath, deleteLoopClip, renderLoopClip, probeDurationSeconds } from './ffmpeg/loopClip.js'
+import { runFfmpegToFile } from './ffmpeg/runFfmpeg.js'
 import { getSettings } from './settings.js'
 import { MAX_BUFFER_CLIP_SECONDS } from '../shared/constants.js'
 
@@ -420,6 +421,36 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
   store.set('sounds', sounds)
   maybeEagerBakeOnImport(entry)
   return entry
+}
+
+// Record-from-microphone import: the renderer captures via MediaRecorder
+// (webm/opus, the only format Chromium's MediaRecorder actually produces)
+// and sends the raw bytes over IPC - written to a scratch .webm here, then
+// transcoded to .wav via ffmpeg (the same bundled binary every other
+// ffmpeg-based feature already uses) before going through the *exact* same
+// addSound(keepCopy: true) path any other imported file does. Mirrors the
+// Composite plugin's own render-to-tmp-then-addSound-then-cleanup shape
+// exactly (see ipc.js's composite:create) - once a real .wav file exists on
+// disk, this is a completely normal import, no new playback/schema code
+// needed anywhere else in the app.
+export async function addRecordedSound({ name, buffer }) {
+  const tmpDir = path.join(app.getPath('userData'), 'recording-tmp')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const id = crypto.randomUUID()
+  const webmPath = path.join(tmpDir, `${id}.webm`)
+  const wavPath = path.join(tmpDir, `${id}.wav`)
+  fs.writeFileSync(webmPath, Buffer.from(buffer))
+  try {
+    await runFfmpegToFile(['-y', '-i', webmPath, wavPath])
+    return addSound({ path: wavPath, name, keepCopy: true })
+  } finally {
+    try {
+      if (fs.existsSync(webmPath)) fs.unlinkSync(webmPath)
+      if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+    } catch {
+      // best-effort cleanup, same as composite:create's own tmp-file handling
+    }
+  }
 }
 
 // "Save as copy" in the Remix plugin - trims a segment out of a longer

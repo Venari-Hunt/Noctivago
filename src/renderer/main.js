@@ -4,11 +4,13 @@ import { installSliderDoubleClickReset } from './core/sliderReset.js'
 import { installNumberBoxStepper } from './core/numberBoxStepper.js'
 import { installSettingsMenu } from './core/SettingsMenu.js'
 import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
+import { installRecordDialog } from './core/RecordDialog.js'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
 installSliderDoubleClickReset()
 installNumberBoxStepper()
 installWatchFolderDialog()
+installRecordDialog()
 installSettingsMenu()
 
 // The BrowserWindow's initial title option gets overwritten by the loaded
