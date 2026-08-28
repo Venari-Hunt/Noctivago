@@ -66,7 +66,7 @@ function resizeCanvasForDisplay(canvas) {
 // fetch (see waveformPeaks.js) covers just a narrow zoomed window instead,
 // so the caller passes that window's own bounds here rather than this
 // function assuming peaks always covers the whole file.
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5 }) {
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5, dopplerReversed = false }) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -86,21 +86,27 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
   ctx.fillRect(startX, 0, endX - startX, height)
 
   // Doppler visual: dopplerClosestFraction (0-1 across the loop region,
-  // draggable via the gold pin below) marks the "closest" point - pitch
-  // bends back to natural exactly there, Start/End are both "furthest"
-  // (maximally pitch-shifted, up at Start, down at End). A soft warm glow
-  // peaking at that point and fading toward both edges reads as "closeness"
-  // at a glance - the glow's own asymmetry (narrower/steeper on whichever
-  // side the marker sits closer to) doubles as a visualization of how much
-  // faster the pitch bend happens on that side, backed by an explicit
-  // marker line + pin so it's unambiguous even without the gradient. Drawn
-  // under the waveform fill (so the waveform stays fully legible on top)
-  // but over the plain trim tint.
+  // draggable via the pin below) marks the marker point - normally the
+  // "closest" point (pitch bends back to natural exactly there, Start/End
+  // are "furthest"); in reversed mode the marker is the "furthest" point
+  // instead (pitch peaks there, Start/End are natural) - see
+  // loopClip.js's buildDopplerSendCmd for the actual math either way. A
+  // soft glow peaking at the marker and fading toward both edges reads as
+  // "this is the salient point" at a glance regardless of mode - the
+  // glow's own asymmetry (narrower/steeper on whichever side the marker
+  // sits closer to) doubles as a visualization of how much faster the
+  // pitch bend happens on that side, backed by an explicit marker line +
+  // pin so it's unambiguous even without the gradient. Color distinguishes
+  // the two modes (gold = normal/pass-by, purple = reversed) so it's
+  // obvious at a glance which shape is active. Drawn under the waveform
+  // fill (so the waveform stays fully legible on top) but over the plain
+  // trim tint.
+  const dopplerColor = dopplerReversed ? '187, 154, 247' : '224, 175, 104' // purple : gold
   if (dopplerEnabled && loopEnd > loopStart) {
     const gradient = ctx.createLinearGradient(startX, 0, endX, 0)
-    gradient.addColorStop(0, 'rgba(224, 175, 104, 0)')
-    gradient.addColorStop(dopplerClosestFraction, 'rgba(224, 175, 104, 0.45)')
-    gradient.addColorStop(1, 'rgba(224, 175, 104, 0)')
+    gradient.addColorStop(0, `rgba(${dopplerColor}, 0)`)
+    gradient.addColorStop(dopplerClosestFraction, `rgba(${dopplerColor}, 0.45)`)
+    gradient.addColorStop(1, `rgba(${dopplerColor}, 0)`)
     ctx.fillStyle = gradient
     ctx.fillRect(startX, 0, endX - startX, height)
   }
@@ -171,7 +177,8 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
 
   if (dopplerEnabled && loopEnd > loopStart) {
     const markerX = timeToX(loopStart + dopplerClosestFraction * (loopEnd - loopStart))
-    ctx.strokeStyle = '#e0af68'
+    const markerColor = dopplerReversed ? '#bb9af7' : '#e0af68'
+    ctx.strokeStyle = markerColor
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(markerX, 0)
@@ -182,7 +189,7 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
     // it as interactive, not just an indicator.
     ctx.beginPath()
     ctx.arc(markerX, 8, 5, 0, Math.PI * 2)
-    ctx.fillStyle = '#e0af68'
+    ctx.fillStyle = markerColor
     ctx.fill()
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 1.5

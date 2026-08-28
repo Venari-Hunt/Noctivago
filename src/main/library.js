@@ -313,12 +313,26 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     // pitch exactly there, then bends downward toward Start/End (both
     // "furthest"). Dragging the marker off-center makes the two sides ramp
     // at different rates - closer to Start means a faster approach and
-    // slower recession, or vice versa. A simplified, sound-design-standard
-    // fake (linear semitone ramp per side) rather than deriving true
-    // Doppler physics from an actual distance/velocity this app has no way
-    // to supply - see loopClip.js's buildDopplerSendCmd. Bake-only, like
-    // Reverse - no live preview.
-    speedPitch: { speed: 1, pitchSemitones: 0, reversed: false, dopplerEnabled: false, dopplerClosestFraction: 0.5 },
+    // slower recession, or vice versa. dopplerIntensitySemitones (default 5,
+    // replacing what used to be a fixed constant) sets how far the swing
+    // reaches. dopplerReversed flips the whole shape: instead of the marker
+    // being the natural-pitch crossing and Start/End being the extremes, the
+    // marker becomes the extreme (a sharp close pass-by) and Start/End
+    // become natural pitch - modeling something darting very close then
+    // away, rather than approaching from and receding into the distance. A
+    // simplified, sound-design-standard fake (linear semitone ramp per side)
+    // rather than deriving true Doppler physics from an actual distance/
+    // velocity this app has no way to supply - see loopClip.js's
+    // buildDopplerSendCmd. Bake-only, like Reverse - no live preview.
+    speedPitch: {
+      speed: 1,
+      pitchSemitones: 0,
+      reversed: false,
+      dopplerEnabled: false,
+      dopplerClosestFraction: 0.5,
+      dopplerIntensitySemitones: 5,
+      dopplerReversed: false
+    },
     // playMode 'scatter': instead of looping continuously, replay the
     // trimmed clip at a random gap (minGapSeconds-maxGapSeconds of silence
     // between repeats) with a random pitch shift each time (minPitchSemitones-
@@ -644,7 +658,9 @@ function normalizeSpeedPitch(speedPitch) {
     pitchSemitones: speedPitch?.pitchSemitones ?? 0,
     reversed: speedPitch?.reversed ?? false,
     dopplerEnabled: speedPitch?.dopplerEnabled ?? false,
-    dopplerClosestFraction: speedPitch?.dopplerClosestFraction ?? 0.5
+    dopplerClosestFraction: speedPitch?.dopplerClosestFraction ?? 0.5,
+    dopplerIntensitySemitones: speedPitch?.dopplerIntensitySemitones ?? 5,
+    dopplerReversed: speedPitch?.dopplerReversed ?? false
   })
 }
 

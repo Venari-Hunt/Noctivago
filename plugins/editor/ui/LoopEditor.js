@@ -60,6 +60,10 @@ export function createLoopEditorController(canvas) {
   // on the waveform (see waveform.js), only interactive while dopplerEnabled.
   // Defaults to the midpoint, matching the original fixed-midpoint behavior.
   let dopplerClosestFraction = 0.5
+  // Purely cosmetic - tints the marker/glow a different color when reversed
+  // mode is on, so it's visually obvious which shape the drag is currently
+  // controlling (see waveform.js's own comment for what actually changes).
+  let dopplerReversed = false
   // A single finer-grained peaks fetch for whatever narrow window the caller
   // last requested (see plugins/editor/index.js's maybeFetchDetailPeaks) -
   // just one slot, not a cache of every window ever visited, so re-zooming
@@ -133,7 +137,8 @@ export function createLoopEditorController(canvas) {
       peaksStart: useDetail ? detailPeaksStart : 0,
       peaksEnd: useDetail ? detailPeaksEnd : duration,
       dopplerEnabled,
-      dopplerClosestFraction
+      dopplerClosestFraction,
+      dopplerReversed
     })
   }
 
@@ -545,6 +550,7 @@ export function createLoopEditorController(canvas) {
       detailPeaks = null
       dopplerEnabled = false
       dopplerClosestFraction = 0.5
+      dopplerReversed = false
       viewStart = 0
       viewEnd = totalDuration
       redraw()
@@ -556,6 +562,10 @@ export function createLoopEditorController(canvas) {
     },
     setDopplerEnabled(enabled) {
       dopplerEnabled = enabled
+      redraw()
+    },
+    setDopplerReversed(reversed) {
+      dopplerReversed = Boolean(reversed)
       redraw()
     },
     getDopplerClosestFraction() {
