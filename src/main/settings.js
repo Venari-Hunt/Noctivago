@@ -15,6 +15,11 @@ const store = new Store({
     wasPlayingOnClose: false,
     eagerlyBakeOnImport: false,
     skipRemixLeaveConfirm: false,
+    // Remembered so a nightly-use sleep timer doesn't need re-picking every
+    // time - just the last chosen values, not an active timer (that's
+    // session-only, main-process state in sleepTimer.js).
+    sleepTimerMinutes: 30,
+    sleepTimerAction: 'stop', // 'stop' | 'sleep' | 'shutdown'
     // The app version the last time it ran - compared against the current
     // version on startup to detect "we just updated" and show the What's-new
     // screen (see autoUpdate.js). null on a first-ever launch, which
@@ -32,12 +37,20 @@ export function getSettings() {
     wasPlayingOnClose: store.get('wasPlayingOnClose'),
     eagerlyBakeOnImport: store.get('eagerlyBakeOnImport'),
     skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
+    sleepTimerMinutes: store.get('sleepTimerMinutes'),
+    sleepTimerAction: store.get('sleepTimerAction'),
     lastRunVersion: store.get('lastRunVersion')
   }
 }
 
 export function setLastRunVersion(version) {
   store.set('lastRunVersion', version)
+  return getSettings()
+}
+
+export function setSleepTimerPrefs({ minutes, action }) {
+  if (Number.isFinite(minutes) && minutes > 0) store.set('sleepTimerMinutes', Math.round(minutes))
+  if (['stop', 'sleep', 'shutdown'].includes(action)) store.set('sleepTimerAction', action)
   return getSettings()
 }
 

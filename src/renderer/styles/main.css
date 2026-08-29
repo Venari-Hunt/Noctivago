@@ -632,7 +632,8 @@ main {
   margin-bottom: 12px;
 }
 
-.field-label input[type='text'] {
+.field-label input[type='text'],
+.field-label input[type='number'] {
   display: block;
   width: 100%;
   margin-top: 4px;
@@ -641,6 +642,10 @@ main {
   border: 1px solid var(--border);
   background: var(--surface-alt);
   color: var(--text);
+}
+
+.field-label input[type='number'] {
+  width: 100px;
 }
 
 .checkbox-row {
@@ -696,6 +701,55 @@ main {
 .settings-check-status {
   font-size: 12px;
   color: var(--text-dim);
+}
+
+.sleep-timer-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sleep-timer-remaining {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.sleep-timer-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 16px;
+}
+
+.sleep-timer-action {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px 4px;
+  margin: 0 0 8px;
+}
+
+.sleep-timer-action legend {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 0 4px;
+}
+
+.sleep-timer-action label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.sleep-timer-countdown {
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  margin: 8px 0 4px;
+  color: var(--accent);
 }
 
 .update-version-row {

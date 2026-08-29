@@ -12,6 +12,7 @@ import { initAutoUpdate } from './autoUpdate.js'
 import { getSettings } from './settings.js'
 import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
 import { initThumbar } from './thumbar.js'
+import { initSleepTimer } from './sleepTimer.js'
 import { initWatchFolders, startWatching, stopWatching } from './watchFolders.js'
 
 log.initialize()
@@ -209,6 +210,7 @@ app.whenReady().then(() => {
   initAutoUpdate(win)
   initTray(win)
   initThumbar(win)
+  initSleepTimer(win)
   setTrayEnabled(getSettings().minimizeToTrayEnabled)
   initWatchFolders(win)
   startWatching()

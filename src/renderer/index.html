@@ -22,6 +22,12 @@
             <path d="M16 8a5 5 0 0 1 0 8"/>
           </svg>
         </button>
+        <div class="sleep-timer-wrapper">
+          <button id="open-sleep-timer" class="btn btn-svg-icon" type="button" title="Sleep timer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <span id="sleep-timer-remaining" class="sleep-timer-remaining hidden"></span>
+        </div>
         <span class="spacer"></span>
         <button id="open-presets" class="btn btn-icon-text" type="button">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
@@ -258,6 +264,52 @@
             Download &amp; install
           </button>
           <button id="update-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sleep-timer-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Sleep timer</h2>
+        <div id="sleep-timer-setup">
+          <p class="modal-hint">When the time is up, Noctívago does the action you pick.</p>
+          <label class="field-label">Minutes
+            <input id="sleep-timer-minutes" type="number" min="1" max="1440" step="1" value="30" />
+          </label>
+          <div class="sleep-timer-presets">
+            <button class="btn btn-small" type="button" data-min="15">15m</button>
+            <button class="btn btn-small" type="button" data-min="30">30m</button>
+            <button class="btn btn-small" type="button" data-min="45">45m</button>
+            <button class="btn btn-small" type="button" data-min="60">1h</button>
+            <button class="btn btn-small" type="button" data-min="90">1h 30m</button>
+            <button class="btn btn-small" type="button" data-min="120">2h</button>
+          </div>
+          <fieldset class="sleep-timer-action">
+            <legend>When the time is up</legend>
+            <label><input type="radio" name="sleep-timer-action" value="stop" checked /> Stop all sounds</label>
+            <label><input type="radio" name="sleep-timer-action" value="sleep" /> Put the computer to sleep</label>
+            <label><input type="radio" name="sleep-timer-action" value="shutdown" /> Shut down the computer</label>
+          </fieldset>
+        </div>
+        <div id="sleep-timer-active" class="hidden">
+          <p class="sleep-timer-countdown"><span id="sleep-timer-countdown-value">--:--</span></p>
+          <p id="sleep-timer-active-action" class="modal-hint"></p>
+        </div>
+        <div class="modal-actions">
+          <button id="sleep-timer-close" class="btn" type="button">Close</button>
+          <button id="sleep-timer-cancel" class="btn btn-danger hidden" type="button">Cancel timer</button>
+          <button id="sleep-timer-start" class="btn btn-primary" type="button">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sleep-timer-warning" class="modal hidden">
+      <div class="modal-card">
+        <h2 id="sleep-timer-warning-title">Shutting down</h2>
+        <p id="sleep-timer-warning-message" class="modal-hint"></p>
+        <div class="modal-actions">
+          <button id="sleep-timer-warning-now" class="btn" type="button">Do it now</button>
+          <button id="sleep-timer-warning-cancel" class="btn btn-primary" type="button">Cancel</button>
         </div>
       </div>
     </div>

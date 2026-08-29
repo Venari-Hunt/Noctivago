@@ -47,6 +47,17 @@ const api = {
     // handler for what this drives (the taskbar thumbnail toolbar button).
     reportState: (playing) => ipcRenderer.send('playback:reportState', playing)
   },
+  sleepTimer: {
+    get: () => ipcRenderer.invoke('sleepTimer:get'),
+    start: (payload) => ipcRenderer.invoke('sleepTimer:start', payload),
+    cancel: () => ipcRenderer.invoke('sleepTimer:cancel'),
+    runEndAction: (action) => ipcRenderer.invoke('sleepTimer:runEndAction', action),
+    onElapsed: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('sleep-timer:elapsed', listener)
+      return () => ipcRenderer.removeListener('sleep-timer:elapsed', listener)
+    }
+  },
   tray: {
     // The tray's "Play / Pause" menu item has no direct line to renderer
     // playback state (that's Mixer-only, in tabs/mixer/index.js) - it just

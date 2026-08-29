@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.96 — Sleep timer
+
+- New moon button in the toolbar opens a sleep timer: pick a duration (or a quick preset) and what happens when it ends — stop all sounds, put the computer to sleep, or shut it down.
+- Sleep and shutdown give you a 30-second warning you can cancel. The remaining time shows next to the button while it runs.
+
 ## v0.1.95 — What's new after updating
 
 - After an update installs and the app restarts, a "What's new" screen now opens automatically with a rundown of what changed.

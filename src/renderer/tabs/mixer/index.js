@@ -1223,4 +1223,11 @@ export function mount(container) {
   window.addEventListener('noctivago:solo', (e) => {
     applySolo(e.detail.soundId, e.detail.active)
   })
+  // The sleep timer (core/SleepTimer.js) dispatches this when its timer
+  // elapses with the "stop all sounds" action - same DOM-event bridge, since
+  // that core module has no import path into the Mixer's playback state.
+  window.addEventListener('noctivago:stop-all-playback', () => {
+    for (const id of [...state.playing]) stopPlayback(id)
+    render()
+  })
 }
