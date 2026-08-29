@@ -180,7 +180,7 @@
           Automatically check for updates
         </label>
         <div class="settings-row">
-          <button id="settings-check-now" class="btn" type="button">Check for updates now</button>
+          <button id="settings-check-now" class="btn" type="button">Check for updates…</button>
           <span id="settings-check-status" class="settings-check-status"></span>
         </div>
         <label class="settings-row">
@@ -207,6 +207,34 @@
         </div>
         <div class="modal-actions">
           <button id="settings-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="update-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2 id="update-modal-title">Check for updates</h2>
+        <p id="update-modal-message" class="modal-hint"></p>
+        <div id="update-version-row" class="update-version-row hidden">
+          <span id="update-version-current" class="update-version-current"></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          <span id="update-version-new" class="update-version-new"></span>
+        </div>
+        <div id="update-notes-wrapper" class="update-notes-wrapper hidden">
+          <h3 class="settings-section-heading">Release notes</h3>
+          <div id="update-notes" class="update-notes"></div>
+        </div>
+        <div id="update-progress-wrapper" class="update-progress-wrapper hidden">
+          <div class="update-progress-track"><div id="update-progress-bar" class="update-progress-bar"></div></div>
+          <span id="update-progress-label" class="update-progress-label"></span>
+        </div>
+        <div class="modal-actions">
+          <button id="update-retry" class="btn hidden" type="button">Try again</button>
+          <button id="update-download" class="btn btn-primary btn-icon-text hidden" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download &amp; install
+          </button>
+          <button id="update-close" class="btn" type="button">Close</button>
         </div>
       </div>
     </div>

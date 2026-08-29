@@ -1,5 +1,6 @@
 import { renderWatchedFolderList } from '../ui/WatchedFolderList.js'
 import { openWatchFolderPicker } from './WatchFolderDialog.js'
+import { openUpdateModal } from './UpdateModal.js'
 import { parseDuration } from '../util/time.js'
 
 // Always shows all three segments, zero-padded (unlike util/time.js's own
@@ -106,15 +107,10 @@ export function installSettingsMenu() {
   })
 
   checkNowBtn.addEventListener('click', () => {
-    // The actual result (update found / already up to date / check failed)
-    // surfaces as a native dialog from the main process - same as every
-    // other update-related prompt in this app - so this status line is
-    // just a lightweight "yes, it's running" acknowledgement, not the
-    // final answer.
-    checkStatus.textContent = 'Checking…'
-    window.noctivago.autoUpdate.checkNow()
-    setTimeout(() => {
-      checkStatus.textContent = ''
-    }, 3000)
+    // Opens the in-app Update modal, which runs the check and shows the
+    // result (update found + release notes / already up to date / check
+    // failed) plus the download progress bar - replacing the native OS
+    // dialogs this flow used to pop.
+    openUpdateModal()
   })
 }

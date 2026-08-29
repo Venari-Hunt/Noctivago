@@ -1,0 +1,189 @@
+// In-app "Update available" modal - replaces the native OS dialogs that
+// autoUpdate.js used to pop for every step of the update flow (found /
+// download? / no update / check failed). Holds no state of its own: every
+// render is driven either by an update:* IPC event from the main process or
+// by a one-off getState() read when the modal is opened directly from
+// Settings.
+//
+// Flow: available -> (Download & install) -> downloading (progress bar) ->
+// downloaded -> app restarts to install. Matches the existing
+// single-confirmation decision - the one Download click is the only prompt.
+
+let els = null
+let renderedStatus = 'idle'
+let currentVersion = ''
+let offeredVersion = null
+
+const TITLES = {
+  checking: 'Checking for updates…',
+  available: 'Update available',
+  downloading: 'Downloading update…',
+  downloaded: 'Update ready',
+  'not-available': "You're up to date",
+  error: 'Update check failed',
+  dev: 'Updates unavailable',
+  idle: 'Check for updates'
+}
+
+function mb(n) {
+  if (typeof n !== 'number' || Number.isNaN(n)) return ''
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function show() {
+  els.modal.classList.remove('hidden')
+}
+
+function hide() {
+  els.modal.classList.add('hidden')
+}
+
+function toggle(el, visible) {
+  el.classList.toggle('hidden', !visible)
+}
+
+function renderState(state) {
+  const status = state.status
+  renderedStatus = status
+  const cur = state.currentVersion || currentVersion
+  if (state.currentVersion) currentVersion = state.currentVersion
+  if (status === 'available' && state.version) offeredVersion = state.version
+
+  els.title.textContent = TITLES[status] || TITLES.idle
+
+  const messages = {
+    checking: 'Looking for a newer version of Noctívago…',
+    available: `Noctívago ${state.version} is available. You have ${cur || 'an older version'}.`,
+    downloading: 'The app will restart to finish installing once the download completes.',
+    downloaded: 'Restarting to finish installing…',
+    'not-available': `You already have the latest version${cur ? ` (${cur})` : ''}.`,
+    error: state.message || 'Could not check for updates. Check your internet connection and try again later.',
+    dev: 'Update checking only works in the installed version of Noctívago.',
+    idle: ''
+  }
+  els.message.textContent = messages[status] || ''
+
+  toggle(els.versionRow, status === 'available')
+  if (status === 'available') {
+    els.versionCurrent.textContent = cur || '—'
+    els.versionNew.textContent = state.version || '—'
+  }
+
+  const notes = status === 'available' && state.notes ? String(state.notes).trim() : ''
+  toggle(els.notesWrapper, Boolean(notes))
+  if (notes) els.notes.textContent = notes
+
+  const showProgress = status === 'downloading' || status === 'downloaded'
+  toggle(els.progressWrapper, showProgress)
+  if (status === 'downloading') {
+    const p = state.progress
+    const pct = p && typeof p.percent === 'number' ? p.percent : null
+    els.progressBar.classList.toggle('indeterminate', pct == null)
+    els.progressBar.style.width = pct == null ? '' : `${pct.toFixed(1)}%`
+    if (pct == null) {
+      els.progressLabel.textContent = 'Starting download…'
+    } else {
+      const size = p.total ? ` · ${mb(p.transferred)} / ${mb(p.total)}` : ''
+      const speed = p.bytesPerSecond ? ` · ${mb(p.bytesPerSecond)}/s` : ''
+      els.progressLabel.textContent = `${pct.toFixed(0)}%${size}${speed}`
+    }
+  } else if (status === 'downloaded') {
+    els.progressBar.classList.remove('indeterminate')
+    els.progressBar.style.width = '100%'
+    els.progressLabel.textContent = ''
+  }
+
+  toggle(els.download, status === 'available')
+  toggle(els.retry, status === 'error')
+  els.close.textContent =
+    status === 'available' ? 'Not now' : status === 'downloading' ? 'Hide' : 'Close'
+  els.close.disabled = status === 'downloaded'
+}
+
+// Opened from Settings ("Check for updates"). Kicks a fresh check and shows
+// whatever the main process reports. If a background check already found an
+// update, getState() lets us show it right away rather than waiting for the
+// new check to re-emit.
+export async function openUpdateModal() {
+  if (!els) return
+  show()
+  renderState({ status: 'checking' })
+
+  const result = await window.noctivago.autoUpdate.checkNow()
+  if (result && result.packaged === false) {
+    renderState({ status: 'dev' })
+    return
+  }
+
+  const state = await window.noctivago.autoUpdate.getState()
+  if (state && ['available', 'downloading', 'downloaded'].includes(state.status)) {
+    renderState(state)
+  }
+}
+
+export function installUpdateModal() {
+  els = {
+    modal: document.getElementById('update-modal'),
+    title: document.getElementById('update-modal-title'),
+    message: document.getElementById('update-modal-message'),
+    versionRow: document.getElementById('update-version-row'),
+    versionCurrent: document.getElementById('update-version-current'),
+    versionNew: document.getElementById('update-version-new'),
+    notesWrapper: document.getElementById('update-notes-wrapper'),
+    notes: document.getElementById('update-notes'),
+    progressWrapper: document.getElementById('update-progress-wrapper'),
+    progressBar: document.getElementById('update-progress-bar'),
+    progressLabel: document.getElementById('update-progress-label'),
+    download: document.getElementById('update-download'),
+    retry: document.getElementById('update-retry'),
+    close: document.getElementById('update-close')
+  }
+
+  els.download.addEventListener('click', () => {
+    renderState({ status: 'downloading', progress: null })
+    window.noctivago.autoUpdate.download()
+  })
+
+  els.retry.addEventListener('click', () => {
+    openUpdateModal()
+  })
+
+  els.close.addEventListener('click', () => {
+    // Closing while an update is being offered counts as "Not now" - tell
+    // the main process so the periodic re-check doesn't reopen this for the
+    // same version.
+    if (renderedStatus === 'available' && offeredVersion) {
+      window.noctivago.autoUpdate.dismiss(offeredVersion)
+    }
+    hide()
+  })
+
+  window.noctivago.autoUpdate.onEvent(handleEvent)
+}
+
+function handleEvent(channel, payload) {
+  switch (channel) {
+    case 'update:checking':
+      renderState({ status: 'checking' })
+      break
+    case 'update:available':
+      renderState({ status: 'available', ...payload })
+      show()
+      break
+    case 'update:progress':
+      renderState({ status: 'downloading', progress: payload })
+      break
+    case 'update:downloaded':
+      renderState({ status: 'downloaded', ...payload })
+      show()
+      break
+    case 'update:not-available':
+      renderState({ status: 'not-available', ...payload })
+      break
+    case 'update:error':
+      renderState({ status: 'error', ...payload })
+      break
+    default:
+      break
+  }
+}

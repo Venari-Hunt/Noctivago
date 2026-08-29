@@ -12,7 +12,14 @@ import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled } from './settings.js'
-import { setAutoUpdateEnabled, setAutoUpdateIntervalSeconds, checkForUpdatesNow } from './autoUpdate.js'
+import {
+  setAutoUpdateEnabled,
+  setAutoUpdateIntervalSeconds,
+  checkForUpdatesNow,
+  getUpdateState,
+  downloadUpdateNow,
+  dismissUpdate
+} from './autoUpdate.js'
 import { setTrayEnabled } from './tray.js'
 import { setThumbarPlaying } from './thumbar.js'
 import { watchNewFolder, unwatchFolder } from './watchFolders.js'
@@ -31,6 +38,9 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setAutoUpdateIntervalSeconds', (_event, seconds) => setAutoUpdateIntervalSeconds(seconds))
   ipcMain.handle('settings:setAutoInstallUpdatesEnabled', (_event, enabled) => setAutoInstallUpdatesEnabled(enabled))
   ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
+  ipcMain.handle('autoUpdate:getState', () => getUpdateState())
+  ipcMain.handle('autoUpdate:download', () => downloadUpdateNow())
+  ipcMain.handle('autoUpdate:dismiss', (_event, version) => dismissUpdate(version))
   ipcMain.handle('settings:setMinimizeToTrayEnabled', (_event, enabled) => {
     const settings = setMinimizeToTrayEnabled(enabled)
     setTrayEnabled(enabled)

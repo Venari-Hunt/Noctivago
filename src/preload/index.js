@@ -16,7 +16,30 @@ const api = {
     setSkipRemixLeaveConfirmEnabled: (enabled) => ipcRenderer.invoke('settings:setSkipRemixLeaveConfirmEnabled', enabled)
   },
   autoUpdate: {
-    checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow')
+    checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow'),
+    getState: () => ipcRenderer.invoke('autoUpdate:getState'),
+    download: () => ipcRenderer.invoke('autoUpdate:download'),
+    dismiss: (version) => ipcRenderer.invoke('autoUpdate:dismiss', version),
+    // Feeds the in-app Update modal (src/renderer/core/UpdateModal.js).
+    // callback(channel, payload) for each of the update:* events the main
+    // process pushes. Returns an unsubscribe function, matching the other
+    // listener-style preload APIs.
+    onEvent: (callback) => {
+      const channels = [
+        'update:checking',
+        'update:available',
+        'update:progress',
+        'update:downloaded',
+        'update:not-available',
+        'update:error'
+      ]
+      const registered = channels.map((channel) => {
+        const listener = (_event, payload) => callback(channel, payload)
+        ipcRenderer.on(channel, listener)
+        return [channel, listener]
+      })
+      return () => registered.forEach(([channel, listener]) => ipcRenderer.removeListener(channel, listener))
+    }
   },
   playback: {
     // One-way, no response expected - see ipc.js's 'playback:reportState'

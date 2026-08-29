@@ -206,7 +206,7 @@ app.whenReady().then(() => {
   grantMicrophonePermission()
   registerIpcHandlers()
   const win = createWindow()
-  initAutoUpdate()
+  initAutoUpdate(win)
   initTray(win)
   initThumbar(win)
   setTrayEnabled(getSettings().minimizeToTrayEnabled)

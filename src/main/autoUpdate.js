@@ -1,4 +1,4 @@
-import { app, dialog } from 'electron'
+import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import log from 'electron-log/main'
 import {
@@ -46,16 +46,50 @@ let recheckIntervalId = null
 // Tracks the version the user already clicked "Not now" on, so the
 // periodic re-check doesn't nag them with the same prompt every few hours -
 // only a genuinely newer version (or the next app restart, which resets
-// this) prompts again.
+// this) prompts again. A manual check from Settings always surfaces its
+// result regardless of this, since the user explicitly asked.
 let dismissedVersion = null
 
 // Set right before a check triggered by the Settings menu's "Check for
-// updates now" button, so the update-not-available/error handlers know to
-// surface a result via dialog. The periodic background check deliberately
-// stays silent in both of those cases (a failed/empty background check
-// should be invisible, not an interruption) - but a check the user
-// explicitly asked for should never look like nothing happened.
+// updates" button. The result (found / already current / failed) is then
+// pushed to the in-app Update modal instead of staying silent - a plain
+// background check still says nothing on those two non-events, an
+// explicitly-requested one always shows something.
 let manualCheckPending = false
+
+// The renderer's Update modal (src/renderer/core/UpdateModal.js) is driven
+// entirely by these - it holds no state of its own beyond what the last
+// event told it. `mainWindow` is set once in initAutoUpdate; guarded on
+// every send since the window can be destroyed on quit.
+let mainWindow = null
+let updateState = { status: 'idle', currentVersion: app.getVersion() }
+
+function setState(patch) {
+  updateState = { ...updateState, ...patch, currentVersion: app.getVersion() }
+}
+
+function send(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload)
+  }
+}
+
+// electron-updater's GitHub provider gives `releaseNotes` as the release
+// body string; other providers (and multi-version catch-up) can hand back
+// an array of { version, note }. Flatten either into plain display text -
+// the modal renders it as-is (textContent, not HTML), so no sanitizing
+// needed.
+function normalizeNotes(releaseNotes) {
+  if (!releaseNotes) return ''
+  if (typeof releaseNotes === 'string') return releaseNotes
+  if (Array.isArray(releaseNotes)) {
+    return releaseNotes
+      .map((n) => (n && n.note ? `${n.version ? `${n.version}\n` : ''}${n.note}` : ''))
+      .filter(Boolean)
+      .join('\n\n')
+  }
+  return String(releaseNotes)
+}
 
 function runCheck() {
   log.info(`Auto-update: checking (current version ${app.getVersion()}, token present: ${Boolean(__UPDATE_TOKEN__)})`)
@@ -73,78 +107,95 @@ function stopPeriodicChecks() {
   recheckIntervalId = null
 }
 
-export function initAutoUpdate() {
+export function initAutoUpdate(win) {
+  mainWindow = win
+
   // electron-updater only makes sense for an installed, packaged app - it
   // has no meaningful feed to check against a dev build, and would just
-  // error on every `npm run dev` startup otherwise.
+  // error on every `npm run dev` startup otherwise. The Update modal still
+  // opens in dev (from Settings) - checkForUpdatesNow() below returns
+  // { packaged: false } and the modal shows a "only in the installed app"
+  // message rather than spinning forever.
   if (!app.isPackaged) return
 
-  autoUpdater.on('update-available', async (info) => {
-    if (info.version === dismissedVersion) return
+  autoUpdater.on('checking-for-update', () => {
+    setState({ status: 'checking', errorMessage: null })
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    const notes = normalizeNotes(info.releaseNotes)
+    setState({ status: 'available', version: info.version, notes, releaseDate: info.releaseDate })
+
+    const wasManual = manualCheckPending
     manualCheckPending = false
 
-    // Opt-in Settings toggle - skips this confirmation entirely and goes
-    // straight to downloading. update-downloaded below already installs
-    // and restarts with no second prompt, so this is the one remaining
-    // gate between "update detected" and "fully automatic."
+    // Opt-in Settings toggle - skips the modal entirely and goes straight
+    // to downloading. update-downloaded below already installs and restarts
+    // with no prompt, so this is the one remaining gate between "update
+    // detected" and "fully automatic."
     if (getSettings().autoInstallUpdates) {
       log.info(`Auto-update: ${info.version} available, downloading automatically (autoInstallUpdates is on)`)
       autoUpdater.downloadUpdate()
       return
     }
 
-    const { response } = await dialog.showMessageBox({
-      type: 'info',
-      buttons: ['Download', 'Not now'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Update available',
-      message: `Noctívago ${info.version} is available (you have ${app.getVersion()}).`,
-      detail: 'Download it now? It will install automatically and restart the app once the download finishes.'
+    // A background re-check of a version the user already dismissed this run
+    // stays quiet; an explicit "Check for updates" from Settings always
+    // surfaces, dismissed or not.
+    if (info.version === dismissedVersion && !wasManual) return
+
+    send('update:available', {
+      version: info.version,
+      currentVersion: app.getVersion(),
+      notes,
+      releaseDate: info.releaseDate
     })
-    if (response === 0) {
-      autoUpdater.downloadUpdate()
-    } else {
-      dismissedVersion = info.version
-    }
   })
 
-  // No second confirmation here on purpose - the one Download? prompt above
-  // is the only consent needed; once that's given, install-and-restart just
-  // happens. quitAndInstall()'s two args matter: isSilent=true skips the
-  // NSIS installer's own wizard window (its default is false, which is why
-  // v0.1.4's install still showed a visible installer despite this comment
-  // already claiming "installs automatically") and isForceRunAfter=true
-  // relaunches the app once the silent install finishes, matching what a
-  // visible install would have done after the user clicked through it.
+  autoUpdater.on('download-progress', (p) => {
+    setState({
+      status: 'downloading',
+      progress: {
+        percent: p.percent,
+        bytesPerSecond: p.bytesPerSecond,
+        transferred: p.transferred,
+        total: p.total
+      }
+    })
+    send('update:progress', updateState.progress)
+  })
+
+  // No second confirmation here on purpose - the one Download click in the
+  // modal is the only consent needed; once that's given, install-and-restart
+  // just happens. A short delay lets the modal paint its "restarting to
+  // install" state first. quitAndInstall()'s two args matter: isSilent=true
+  // skips the NSIS installer's own wizard window and isForceRunAfter=true
+  // relaunches the app once the silent install finishes.
   autoUpdater.on('update-downloaded', (info) => {
+    setState({ status: 'downloaded', version: info.version })
     log.info(`Auto-update: ${info.version} downloaded, installing and restarting now`)
-    autoUpdater.quitAndInstall(true, true)
+    send('update:downloaded', { version: info.version })
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 1500)
   })
 
   autoUpdater.on('update-not-available', (info) => {
+    setState({ status: 'not-available' })
     log.info(`Auto-update: no update available (latest published is ${info.version})`)
     if (manualCheckPending) {
       manualCheckPending = false
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'No update available',
-        message: `You're already on the latest version (${app.getVersion()}).`
-      })
+      send('update:not-available', { currentVersion: app.getVersion() })
     }
   })
 
   autoUpdater.on('error', (err) => {
-    // Never surfaced to the user for a background check - a failed check
-    // (offline, rate-limited, misconfigured token) should be invisible, not
-    // an interruption. A manual check is the one exception (see
-    // manualCheckPending above).
+    // Never surfaced for a background check - a failed check (offline,
+    // rate-limited, misconfigured token) should be invisible, not an
+    // interruption. A manual check is the one exception.
+    setState({ status: 'error', errorMessage: String((err && err.message) || err) })
     log.error('Auto-update check failed', err)
     if (manualCheckPending) {
       manualCheckPending = false
-      dialog.showMessageBox({
-        type: 'error',
-        title: 'Update check failed',
+      send('update:error', {
         message: 'Could not check for updates. Check your internet connection and try again later.'
       })
     }
@@ -156,13 +207,43 @@ export function initAutoUpdate() {
   }
 }
 
-// Settings menu's "Check for updates now" - runs regardless of the
+// Settings menu's "Check for updates" button - runs regardless of the
 // autoUpdateEnabled setting, since clicking a button asking to check is
 // explicit consent by itself, separate from the standing on/off preference.
+// Returns { packaged } so the modal can show the right thing in a dev build
+// (where no real check ever runs).
 export function checkForUpdatesNow() {
-  if (!app.isPackaged) return
+  if (!app.isPackaged) return { packaged: false }
   manualCheckPending = true
+  setState({ status: 'checking', errorMessage: null })
   runCheck()
+  return { packaged: true }
+}
+
+// Current known update state, for the modal when it's opened directly from
+// Settings after a background check already found (or ruled out) an update -
+// so it can render that immediately instead of waiting for a fresh check to
+// re-emit.
+export function getUpdateState() {
+  return { ...updateState, packaged: app.isPackaged }
+}
+
+// The modal's "Download & install" button. Safe to call only after an
+// update-available; no-ops in a dev build.
+export function downloadUpdateNow() {
+  if (!app.isPackaged) return { ok: false, reason: 'not-packaged' }
+  setState({ status: 'downloading', progress: { percent: 0 } })
+  autoUpdater.downloadUpdate().catch((err) => log.error('Auto-update download failed', err))
+  return { ok: true }
+}
+
+// The modal's "Not now" / close-while-an-update-is-offered path - records
+// the version so the periodic re-check won't reopen the modal for the same
+// one (reset on next app start, or superseded by a newer version).
+export function dismissUpdate(version) {
+  if (version) dismissedVersion = version
+  setState({ status: 'idle' })
+  return { ok: true }
 }
 
 // Settings menu's auto-update toggle. Persists regardless of packaged
