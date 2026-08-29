@@ -213,6 +213,18 @@ function buildFilterChain(filters) {
 // audible pass-by without tipping into "obviously fake siren" territory.
 const DEFAULT_DOPPLER_INTENSITY_SEMITONES = 5
 
+// How abruptly the pitch swings through the marker (speedPitch.dopplerSharpness,
+// a 0..1 Remix slider). This is what makes it sound like a *pass-by* rather
+// than a slow detune: at a low value the pitch glides continuously across the
+// whole clip (the original, and what a direct report called out as "just
+// lowering the pitch progressively"); at a high value the pitch sits roughly
+// flat - high while approaching, low while receding - and does its whole swing
+// in a short burst right at the marker, the classic siren "fwooo-yowm" of
+// something rushing past close by. 0.5 is a clearly plateau-shaped pass-by
+// without the transition being so sharp it reads as a glitch. Kept as the
+// fallback for entries saved before the control existed.
+const DEFAULT_DOPPLER_SHARPNESS = 0.5
+
 // Floor on how close the draggable "closest point" marker (closestFraction,
 // see below) can get to either edge - without this, dragging it all the way
 // to Start or End would collapse one side's ramp to zero duration, an
@@ -225,47 +237,62 @@ const MIN_DOPPLER_FRACTION = 0.05
 // Generates a sequence of timestamped `rubberband pitch <value>;` commands
 // (ffmpeg's asendcmd syntax) spanning [0, durationSeconds] - the trimmed
 // loop region's own duration, matching what this pre-processing pass
-// actually reads via -ss/-t before any of this runs. Ramps *linearly in
-// semitones* (not in the raw pitch-ratio rubberband itself takes) between
-// two anchor points either side of the "closest" marker
-// (t=durationSeconds*closestFraction - user-draggable on the waveform,
-// defaulting to the midpoint):
+// actually reads via -ss/-t before any of this runs. The pitch contour
+// follows the physical Doppler model f'/f = c / (c + v*cos0) rather than a
+// straight semitone ramp: as a source moves past on a straight line,
+// cos0 (the along-track angle) swings from ~+1 while approaching, through 0
+// at closest approach, to ~-1 while receding, and how *fast* it swings
+// through 0 depends on how close the pass is. That gives the characteristic
+// flat-high / fast-drop / flat-low siren shape - a plain linear ramp
+// instead just sounds like a slow continuous detune (a directly-reported
+// bug). The "closest" marker is at t=durationSeconds*closestFraction
+// (user-draggable on the waveform, defaulting to the midpoint):
 //
-// - Normal (reversed=false, the original "pass-by" shape): +intensity at
-//   t=0, crossing exactly 0 at the marker, down to -intensity at the end -
-//   the marker is the natural-pitch crossing, Start/End are the extremes
-//   ("furthest," approaching from and receding into the distance).
-// - Reversed: the shape flips - 0 at t=0, up to +intensity at the marker,
-//   back down to 0 at the end. Now the marker is the extreme ("furthest")
-//   and Start/End are the natural-pitch points ("closest") - models
-//   something darting sharply close then away, rather than a distant
-//   approach/recede.
+// - Normal (reversed=false): high pitch (+intensity) while approaching,
+//   crossing exactly natural at the marker, low pitch (-intensity) while
+//   receding - the marker is the natural-pitch crossing, Start/End are the
+//   extremes.
+// - Reversed: Start/End sit at natural pitch and the full high->low swing
+//   happens in a short burst right at the marker (a raised-cosine window
+//   tapers it back to natural by the ends) - models something darting
+//   sharply past very close rather than a distant approach/recede.
 //
-// Either way, the two segments (before/after the marker) ramp at different
-// rates whenever closestFraction isn't exactly 0.5 (a marker dragged near
-// Start means one side happens fast and the other slowly) - that's the
-// whole point of making it draggable, "control how fast the pitch reaches
-// its peak" independently on each side. Composed multiplicatively with
-// whatever static pitchSemitones is already set, so the two controls stack
-// correctly rather than one silently overriding the other. ~10 commands/
-// second is dense enough that rubberband (which does its own internal
-// smoothing between commands) produces a genuinely continuous-sounding bend
-// rather than audible discrete steps - verified directly against the real
-// bundled binary (measured a real, monotonic frequency shift across a
-// synthetic test tone) before this was ever wired into the app.
-function buildDopplerSendCmd(basePitchRatio, durationSeconds, closestFraction = 0.5, intensitySemitones = DEFAULT_DOPPLER_INTENSITY_SEMITONES, reversed = false) {
+// sharpness01 (0..1) maps exponentially to k, the model's effective "how
+// close does it pass" factor: small k keeps cos0 near 0 for most of the
+// clip (a gentle glide), large k drives cos0 to +/-1 everywhere except at
+// the marker (flat plateaus, fast transition). The contour is renormalized
+// so it still hits exactly +/-intensity at Start/End regardless of k.
+//
+// The two segments either side of the marker are each scaled to their own
+// length, so a marker dragged off-center makes one side swing faster than
+// the other - the point of making it draggable. Composed multiplicatively
+// with whatever static pitchSemitones is already set, so the two controls
+// stack. ~10 commands/second is dense enough that rubberband (which does its
+// own internal smoothing between commands) produces a continuous-sounding
+// bend rather than audible discrete steps.
+function buildDopplerSendCmd(basePitchRatio, durationSeconds, closestFraction = 0.5, intensitySemitones = DEFAULT_DOPPLER_INTENSITY_SEMITONES, reversed = false, sharpness01 = DEFAULT_DOPPLER_SHARPNESS) {
   if (durationSeconds <= 0) return null
   const frac = Math.min(Math.max(closestFraction, MIN_DOPPLER_FRACTION), 1 - MIN_DOPPLER_FRACTION)
   const closestT = frac * durationSeconds
   const steps = Math.max(8, Math.min(400, Math.round(durationSeconds * 10)))
+  const sharp = Math.min(Math.max(sharpness01, 0), 1)
+  const k = 0.6 * Math.pow(30, sharp) // ~0.6 (gentle glide) .. ~18 (hard plateaus)
+  const edgeCos = k / Math.sqrt(1 + k * k) // |contour| at the segment ends, for renormalizing to +/-intensity
   const parts = []
   for (let i = 0; i <= steps; i++) {
     const t = (i / steps) * durationSeconds
     const beforeMarker = t <= closestT
-    const segmentFrac = beforeMarker ? t / closestT : (t - closestT) / (durationSeconds - closestT)
+    // signed normalized position: -1 at Start, 0 at the marker, +1 at End,
+    // each side scaled to its own length (the off-center-marker behavior).
+    const s = beforeMarker
+      ? (t - closestT) / closestT
+      : (t - closestT) / (durationSeconds - closestT)
+    // cos0-shaped contour: ~linear through the marker, saturating to a
+    // plateau away from it. Renormalized so |contour| == 1 at s = +/-1.
+    const contour = ((k * s) / Math.sqrt(1 + (k * s) * (k * s))) / edgeCos
     const semitoneOffset = reversed
-      ? (beforeMarker ? intensitySemitones * segmentFrac : intensitySemitones * (1 - segmentFrac))
-      : (beforeMarker ? intensitySemitones * (1 - segmentFrac) : -intensitySemitones * segmentFrac)
+      ? -intensitySemitones * contour * Math.pow(Math.cos((Math.PI * s) / 2), 2)
+      : -intensitySemitones * contour
     const pitch = basePitchRatio * Math.pow(2, semitoneOffset / 12)
     parts.push(`${t.toFixed(3)} rubberband pitch ${pitch.toFixed(6)};`)
   }
@@ -289,13 +316,14 @@ function buildSpeedPitchReverseChain(speedPitch, durationSeconds) {
     dopplerEnabled = false,
     dopplerClosestFraction = 0.5,
     dopplerIntensitySemitones = DEFAULT_DOPPLER_INTENSITY_SEMITONES,
-    dopplerReversed = false
+    dopplerReversed = false,
+    dopplerSharpness = DEFAULT_DOPPLER_SHARPNESS
   } = speedPitch
   const parts = []
   if (speed !== 1 || pitchSemitones !== 0 || dopplerEnabled) {
     const pitchRatio = Math.pow(2, pitchSemitones / 12)
     if (dopplerEnabled) {
-      const sendCmd = buildDopplerSendCmd(pitchRatio, durationSeconds, dopplerClosestFraction, dopplerIntensitySemitones, dopplerReversed)
+      const sendCmd = buildDopplerSendCmd(pitchRatio, durationSeconds, dopplerClosestFraction, dopplerIntensitySemitones, dopplerReversed, dopplerSharpness)
       if (sendCmd) parts.push(`asendcmd=c='${sendCmd}'`)
     }
     parts.push(`rubberband=tempo=${speed}:pitch=${pitchRatio.toFixed(6)}`)

@@ -234,7 +234,11 @@ function normalizeSpeedPitch(speedPitch) {
     speed: speedPitch?.speed ?? 1,
     pitchSemitones: speedPitch?.pitchSemitones ?? 0,
     reversed: speedPitch?.reversed ?? false,
-    dopplerEnabled: speedPitch?.dopplerEnabled ?? false
+    dopplerEnabled: speedPitch?.dopplerEnabled ?? false,
+    dopplerClosestFraction: speedPitch?.dopplerClosestFraction ?? 0.5,
+    dopplerIntensitySemitones: speedPitch?.dopplerIntensitySemitones ?? 5,
+    dopplerReversed: speedPitch?.dopplerReversed ?? false,
+    dopplerSharpness: speedPitch?.dopplerSharpness ?? 0.5
   })
 }
 

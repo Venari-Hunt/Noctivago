@@ -231,12 +231,17 @@ export default class EditorPlugin {
               <input id="editor-doppler-intensity" type="range" min="1" max="12" value="5" step="1" />
               <span id="editor-doppler-intensity-value" class="editor-filter-value">5 st</span>
             </label>
+            <label>
+              <span>Sharpness</span>
+              <input id="editor-doppler-sharpness" type="range" min="0" max="100" value="50" step="1" />
+              <span id="editor-doppler-sharpness-value" class="editor-filter-value">50%</span>
+            </label>
             <label class="editor-reverse-toggle">
               <input id="editor-doppler-reversed" type="checkbox" />
               Reverse (peak = furthest point, not closest)
             </label>
           </div>
-          <p id="editor-doppler-hint" class="editor-speed-pitch-hint hidden">Simulates a sound passing by: pitch rises approaching the closest point (the gold marker on the waveform - drag it to control how fast each side ramps, double-click to re-center), then falls as it recedes toward Start/End. Reverse flips that: Start/End become the natural-pitch points and the marker becomes the peak shift instead — a sharp close pass-by rather than an approach/recede. Intensity sets how many semitones the shift swings. Only takes effect once saved (loops under 10 minutes) - no live preview while dragging.</p>
+          <p id="editor-doppler-hint" class="editor-speed-pitch-hint hidden">Simulates a sound passing by: pitch rises approaching the closest point (the gold marker on the waveform - drag it to control how fast each side ramps, double-click to re-center), then falls as it recedes toward Start/End. Reverse flips that: Start/End become the natural-pitch points and the marker becomes the peak shift instead — a sharp close pass-by rather than an approach/recede. Intensity sets how many semitones the shift swings; Sharpness sets how abruptly it swings through the marker — low is a slow continuous glide, high sits flat and does the whole swing in a burst right at the marker (the real pass-by whoosh). Only takes effect once saved (loops under 10 minutes) - no live preview while dragging.</p>
           <div class="editor-playmode">
             <span class="editor-playmode-label">Playback mode</span>
             <label class="editor-playmode-option">
@@ -561,6 +566,8 @@ export default class EditorPlugin {
       dopplerOptions: container.querySelector('#editor-doppler-options'),
       dopplerIntensity: container.querySelector('#editor-doppler-intensity'),
       dopplerIntensityValue: container.querySelector('#editor-doppler-intensity-value'),
+      dopplerSharpness: container.querySelector('#editor-doppler-sharpness'),
+      dopplerSharpnessValue: container.querySelector('#editor-doppler-sharpness-value'),
       dopplerReversed: container.querySelector('#editor-doppler-reversed'),
       highpass: container.querySelector('#editor-highpass'),
       highpassValue: container.querySelector('#editor-highpass-value'),
@@ -754,6 +761,7 @@ export default class EditorPlugin {
     this.els.reverse.addEventListener('change', () => this.applySpeedPitchControls())
     this.els.doppler.addEventListener('change', () => this.applySpeedPitchControls())
     this.els.dopplerIntensity.addEventListener('input', () => this.applySpeedPitchControls())
+    this.els.dopplerSharpness.addEventListener('input', () => this.applySpeedPitchControls())
     this.els.dopplerReversed.addEventListener('change', () => this.applySpeedPitchControls())
 
     this.els.highpass.addEventListener('input', () => this.applyFilterControls())
@@ -1491,7 +1499,8 @@ export default class EditorPlugin {
       // themselves.
       dopplerClosestFraction: this.loopEditorController?.getDopplerClosestFraction() ?? 0.5,
       dopplerIntensitySemitones: Number(this.els.dopplerIntensity.value),
-      dopplerReversed: this.els.dopplerReversed.checked
+      dopplerReversed: this.els.dopplerReversed.checked,
+      dopplerSharpness: Number(this.els.dopplerSharpness.value) / 100
     }
   }
 
@@ -1502,7 +1511,8 @@ export default class EditorPlugin {
     dopplerEnabled = false,
     dopplerClosestFraction = 0.5,
     dopplerIntensitySemitones = 5,
-    dopplerReversed = false
+    dopplerReversed = false,
+    dopplerSharpness = 0.5
   }) {
     this.els.speed.value = String(Math.round(speed * 100))
     this.els.pitch.value = String(pitchSemitones)
@@ -1512,6 +1522,8 @@ export default class EditorPlugin {
     this.els.dopplerOptions.classList.toggle('hidden', !dopplerEnabled)
     this.els.dopplerIntensity.value = String(dopplerIntensitySemitones)
     this.els.dopplerIntensityValue.textContent = `${dopplerIntensitySemitones} st`
+    this.els.dopplerSharpness.value = String(Math.round((dopplerSharpness ?? 0.5) * 100))
+    this.els.dopplerSharpnessValue.textContent = `${Math.round((dopplerSharpness ?? 0.5) * 100)}%`
     this.els.dopplerReversed.checked = Boolean(dopplerReversed)
     this.loopEditorController?.setDopplerClosestFraction(dopplerClosestFraction)
   }
@@ -1528,6 +1540,7 @@ export default class EditorPlugin {
     this.els.dopplerHint.classList.toggle('hidden', !speedPitch.dopplerEnabled)
     this.els.dopplerOptions.classList.toggle('hidden', !speedPitch.dopplerEnabled)
     this.els.dopplerIntensityValue.textContent = `${speedPitch.dopplerIntensitySemitones} st`
+    this.els.dopplerSharpnessValue.textContent = `${Math.round((speedPitch.dopplerSharpness ?? 0.5) * 100)}%`
     this.loopEditorController?.setDopplerEnabled(speedPitch.dopplerEnabled)
     this.loopEditorController?.setDopplerReversed(speedPitch.dopplerReversed)
     this.updateSaveButtonState()
@@ -1568,7 +1581,8 @@ export default class EditorPlugin {
         dopplerEnabled: speedPitch.dopplerEnabled ?? false,
         dopplerClosestFraction: speedPitch.dopplerClosestFraction ?? 0.5,
         dopplerIntensitySemitones: speedPitch.dopplerIntensitySemitones ?? 5,
-        dopplerReversed: speedPitch.dopplerReversed ?? false
+        dopplerReversed: speedPitch.dopplerReversed ?? false,
+        dopplerSharpness: speedPitch.dopplerSharpness ?? 0.5
       },
       playMode,
       scatter: {
@@ -1917,7 +1931,8 @@ export default class EditorPlugin {
       dopplerEnabled: false,
       dopplerClosestFraction: 0.5,
       dopplerIntensitySemitones: 5,
-      dopplerReversed: false
+      dopplerReversed: false,
+      dopplerSharpness: 0.5
     }
     this.setSpeedPitchControls(speedPitch)
     this.updateSpeedPitchLabels(speedPitch)
