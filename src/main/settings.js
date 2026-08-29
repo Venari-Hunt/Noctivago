@@ -14,7 +14,12 @@ const store = new Store({
     minimizeToTrayEnabled: false,
     wasPlayingOnClose: false,
     eagerlyBakeOnImport: false,
-    skipRemixLeaveConfirm: false
+    skipRemixLeaveConfirm: false,
+    // The app version the last time it ran - compared against the current
+    // version on startup to detect "we just updated" and show the What's-new
+    // screen (see autoUpdate.js). null on a first-ever launch, which
+    // correctly shows nothing.
+    lastRunVersion: null
   }
 })
 
@@ -26,8 +31,14 @@ export function getSettings() {
     minimizeToTrayEnabled: store.get('minimizeToTrayEnabled'),
     wasPlayingOnClose: store.get('wasPlayingOnClose'),
     eagerlyBakeOnImport: store.get('eagerlyBakeOnImport'),
-    skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm')
+    skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
+    lastRunVersion: store.get('lastRunVersion')
   }
+}
+
+export function setLastRunVersion(version) {
+  store.set('lastRunVersion', version)
+  return getSettings()
 }
 
 export function setAutoUpdateEnabled(enabled) {

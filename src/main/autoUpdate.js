@@ -3,9 +3,11 @@ import { autoUpdater } from 'electron-updater'
 import log from 'electron-log/main'
 import {
   getSettings,
+  setLastRunVersion,
   setAutoUpdateEnabled as persistAutoUpdateEnabled,
   setAutoUpdateIntervalSeconds as persistAutoUpdateIntervalSeconds
 } from './settings.js'
+import { changelogTextBetween } from './changelog.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -64,6 +66,12 @@ let manualCheckPending = false
 let mainWindow = null
 let updateState = { status: 'idle', currentVersion: app.getVersion() }
 
+// Set once at init if the app's version changed since its last run (i.e. an
+// update just installed and relaunched us) - the renderer pulls this via
+// getWhatsNew() when its Update modal wires up and shows a "What's new"
+// screen. null on a normal launch or a first-ever launch.
+let whatsNew = null
+
 function setState(patch) {
   updateState = { ...updateState, ...patch, currentVersion: app.getVersion() }
 }
@@ -107,8 +115,26 @@ function stopPeriodicChecks() {
   recheckIntervalId = null
 }
 
+// Compares the running version against the one persisted last run. Only
+// treats a change as "just updated" for a packaged build (a dev build's
+// version comes from package.json and changes whenever it's bumped for a
+// release, which isn't an update the user did). Always persists the current
+// version so the next launch has an accurate baseline.
+function detectWhatsNew() {
+  const previousVersion = getSettings().lastRunVersion
+  const currentVersion = app.getVersion()
+  setLastRunVersion(currentVersion)
+  if (!app.isPackaged) return
+  if (!previousVersion || previousVersion === currentVersion) return
+
+  const notes = changelogTextBetween(previousVersion, currentVersion)
+  whatsNew = { version: currentVersion, previousVersion, notes: notes || null }
+  log.info(`Auto-update: detected update ${previousVersion} -> ${currentVersion}, showing What's new`)
+}
+
 export function initAutoUpdate(win) {
   mainWindow = win
+  detectWhatsNew()
 
   // electron-updater only makes sense for an installed, packaged app - it
   // has no meaningful feed to check against a dev build, and would just
@@ -226,6 +252,16 @@ export function checkForUpdatesNow() {
 // re-emit.
 export function getUpdateState() {
   return { ...updateState, packaged: app.isPackaged }
+}
+
+// The renderer's Update modal calls this once on startup - a non-null result
+// means an update just installed and it should show the What's-new screen.
+// Consume-once: a renderer reload (only really a thing in dev) shouldn't
+// pop the screen again.
+export function getWhatsNew() {
+  const wn = whatsNew
+  whatsNew = null
+  return wn
 }
 
 // The modal's "Download & install" button. Safe to call only after an

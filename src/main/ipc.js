@@ -19,6 +19,7 @@ import {
   setAutoUpdateIntervalSeconds,
   checkForUpdatesNow,
   getUpdateState,
+  getWhatsNew,
   downloadUpdateNow,
   dismissUpdate
 } from './autoUpdate.js'
@@ -41,6 +42,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setAutoInstallUpdatesEnabled', (_event, enabled) => setAutoInstallUpdatesEnabled(enabled))
   ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
   ipcMain.handle('autoUpdate:getState', () => getUpdateState())
+  ipcMain.handle('autoUpdate:getWhatsNew', () => getWhatsNew())
   ipcMain.handle('autoUpdate:download', () => downloadUpdateNow())
   ipcMain.handle('autoUpdate:dismiss', (_event, version) => dismissUpdate(version))
   ipcMain.handle('settings:setMinimizeToTrayEnabled', (_event, enabled) => {

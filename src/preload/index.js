@@ -18,6 +18,7 @@ const api = {
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow'),
     getState: () => ipcRenderer.invoke('autoUpdate:getState'),
+    getWhatsNew: () => ipcRenderer.invoke('autoUpdate:getWhatsNew'),
     download: () => ipcRenderer.invoke('autoUpdate:download'),
     dismiss: (version) => ipcRenderer.invoke('autoUpdate:dismiss', version),
     // Feeds the in-app Update modal (src/renderer/core/UpdateModal.js).

@@ -8,6 +8,9 @@
 // Flow: available -> (Download & install) -> downloading (progress bar) ->
 // downloaded -> app restarts to install. Matches the existing
 // single-confirmation decision - the one Download click is the only prompt.
+// After the restart, this same modal reopens in a 'whats-new' state (driven
+// by autoUpdate.getWhatsNew(), a version-changed-since-last-run check against
+// the bundled CHANGELOG) with a rundown of what changed.
 
 let els = null
 let renderedStatus = 'idle'
@@ -49,7 +52,8 @@ function renderState(state) {
   if (state.currentVersion) currentVersion = state.currentVersion
   if (status === 'available' && state.version) offeredVersion = state.version
 
-  els.title.textContent = TITLES[status] || TITLES.idle
+  els.title.textContent =
+    status === 'whats-new' ? `What's new in v${state.version}` : TITLES[status] || TITLES.idle
 
   const messages = {
     checking: 'Looking for a newer version of Noctívago…',
@@ -59,17 +63,26 @@ function renderState(state) {
     'not-available': `You already have the latest version${cur ? ` (${cur})` : ''}.`,
     error: state.message || 'Could not check for updates. Check your internet connection and try again later.',
     dev: 'Update checking only works in the installed version of Noctívago.',
+    'whats-new': `Noctívago updated${state.previousVersion ? ` from ${state.previousVersion}` : ''} to ${state.version}.`,
     idle: ''
   }
   els.message.textContent = messages[status] || ''
 
-  toggle(els.versionRow, status === 'available')
-  if (status === 'available') {
-    els.versionCurrent.textContent = cur || '—'
+  const showVersionRow = status === 'available' || status === 'whats-new'
+  toggle(els.versionRow, showVersionRow)
+  if (showVersionRow) {
+    els.versionCurrent.textContent =
+      (status === 'whats-new' ? state.previousVersion : cur) || '—'
     els.versionNew.textContent = state.version || '—'
   }
 
-  const notes = status === 'available' && state.notes ? String(state.notes).trim() : ''
+  let notes = ''
+  if (status === 'available' && state.notes) notes = String(state.notes).trim()
+  else if (status === 'whats-new') {
+    notes = state.notes
+      ? String(state.notes).trim()
+      : `You're now on v${state.version}.`
+  }
   toggle(els.notesWrapper, Boolean(notes))
   if (notes) els.notes.textContent = notes
 
@@ -159,6 +172,20 @@ export function installUpdateModal() {
   })
 
   window.noctivago.autoUpdate.onEvent(handleEvent)
+
+  // If an update just installed (the app relaunched on a new version), show
+  // the What's-new screen. Deferred so a real update:available event from
+  // the startup check - which supersedes "here's what changed" - can win if
+  // one somehow arrives in the same tick.
+  window.noctivago.autoUpdate
+    .getWhatsNew()
+    .then((wn) => {
+      if (wn && els.modal.classList.contains('hidden')) {
+        renderState({ status: 'whats-new', ...wn })
+        show()
+      }
+    })
+    .catch(() => {})
 }
 
 function handleEvent(channel, payload) {
