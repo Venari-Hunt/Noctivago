@@ -495,6 +495,46 @@ export function duplicateSound(id, { name }) {
   return entry
 }
 
+// Looks up an existing library entry by its source file path (resolved +
+// lowercased, same key hasSoundForPath dedups on) - used by the portable-
+// preset import flow so locating a file that's already in the library
+// reuses that entry instead of creating a duplicate.
+export function findSoundByOriginalPath(filePath) {
+  const normalized = normalizePath(filePath)
+  return store.get('sounds').find((s) => normalizePath(s.originalPath) === normalized) ?? null
+}
+
+// Applies the per-sound settings carried inside a portable preset file
+// (src/main/presetPortable.js) onto a freshly-added sound. Only the fields
+// a preset actually needs to reproduce a mix - trim, filters/EQ, crossfade,
+// speed/pitch/doppler, play mode + its scatter/schedule config, and tags -
+// never id/path/storage/derived-clip fields. One updateEntry write rather
+// than a chain of individual update* calls. Nothing here triggers a bake;
+// the imported sound bakes lazily on first play like any other.
+// Exported so presetPortable.js builds its export from exactly what
+// applyImportedSettings will read back.
+export const IMPORTED_SETTINGS_KEYS = [
+  'loopStart',
+  'loopEnd',
+  'filters',
+  'crossfadeSeconds',
+  'speedPitch',
+  'playMode',
+  'scatter',
+  'schedule'
+]
+
+export function applyImportedSettings(id, settings) {
+  if (!settings || typeof settings !== 'object') return null
+  const patch = {}
+  for (const key of IMPORTED_SETTINGS_KEYS) {
+    if (settings[key] !== undefined) patch[key] = settings[key]
+  }
+  if (Array.isArray(settings.tags)) patch.tags = settings.tags
+  if (Object.keys(patch).length === 0) return listSounds().find((s) => s.id === id) ?? null
+  return updateEntry(id, patch)
+}
+
 // The Composite tab ("compose multiple sounds into one baked file") calls
 // this right after library.addSound has created the entry from the freshly-
 // rendered composite audio - marks it as composite-derived purely for

@@ -26,6 +26,16 @@ export function renderPresetList(listEl, presets, callbacks) {
     loadBtn.addEventListener('click', () => callbacks.onLoad(preset))
     li.appendChild(loadBtn)
 
+    if (callbacks.onExport) {
+      const exportBtn = document.createElement('button')
+      exportBtn.className = 'btn btn-small btn-icon-text'
+      exportBtn.type = 'button'
+      exportBtn.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Export'
+      exportBtn.addEventListener('click', () => callbacks.onExport(preset))
+      li.appendChild(exportBtn)
+    }
+
     const deleteBtn = document.createElement('button')
     deleteBtn.className = 'btn btn-small btn-danger btn-icon-text'
     deleteBtn.type = 'button'
@@ -33,6 +43,49 @@ export function renderPresetList(listEl, presets, callbacks) {
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg> Delete'
     deleteBtn.addEventListener('click', () => callbacks.onDelete(preset.id))
     li.appendChild(deleteBtn)
+
+    listEl.appendChild(li)
+  }
+}
+
+// Renders the per-sound status list inside the "Import preset" dialog. Each
+// sound is either already in the library (shown resolved) or needs its audio
+// file located (a "Locate…" button). `sounds` is the analyzed array from
+// presets:pickImport, mutated in place by the caller as sounds get resolved.
+export function renderPresetImportList(listEl, sounds, callbacks) {
+  listEl.innerHTML = ''
+
+  for (const [index, sound] of sounds.entries()) {
+    const li = document.createElement('li')
+    li.className = 'preset-import-row'
+
+    const info = document.createElement('div')
+    info.className = 'preset-import-info'
+
+    const name = document.createElement('span')
+    name.className = 'preset-import-sound-name'
+    name.textContent = sound.name
+    info.appendChild(name)
+
+    const status = document.createElement('span')
+    status.className = sound.matchedSoundId
+      ? 'preset-import-sound-status resolved'
+      : 'preset-import-sound-status missing'
+    status.textContent = sound.matchedSoundId
+      ? 'In your library'
+      : `Needs file — ${sound.fileName || 'unknown file'}`
+    info.appendChild(status)
+
+    li.appendChild(info)
+
+    if (!sound.matchedSoundId) {
+      const locateBtn = document.createElement('button')
+      locateBtn.className = 'btn btn-small'
+      locateBtn.type = 'button'
+      locateBtn.textContent = 'Locate…'
+      locateBtn.addEventListener('click', () => callbacks.onLocate(index))
+      li.appendChild(locateBtn)
+    }
 
     listEl.appendChild(li)
   }

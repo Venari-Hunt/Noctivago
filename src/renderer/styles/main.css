@@ -681,6 +681,12 @@ main {
   min-height: 14px;
 }
 
+/* Same line, reused for a neutral confirmation (export done / preset
+   imported) rather than only errors. */
+.preset-save-hint.ok {
+  color: var(--text-dim);
+}
+
 .settings-row {
   display: flex;
   align-items: center;
@@ -807,5 +813,54 @@ main {
   font-size: 12px;
   list-style: none;
   padding: 8px 0;
+}
+
+.preset-import-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.preset-import-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface-alt);
+  border-radius: 6px;
+}
+
+.preset-import-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preset-import-sound-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-import-sound-status {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-import-sound-status.resolved {
+  color: var(--text-dim);
+}
+
+.preset-import-sound-status.missing {
+  color: var(--danger);
 }
 

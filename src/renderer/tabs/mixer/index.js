@@ -4,7 +4,7 @@ import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
 import { BufferScheduledSource, StreamScheduledSource } from '../../audio/ScheduledSoundSource.js'
 import { renderSoundList, sortForDisplay, SORT_MODES, GROUP_MODES } from '../../ui/SoundList.js'
-import { renderPresetList } from '../../ui/PresetsModal.js'
+import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
 import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
@@ -81,7 +81,15 @@ const els = {
   savePresetBtn: document.getElementById('save-preset'),
   presetSaveHint: document.getElementById('preset-save-hint'),
   presetList: document.getElementById('preset-list'),
-  presetsClose: document.getElementById('presets-close')
+  presetsClose: document.getElementById('presets-close'),
+  importPresetBtn: document.getElementById('import-preset'),
+
+  presetImportDialog: document.getElementById('preset-import-dialog'),
+  presetImportName: document.getElementById('preset-import-name'),
+  presetImportList: document.getElementById('preset-import-list'),
+  presetImportStatus: document.getElementById('preset-import-status'),
+  presetImportCancel: document.getElementById('preset-import-cancel'),
+  presetImportConfirm: document.getElementById('preset-import-confirm')
 }
 
 let pickedFile = null
@@ -980,12 +988,27 @@ async function refreshPresetList() {
   const presets = await api.presets.list()
   renderPresetList(els.presetList, presets, {
     onLoad: loadPreset,
-    onDelete: deletePreset
+    onDelete: deletePreset,
+    onExport: exportPreset
   })
+}
+
+async function exportPreset(preset) {
+  els.presetSaveHint.textContent = ''
+  const result = await api.presets.export(preset.id)
+  if (result.canceled) return
+  if (!result.ok) {
+    els.presetSaveHint.classList.remove('ok')
+    els.presetSaveHint.textContent = result.error ?? 'Export failed.'
+    return
+  }
+  els.presetSaveHint.classList.add('ok')
+  els.presetSaveHint.textContent = `Exported "${preset.name}" (${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}, audio not included).`
 }
 
 els.openPresetsBtn.addEventListener('click', async () => {
   els.presetSaveHint.textContent = ''
+  els.presetSaveHint.classList.remove('ok')
   await refreshPresetList()
   showModal(els.presetsModal)
 })
@@ -1000,6 +1023,7 @@ els.savePresetBtn.addEventListener('click', async () => {
     return
   }
   if (state.included.size === 0) {
+    els.presetSaveHint.classList.remove('ok')
     els.presetSaveHint.textContent = 'Add at least one sound to the mix before saving a preset.'
     return
   }
@@ -1048,6 +1072,69 @@ async function deletePreset(id) {
   await api.presets.delete(id)
   await refreshPresetList()
 }
+
+// Portable preset import. The analyzed manifest (from presets:pickImport) is
+// held here while the dialog is open; each sound's `matchedSoundId` starts
+// either set (already in the library) or null (needs a file), and a Locate…
+// resolves it in place.
+let importAnalysis = null
+
+function renderImport() {
+  els.presetImportName.textContent = importAnalysis.name
+  renderPresetImportList(els.presetImportList, importAnalysis.sounds, { onLocate: locateImportSound })
+  const resolved = importAnalysis.sounds.filter((s) => s.matchedSoundId).length
+  const total = importAnalysis.sounds.length
+  els.presetImportConfirm.disabled = resolved === 0
+  els.presetImportStatus.textContent =
+    resolved === total
+      ? `All ${total} sound${total === 1 ? '' : 's'} ready.`
+      : `${resolved} of ${total} ready — unresolved sounds will be left out of the preset.`
+}
+
+els.importPresetBtn.addEventListener('click', async () => {
+  const result = await api.presets.pickImport()
+  if (result.canceled) return
+  if (!result.ok) {
+    els.presetSaveHint.classList.remove('ok')
+    els.presetSaveHint.textContent = result.error ?? 'Could not read that preset file.'
+    return
+  }
+  importAnalysis = result
+  renderImport()
+  showModal(els.presetImportDialog)
+})
+
+async function locateImportSound(index) {
+  const sound = importAnalysis.sounds[index]
+  const result = await api.presets.resolveImportedSound(sound)
+  if (result.canceled) return
+  if (!result.ok) {
+    els.presetImportStatus.textContent = result.error ?? 'Could not import that file.'
+    return
+  }
+  sound.matchedSoundId = result.soundId
+  await refreshList()
+  renderImport()
+}
+
+els.presetImportCancel.addEventListener('click', () => {
+  importAnalysis = null
+  hideModal(els.presetImportDialog)
+})
+
+els.presetImportConfirm.addEventListener('click', async () => {
+  const sounds = importAnalysis.sounds
+    .filter((s) => s.matchedSoundId)
+    .map((s) => ({ soundId: s.matchedSoundId, volume: s.volume }))
+  if (sounds.length === 0) return
+  await api.presets.save({ name: importAnalysis.name, sounds })
+  importAnalysis = null
+  hideModal(els.presetImportDialog)
+  await refreshList()
+  await refreshPresetList()
+  els.presetSaveHint.classList.add('ok')
+  els.presetSaveHint.textContent = 'Preset imported.'
+})
 
 // Re-reads the library on every return to this tab, so edits made in
 // another tab (e.g. trim/filters saved in the Remix plugin) take effect

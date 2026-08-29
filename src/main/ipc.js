@@ -4,6 +4,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import * as library from './library.js'
 import * as presets from './presets.js'
+import { buildPortablePreset, analyzePortablePreset, importLocatedSound } from './presetPortable.js'
 import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
@@ -87,6 +88,56 @@ export function registerIpcHandlers() {
   ipcMain.handle('presets:list', () => presets.listPresets())
   ipcMain.handle('presets:save', (_event, payload) => presets.savePreset(payload))
   ipcMain.handle('presets:delete', (_event, id) => presets.deletePreset(id))
+
+  // Portable preset export/import (src/main/presetPortable.js) - the preset
+  // plus per-sound settings, no audio. Audio bundling is a later phase.
+  ipcMain.handle('presets:export', async (_event, presetId) => {
+    const manifest = buildPortablePreset(presetId)
+    if (!manifest) return { ok: false, error: 'Preset not found.' }
+    const result = await dialog.showSaveDialog({
+      title: 'Export preset',
+      defaultPath: `${manifest.name}.ncvpreset`,
+      filters: [{ name: 'Noctívago preset', extensions: ['ncvpreset'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    try {
+      fs.writeFileSync(result.filePath, JSON.stringify(manifest, null, 2))
+    } catch (err) {
+      return { ok: false, error: `Could not write the file: ${err.message}` }
+    }
+    return { ok: true, path: result.filePath, soundCount: manifest.sounds.length }
+  })
+
+  ipcMain.handle('presets:pickImport', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Import preset',
+      properties: ['openFile'],
+      filters: [{ name: 'Noctívago preset', extensions: ['ncvpreset', 'json'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
+    let manifest
+    try {
+      manifest = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'))
+    } catch {
+      return { ok: false, error: "That file couldn't be read as a preset." }
+    }
+    return analyzePortablePreset(manifest)
+  })
+
+  ipcMain.handle('presets:resolveImportedSound', async (_event, portableSound) => {
+    const result = await dialog.showOpenDialog({
+      title: `Locate the audio file for "${portableSound?.name ?? 'sound'}"`,
+      properties: ['openFile'],
+      filters: [{ name: 'Audio files', extensions: library.AUDIO_EXTENSIONS }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
+    try {
+      const { soundId, reused } = importLocatedSound(result.filePaths[0], portableSound)
+      return { ok: true, soundId, reused }
+    } catch (err) {
+      return { ok: false, error: `Could not import that file: ${err.message}` }
+    }
+  })
 
   ipcMain.handle('audio:renderLoopClip', async (_event, id, { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }) => {
     const inputPath = library.getPlaybackPathForId(id)
