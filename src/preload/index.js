@@ -112,7 +112,9 @@ const api = {
     delete: (id) => ipcRenderer.invoke('presets:delete', id),
     export: (presetId) => ipcRenderer.invoke('presets:export', presetId),
     pickImport: () => ipcRenderer.invoke('presets:pickImport'),
-    resolveImportedSound: (portableSound) => ipcRenderer.invoke('presets:resolveImportedSound', portableSound)
+    resolveImportedSound: (portableSound) => ipcRenderer.invoke('presets:resolveImportedSound', portableSound),
+    finalizeImport: (payload) => ipcRenderer.invoke('presets:finalizeImport', payload),
+    cancelImport: (importSessionId) => ipcRenderer.invoke('presets:cancelImport', importSessionId)
   },
   audio: {
     renderLoopClip: (id, points) => ipcRenderer.invoke('audio:renderLoopClip', id, points),

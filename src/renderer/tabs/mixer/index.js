@@ -1003,7 +1003,10 @@ async function exportPreset(preset) {
     return
   }
   els.presetSaveHint.classList.add('ok')
-  els.presetSaveHint.textContent = `Exported "${preset.name}" (${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}, audio not included).`
+  const mb = result.totalBytes ? ` · ${(result.totalBytes / (1024 * 1024)).toFixed(1)} MB of audio` : ''
+  const missing = result.soundCount - (result.audioCount ?? result.soundCount)
+  const missingNote = missing > 0 ? ` (${missing} missing its file)` : ''
+  els.presetSaveHint.textContent = `Exported "${preset.name}" — ${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}${missingNote}${mb}.`
 }
 
 els.openPresetsBtn.addEventListener('click', async () => {
@@ -1082,7 +1085,7 @@ let importAnalysis = null
 function renderImport() {
   els.presetImportName.textContent = importAnalysis.name
   renderPresetImportList(els.presetImportList, importAnalysis.sounds, { onLocate: locateImportSound })
-  const resolved = importAnalysis.sounds.filter((s) => s.matchedSoundId).length
+  const resolved = importAnalysis.sounds.filter((s) => s.matchedSoundId || s.fromBundle).length
   const total = importAnalysis.sounds.length
   els.presetImportConfirm.disabled = resolved === 0
   els.presetImportStatus.textContent =
@@ -1118,22 +1121,30 @@ async function locateImportSound(index) {
 }
 
 els.presetImportCancel.addEventListener('click', () => {
+  if (importAnalysis?.importSessionId) api.presets.cancelImport(importAnalysis.importSessionId)
   importAnalysis = null
   hideModal(els.presetImportDialog)
 })
 
 els.presetImportConfirm.addEventListener('click', async () => {
-  const sounds = importAnalysis.sounds
-    .filter((s) => s.matchedSoundId)
-    .map((s) => ({ soundId: s.matchedSoundId, volume: s.volume }))
-  if (sounds.length === 0) return
-  await api.presets.save({ name: importAnalysis.name, sounds })
+  if (!importAnalysis) return
+  const anyResolvable = importAnalysis.sounds.some((s) => s.matchedSoundId || s.fromBundle)
+  if (!anyResolvable) return
+  els.presetImportConfirm.disabled = true
+  els.presetImportStatus.textContent = 'Adding sounds…'
+  const result = await api.presets.finalizeImport({
+    importSessionId: importAnalysis.importSessionId ?? null,
+    name: importAnalysis.name,
+    sounds: importAnalysis.sounds
+  })
   importAnalysis = null
   hideModal(els.presetImportDialog)
   await refreshList()
   await refreshPresetList()
-  els.presetSaveHint.classList.add('ok')
-  els.presetSaveHint.textContent = 'Preset imported.'
+  els.presetSaveHint.classList.toggle('ok', Boolean(result.ok))
+  els.presetSaveHint.textContent = result.ok
+    ? `Preset imported — ${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}.`
+    : result.error ?? 'Import failed.'
 })
 
 // Re-reads the library on every return to this tab, so edits made in

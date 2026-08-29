@@ -49,9 +49,9 @@ export function renderPresetList(listEl, presets, callbacks) {
 }
 
 // Renders the per-sound status list inside the "Import preset" dialog. Each
-// sound is either already in the library (shown resolved) or needs its audio
-// file located (a "Locate…" button). `sounds` is the analyzed array from
-// presets:pickImport, mutated in place by the caller as sounds get resolved.
+// sound is already in the library, included in the preset file itself, or
+// still needs its audio located (a "Locate…" button). `sounds` is the
+// analyzed array from presets:pickImport, mutated in place as sounds resolve.
 export function renderPresetImportList(listEl, sounds, callbacks) {
   listEl.innerHTML = ''
 
@@ -67,18 +67,21 @@ export function renderPresetImportList(listEl, sounds, callbacks) {
     name.textContent = sound.name
     info.appendChild(name)
 
+    const resolved = Boolean(sound.matchedSoundId) || sound.fromBundle
     const status = document.createElement('span')
-    status.className = sound.matchedSoundId
+    status.className = resolved
       ? 'preset-import-sound-status resolved'
       : 'preset-import-sound-status missing'
     status.textContent = sound.matchedSoundId
       ? 'In your library'
-      : `Needs file — ${sound.fileName || 'unknown file'}`
+      : sound.fromBundle
+        ? 'Included in this file'
+        : `Needs file — ${sound.fileName || 'unknown file'}`
     info.appendChild(status)
 
     li.appendChild(info)
 
-    if (!sound.matchedSoundId) {
+    if (!resolved) {
       const locateBtn = document.createElement('button')
       locateBtn.className = 'btn btn-small'
       locateBtn.type = 'button'

@@ -4,7 +4,16 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import * as library from './library.js'
 import * as presets from './presets.js'
-import { buildPortablePreset, analyzePortablePreset, importLocatedSound } from './presetPortable.js'
+import {
+  buildPortableBundle,
+  writePortableBundle,
+  readPortablePresetFile,
+  analyzePortablePreset,
+  importLocatedSound,
+  stashImportBundle,
+  clearImportSession,
+  finalizeImport
+} from './presetPortable.js'
 import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
@@ -101,23 +110,24 @@ export function registerIpcHandlers() {
   ipcMain.handle('presets:save', (_event, payload) => presets.savePreset(payload))
   ipcMain.handle('presets:delete', (_event, id) => presets.deletePreset(id))
 
-  // Portable preset export/import (src/main/presetPortable.js) - the preset
-  // plus per-sound settings, no audio. Audio bundling is a later phase.
+  // Portable preset export/import (src/main/presetPortable.js) - a .ncvpreset
+  // file (a zip) carrying the preset, every sound's settings, and the audio
+  // itself. Phase-1 raw-JSON .ncvpreset files still import.
   ipcMain.handle('presets:export', async (_event, presetId) => {
-    const manifest = buildPortablePreset(presetId)
-    if (!manifest) return { ok: false, error: 'Preset not found.' }
+    const bundle = buildPortableBundle(presetId)
+    if (!bundle) return { ok: false, error: 'Preset not found.' }
     const result = await dialog.showSaveDialog({
       title: 'Export preset',
-      defaultPath: `${manifest.name}.ncvpreset`,
+      defaultPath: `${bundle.manifest.name}.ncvpreset`,
       filters: [{ name: 'Noctívago preset', extensions: ['ncvpreset'] }]
     })
     if (result.canceled || !result.filePath) return { ok: false, canceled: true }
     try {
-      fs.writeFileSync(result.filePath, JSON.stringify(manifest, null, 2))
+      const { soundCount, audioCount, totalBytes } = writePortableBundle(bundle, result.filePath)
+      return { ok: true, path: result.filePath, soundCount, audioCount, totalBytes }
     } catch (err) {
       return { ok: false, error: `Could not write the file: ${err.message}` }
     }
-    return { ok: true, path: result.filePath, soundCount: manifest.sounds.length }
   })
 
   ipcMain.handle('presets:pickImport', async () => {
@@ -127,13 +137,27 @@ export function registerIpcHandlers() {
       filters: [{ name: 'Noctívago preset', extensions: ['ncvpreset', 'json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
-    let manifest
+
+    let read
     try {
-      manifest = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'))
-    } catch {
-      return { ok: false, error: "That file couldn't be read as a preset." }
+      read = readPortablePresetFile(fs.readFileSync(result.filePaths[0]))
+    } catch (err) {
+      return { ok: false, error: `Could not read that file: ${err.message}` }
     }
-    return analyzePortablePreset(manifest)
+    if (!read.ok) return read
+
+    const analysis = analyzePortablePreset(read.manifest, read.bundle)
+    if (!analysis.ok) return analysis
+
+    let importSessionId = null
+    if (read.bundle && read.bundle.size > 0) {
+      try {
+        importSessionId = stashImportBundle(read.bundle)
+      } catch (err) {
+        return { ok: false, error: `Could not unpack that preset: ${err.message}` }
+      }
+    }
+    return { ...analysis, importSessionId }
   })
 
   ipcMain.handle('presets:resolveImportedSound', async (_event, portableSound) => {
@@ -149,6 +173,12 @@ export function registerIpcHandlers() {
     } catch (err) {
       return { ok: false, error: `Could not import that file: ${err.message}` }
     }
+  })
+
+  ipcMain.handle('presets:finalizeImport', (_event, payload) => finalizeImport(payload))
+  ipcMain.handle('presets:cancelImport', (_event, importSessionId) => {
+    if (importSessionId) clearImportSession(importSessionId)
+    return { ok: true }
   })
 
   ipcMain.handle('audio:renderLoopClip', async (_event, id, { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }) => {

@@ -13,6 +13,7 @@ import { getSettings } from './settings.js'
 import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
 import { initThumbar } from './thumbar.js'
 import { initSleepTimer } from './sleepTimer.js'
+import { sweepImportSessions } from './presetPortable.js'
 import { initWatchFolders, startWatching, stopWatching } from './watchFolders.js'
 
 log.initialize()
@@ -211,6 +212,7 @@ app.whenReady().then(() => {
   initTray(win)
   initThumbar(win)
   initSleepTimer(win)
+  sweepImportSessions()
   setTrayEnabled(getSettings().minimizeToTrayEnabled)
   initWatchFolders(win)
   startWatching()

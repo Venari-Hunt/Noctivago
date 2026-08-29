@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.97 — Preset sharing now includes the audio
+
+- Exporting a preset now packs the audio files in too, so the person you send it to gets everything in one `.ncvpreset` file — no more hunting for the source sounds.
+- On import, sounds that came in the file are added automatically; ones you already have are reused, and anything still missing can be located by hand as before.
+- Older config-only preset files still import fine.
+
 ## v0.1.96 — Sleep timer
 
 - New moon button in the toolbar opens a sleep timer: pick a duration (or a quick preset) and what happens when it ends — stop all sounds, put the computer to sleep, or shut it down.
