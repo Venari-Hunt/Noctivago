@@ -225,6 +225,13 @@ export default class EditorPlugin {
               Doppler (pass-by)
             </label>
           </div>
+          <div class="editor-suggest-loop-row">
+            <button id="editor-suggest-loop" class="btn btn-small btn-icon-text" type="button" title="Analyze the file and propose a seamless loop region. You can still adjust Start/End afterward.">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+              Suggest a loop point
+            </button>
+            <span id="editor-suggest-status" class="editor-suggest-status"></span>
+          </div>
           <div id="editor-doppler-options" class="editor-speed-pitch hidden">
             <label>
               <span>Intensity</span>
@@ -519,6 +526,8 @@ export default class EditorPlugin {
       startInput: container.querySelector('#editor-start-input'),
       endInput: container.querySelector('#editor-end-input'),
       lengthInput: container.querySelector('#editor-length-input'),
+      suggestLoopBtn: container.querySelector('#editor-suggest-loop'),
+      suggestStatus: container.querySelector('#editor-suggest-status'),
       playModeLoop: container.querySelector('#editor-playmode-loop'),
       playModeScatter: container.querySelector('#editor-playmode-scatter'),
       playModeScheduled: container.querySelector('#editor-playmode-scheduled'),
@@ -729,6 +738,7 @@ export default class EditorPlugin {
     this.els.startInput.addEventListener('change', () => this.applyManualLoopPoints())
     this.els.endInput.addEventListener('change', () => this.applyManualLoopPoints())
     this.els.lengthInput.addEventListener('change', () => this.applyManualLength())
+    this.els.suggestLoopBtn.addEventListener('click', () => this.suggestLoopPoint())
 
     this.els.playModeLoop.addEventListener('change', () => this.applyPlayModeControl())
     this.els.playModeScatter.addEventListener('change', () => this.applyPlayModeControl())
@@ -1134,6 +1144,42 @@ export default class EditorPlugin {
     const updated = this.loopEditorController.getLoopPoints()
     this.updateLoopTimeInputs(updated.loopStart, updated.loopEnd)
     this.updateSaveButtonState()
+  }
+
+  // "Suggest a loop point" - a real ffmpeg-backed analysis pass in the main
+  // process (src/main/ffmpeg/loopSuggest.js: energy-envelope seam matching),
+  // so this is an async round-trip that can take a second or two on a long
+  // file. Analysis-only: it just populates Start/End (same path a manual
+  // edit takes, so Save/undo pick it up), never bakes or renders anything.
+  async suggestLoopPoint() {
+    if (!this.currentEntry || !this.loopEditorController) return
+    const id = this.currentEntry.id
+    this.els.suggestLoopBtn.disabled = true
+    this.els.suggestStatus.textContent = 'Analyzing…'
+    let result
+    try {
+      result = await this.api.audio.suggestLoopPoints(id)
+    } catch (err) {
+      console.error('Editor: loop-point suggestion failed', err)
+      result = { ok: false }
+    }
+    if (this.currentEntry?.id !== id) return // switched sounds mid-analysis
+    this.els.suggestLoopBtn.disabled = false
+
+    if (!result || !result.ok) {
+      this.els.suggestStatus.textContent = "Couldn't analyze this file."
+      return
+    }
+    if (result.wholeFile) {
+      this.els.suggestStatus.textContent = 'This file is short enough to loop as-is.'
+      return
+    }
+
+    this.loopEditorController.setLoopPoints(result.loopStart, result.loopEnd)
+    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+    this.updateLoopTimeInputs(loopStart, loopEnd)
+    this.updateSaveButtonState()
+    this.els.suggestStatus.textContent = `Suggested ${formatDuration(loopEnd - loopStart)} loop — adjust if needed, then Save.`
   }
 
   // Shared by Reset filters and every preset button, both of which just set
@@ -2010,6 +2056,8 @@ export default class EditorPlugin {
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
     this.updateStickyProgress(loopStart)
+    this.els.suggestStatus.textContent = ''
+    this.els.suggestLoopBtn.disabled = false
 
     // Fire-and-forget: a real ffmpeg round-trip (six bandpass-filtered
     // passes, see src/main/ffmpeg/bandEnergy.js), so this arrives well after

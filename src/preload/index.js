@@ -106,7 +106,8 @@ const api = {
     renderLoopClip: (id, points) => ipcRenderer.invoke('audio:renderLoopClip', id, points),
     getWaveformPeaks: (id, targetWidth, windowStart, windowEnd) =>
       ipcRenderer.invoke('audio:getWaveformPeaks', id, targetWidth, windowStart, windowEnd),
-    getBandEnergy: (id, options) => ipcRenderer.invoke('audio:getBandEnergy', id, options)
+    getBandEnergy: (id, options) => ipcRenderer.invoke('audio:getBandEnergy', id, options),
+    suggestLoopPoints: (id, options) => ipcRenderer.invoke('audio:suggestLoopPoints', id, options)
   },
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),

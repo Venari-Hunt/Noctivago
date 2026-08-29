@@ -8,6 +8,7 @@ import { buildPortablePreset, analyzePortablePreset, importLocatedSound } from '
 import { renderLoopClip } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
+import { suggestLoopPoints } from './ffmpeg/loopSuggest.js'
 import { exportMix } from './ffmpeg/exportMix.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
@@ -174,6 +175,18 @@ export function registerIpcHandlers() {
     } catch (err) {
       console.error('Band energy analysis failed', id, err)
       return null
+    }
+  })
+
+  ipcMain.handle('audio:suggestLoopPoints', async (_event, id, options) => {
+    const entry = library.listSounds().find((s) => s.id === id)
+    const inputPath = library.getPlaybackPathForId(id)
+    if (!inputPath) return { ok: false, error: 'Source file not found' }
+    try {
+      return await suggestLoopPoints(inputPath, entry?.durationSeconds, options ?? {})
+    } catch (err) {
+      console.error('Loop-point suggestion failed', id, err)
+      return { ok: false, error: 'Analysis failed' }
     }
   })
 

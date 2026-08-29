@@ -192,6 +192,19 @@
   gap: 6px;
 }
 
+.editor-suggest-loop-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: -2px 0 10px;
+}
+
+.editor-suggest-status {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .editor-times input[type='text'] {
   width: 80px;
   padding: 6px 8px;
