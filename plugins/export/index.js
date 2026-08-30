@@ -50,7 +50,23 @@ export default class ExportPlugin {
   }
 
   async onunload() {
+    this.unsubscribeProgress?.()
     this.unregister?.()
+  }
+
+  onExportProgress(payload) {
+    if (!this.exporting || !this.els.progressBar) return
+    const pct = Math.round((payload.fraction ?? 0) * 100)
+    this.els.progressBar.style.width = `${pct}%`
+    this.els.progressPct.textContent = `${pct}%`
+    if (payload.type === 'step' && payload.label) {
+      this.els.status.textContent = payload.label
+      const line = document.createElement('div')
+      line.className = 'export-log-line'
+      line.textContent = payload.label
+      this.els.log.appendChild(line)
+      this.els.log.scrollTop = this.els.log.scrollHeight
+    }
   }
 
   mount(container) {
@@ -107,6 +123,11 @@ export default class ExportPlugin {
 
         <button id="export-run" class="btn btn-icon-text" type="button">Export</button>
         <p id="export-status" class="export-status"></p>
+        <div id="export-progress-wrap" class="export-progress-wrap hidden">
+          <div class="export-progress-track"><div id="export-progress-bar" class="export-progress-bar"></div></div>
+          <span id="export-progress-pct" class="export-progress-pct">0%</span>
+        </div>
+        <div id="export-log" class="export-log hidden"></div>
       </div>
     `
 
@@ -123,8 +144,15 @@ export default class ExportPlugin {
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
-      status: container.querySelector('#export-status')
+      status: container.querySelector('#export-status'),
+      progressWrap: container.querySelector('#export-progress-wrap'),
+      progressBar: container.querySelector('#export-progress-bar'),
+      progressPct: container.querySelector('#export-progress-pct'),
+      log: container.querySelector('#export-log')
     }
+
+    this.unsubscribeProgress?.()
+    this.unsubscribeProgress = this.api.export.onProgress((payload) => this.onExportProgress(payload))
 
     this.els.length.addEventListener('blur', () => this.normalizeLengthField())
     this.els.length.addEventListener('keydown', (evt) => {
@@ -195,6 +223,7 @@ export default class ExportPlugin {
       const playMode = entry.playMode ?? 'loop'
       sounds.push({
         soundId: entry.id,
+        name: entry.name,
         playMode,
         loopStart: entry.loopStart ?? 0,
         loopEnd: entry.loopEnd ?? entry.durationSeconds ?? 0,
@@ -218,6 +247,11 @@ export default class ExportPlugin {
     this.exporting = true
     this.els.run.disabled = true
     this.els.status.textContent = `Exporting "${preset.name}" (${sounds.length} sound${sounds.length === 1 ? '' : 's'}, ${formatDuration(durationSeconds)})…`
+    this.els.log.innerHTML = ''
+    this.els.log.classList.remove('hidden')
+    this.els.progressWrap.classList.remove('hidden')
+    this.els.progressBar.style.width = '0%'
+    this.els.progressPct.textContent = '0%'
 
     try {
       const result = await this.api.export.run({
@@ -229,7 +263,13 @@ export default class ExportPlugin {
         fadeOutSeconds: Number(this.els.fadeOut.value) || 0,
         outputPath
       })
-      this.els.status.textContent = result.ok ? `Exported to ${outputPath}` : `Export failed: ${result.error}`
+      if (result.ok) {
+        this.els.progressBar.style.width = '100%'
+        this.els.progressPct.textContent = '100%'
+        this.els.status.textContent = `Exported to ${outputPath}`
+      } else {
+        this.els.status.textContent = `Export failed: ${result.error}`
+      }
     } catch (err) {
       console.error('Export failed', err)
       this.els.status.textContent = `Export failed: ${err.message}`

@@ -12,12 +12,40 @@ function captureStderrTail(stream) {
   return () => tail
 }
 
+// ffmpeg writes progress to stderr as `... time=HH:MM:SS.ms ...` lines
+// (carriage-return separated). Pull the most recent one out of a chunk so a
+// long render can report how far through the output it is.
+const TIME_RE = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/g
+
+function latestProgressSeconds(text) {
+  let match
+  let last = null
+  while ((match = TIME_RE.exec(text)) !== null) last = match
+  TIME_RE.lastIndex = 0
+  if (!last) return null
+  return Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3])
+}
+
 // Runs ffmpeg to completion, ignoring stdout (used for operations that write
 // their result to a file passed in `args`, e.g. -y ... output.wav).
-export function runFfmpegToFile(args) {
+// `onProgress(outputSeconds)` fires as the render advances, if given.
+export function runFfmpegToFile(args, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(resolveFfmpegPath(), args, { windowsHide: true })
     const getStderrTail = captureStderrTail(child.stderr)
+
+    if (onProgress) {
+      child.stderr.on('data', (chunk) => {
+        const seconds = latestProgressSeconds(chunk.toString())
+        if (seconds != null) {
+          try {
+            onProgress(seconds)
+          } catch {
+            // a progress-callback throw must never break the render
+          }
+        }
+      })
+    }
 
     child.on('error', (err) => reject(err))
     child.on('close', (code) => {

@@ -129,7 +129,14 @@ const api = {
   },
   export: {
     pickDestination: (options) => ipcRenderer.invoke('export:pickDestination', options),
-    run: (payload) => ipcRenderer.invoke('export:run', payload)
+    run: (payload) => ipcRenderer.invoke('export:run', payload),
+    // Progress updates while an export renders: { type:'step', label, fraction }
+    // or { type:'tick', fraction } (fraction 0..1). Returns an unsubscribe fn.
+    onProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('export:progress', listener)
+      return () => ipcRenderer.removeListener('export:progress', listener)
+    }
   },
   composite: {
     create: (payload) => ipcRenderer.invoke('composite:create', payload),

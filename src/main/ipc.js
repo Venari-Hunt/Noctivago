@@ -249,12 +249,22 @@ export function registerIpcHandlers() {
   // renderer shouldn't need direct filesystem knowledge for, matching
   // audio:renderLoopClip's own id -> path boundary) before handing
   // everything to the actual ffmpeg pipeline.
-  ipcMain.handle('export:run', async (_event, { sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath }) => {
+  ipcMain.handle('export:run', async (event, { sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath }) => {
     const resolvedSounds = sounds
       .map((s) => ({ ...s, inputPath: library.getPlaybackPathForId(s.soundId) }))
       .filter((s) => s.inputPath)
     if (resolvedSounds.length === 0) return { ok: false, error: 'No exportable sounds in this preset' }
-    return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath })
+    // Throttle so a fast render doesn't flood the renderer with tick events;
+    // a 'step' always goes through so the verbose log stays complete.
+    let lastSent = 0
+    const onProgress = (payload) => {
+      const now = Date.now()
+      if (payload.type === 'step' || now - lastSent > 120) {
+        lastSent = now
+        if (!event.sender.isDestroyed()) event.sender.send('export:progress', payload)
+      }
+    }
+    return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress })
   })
 
   // members: [{soundId, delayMs}] - resolves each to the real, current data
