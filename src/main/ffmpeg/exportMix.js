@@ -12,68 +12,57 @@ import { renderClipToPath } from './loopClip.js'
 // randomization/scheduling math the real playback sources use, just run as
 // a dry loop instead of a real audio-scheduling timer - and hands this
 // module a plain event list per sound. This module only has to answer *how*
-// to actually render that into audio:
+// to actually render that into audio.
 //
-// - A 'loop' sound has no discrete events at all - one crossfaded loop
-//   iteration (reusing loopClip.js's existing bake, unchanged) tiled via
-//   ffmpeg's own -stream_loop for the full export duration.
-// - A 'scatter'/'scheduled' sound bakes a single one-shot "shot" clip
-//   (crossfade forced to 0, matching effectiveCrossfadeSeconds' existing
-//   reasoning - a one-shot is never rotated against itself), then places a
-//   copy of it at each simulated event's own offset via ffmpeg's
-//   asplit+adelay+amix - verified directly against the real bundled binary
-//   (150 shots across a 5-minute track rendered in ~4s, correct output
-//   duration) before any of this was wired into the app. Written to a
-//   *script file* and referenced via -filter_complex_script rather than
-//   inlined on the command line, specifically so a dense export (many
-//   shots) can't run into a Windows command-line length limit.
+// PIPELINE (rewritten for speed, see the task-list "MAKE MULTI-HOUR EXPORT
+// AS FAST AS POSSIBLE" item - the old shape ran one full-export-duration
+// ffmpeg pass *per sound per event-batch* plus a combine plus a final
+// mixdown, ~2N+2 full-duration passes; a 3h export with a couple of Random
+// Interval sounds churned through 100+ hours of audio):
 //
-// Every per-sound track renders to its own temp file at the *exact* export
-// duration; the final step just amixes those together, applies the
-// whole-mix EQ/gain and fade in/out *last* (per the owner's own explicit
-// ordering - "should be applied on the whole mix after everything"), and
-// encodes to the chosen output format.
+// 1. One short "shot" clip per sound (reusing loopClip.js's bake, unchanged;
+//    a loop sound's already-cached clip is reused directly when its
+//    trim/filters/crossfade/speed still match - see cachedClipPath).
+// 2. For a scatter/scheduled sound, one *sliced* batch track per
+//    EVENT_BATCH_SIZE events, rendered over only that batch's real time span
+//    (the events are chronological - verified in simulate.js - so a batch is
+//    a contiguous slice), not padded to the whole export length. The sum of
+//    every batch's span across every sound is ~1x the export duration total,
+//    instead of nBatches x duration.
+// 3. One final ffmpeg pass: every loop sound's short shot as a
+//    `-stream_loop -1 -i` input through `volume`, every sliced batch track
+//    `adelay`'d to its absolute offset, all `amix`ed together (normalize=0 -
+//    honest summing, matching how the live Mixer's own AudioContext sums its
+//    per-sound gains rather than auto-dividing by sound count), then the
+//    whole-mix highpass/lowpass/gain and fade in/out applied *last* (the
+//    owner's explicit ordering), then encoded. The rubberband pitch work all
+//    happened already in the (short) sliced-batch renders, so this pass is
+//    cheap PCM mixing + one encode even for a multi-hour output.
+//
+// Intermediates are FLAC (roughly halves the multi-GB temp I/O a long dense
+// export writes; codec cost is negligible next to that) and forced to
+// stereo/44.1k so the final `amix` never hits a channel-layout mismatch.
 
-// Progress reporting for the Export tab's bar + verbose log. "Units" are the
-// heavy, full-export-duration ffmpeg passes (each loop tile, each event
-// batch, each combine, the final mixdown); the quick shot renders in between
-// aren't counted, just announced via step(). onProgress receives:
-//   { type:'step', label, fraction }         - a new phase started
-//   { type:'tick', fraction }                - progress within the current phase
-// where fraction is 0..1 across the whole export.
-function makeReporter(onProgress, sounds) {
-  let totalUnits = 1 // final mixdown
-  for (const s of sounds) {
-    if (s.playMode === 'loop') {
-      totalUnits += 1
-    } else {
-      const nb = !s.events || s.events.length === 0 ? 1 : Math.ceil(s.events.length / EVENT_BATCH_SIZE)
-      totalUnits += nb + (nb > 1 ? 1 : 0)
-    }
-  }
-  let done = 0
-  const emit = (payload) => {
-    if (!onProgress) return
-    try {
-      onProgress(payload)
-    } catch {
-      // a progress-callback failure must never break the export
-    }
-  }
-  return {
-    step(label) {
-      emit({ type: 'step', label, fraction: done / totalUnits })
-    },
-    tick(unitFraction) {
-      const f = Math.min(1, Math.max(0, unitFraction || 0))
-      emit({ type: 'tick', fraction: (done + f) / totalUnits })
-    },
-    completeUnit() {
-      done += 1
-      emit({ type: 'tick', fraction: done / totalUnits })
-    }
-  }
-}
+// EVENT_BATCH_SIZE branches of rubberband+volume+fade+adelay go into one
+// ffmpeg graph per batch. rubberband's cost is proportional to a shot's
+// duration and ffmpeg runs a graph's branches on one thread, so this is
+// bounded on purpose - a documented "took all my RAM and never finished"
+// bug (v0.1.85) came from putting every event's rubberband into a single
+// graph. 25 branches were measured safe (~40s/500MB); this keeps a margin.
+// Unlike the pre-rewrite version each batch graph is now only `apad`'d to
+// its own span, not the whole export length, so peak memory per batch is
+// meaningfully lower than even that measurement.
+const EVENT_BATCH_SIZE = 20
+// Below this a pitch shift is inaudible - skip the (expensive) rubberband
+// node entirely, matching how eqNodeType elsewhere treats a true no-op as
+// "skip the node," not "run it at neutral settings."
+const IDENTITY_PITCH_EPSILON_SEMITONES = 0.02
+// A little slack past the last event's own end so a batch's final shot
+// (plus any fade-out tail) isn't clipped by the batch track's own length.
+const BATCH_TAIL_MARGIN_SECONDS = 0.25
+
+const INTERMEDIATE_EXT = 'flac'
+const INTERMEDIATE_CODEC = ['-c:a', 'flac', '-ar', '44100', '-ac', '2']
 
 function exportTempDir() {
   return path.join(app.getPath('userData'), 'export-tmp')
@@ -86,105 +75,138 @@ function tempPath(ext) {
 async function cleanupFiles(paths) {
   for (const p of paths) {
     try {
-      if (fs.existsSync(p)) fs.unlinkSync(p)
+      if (p && fs.existsSync(p)) fs.unlinkSync(p)
     } catch {
-      // best-effort cleanup - a leftover temp file isn't worth failing the export over
+      // best-effort - a leftover temp file isn't worth failing the export over
     }
   }
 }
 
-// One crossfaded loop iteration, tiled to fill durationSeconds. Volume is
-// applied here (not in the final mixdown) since -stream_loop just repeats
-// raw samples with no room to inject a per-sound gain stage mid-tile.
-async function renderLoopModeTrack({ inputPath, loopStart, loopEnd, filters, speedPitch, crossfadeSeconds, volume, durationSeconds, reporter, label }) {
-  const shotPath = tempPath('wav')
-  const trackPath = tempPath('wav')
-  reporter?.step(`Preparing ${label} (looped)…`)
-  const result = await renderClipToPath({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, outputPath: shotPath })
+// Progress reporting for the Export tab's bar + verbose log. The rewrite has
+// ~1 heavy full-duration pass (the final mix) plus many short ones (the
+// sliced batches), so progress is weighted by *audio-seconds to process* -
+// the sum of every batch's own span plus one full export duration for the
+// final mix - rather than by "number of heavy passes" like the old shape.
+// The cheap per-sound shot bakes aren't weighted, just announced via step().
+//   { type:'step', label }            - a new phase started
+//   { type:'tick', fraction }         - 0..1 across the whole export
+function makeReporter(onProgress, totalWorkSeconds) {
+  const total = Math.max(1, totalWorkSeconds)
+  let doneSeconds = 0
+  const emit = (payload) => {
+    if (!onProgress) return
+    try {
+      onProgress(payload)
+    } catch {
+      // a progress-callback failure must never break the export
+    }
+  }
+  return {
+    step(label) {
+      emit({ type: 'step', label, fraction: doneSeconds / total })
+    },
+    // progress within the phase currently running, `phaseSeconds` long
+    tick(secIntoPhase, phaseSeconds) {
+      const f = Math.min(phaseSeconds, Math.max(0, secIntoPhase || 0))
+      emit({ type: 'tick', fraction: Math.min(1, (doneSeconds + f) / total) })
+    },
+    completePhase(phaseSeconds) {
+      doneSeconds += phaseSeconds
+      emit({ type: 'tick', fraction: Math.min(1, doneSeconds / total) })
+    }
+  }
+}
+
+// Chronological events -> contiguous batches, each with the real time span it
+// occupies (first event's offset .. last event's offset + its own
+// pitch-adjusted shot length + a little tail slack). Computed up front from
+// the event list alone (no rendering needed) so the progress reporter can be
+// weighted before any ffmpeg runs.
+function planBatches(events, shotDurationSeconds) {
+  const batches = []
+  for (let i = 0; i < events.length; i += EVENT_BATCH_SIZE) {
+    const slice = events.slice(i, i + EVENT_BATCH_SIZE)
+    const start = slice[0].offsetSeconds
+    let end = start
+    for (const evt of slice) {
+      const shotLen = Number.isFinite(evt.shotDurationSeconds) ? evt.shotDurationSeconds : shotDurationSeconds
+      end = Math.max(end, evt.offsetSeconds + shotLen + (evt.fadeOutMs ?? 0) / 1000)
+    }
+    end += BATCH_TAIL_MARGIN_SECONDS
+    batches.push({ events: slice, start, span: Math.max(0.05, end - start) })
+  }
+  return batches
+}
+
+// Renders one sound's [loopStart, loopEnd) as a single short FLAC shot clip.
+// A loop sound whose already-baked cached clip still matches (cachedClipPath,
+// resolved by the IPC handler via library.getLoopClipPathForId) skips the
+// bake entirely and reuses that file - returned with owned:false so cleanup
+// leaves it alone.
+async function bakeShotClip(sound, { forLoop }) {
+  if (forLoop && sound.cachedClipPath && fs.existsSync(sound.cachedClipPath)) {
+    return { path: sound.cachedClipPath, owned: false }
+  }
+  const shotPath = tempPath(INTERMEDIATE_EXT)
+  const result = await renderClipToPath({
+    inputPath: sound.inputPath,
+    loopStart: sound.loopStart,
+    loopEnd: sound.loopEnd,
+    filters: sound.filters,
+    // A scatter/scheduled shot is never looped back-to-back, so it's never
+    // crossfaded/rotated against itself, and its per-event speed/pitch is
+    // applied later, per placement - matching effectiveCrossfadeSeconds'
+    // reasoning across the rest of the app.
+    crossfadeSeconds: forLoop ? sound.crossfadeSeconds : 0,
+    speedPitch: forLoop ? sound.speedPitch : null,
+    outputPath: shotPath
+  })
   if (!result.ok) {
     await cleanupFiles([shotPath])
-    throw new Error(result.error ?? 'loop-mode shot render failed')
+    throw new Error(result.error ?? 'shot render failed')
   }
-  try {
-    reporter?.step(`Tiling ${label} across the full length…`)
-    await runFfmpegToFile(
-      [
-        '-y',
-        '-stream_loop', '-1', '-i', shotPath,
-        '-af', `volume=${volume}`,
-        '-t', durationSeconds.toFixed(6),
-        '-c:a', 'pcm_s16le', '-ar', '44100', '-vn', trackPath
-      ],
-      { onProgress: (sec) => reporter?.tick(sec / durationSeconds) }
-    )
-    reporter?.completeUnit()
-    return trackPath
-  } finally {
-    await cleanupFiles([shotPath])
-  }
+  return { path: shotPath, owned: true }
 }
 
-// Instantiating rubberband once per event and letting a single ffmpeg
-// process hold every branch alive at once was found to scale very badly -
-// rubberband's own cost is proportional to the shot's duration, and ffmpeg
-// runs a filter graph's branches on one thread, so N branches means N times
-// the work serialized into one process. Verified directly against the real
-// bundled binary before writing this: a 1-hour export with a single default-
-// settings scatter sound (194 shots, matching the Export tab's own default
-// length) and a realistic ~90s shot never finished in 90+ seconds and was
-// still climbing past 1.3GB of RAM when killed - this is the exact "took
-// whatever RAM it could get and still produced nothing" symptom reported.
-// The same 194 shots at a short (3s) shot duration finished fine (56s,
-// 330MB) - so the failure mode is specifically long-shot × many-event
-// combinations (a scatter/scheduled sound whose trimmed clip was never
-// shortened down to a brief "event" length), not scatter/export in general.
-// Batching bounds this: rendering EVENT_BATCH_SIZE branches per ffmpeg
-// process at a time (25 branches measured at ~40s/500MB) keeps peak memory
-// bounded regardless of total event count, trading "one huge process that
-// may never finish" for "several bounded processes that reliably do" - a
-// smaller batch of 25 verified working directly, this keeps a safety margin
-// below that.
-const EVENT_BATCH_SIZE = 20
-// Below this, a pitch shift is inaudible - skip the (expensive) rubberband
-// node entirely and pass the shot straight to volume/fade/delay, matching
-// how eqNodeType elsewhere in this codebase treats a true no-op as "skip the
-// node," not "run it at neutral settings."
-const IDENTITY_PITCH_EPSILON_SEMITONES = 0.02
-
-function eventBranchChain(evt, volume) {
+function eventBranchChain(evt, volume, batchStart) {
   const semitones = evt.pitchSemitones ?? 0
   const gain = (evt.volumeScale ?? 1) * volume
-  const fadeParts = []
-  if (evt.fadeInMs > 0) fadeParts.push(`afade=t=in:d=${(evt.fadeInMs / 1000).toFixed(3)}`)
+  const parts = []
+  if (Math.abs(semitones) >= IDENTITY_PITCH_EPSILON_SEMITONES) {
+    parts.push(`rubberband=pitch=${Math.pow(2, semitones / 12).toFixed(6)}`)
+  }
+  parts.push(`volume=${gain.toFixed(6)}`)
+  if (evt.fadeInMs > 0) parts.push(`afade=t=in:d=${(evt.fadeInMs / 1000).toFixed(3)}`)
   if (evt.fadeOutMs > 0 && Number.isFinite(evt.shotDurationSeconds)) {
     const start = Math.max(0, evt.shotDurationSeconds - evt.fadeOutMs / 1000)
-    fadeParts.push(`afade=t=out:st=${start.toFixed(3)}:d=${(evt.fadeOutMs / 1000).toFixed(3)}`)
+    parts.push(`afade=t=out:st=${start.toFixed(3)}:d=${(evt.fadeOutMs / 1000).toFixed(3)}`)
   }
-  const chain = []
-  if (Math.abs(semitones) >= IDENTITY_PITCH_EPSILON_SEMITONES) {
-    chain.push(`rubberband=pitch=${Math.pow(2, semitones / 12).toFixed(6)}`)
-  }
-  chain.push(`volume=${gain.toFixed(6)}`, ...fadeParts)
-  const delayMs = Math.max(0, Math.round(evt.offsetSeconds * 1000))
-  chain.push(`adelay=${delayMs}|${delayMs}`)
-  return chain.join(',')
+  const delayMs = Math.max(0, Math.round((evt.offsetSeconds - batchStart) * 1000))
+  parts.push(`adelay=delays=${delayMs}:all=1`)
+  return parts.join(',')
 }
 
-// Renders one bounded batch of events (<= EVENT_BATCH_SIZE) against the shot
-// clip into its own full-duration track.
-async function renderEventBatchTrack({ shotPath, events, volume, durationSeconds, reporter }) {
-  const trackPath = tempPath('wav')
+// One sliced batch -> its own short FLAC track, plus the absolute offset it
+// needs to sit at in the final mix. asplit+per-branch+amix(normalize=0) is
+// written to a script file and passed via -filter_complex_script so a dense
+// batch can't hit a command-line length limit.
+async function renderSlicedBatch({ shotPath, batch, volume, reporter }) {
+  const trackPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
+  const { events, start, span } = batch
   try {
     const n = events.length
     const splitLabels = events.map((_, i) => `[s${i}]`).join('')
-    const parts = [`[0:a]asplit=${n}${splitLabels};`]
+    const parts = [`[0:a]aformat=channel_layouts=stereo,asplit=${n}${splitLabels};`]
     const mixLabels = []
     events.forEach((evt, i) => {
-      parts.push(`[s${i}]${eventBranchChain(evt, volume)}[d${i}];`)
+      parts.push(`[s${i}]${eventBranchChain(evt, volume, start)}[d${i}];`)
       mixLabels.push(`[d${i}]`)
     })
-    parts.push(`${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0,apad=whole_dur=${durationSeconds.toFixed(6)}[out]`)
+    parts.push(
+      `${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0:normalize=0,` +
+        `apad=whole_dur=${span.toFixed(6)}[out]`
+    )
     fs.writeFileSync(scriptPath, parts.join(''))
 
     await runFfmpegToFile(
@@ -192,100 +214,15 @@ async function renderEventBatchTrack({ shotPath, events, volume, durationSeconds
         '-y', '-i', shotPath,
         '-filter_complex_script', scriptPath,
         '-map', '[out]',
-        '-t', durationSeconds.toFixed(6),
-        '-c:a', 'pcm_s16le', '-ar', '44100', trackPath
+        '-t', span.toFixed(6),
+        ...INTERMEDIATE_CODEC, trackPath
       ],
-      { onProgress: (sec) => reporter?.tick(sec / durationSeconds) }
+      { onProgress: (sec) => reporter?.tick(sec, span) }
     )
-    reporter?.completeUnit()
-    return trackPath
+    reporter?.completePhase(span)
+    return { path: trackPath, offset: start }
   } finally {
     await cleanupFiles([scriptPath])
-  }
-}
-
-// Merges several already-rendered, already-full-duration batch tracks into
-// one - a plain amix with no rubberband/fades involved, so unlike the batch
-// renders above this is cheap regardless of how many batches there are.
-async function combineBatchTracks({ trackPaths, durationSeconds, reporter }) {
-  if (trackPaths.length === 1) return trackPaths[0]
-  const mergedPath = tempPath('wav')
-  const scriptPath = tempPath('txt')
-  try {
-    const n = trackPaths.length
-    const mixLabels = trackPaths.map((_, i) => `[${i}:a]`).join('')
-    fs.writeFileSync(scriptPath, `${mixLabels}amix=inputs=${n}:duration=longest:dropout_transition=0,apad=whole_dur=${durationSeconds.toFixed(6)}[out]`)
-    const inputArgs = trackPaths.flatMap((p) => ['-i', p])
-    await runFfmpegToFile(
-      [
-        '-y', ...inputArgs,
-        '-filter_complex_script', scriptPath,
-        '-map', '[out]',
-        '-t', durationSeconds.toFixed(6),
-        '-c:a', 'pcm_s16le', '-ar', '44100', mergedPath
-      ],
-      { onProgress: (sec) => reporter?.tick(sec / durationSeconds) }
-    )
-    reporter?.completeUnit()
-    return mergedPath
-  } finally {
-    await cleanupFiles([scriptPath])
-  }
-}
-
-// Places a copy of the baked one-shot "shot" clip at each simulated event's
-// own offset, with that event's own pitch/volume/fade - see the module
-// comment above for why this is asplit+adelay+amix rather than one -i per
-// shot (avoids opening the same short file hundreds of times), why the graph
-// is written to a script file rather than inlined, and why it's batched
-// (EVENT_BATCH_SIZE above) rather than one single graph for every event.
-async function renderEventBasedTrack({ inputPath, loopStart, loopEnd, filters, volume, events, durationSeconds, reporter, label }) {
-  const shotPath = tempPath('wav')
-  reporter?.step(`Preparing ${label} (${events.length} play${events.length === 1 ? '' : 's'})…`)
-  // Scatter/scheduled sounds never crossfade against themselves (a one-shot
-  // isn't looped back-to-back) - matches effectiveCrossfadeSeconds' existing
-  // reasoning across the rest of the app.
-  const result = await renderClipToPath({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds: 0, speedPitch: null, outputPath: shotPath })
-  if (!result.ok) {
-    await cleanupFiles([shotPath])
-    throw new Error(result.error ?? 'shot render failed')
-  }
-  try {
-    if (events.length === 0) {
-      // Nothing ever fires in this export window - a silent track of the
-      // right length, so the final amix still has something to combine.
-      const trackPath = tempPath('wav')
-      reporter?.step(`${label} never plays in this window — skipping.`)
-      await runFfmpegToFile([
-        '-y', '-f', 'lavfi', '-i', `anullsrc=r=44100:cl=mono`,
-        '-t', durationSeconds.toFixed(6),
-        '-c:a', 'pcm_s16le', trackPath
-      ])
-      reporter?.completeUnit()
-      return trackPath
-    }
-
-    const totalBatches = Math.ceil(events.length / EVENT_BATCH_SIZE)
-    const batchTracks = []
-    try {
-      for (let i = 0; i < events.length; i += EVENT_BATCH_SIZE) {
-        const batch = events.slice(i, i + EVENT_BATCH_SIZE)
-        const batchNum = batchTracks.length + 1
-        if (totalBatches > 1) reporter?.step(`Placing ${label}: batch ${batchNum} of ${totalBatches}…`)
-        else reporter?.step(`Placing ${label}'s ${events.length} play${events.length === 1 ? '' : 's'}…`)
-        batchTracks.push(await renderEventBatchTrack({ shotPath, events: batch, volume, durationSeconds, reporter }))
-      }
-    } catch (err) {
-      await cleanupFiles(batchTracks)
-      throw err
-    }
-    if (batchTracks.length === 1) return batchTracks[0]
-    reporter?.step(`Combining ${batchTracks.length} batches of ${label}…`)
-    const merged = await combineBatchTracks({ trackPaths: batchTracks, durationSeconds, reporter })
-    await cleanupFiles(batchTracks)
-    return merged
-  } finally {
-    await cleanupFiles([shotPath])
   }
 }
 
@@ -297,87 +234,167 @@ const FORMAT_CODECS = {
   ogg: ['-c:a', 'libvorbis', '-b:a', '192k']
 }
 
-// Whole-mix EQ/gain and fade in/out apply *last*, after every per-sound
-// track has already been combined - the owner's own explicit ordering
-// ("should be applied on the whole mix after everything"). A simple three-
-// control set (highpass/lowpass/gain) for v1, not the full 7-band
-// parametric EQ the per-sound Remix editor has - deliberately scoped down,
-// noted directly rather than silently expanded.
-async function renderFinalMixdown({ trackPaths, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
-  const mixParts = []
-  const n = trackPaths.length
-  const mixLabels = trackPaths.map((_, i) => `[${i}:a]`).join('')
-  mixParts.push(`${mixLabels}amix=inputs=${n}:duration=longest:dropout_transition=0,apad=whole_dur=${durationSeconds.toFixed(6)}[mixed]`)
+// The one heavy pass: every loop shot tiled via -stream_loop through its own
+// `volume`, every sliced batch track delayed to its absolute offset, all
+// summed (normalize=0), then whole-mix highpass/lowpass/gain and fade in/out
+// applied last, then encoded to the chosen format.
+async function renderFinalMixdown({
+  loopShots,
+  batchTracks,
+  durationSeconds,
+  wholeMixFilters,
+  fadeInSeconds,
+  fadeOutSeconds,
+  outputPath,
+  format,
+  reporter
+}) {
+  const inputArgs = []
+  const graph = []
+  const mixLabels = []
+  let idx = 0
 
-  const postParts = []
-  if (wholeMixFilters?.highpassHz > 0) postParts.push(`highpass=f=${wholeMixFilters.highpassHz}`)
-  if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) postParts.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
-  if (wholeMixFilters?.gainDb) postParts.push(`volume=${wholeMixFilters.gainDb}dB`)
-  if (fadeInSeconds > 0) postParts.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
-  if (fadeOutSeconds > 0) postParts.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
+  for (const shot of loopShots) {
+    inputArgs.push('-stream_loop', '-1', '-i', shot.path)
+    graph.push(`[${idx}:a]aformat=channel_layouts=stereo,volume=${shot.volume.toFixed(6)}[m${idx}]`)
+    mixLabels.push(`[m${idx}]`)
+    idx += 1
+  }
+  for (const track of batchTracks) {
+    inputArgs.push('-i', track.path)
+    const delayMs = Math.max(0, Math.round(track.offset * 1000))
+    graph.push(`[${idx}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${idx}]`)
+    mixLabels.push(`[m${idx}]`)
+    idx += 1
+  }
 
-  const lastLabel = postParts.length > 0 ? '[out]' : '[mixed]'
-  if (postParts.length > 0) mixParts.push(`[mixed]${postParts.join(',')}[out]`)
+  // Nothing ever plays (every sound was a scatter/scheduled one that never
+  // fires in this window) - still produce a valid, correctly-long silent
+  // file rather than erroring.
+  if (idx === 0) {
+    inputArgs.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo')
+    graph.push(`[0:a]anull[m0]`)
+    mixLabels.push('[m0]')
+    idx = 1
+  }
+
+  const post = []
+  if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)
+  if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) post.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
+  if (wholeMixFilters?.gainDb) post.push(`volume=${wholeMixFilters.gainDb}dB`)
+  if (fadeInSeconds > 0) post.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
+  if (fadeOutSeconds > 0) {
+    post.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
+  }
+
+  graph.push(
+    `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
+      `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
+  )
 
   const scriptPath = tempPath('txt')
-  fs.writeFileSync(scriptPath, mixParts.join(';'))
-
+  fs.writeFileSync(scriptPath, graph.join(';'))
   const codecArgs = FORMAT_CODECS[format] ?? FORMAT_CODECS.wav
   try {
-    const inputArgs = trackPaths.flatMap((p) => ['-i', p])
     await runFfmpegToFile(
       [
         '-y', ...inputArgs,
         '-filter_complex_script', scriptPath,
-        '-map', lastLabel,
+        '-map', '[out]',
         '-t', durationSeconds.toFixed(6),
-        ...codecArgs,
-        '-ar', '44100',
+        ...codecArgs, '-ar', '44100', '-ac', '2',
         outputPath
       ],
-      { onProgress: (sec) => reporter?.tick(sec / durationSeconds) }
+      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
     )
-    reporter?.completeUnit()
+    reporter?.completePhase(durationSeconds)
   } finally {
     await cleanupFiles([scriptPath])
   }
 }
 
-// sounds: [{ inputPath, playMode, loopStart, loopEnd, filters, speedPitch,
-//   crossfadeSeconds, volume, events }] - already fully resolved by the
-// renderer (library lookup + simulation both happen there; this module only
-// renders). events is null/empty for 'loop' mode, an array of
-// {offsetSeconds, pitchSemitones, volumeScale, fadeInMs, fadeOutMs,
-// shotDurationSeconds} for 'scatter'/'scheduled'.
+// sounds: [{ soundId, inputPath, cachedClipPath, name, playMode, loopStart,
+//   loopEnd, filters, speedPitch, crossfadeSeconds, volume, events }] -
+//   already fully resolved by the renderer + IPC handler (library lookup,
+//   path resolution, event simulation). events is null/empty for 'loop'
+//   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
+//   fadeInMs, fadeOutMs, shotDurationSeconds } for 'scatter'/'scheduled'.
 export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
-  const reporter = makeReporter(onProgress, sounds)
+  // Split sounds into loop vs. event-based, plan every batch up front, and
+  // sum the total audio-seconds of work so progress can be weighted.
+  const loopSounds = []
+  const eventSounds = []
+  for (const sound of sounds) {
+    if ((sound.playMode ?? 'loop') === 'loop') {
+      loopSounds.push(sound)
+    } else {
+      const events = sound.events ?? []
+      if (events.length === 0) continue // never fires in this window - skip entirely
+      const shotDur = Math.max(0.05, (sound.loopEnd ?? 0) - (sound.loopStart ?? 0))
+      eventSounds.push({ sound, batches: planBatches(events, shotDur) })
+    }
+  }
 
-  const trackPaths = []
+  const totalWorkSeconds =
+    durationSeconds + eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0)
+  const reporter = makeReporter(onProgress, totalWorkSeconds)
+
+  if (sounds.length === 0) return { ok: false, error: 'No sounds to export' }
+
+  const loopShotPaths = [] // owned loop shots - needed through the final mixdown, cleaned at the very end
+  const batchTrackPaths = []
   try {
-    let idx = 0
-    for (const sound of sounds) {
-      idx += 1
-      const label = `"${sound.name ?? `sound ${idx}`}" (${idx}/${sounds.length})`
-      const track =
-        sound.playMode === 'loop'
-          ? await renderLoopModeTrack({ ...sound, durationSeconds, reporter, label })
-          : await renderEventBasedTrack({ ...sound, durationSeconds, reporter, label })
-      trackPaths.push(track)
+    const loopShots = []
+    let n = 0
+    for (const sound of loopSounds) {
+      n += 1
+      reporter.step(`Preparing "${sound.name ?? `sound ${n}`}" (looped)…`)
+      const shot = await bakeShotClip(sound, { forLoop: true })
+      if (shot.owned) loopShotPaths.push(shot.path)
+      loopShots.push({ path: shot.path, volume: sound.volume ?? 0.7 })
     }
-    if (trackPaths.length === 0) {
-      throw new Error('No sounds to export')
+
+    const batchTracks = []
+    for (const { sound, batches } of eventSounds) {
+      n += 1
+      const label = `"${sound.name ?? `sound ${n}`}"`
+      reporter.step(`Preparing ${label} (${sound.events.length} play${sound.events.length === 1 ? '' : 's'})…`)
+      const shot = await bakeShotClip(sound, { forLoop: false })
+      try {
+        for (let b = 0; b < batches.length; b += 1) {
+          if (batches.length > 1) reporter.step(`Placing ${label}: batch ${b + 1} of ${batches.length}…`)
+          else reporter.step(`Placing ${label}'s ${sound.events.length} play${sound.events.length === 1 ? '' : 's'}…`)
+          const track = await renderSlicedBatch({ shotPath: shot.path, batch: batches[b], volume: sound.volume ?? 0.7, reporter })
+          batchTrackPaths.push(track.path)
+          batchTracks.push(track)
+        }
+      } finally {
+        // the shot clip has done its job once every batch is placed
+        if (shot.owned) await cleanupFiles([shot.path])
+      }
     }
+
     reporter.step('Final mixdown + whole-mix processing…')
-    await renderFinalMixdown({ trackPaths, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
+    await renderFinalMixdown({
+      loopShots,
+      batchTracks,
+      durationSeconds,
+      wholeMixFilters,
+      fadeInSeconds,
+      fadeOutSeconds,
+      outputPath,
+      format,
+      reporter
+    })
     reporter.step(`Encoding to ${String(format || 'wav').toUpperCase()} — done.`)
     return { ok: true }
   } catch (err) {
     console.error('exportMix failed', err)
     return { ok: false, error: err.message }
   } finally {
-    await cleanupFiles(trackPaths)
+    await cleanupFiles([...loopShotPaths, ...batchTrackPaths])
   }
 }

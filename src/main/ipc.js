@@ -251,7 +251,14 @@ export function registerIpcHandlers() {
   // everything to the actual ffmpeg pipeline.
   ipcMain.handle('export:run', async (event, { sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath }) => {
     const resolvedSounds = sounds
-      .map((s) => ({ ...s, inputPath: library.getPlaybackPathForId(s.soundId) }))
+      .map((s) => ({
+        ...s,
+        inputPath: library.getPlaybackPathForId(s.soundId),
+        // a loop sound whose already-baked clip still matches its current
+        // trim/filters/crossfade/speed can be reused as-is (exportMix skips
+        // re-baking it) - null when stale or never baked
+        cachedClipPath: library.getLoopClipPathForId(s.soundId)
+      }))
       .filter((s) => s.inputPath)
     if (resolvedSounds.length === 0) return { ok: false, error: 'No exportable sounds in this preset' }
     // Throttle so a fast render doesn't flood the renderer with tick events;
