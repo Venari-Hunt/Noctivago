@@ -573,12 +573,17 @@ main {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 20px;
-  width: 360px;
-  max-width: 90vw;
+  /* Grows with the window instead of a fixed 360px that squeezed content
+     (preset names especially) into unreadable ellipsis on the default
+     480px-wide window. Capped so a wide monitor doesn't stretch a short
+     dialog across the screen. */
+  width: min(440px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
 }
 
 .modal-card-wide {
-  width: 680px;
+  width: min(680px, 94vw);
 }
 
 .modal-card h2 {

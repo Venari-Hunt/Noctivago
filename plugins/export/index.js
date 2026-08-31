@@ -94,6 +94,11 @@ export default class ExportPlugin {
           </select>
         </label>
 
+        <label class="export-check">
+          <input id="export-faster" type="checkbox" />
+          <span>Faster export — uses more CPU and memory. Renders several parts of the export at once; noticeably quicker on long presets with lots of Random Interval or Scheduled sounds. Leave off if you want to keep working on the PC while it runs.</span>
+        </label>
+
         <h3>Whole-mix processing <span class="export-hint-inline">(applied last, after everything is combined)</span></h3>
         <label>
           <span>Highpass</span>
@@ -135,6 +140,7 @@ export default class ExportPlugin {
       preset: container.querySelector('#export-preset'),
       length: container.querySelector('#export-length'),
       format: container.querySelector('#export-format'),
+      faster: container.querySelector('#export-faster'),
       highpass: container.querySelector('#export-highpass'),
       highpassValue: container.querySelector('#export-highpass-value'),
       lowpass: container.querySelector('#export-lowpass'),
@@ -162,6 +168,20 @@ export default class ExportPlugin {
     this.els.lowpass.addEventListener('input', () => this.updateWholeMixLabels())
     this.els.gain.addEventListener('input', () => this.updateWholeMixLabels())
     this.els.run.addEventListener('click', () => this.runExport())
+
+    // "Faster export" is a per-machine resource choice made right before an
+    // export, so it lives here rather than in the global Settings modal - but
+    // it's still persisted (via the same settings store the export:run handler
+    // reads) so the last choice sticks between sessions.
+    this.els.faster.addEventListener('change', () => {
+      this.api.settings.setFasterExportEnabled(this.els.faster.checked)
+    })
+    this.api.settings
+      .get()
+      .then((settings) => {
+        this.els.faster.checked = Boolean(settings.fasterExport)
+      })
+      .catch((err) => console.error('Export: failed to read settings', err))
 
     this.updateWholeMixLabels()
     this.refresh().catch((err) => console.error('Export: failed to load presets/library', err))

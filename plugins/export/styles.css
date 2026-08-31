@@ -39,6 +39,22 @@
   flex-shrink: 0;
 }
 
+.export-tab label.export-check {
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 4px;
+  line-height: 1.5;
+}
+
+.export-tab label.export-check input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.export-tab label.export-check > span {
+  flex: 1;
+}
+
 .export-tab input[type='text'],
 .export-tab input[type='number'],
 .export-tab select {
