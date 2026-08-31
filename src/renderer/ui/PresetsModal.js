@@ -16,7 +16,12 @@ export function renderPresetList(listEl, presets, callbacks) {
     const name = document.createElement('span')
     name.className = 'preset-row-name'
     name.textContent = preset.name
+    name.title = preset.name
     li.appendChild(name)
+
+    const actions = document.createElement('div')
+    actions.className = 'preset-row-actions'
+    li.appendChild(actions)
 
     const loadBtn = document.createElement('button')
     loadBtn.className = 'btn btn-small btn-primary btn-icon-text'
@@ -24,7 +29,7 @@ export function renderPresetList(listEl, presets, callbacks) {
     loadBtn.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Load'
     loadBtn.addEventListener('click', () => callbacks.onLoad(preset))
-    li.appendChild(loadBtn)
+    actions.appendChild(loadBtn)
 
     if (callbacks.onExport) {
       const exportBtn = document.createElement('button')
@@ -33,7 +38,7 @@ export function renderPresetList(listEl, presets, callbacks) {
       exportBtn.innerHTML =
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Export'
       exportBtn.addEventListener('click', () => callbacks.onExport(preset))
-      li.appendChild(exportBtn)
+      actions.appendChild(exportBtn)
     }
 
     const deleteBtn = document.createElement('button')
@@ -42,7 +47,7 @@ export function renderPresetList(listEl, presets, callbacks) {
     deleteBtn.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg> Delete'
     deleteBtn.addEventListener('click', () => callbacks.onDelete(preset.id))
-    li.appendChild(deleteBtn)
+    actions.appendChild(deleteBtn)
 
     listEl.appendChild(li)
   }
