@@ -11,6 +11,17 @@ const FILTER_SMOOTHING_SECONDS = 0.01
 // time can never need a value the node wasn't built to hold.
 const MAX_ECHO_DELAY_SECONDS = 2.0
 
+// Default length of the loop-seam crossfade in stream mode (see _tick /
+// _startCrossfade below). Mirrors loopClip.js's DEFAULT_CROSSFADE_SECONDS
+// (the baked buffer-mode path's own default) so a long, stream-only sound
+// loops with roughly the same seam feel as a short one that got baked -
+// buffer mode still wins on sample-accuracy, this just closes the gap for
+// files whose loop region is too long to ever bake. A sound's per-sound
+// entry.crossfadeSeconds overrides this; an explicit 0 there falls back to
+// the old hard seek-back (a real "off" switch, matching every other
+// 0-means-off control in the app).
+const DEFAULT_STREAM_CROSSFADE_SECONDS = 0.2
+
 // How long a 'waiting'/stalled <audio> element gets before this treats it as
 // a real problem rather than normal, brief re-buffering. See the 'waiting'
 // listener below for why this exists at all: the sound:// stream (hand-
@@ -49,8 +60,20 @@ function eqBandStageCount(band) {
   return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
 }
 
+// Plays the original file by streaming it through an <audio> element, for
+// sounds whose loop region is too long to bake into a buffer clip (see
+// BufferSoundSource for the short-region path). Loops seamlessly via a
+// two-element crossfade at the seam: two <audio> elements of the same file
+// feed a pair of crossfade GainNodes that sum into the shared filter chain;
+// as the active element nears loopEnd the standby element (pre-seeked to
+// loopStart) fades in over crossfadeSeconds while the active fades out, then
+// the two swap roles. This is the streaming counterpart of the baked clip's
+// own tail/head crossfade - it can't be sample-accurate (the seam trigger is
+// still rAF-polled currentTime, documented imprecise), but the crossfade
+// masks that jitter far better than the old hard `currentTime = loopStart`
+// seek did. entry.crossfadeSeconds === 0 opts back out to that hard seek.
 export class LocalFileSoundSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume, filters, speed }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, filters, speed, crossfadeSeconds }) {
     this.engine = engine
     this.soundId = soundId
     this.loopStart = loopStart ?? 0
@@ -62,10 +85,6 @@ export class LocalFileSoundSource {
     this._stallTimeoutId = null
     this._recoveryAttempts = 0
 
-    this.audioEl = new Audio()
-    this.audioEl.crossOrigin = 'anonymous'
-    this.audioEl.preload = 'auto'
-    this.audioEl.src = `sound://${soundId}`
     // Speed is the only speed/pitch/reverse control applied to stream mode -
     // playbackRate maps to it directly, and the browser's own default
     // preservesPitch=true keeps this a pure tempo change. Pitch and reverse
@@ -75,16 +94,42 @@ export class LocalFileSoundSource {
     // long to bake, same category as buffer mode's other seam-smoothness-
     // only advantages over streaming.
     this.speed = speed ?? 1
-    this.audioEl.playbackRate = this.speed
-    this._bindRecoveryListeners()
+    // Nullable - null means "use DEFAULT_STREAM_CROSSFADE_SECONDS". See
+    // _crossfadeSeconds() / _tick() for how it drives the loop-seam blend.
+    this.crossfadeSeconds = crossfadeSeconds ?? null
 
-    this.sourceNode = engine.context.createMediaElementSource(this.audioEl)
+    // Two identical streaming voices of the same file. _active indexes which
+    // one is currently audible (crossfade gain 1); the other sits paused,
+    // seeked to loopStart, ready to fade in at the next seam. audioEl (a
+    // getter) is always the active one, so most of the code below reads as
+    // if there were a single element.
+    this._els = [new Audio(), new Audio()]
+    this._srcNodes = []
+    this._xfadeGains = []
+    for (let i = 0; i < this._els.length; i++) {
+      const el = this._els[i]
+      el.crossOrigin = 'anonymous'
+      el.preload = 'auto'
+      el.src = `sound://${soundId}`
+      el.playbackRate = this.speed
+      const srcNode = engine.context.createMediaElementSource(el)
+      const xfade = engine.context.createGain()
+      xfade.gain.value = i === 0 ? 1 : 0
+      srcNode.connect(xfade)
+      this._srcNodes.push(srcNode)
+      this._xfadeGains.push(xfade)
+    }
+    this._active = 0
+    this._crossfading = false
+    this._crossfadeTimeoutId = null
+
+    this._bindRecoveryListeners()
 
     // Same highpass -> lowpass -> gain chain as the Remix plugin's preview
     // (plugins/editor/audio/PreviewSource.js), so saved filters are audible
     // in the Mixer even for sounds too long to qualify for a baked buffer
     // clip. Loop-clip eligibility only affects seam smoothness, never
-    // whether filters apply.
+    // whether filters apply. Both crossfade voices feed into it.
     this.filters = filters ?? {}
 
     this.highpassNode = engine.context.createBiquadFilter()
@@ -148,7 +193,8 @@ export class LocalFileSoundSource {
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
-    this.sourceNode.connect(this.highpassNode)
+    this._xfadeGains[0].connect(this.highpassNode)
+    this._xfadeGains[1].connect(this.highpassNode)
     this.highpassNode.connect(this.lowpassNode)
     this._rebuildEqChain(this.filters.eq ?? [])
     this.filterGainNode.connect(this.gainNode)
@@ -162,52 +208,72 @@ export class LocalFileSoundSource {
     this.gainNode.connect(engine.masterGain)
   }
 
+  get audioEl() {
+    return this._els[this._active]
+  }
+
+  get _standbyEl() {
+    return this._els[1 - this._active]
+  }
+
+  get _activeXfadeGain() {
+    return this._xfadeGains[this._active].gain
+  }
+
+  get _standbyXfadeGain() {
+    return this._xfadeGains[1 - this._active].gain
+  }
+
   // 'waiting' fires whenever playback runs out of buffered data - this is
   // completely normal for a second or two while streaming catches up, so
   // this only acts if it's still stalled after STALL_RECOVERY_DELAY_MS with
   // no 'playing' event cancelling the timer in between. 'error' recovers
   // immediately, no delay - a real media error isn't going to resolve itself
-  // by waiting.
+  // by waiting. Bound to both crossfade voices; the standby only matters
+  // while it's mid-crossfade (otherwise it's deliberately paused).
   _bindRecoveryListeners() {
-    this.audioEl.addEventListener('waiting', () => {
-      if (!this.playing || this._stallTimeoutId) return
-      this._stallTimeoutId = setTimeout(() => {
-        this._stallTimeoutId = null
-        log.warn(`Sound ${this.soundId} stalled for ${STALL_RECOVERY_DELAY_MS}ms, attempting recovery`)
-        this._recover()
-      }, STALL_RECOVERY_DELAY_MS)
-    })
+    for (const el of this._els) {
+      el.addEventListener('waiting', () => {
+        if (!this.playing || this._stallTimeoutId) return
+        if (el !== this.audioEl && !this._crossfading) return
+        this._stallTimeoutId = setTimeout(() => {
+          this._stallTimeoutId = null
+          log.warn(`Sound ${this.soundId} stalled for ${STALL_RECOVERY_DELAY_MS}ms, attempting recovery`)
+          this._recover(el)
+        }, STALL_RECOVERY_DELAY_MS)
+      })
 
-    this.audioEl.addEventListener('playing', () => {
-      if (this._stallTimeoutId) {
-        clearTimeout(this._stallTimeoutId)
-        this._stallTimeoutId = null
-      }
-      // A sustained resume is a good sign the stream is healthy again -
-      // don't let one bad patch permanently eat into the retry budget for
-      // an otherwise long, mostly-fine listening session.
-      this._recoveryAttempts = 0
-    })
+      el.addEventListener('playing', () => {
+        if (this._stallTimeoutId) {
+          clearTimeout(this._stallTimeoutId)
+          this._stallTimeoutId = null
+        }
+        // A sustained resume is a good sign the stream is healthy again -
+        // don't let one bad patch permanently eat into the retry budget for
+        // an otherwise long, mostly-fine listening session.
+        this._recoveryAttempts = 0
+      })
 
-    this.audioEl.addEventListener('error', () => {
-      log.error(`Sound ${this.soundId} audio element error`, this.audioEl.error)
-      if (this.playing) this._recover()
-    })
+      el.addEventListener('error', () => {
+        log.error(`Sound ${this.soundId} audio element error`, el.error)
+        if (this.playing && (el === this.audioEl || this._crossfading)) this._recover(el)
+      })
+    }
   }
 
-  async _recover() {
+  async _recover(el) {
     if (!this.playing) return
     if (this._recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
       log.error(`Sound ${this.soundId} gave up after ${MAX_RECOVERY_ATTEMPTS} recovery attempts`)
       return
     }
     this._recoveryAttempts += 1
-    const resumeAt = this.audioEl.currentTime
+    const resumeAt = el.currentTime
     log.info(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts}, resuming at ${resumeAt.toFixed(2)}s`)
     try {
-      this.audioEl.load()
-      this.audioEl.currentTime = resumeAt
-      await this.audioEl.play()
+      el.load()
+      el.currentTime = resumeAt
+      await el.play()
       log.info(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts} succeeded`)
     } catch (err) {
       log.error(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts} failed`, err)
@@ -224,6 +290,15 @@ export class LocalFileSoundSource {
   setLoopPoints(loopStart, loopEnd) {
     this.loopStart = loopStart
     this.loopEnd = loopEnd
+    // Keep an idle standby voice parked at the new loop start so the next
+    // crossfade blends from the right place.
+    if (!this._crossfading && this._standbyEl.paused) {
+      try {
+        this._standbyEl.currentTime = this.loopStart
+      } catch {
+        // seeking a not-yet-loaded element throws; it'll be re-seeked in play()
+      }
+    }
   }
 
   hasLoopPoints(loopStart, loopEnd) {
@@ -323,24 +398,121 @@ export class LocalFileSoundSource {
 
   setSpeed(speed) {
     this.speed = speed ?? 1
-    this.audioEl.playbackRate = this.speed
+    for (const el of this._els) el.playbackRate = this.speed
   }
 
   hasSpeed(speed) {
     return this.speed === (speed ?? 1)
   }
 
+  setCrossfadeSeconds(crossfadeSeconds) {
+    this.crossfadeSeconds = crossfadeSeconds ?? null
+  }
+
+  hasCrossfadeSeconds(crossfadeSeconds) {
+    return this.crossfadeSeconds === (crossfadeSeconds ?? null)
+  }
+
   _loopEnd() {
     return this.loopEnd ?? this.audioEl.duration
+  }
+
+  // Resolved seam-crossfade length: the per-sound override (null -> the app
+  // default), clamped to a quarter of the loop region so it can't misbehave
+  // on a short region, and 0 whenever the loop end isn't known yet. An
+  // explicit 0 (slider at 0ms) returns 0, which _tick() reads as "hard
+  // seek-back, no crossfade" - the pre-crossfade behavior, kept as a real
+  // opt-out.
+  _crossfadeSeconds() {
+    const end = this._loopEnd()
+    if (!Number.isFinite(end)) return 0
+    const region = end - this.loopStart
+    if (!(region > 0)) return 0
+    const raw = this.crossfadeSeconds ?? DEFAULT_STREAM_CROSSFADE_SECONDS
+    return Math.max(0, Math.min(raw, region / 4))
   }
 
   _tick() {
     if (!this.playing) return
     const end = this._loopEnd()
-    if (Number.isFinite(end) && this.audioEl.currentTime >= end - LOOP_EPSILON_SECONDS) {
-      this.audioEl.currentTime = this.loopStart
+    if (Number.isFinite(end)) {
+      const fade = this._crossfadeSeconds()
+      if (fade > 0) {
+        if (!this._crossfading && this.audioEl.currentTime >= end - fade) {
+          this._startCrossfade(fade)
+        }
+      } else if (this.audioEl.currentTime >= end - LOOP_EPSILON_SECONDS) {
+        this.audioEl.currentTime = this.loopStart
+      }
     }
     this._rafId = requestAnimationFrame(() => this._tick())
+  }
+
+  // Blends the active voice's tail into the standby voice's head over `fade`
+  // seconds, then swaps their roles (see _finalizeCrossfade). The standby is
+  // started from loopStart right now - its first few ms may be near-silent
+  // if the element hasn't resumed yet, but under a ramp that starts at gain
+  // 0 that contribution is inaudible, and on every loop after the first the
+  // standby is a warm, already-buffered element.
+  _startCrossfade(fade) {
+    this._crossfading = true
+    const ctx = this.engine.context
+    const now = ctx.currentTime
+    const standby = this._standbyEl
+    try {
+      standby.currentTime = this.loopStart
+    } catch {
+      // not loaded yet - extremely unlikely this deep into playback; the
+      // ramp below still runs and the element catches up
+    }
+    standby.playbackRate = this.speed
+    standby.play().catch(() => {})
+
+    const activeGain = this._activeXfadeGain
+    const standbyGain = this._standbyXfadeGain
+    activeGain.cancelScheduledValues(now)
+    activeGain.setValueAtTime(activeGain.value, now)
+    activeGain.linearRampToValueAtTime(0, now + fade)
+    standbyGain.cancelScheduledValues(now)
+    standbyGain.setValueAtTime(standbyGain.value, now)
+    standbyGain.linearRampToValueAtTime(1, now + fade)
+
+    if (this._crossfadeTimeoutId) clearTimeout(this._crossfadeTimeoutId)
+    this._crossfadeTimeoutId = setTimeout(() => {
+      this._crossfadeTimeoutId = null
+      this._finalizeCrossfade()
+    }, fade * 1000 + 40)
+  }
+
+  // Completes a crossfade: the standby voice becomes active, the old active
+  // voice is paused, rewound to loopStart, and becomes the new standby.
+  // Also called synchronously from pause() when a crossfade is in flight, so
+  // a pause mid-seam resumes cleanly from just after the loop point rather
+  // than from a half-faded state.
+  _finalizeCrossfade() {
+    const ctx = this.engine.context
+    const now = ctx.currentTime
+    const retiring = this.audioEl
+
+    this._active = 1 - this._active
+
+    // Snap to exact end-state gains regardless of where the ramps landed.
+    this._activeXfadeGain.cancelScheduledValues(now)
+    this._activeXfadeGain.setValueAtTime(1, now)
+    this._standbyXfadeGain.cancelScheduledValues(now)
+    this._standbyXfadeGain.setValueAtTime(0, now)
+
+    try {
+      retiring.pause()
+    } catch {
+      // ignore
+    }
+    try {
+      retiring.currentTime = this.loopStart
+    } catch {
+      // ignore
+    }
+    this._crossfading = false
   }
 
   async play() {
@@ -349,12 +521,34 @@ export class LocalFileSoundSource {
       clearTimeout(this._pauseTimeoutId)
       this._pauseTimeoutId = null
     }
+
+    const ctx = this.engine.context
+    // A prior pause may have interrupted a crossfade and left the gains
+    // mid-ramp - reset to the clean active/standby state before resuming.
+    if (this._crossfadeTimeoutId) {
+      clearTimeout(this._crossfadeTimeoutId)
+      this._crossfadeTimeoutId = null
+    }
+    this._crossfading = false
+    const resetAt = ctx.currentTime
+    this._activeXfadeGain.cancelScheduledValues(resetAt)
+    this._activeXfadeGain.setValueAtTime(1, resetAt)
+    this._standbyXfadeGain.cancelScheduledValues(resetAt)
+    this._standbyXfadeGain.setValueAtTime(0, resetAt)
+
+    for (const el of this._els) el.playbackRate = this.speed
+    try {
+      if (this._standbyEl.paused) this._standbyEl.currentTime = this.loopStart
+    } catch {
+      // ignore - re-seeked at the next crossfade
+    }
+
     const end = this._loopEnd()
     if (this.audioEl.currentTime < this.loopStart || (Number.isFinite(end) && this.audioEl.currentTime >= end)) {
       this.audioEl.currentTime = this.loopStart
     }
     await this.audioEl.play()
-    const now = this.engine.context.currentTime
+    const now = ctx.currentTime
     this.gainNode.gain.cancelScheduledValues(now)
     this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
     this.gainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
@@ -375,9 +569,14 @@ export class LocalFileSoundSource {
       clearTimeout(this._stallTimeoutId)
       this._stallTimeoutId = null
     }
+    if (this._crossfadeTimeoutId) {
+      clearTimeout(this._crossfadeTimeoutId)
+      this._crossfadeTimeoutId = null
+      this._finalizeCrossfade()
+    }
     this._pauseTimeoutId = setTimeout(() => {
       this._pauseTimeoutId = null
-      this.audioEl.pause()
+      for (const el of this._els) el.pause()
     }, RAMP_SECONDS * 1000 + 20)
   }
 
@@ -395,10 +594,17 @@ export class LocalFileSoundSource {
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     if (this._stallTimeoutId) clearTimeout(this._stallTimeoutId)
-    this.audioEl.pause()
-    this.audioEl.removeAttribute('src')
-    this.audioEl.load()
-    this.sourceNode.disconnect()
+    if (this._crossfadeTimeoutId) {
+      clearTimeout(this._crossfadeTimeoutId)
+      this._crossfadeTimeoutId = null
+    }
+    for (const el of this._els) {
+      el.pause()
+      el.removeAttribute('src')
+      el.load()
+    }
+    for (const node of this._srcNodes) node.disconnect()
+    for (const gain of this._xfadeGains) gain.disconnect()
     this.highpassNode.disconnect()
     this.lowpassNode.disconnect()
     for (const node of this.eqNodes) node.disconnect()

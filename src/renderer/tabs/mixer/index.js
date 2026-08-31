@@ -334,6 +334,7 @@ function reconcileSource(entry) {
     if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
     if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
     if (!source.hasSpeed(entry.speedPitch?.speed)) source.setSpeed(entry.speedPitch?.speed)
+    if (!source.hasCrossfadeSeconds(entry.crossfadeSeconds)) source.setCrossfadeSeconds(entry.crossfadeSeconds)
   } else if (desiredKind === 'scatter-stream') {
     if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
     if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
@@ -489,7 +490,8 @@ async function getOrCreateSource(entry) {
             loopEnd: entry.loopEnd,
             volume,
             filters: entry.filters,
-            speed: entry.speedPitch?.speed
+            speed: entry.speedPitch?.speed,
+            crossfadeSeconds: entry.crossfadeSeconds
           })
     source.kind = isScatter ? 'scatter-stream' : isScheduled ? 'scheduled-stream' : 'loop-stream'
     if (isScatter) source.onShotStart = () => propagateSync(entry.id)

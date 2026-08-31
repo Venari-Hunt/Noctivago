@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.101 — Seamless looping for long sounds
+
+- Sounds whose loop region is too long to pre-process (anything over ~10 minutes) now loop with a smooth crossfade at the seam instead of a hard jump back to the start — the same seamless feel shorter sounds already had.
+- The "Loop crossfade" slider in Remix now affects these long sounds too; set it to 0 to go back to the plain instant jump.
+
 ## v0.1.100 — What's new, on demand + an even-faster export mode
 
 - The "What's new" screen (the changelog for the current version) can now be opened any time from Settings, not only the first launch after an update.
