@@ -339,9 +339,13 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     },
     // playMode 'scatter': instead of looping continuously, replay the
     // trimmed clip at a random gap (minGapSeconds-maxGapSeconds of silence
-    // between repeats) with a random pitch shift each time (minPitchSemitones-
-    // maxPitchSemitones; both at 0 means "fully random" rather than "no
-    // shift"), a random volume scale each time (minVolume-maxVolume, both at
+    // between repeats, or 0..2min if gapFullyRandom) with a random pitch shift
+    // each time (minPitchSemitones-maxPitchSemitones, or the whole ±12 st
+    // range if pitchFullyRandom - the two *FullyRandom flags are explicit
+    // toggles in the Remix scatter controls; before v0.1.105, leaving both
+    // pitch bounds at 0 was a hidden trigger for fully-random pitch, which the
+    // owner asked to make 0/0 mean literally "no variation" instead), a random
+    // volume scale each time (minVolume-maxVolume, both at
     // 1 means "always full volume" - unlike pitch, 0 isn't a neutral value
     // for volume, so there's no equivalent "both 0" special case here), and
     // an optional fade-in/fade-out envelope per shot (fadeInMs/fadeOutMs,
@@ -365,8 +369,10 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     scatter: {
       minGapSeconds: 5,
       maxGapSeconds: 35,
+      gapFullyRandom: false,
       minPitchSemitones: 0,
       maxPitchSemitones: 0,
+      pitchFullyRandom: false,
       minVolume: 1,
       maxVolume: 1,
       fadeInMs: 0,
@@ -394,6 +400,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
       // entry.scatter's own copies, reused directly rather than reinvented.
       minPitchSemitones: 0,
       maxPitchSemitones: 0,
+      pitchFullyRandom: false,
       minVolume: 1,
       maxVolume: 1,
       fadeInMs: 0,

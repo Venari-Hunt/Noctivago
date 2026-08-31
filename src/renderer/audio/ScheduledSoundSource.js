@@ -56,6 +56,7 @@ function normalizeSchedule(schedule) {
     intervalMinutes: schedule?.intervalMinutes ?? 60,
     minPitchSemitones: schedule?.minPitchSemitones ?? 0,
     maxPitchSemitones: schedule?.maxPitchSemitones ?? 0,
+    pitchFullyRandom: Boolean(schedule?.pitchFullyRandom),
     minVolume: schedule?.minVolume ?? 1,
     maxVolume: schedule?.maxVolume ?? 1,
     fadeInMs: schedule?.fadeInMs ?? 0,

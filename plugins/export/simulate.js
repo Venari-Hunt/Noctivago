@@ -8,20 +8,23 @@
 const DEFAULT_PITCH_RANGE_SEMITONES = 12
 const DEFAULT_MIN_GAP_SECONDS = 5
 const DEFAULT_MAX_GAP_SECONDS = 35
+const FULLY_RANDOM_MAX_GAP_SECONDS = 120
 
 function randomGapSeconds(scatter) {
+  if (scatter?.gapFullyRandom) {
+    return Math.random() * FULLY_RANDOM_MAX_GAP_SECONDS
+  }
   const min = Math.max(0, scatter?.minGapSeconds ?? DEFAULT_MIN_GAP_SECONDS)
   const max = Math.max(min, scatter?.maxGapSeconds ?? DEFAULT_MAX_GAP_SECONDS)
   return min + Math.random() * (max - min)
 }
 
 function randomPitchSemitones(scatter) {
+  if (scatter?.pitchFullyRandom) {
+    return -DEFAULT_PITCH_RANGE_SEMITONES + Math.random() * 2 * DEFAULT_PITCH_RANGE_SEMITONES
+  }
   let min = scatter?.minPitchSemitones ?? 0
   let max = scatter?.maxPitchSemitones ?? 0
-  if (min === 0 && max === 0) {
-    min = -DEFAULT_PITCH_RANGE_SEMITONES
-    max = DEFAULT_PITCH_RANGE_SEMITONES
-  }
   if (max < min) max = min
   return min + Math.random() * (max - min)
 }

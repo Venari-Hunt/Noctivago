@@ -2,19 +2,29 @@ import log from 'electron-log/renderer'
 
 const RAMP_SECONDS = 0.15
 // Matches the Remix plugin's Pitch slider range (plugins/editor/index.js) -
-// reused here as the "roll anywhere in the normal range" default for the
-// explicit "both bounds at 0 means fully random, not disabled" case (see
-// scatter config below), so a freshly-enabled scatter sound with untouched
-// pitch controls sounds obviously varied rather than silently doing nothing.
+// the span rolled across when the explicit `pitchFullyRandom` toggle is on.
+// (Before v0.1.105 this was a *hidden* behavior triggered by leaving both
+// pitch bounds at 0; the owner asked for 0/0 to mean literally "no pitch
+// variation" and for "fully random" to be an explicit, visible checkbox
+// instead - see the scatter config in library.js.)
 const DEFAULT_PITCH_RANGE_SEMITONES = 12
 const DEFAULT_MIN_GAP_SECONDS = 5
 const DEFAULT_MAX_GAP_SECONDS = 35
+// The gap span rolled across when the explicit `gapFullyRandom` toggle is on
+// (0 .. this). Not the 3600s the Remix number field allows - a fully-random
+// gap that averaged half an hour would just be "barely ever plays"; 2 min is
+// a generous ceiling for "scattered ambience" and the explicit min/max
+// fields cover anything wider. Feel-tunable (flagged in the inbox Questions).
+const FULLY_RANDOM_MAX_GAP_SECONDS = 120
 
 // Game-engine "scattered ambience emitter" pattern (Wwise Random Container /
 // FMOD Scatterer Instrument / Unity Audio Random Container) - re-triggers a
 // short clip on a randomized gap instead of looping it back-to-back, with a
 // randomized pitch each time. Shared by both scatter source variants below.
 function randomGapSeconds(scatter) {
+  if (scatter?.gapFullyRandom) {
+    return Math.random() * FULLY_RANDOM_MAX_GAP_SECONDS
+  }
   const min = Math.max(0, scatter?.minGapSeconds ?? DEFAULT_MIN_GAP_SECONDS)
   const max = Math.max(min, scatter?.maxGapSeconds ?? DEFAULT_MAX_GAP_SECONDS)
   return min + Math.random() * (max - min)
@@ -26,15 +36,15 @@ function randomGapSeconds(scatter) {
 // third copy, now that Scheduled sounds get the same per-shot pitch/volume/
 // fade controls Scatter already has.
 export function randomPitchSemitones(scatter) {
+  // `pitchFullyRandom` (explicit toggle): roll across the whole ±12 st range,
+  // ignoring the min/max bounds entirely. Otherwise honor the bounds as set -
+  // 0/0 now means literally "no pitch variation" (v0.1.105; before that, 0/0
+  // was a hidden trigger for this fully-random behavior).
+  if (scatter?.pitchFullyRandom) {
+    return -DEFAULT_PITCH_RANGE_SEMITONES + Math.random() * 2 * DEFAULT_PITCH_RANGE_SEMITONES
+  }
   let min = scatter?.minPitchSemitones ?? 0
   let max = scatter?.maxPitchSemitones ?? 0
-  // Explicit user-requested special case: both bounds left at their neutral
-  // default means "fully random," not "no pitch variation" - matches how
-  // this feature was scoped (see noctivago_task_list memory / Board.md).
-  if (min === 0 && max === 0) {
-    min = -DEFAULT_PITCH_RANGE_SEMITONES
-    max = DEFAULT_PITCH_RANGE_SEMITONES
-  }
   if (max < min) max = min
   return min + Math.random() * (max - min)
 }
@@ -85,8 +95,10 @@ function normalizeScatter(scatter) {
   return JSON.stringify({
     minGapSeconds: scatter?.minGapSeconds ?? DEFAULT_MIN_GAP_SECONDS,
     maxGapSeconds: scatter?.maxGapSeconds ?? DEFAULT_MAX_GAP_SECONDS,
+    gapFullyRandom: Boolean(scatter?.gapFullyRandom),
     minPitchSemitones: scatter?.minPitchSemitones ?? 0,
     maxPitchSemitones: scatter?.maxPitchSemitones ?? 0,
+    pitchFullyRandom: Boolean(scatter?.pitchFullyRandom),
     minVolume: scatter?.minVolume ?? 1,
     maxVolume: scatter?.maxVolume ?? 1,
     fadeInMs: scatter?.fadeInMs ?? 0,

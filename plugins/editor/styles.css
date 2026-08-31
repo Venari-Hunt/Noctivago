@@ -274,6 +274,21 @@
   flex-shrink: 0;
 }
 
+.editor-scatter-controls label.editor-scatter-check {
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.editor-scatter-controls label.editor-scatter-check input {
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.editor-scatter-controls input:disabled {
+  opacity: 0.4;
+}
+
 .editor-scatter-controls input[type='range'] {
   flex: 1;
 }
