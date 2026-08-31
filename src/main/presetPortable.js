@@ -63,11 +63,15 @@ export function buildPortableBundle(presetId) {
     const sourcePath = library.getPlaybackPathForId(entry.id)
     let bundleName = null
     if (sourcePath) {
-      const base = path.basename(sourcePath)
+      // Name the bundled file after the sound's *original* file where we know
+      // it (a `copied` sound's on-disk name is an opaque `<id>.ext`), so the
+      // zip's contents are readable and `bundleName` matches `fileName`.
+      const ext = path.extname(sourcePath)
+      const originalBase = path.basename(entry.originalPath || '', path.extname(entry.originalPath || ''))
+      const base = `${originalBase || entry.name || 'sound'}${ext}`
       let candidate = base
       let i = 1
       while (usedNames.has(candidate.toLowerCase())) {
-        const ext = path.extname(base)
         candidate = `${path.basename(base, ext)} (${i})${ext}`
         i += 1
       }
@@ -206,9 +210,17 @@ export function analyzePortablePreset(manifest, bundle = null) {
 
   const librarySounds = library.listSounds()
   const sounds = manifest.sounds.map((s) => {
-    const match = matchExistingSound(s, librarySounds)
+    // When the bundle carries this sound's audio, use it - it comes with the
+    // sender's exact per-sound settings (trim/filters/EQ/play mode/volume).
+    // A basename match against the recipient's own library is NOT good enough
+    // here: two unrelated sounds can share a filename ("rain.mp3"), and
+    // silently substituting the recipient's own unconfigured copy is exactly
+    // the "imported preset plays everything on loop, loudly" bug. Only fall
+    // back to matching when the audio isn't in the file (a Phase-1 config-only
+    // .ncvpreset, or a sound whose file was missing when the sender exported).
     const bundleKey = String(s.bundleName || s.fileName || '').toLowerCase()
-    const fromBundle = !match && Boolean(bundle && bundleKey && bundle.has(bundleKey))
+    const fromBundle = Boolean(bundle && bundleKey && bundle.has(bundleKey))
+    const match = fromBundle ? null : matchExistingSound(s, librarySounds)
     return {
       name: s.name ?? '(unnamed)',
       fileName: s.fileName ?? '',
@@ -243,6 +255,12 @@ export function importLocatedSound(filePath, portableSound, { keepCopy = false }
     keepCopy
   })
   library.applyImportedSettings(entry.id, portableSound?.settings || {})
+  // The preset carries the per-sound mix volume separately from the shaping
+  // settings; seed the fresh entry with it so it also sounds right when
+  // played on its own, not only when this exact preset is loaded.
+  if (typeof portableSound?.volume === 'number') {
+    library.updateVolume(entry.id, portableSound.volume)
+  }
   return { soundId: entry.id, reused: false }
 }
 

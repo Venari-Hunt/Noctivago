@@ -137,7 +137,13 @@ export function registerIpcHandlers() {
     const result = await dialog.showOpenDialog({
       title: 'Import preset',
       properties: ['openFile'],
-      filters: [{ name: 'Noctívago preset', extensions: ['ncvpreset', 'json'] }]
+      // .zip: chat apps (WhatsApp, etc.) often append it when forwarding a
+      // .ncvpreset, since the file is really a zip - readPortablePresetFile
+      // sniffs the content, so the extension doesn't matter once it's picked.
+      filters: [
+        { name: 'Noctívago preset', extensions: ['ncvpreset', 'zip', 'json'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
     })
     if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
 

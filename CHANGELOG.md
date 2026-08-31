@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.107 — Fix: shared presets losing their sound settings
+
+- Importing a shared preset (.ncvpreset with the audio bundled in) no longer substitutes your own sounds when a filename happens to match. It now always uses the audio and settings packed in the file — so a preset someone sends you plays with their trim, filters, EQ, play mode, and volume intact, instead of playing everything on loop at full volume.
+- The import file picker now also accepts .zip, since chat apps like WhatsApp tend to add that extension when forwarding a preset file.
+- Bundled audio inside a preset file now keeps its real filename instead of an internal id.
+
 ## v0.1.106 — Remix: full sound names, roomier top bar
 
 - The sound name at the top of the Remix panel now scrolls sideways on hover to reveal the whole thing when it's too long for the window, and shows the full name as a tooltip — matching how the Mixer list already behaves.
