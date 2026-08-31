@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { runFfmpegToFile } from './runFfmpeg.js'
@@ -42,6 +43,13 @@ import { renderClipToPath } from './loopClip.js'
 // Intermediates are FLAC (roughly halves the multi-GB temp I/O a long dense
 // export writes; codec cost is negligible next to that) and forced to
 // stereo/44.1k so the final `amix` never hits a channel-layout mismatch.
+//
+// Steps 1 and 2 are all mutually independent passes. By default they run one
+// at a time (concurrency 1). With `fasterExport` (the export:run handler
+// passes settings.fasterExport straight through) they run `concurrency` at a
+// time via mapPool - bounded by core count and FASTER_EXPORT_CONCURRENCY_CAP
+// - and rubberband switches to its faster pitch mode. Step 3 is one pass
+// regardless.
 
 // EVENT_BATCH_SIZE branches of rubberband+volume+fade+adelay go into one
 // ffmpeg graph per batch. rubberband's cost is proportional to a shot's
@@ -63,6 +71,33 @@ const BATCH_TAIL_MARGIN_SECONDS = 0.25
 
 const INTERMEDIATE_EXT = 'flac'
 const INTERMEDIATE_CODEC = ['-c:a', 'flac', '-ar', '44100', '-ac', '2']
+
+// "Faster export" (settings.fasterExport, OFF by default, passed in by the
+// export:run handler). When on, the independent short passes - every shot
+// bake, every sliced batch - run several at a time instead of sequentially,
+// and rubberband uses its faster pitch mode. Hard-capped: a single 20-event
+// rubberband batch was measured
+// at ~500 MB, and this pipeline has a documented "took all my RAM and never
+// finished" bug (v0.1.85), so concurrency is never more than this many
+// regardless of core count. OFF ⇒ concurrency 1 (the pre-toggle behavior,
+// unchanged).
+const FASTER_EXPORT_CONCURRENCY_CAP = 4
+
+// Runs `worker` over `items` with at most `concurrency` in flight at once.
+// Preserves the pre-toggle behavior exactly at concurrency 1 (a plain
+// sequential walk). Rejects on the first worker error, like Promise.all.
+async function mapPool(items, concurrency, worker) {
+  const limit = Math.max(1, Math.min(concurrency, items.length))
+  let next = 0
+  async function runner() {
+    while (true) {
+      const i = next++
+      if (i >= items.length) return
+      await worker(items[i], i)
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, runner))
+}
 
 function exportTempDir() {
   return path.join(app.getPath('userData'), 'export-tmp')
@@ -93,8 +128,17 @@ async function cleanupFiles(paths) {
 function makeReporter(onProgress, totalWorkSeconds) {
   const total = Math.max(1, totalWorkSeconds)
   let doneSeconds = 0
+  // Under "Faster export" several phases tick concurrently, so a raw
+  // (doneSeconds + f) can briefly read lower than a previous tick when a
+  // fresh batch starts. Clamp every reported fraction up to the highest one
+  // emitted so far - the bar only ever moves forward.
+  let maxFraction = 0
   const emit = (payload) => {
     if (!onProgress) return
+    if (typeof payload.fraction === 'number') {
+      maxFraction = Math.max(maxFraction, Math.min(1, payload.fraction))
+      payload.fraction = maxFraction
+    }
     try {
       onProgress(payload)
     } catch {
@@ -105,7 +149,8 @@ function makeReporter(onProgress, totalWorkSeconds) {
     step(label) {
       emit({ type: 'step', label, fraction: doneSeconds / total })
     },
-    // progress within the phase currently running, `phaseSeconds` long
+    // progress within a phase `phaseSeconds` long; several may be running at
+    // once under the faster-export toggle
     tick(secIntoPhase, phaseSeconds) {
       const f = Math.min(phaseSeconds, Math.max(0, secIntoPhase || 0))
       emit({ type: 'tick', fraction: Math.min(1, (doneSeconds + f) / total) })
@@ -168,12 +213,16 @@ async function bakeShotClip(sound, { forLoop }) {
   return { path: shotPath, owned: true }
 }
 
-function eventBranchChain(evt, volume, batchStart) {
+function eventBranchChain(evt, volume, batchStart, speedMode) {
   const semitones = evt.pitchSemitones ?? 0
   const gain = (evt.volumeScale ?? 1) * volume
   const parts = []
   if (Math.abs(semitones) >= IDENTITY_PITCH_EPSILON_SEMITONES) {
-    parts.push(`rubberband=pitch=${Math.pow(2, semitones / 12).toFixed(6)}`)
+    // pitchq=speed: rubberband's fast (slightly lower quality) pitch mode -
+    // only under the faster-export toggle, since it's an unexpected quality
+    // change, not just a resource one.
+    const rb = `rubberband=pitch=${Math.pow(2, semitones / 12).toFixed(6)}`
+    parts.push(speedMode ? `${rb}:pitchq=speed` : rb)
   }
   parts.push(`volume=${gain.toFixed(6)}`)
   if (evt.fadeInMs > 0) parts.push(`afade=t=in:d=${(evt.fadeInMs / 1000).toFixed(3)}`)
@@ -190,7 +239,7 @@ function eventBranchChain(evt, volume, batchStart) {
 // needs to sit at in the final mix. asplit+per-branch+amix(normalize=0) is
 // written to a script file and passed via -filter_complex_script so a dense
 // batch can't hit a command-line length limit.
-async function renderSlicedBatch({ shotPath, batch, volume, reporter }) {
+async function renderSlicedBatch({ shotPath, batch, volume, speedMode, reporter }) {
   const trackPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
   const { events, start, span } = batch
@@ -200,7 +249,7 @@ async function renderSlicedBatch({ shotPath, batch, volume, reporter }) {
     const parts = [`[0:a]aformat=channel_layouts=stereo,asplit=${n}${splitLabels};`]
     const mixLabels = []
     events.forEach((evt, i) => {
-      parts.push(`[s${i}]${eventBranchChain(evt, volume, start)}[d${i}];`)
+      parts.push(`[s${i}]${eventBranchChain(evt, volume, start, speedMode)}[d${i}];`)
       mixLabels.push(`[d${i}]`)
     })
     parts.push(
@@ -319,7 +368,7 @@ async function renderFinalMixdown({
 //   path resolution, event simulation). events is null/empty for 'loop'
 //   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
 //   fadeInMs, fadeOutMs, shotDurationSeconds } for 'scatter'/'scheduled'.
-export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress }) {
+export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
@@ -344,38 +393,72 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
 
   if (sounds.length === 0) return { ok: false, error: 'No sounds to export' }
 
-  const loopShotPaths = [] // owned loop shots - needed through the final mixdown, cleaned at the very end
+  // "Faster export" toggle: independent short passes (shot bakes, sliced
+  // batches) run `concurrency` at a time. OFF ⇒ 1 ⇒ a plain sequential walk,
+  // byte-for-byte the pre-toggle pipeline. ON ⇒ bounded by core count and a
+  // hard cap - each in-flight batch holds a few hundred MB (measured ~180 MB
+  // with the now-span-limited batch graphs), so the CAP keeps peak bounded.
+  const concurrency = fasterExport
+    ? Math.max(1, Math.min((os.cpus()?.length ?? 2) - 1, FASTER_EXPORT_CONCURRENCY_CAP))
+    : 1
+
+  const ownedShotPaths = [] // every owned shot clip - kept alive through the batch phase, cleaned at the very end
   const batchTrackPaths = []
   try {
+    if (fasterExport && concurrency > 1) {
+      reporter.step(`Faster export on — up to ${concurrency} passes at once.`)
+    }
+
+    // Phase 1: bake every shot clip (loop + event sounds). All independent.
+    reporter.step('Preparing sound clips…')
     const loopShots = []
-    let n = 0
-    for (const sound of loopSounds) {
-      n += 1
-      reporter.step(`Preparing "${sound.name ?? `sound ${n}`}" (looped)…`)
+    await mapPool(loopSounds, concurrency, async (sound) => {
       const shot = await bakeShotClip(sound, { forLoop: true })
-      if (shot.owned) loopShotPaths.push(shot.path)
+      if (shot.owned) ownedShotPaths.push(shot.path)
       loopShots.push({ path: shot.path, volume: sound.volume ?? 0.7 })
+    })
+
+    const eventShotPathBySound = new Map()
+    await mapPool(eventSounds, concurrency, async ({ sound }) => {
+      const shot = await bakeShotClip(sound, { forLoop: false })
+      if (shot.owned) ownedShotPaths.push(shot.path)
+      eventShotPathBySound.set(sound, shot.path)
+    })
+
+    // Phase 2: render every sliced batch across every event sound. Also all
+    // independent (each reads its shot clip read-only, writes its own temp
+    // track) - flattened into one job list so the pool stays saturated
+    // across sound boundaries.
+    const batchJobs = []
+    for (const { sound, batches } of eventSounds) {
+      const label = `"${sound.name ?? 'sound'}"`
+      const plays = `${sound.events.length} play${sound.events.length === 1 ? '' : 's'}`
+      batches.forEach((batch, b) => {
+        batchJobs.push({
+          sound,
+          batch,
+          shotPath: eventShotPathBySound.get(sound),
+          stepLabel:
+            batches.length > 1
+              ? `Placing ${label}: batch ${b + 1} of ${batches.length}…`
+              : `Placing ${label}'s ${plays}…`
+        })
+      })
     }
 
     const batchTracks = []
-    for (const { sound, batches } of eventSounds) {
-      n += 1
-      const label = `"${sound.name ?? `sound ${n}`}"`
-      reporter.step(`Preparing ${label} (${sound.events.length} play${sound.events.length === 1 ? '' : 's'})…`)
-      const shot = await bakeShotClip(sound, { forLoop: false })
-      try {
-        for (let b = 0; b < batches.length; b += 1) {
-          if (batches.length > 1) reporter.step(`Placing ${label}: batch ${b + 1} of ${batches.length}…`)
-          else reporter.step(`Placing ${label}'s ${sound.events.length} play${sound.events.length === 1 ? '' : 's'}…`)
-          const track = await renderSlicedBatch({ shotPath: shot.path, batch: batches[b], volume: sound.volume ?? 0.7, reporter })
-          batchTrackPaths.push(track.path)
-          batchTracks.push(track)
-        }
-      } finally {
-        // the shot clip has done its job once every batch is placed
-        if (shot.owned) await cleanupFiles([shot.path])
-      }
-    }
+    await mapPool(batchJobs, concurrency, async (job) => {
+      reporter.step(job.stepLabel)
+      const track = await renderSlicedBatch({
+        shotPath: job.shotPath,
+        batch: job.batch,
+        volume: job.sound.volume ?? 0.7,
+        speedMode: fasterExport,
+        reporter
+      })
+      batchTrackPaths.push(track.path)
+      batchTracks.push(track)
+    })
 
     reporter.step('Final mixdown + whole-mix processing…')
     await renderFinalMixdown({
@@ -395,6 +478,6 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     console.error('exportMix failed', err)
     return { ok: false, error: err.message }
   } finally {
-    await cleanupFiles([...loopShotPaths, ...batchTrackPaths])
+    await cleanupFiles([...ownedShotPaths, ...batchTrackPaths])
   }
 }

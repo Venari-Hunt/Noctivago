@@ -22,7 +22,7 @@ import { exportMix } from './ffmpeg/exportMix.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setSleepTimerPrefs } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setSleepTimerPrefs } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -30,6 +30,7 @@ import {
   checkForUpdatesNow,
   getUpdateState,
   getWhatsNew,
+  getWhatsNewForCurrentVersion,
   downloadUpdateNow,
   dismissUpdate
 } from './autoUpdate.js'
@@ -53,6 +54,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
   ipcMain.handle('autoUpdate:getState', () => getUpdateState())
   ipcMain.handle('autoUpdate:getWhatsNew', () => getWhatsNew())
+  ipcMain.handle('autoUpdate:getWhatsNewCurrent', () => getWhatsNewForCurrentVersion())
   ipcMain.handle('autoUpdate:download', () => downloadUpdateNow())
   ipcMain.handle('autoUpdate:dismiss', (_event, version) => dismissUpdate(version))
   ipcMain.handle('settings:setMinimizeToTrayEnabled', (_event, enabled) => {
@@ -63,6 +65,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setWasPlayingOnClose', (_event, wasPlaying) => setWasPlayingOnClose(wasPlaying))
   ipcMain.handle('settings:setEagerlyBakeOnImportEnabled', (_event, enabled) => setEagerlyBakeOnImportEnabled(enabled))
   ipcMain.handle('settings:setSkipRemixLeaveConfirmEnabled', (_event, enabled) => setSkipRemixLeaveConfirmEnabled(enabled))
+  ipcMain.handle('settings:setFasterExportEnabled', (_event, enabled) => setFasterExportEnabled(enabled))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
   ipcMain.handle('sleepTimer:start', (_event, { durationSeconds, action, minutes }) => {
@@ -271,7 +274,7 @@ export function registerIpcHandlers() {
         if (!event.sender.isDestroyed()) event.sender.send('export:progress', payload)
       }
     }
-    return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress })
+    return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: getSettings().fasterExport })
   })
 
   // members: [{soundId, delayMs}] - resolves each to the real, current data

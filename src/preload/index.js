@@ -13,12 +13,14 @@ const api = {
     setMinimizeToTrayEnabled: (enabled) => ipcRenderer.invoke('settings:setMinimizeToTrayEnabled', enabled),
     setWasPlayingOnClose: (wasPlaying) => ipcRenderer.invoke('settings:setWasPlayingOnClose', wasPlaying),
     setEagerlyBakeOnImportEnabled: (enabled) => ipcRenderer.invoke('settings:setEagerlyBakeOnImportEnabled', enabled),
-    setSkipRemixLeaveConfirmEnabled: (enabled) => ipcRenderer.invoke('settings:setSkipRemixLeaveConfirmEnabled', enabled)
+    setSkipRemixLeaveConfirmEnabled: (enabled) => ipcRenderer.invoke('settings:setSkipRemixLeaveConfirmEnabled', enabled),
+    setFasterExportEnabled: (enabled) => ipcRenderer.invoke('settings:setFasterExportEnabled', enabled)
   },
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow'),
     getState: () => ipcRenderer.invoke('autoUpdate:getState'),
     getWhatsNew: () => ipcRenderer.invoke('autoUpdate:getWhatsNew'),
+    getWhatsNewCurrent: () => ipcRenderer.invoke('autoUpdate:getWhatsNewCurrent'),
     download: () => ipcRenderer.invoke('autoUpdate:download'),
     dismiss: (version) => ipcRenderer.invoke('autoUpdate:dismiss', version),
     // Feeds the in-app Update modal (src/renderer/core/UpdateModal.js).

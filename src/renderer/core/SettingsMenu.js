@@ -1,6 +1,6 @@
 import { renderWatchedFolderList } from '../ui/WatchedFolderList.js'
 import { openWatchFolderPicker } from './WatchFolderDialog.js'
-import { openUpdateModal } from './UpdateModal.js'
+import { openUpdateModal, openWhatsNewModal } from './UpdateModal.js'
 import { parseDuration } from '../util/time.js'
 
 // Always shows all three segments, zero-padded (unlike util/time.js's own
@@ -24,10 +24,12 @@ export function installSettingsMenu() {
   const autoUpdateCheckbox = document.getElementById('settings-auto-update-enabled')
   const updateIntervalInput = document.getElementById('settings-auto-update-interval')
   const checkNowBtn = document.getElementById('settings-check-now')
+  const whatsNewBtn = document.getElementById('settings-whats-new')
   const checkStatus = document.getElementById('settings-check-status')
   const autoInstallUpdatesCheckbox = document.getElementById('settings-auto-install-updates')
   const minimizeToTrayCheckbox = document.getElementById('settings-minimize-to-tray-enabled')
   const eagerlyBakeOnImportCheckbox = document.getElementById('settings-eagerly-bake-on-import')
+  const fasterExportCheckbox = document.getElementById('settings-faster-export')
 
   const watchedFolderList = document.getElementById('watched-folder-list')
   const addWatchedFolderBtn = document.getElementById('add-watched-folder')
@@ -49,6 +51,7 @@ export function installSettingsMenu() {
     autoInstallUpdatesCheckbox.checked = settings.autoInstallUpdates
     minimizeToTrayCheckbox.checked = settings.minimizeToTrayEnabled
     eagerlyBakeOnImportCheckbox.checked = settings.eagerlyBakeOnImport
+    fasterExportCheckbox.checked = settings.fasterExport
     checkStatus.textContent = ''
     refreshWatchedFolders()
     modal.classList.remove('hidden')
@@ -106,11 +109,21 @@ export function installSettingsMenu() {
     window.noctivago.settings.setEagerlyBakeOnImportEnabled(eagerlyBakeOnImportCheckbox.checked)
   })
 
+  fasterExportCheckbox.addEventListener('change', () => {
+    window.noctivago.settings.setFasterExportEnabled(fasterExportCheckbox.checked)
+  })
+
   checkNowBtn.addEventListener('click', () => {
     // Opens the in-app Update modal, which runs the check and shows the
     // result (update found + release notes / already up to date / check
     // failed) plus the download progress bar - replacing the native OS
     // dialogs this flow used to pop.
     openUpdateModal()
+  })
+
+  whatsNewBtn.addEventListener('click', () => {
+    // Same "What's new" screen that auto-pops once after an update installs,
+    // now reachable on demand - shows the current version's changelog entry.
+    openWhatsNewModal()
   })
 }

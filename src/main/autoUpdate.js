@@ -7,7 +7,7 @@ import {
   setAutoUpdateEnabled as persistAutoUpdateEnabled,
   setAutoUpdateIntervalSeconds as persistAutoUpdateIntervalSeconds
 } from './settings.js'
-import { changelogTextBetween } from './changelog.js'
+import { changelogTextBetween, changelogEntriesBetween } from './changelog.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -262,6 +262,20 @@ export function getWhatsNew() {
   const wn = whatsNew
   whatsNew = null
   return wn
+}
+
+// On-demand version of the above, for the Settings menu's "What's new"
+// button - always returns the current version's changelog entry (never
+// consume-once, works in dev too, no previousVersion since this isn't tied
+// to an update that just happened). `notes` is null if this version has no
+// CHANGELOG.md section yet.
+export function getWhatsNewForCurrentVersion() {
+  const version = app.getVersion()
+  const entries = changelogEntriesBetween(version, version)
+  const notes = entries.length
+    ? entries.map((e) => `${e.heading}\n${e.body}`.trim()).join('\n\n')
+    : null
+  return { version, previousVersion: null, notes }
 }
 
 // The modal's "Download & install" button. Safe to call only after an

@@ -15,6 +15,14 @@ const store = new Store({
     wasPlayingOnClose: false,
     eagerlyBakeOnImport: false,
     skipRemixLeaveConfirm: false,
+    // When on, the Export pipeline (src/main/ffmpeg/exportMix.js) renders its
+    // independent short passes several at a time instead of one after another,
+    // and uses rubberband's faster (slightly lower quality) pitch mode - a
+    // real speed win on a long/dense export at the cost of pinning multiple
+    // CPU cores and spiking RAM. Off by default: the pipeline has a documented
+    // history of a "took all my RAM and never finished" bug, so the
+    // higher-resource path is strictly opt-in and hard-capped.
+    fasterExport: false,
     // Remembered so a nightly-use sleep timer doesn't need re-picking every
     // time - just the last chosen values, not an active timer (that's
     // session-only, main-process state in sleepTimer.js).
@@ -37,6 +45,7 @@ export function getSettings() {
     wasPlayingOnClose: store.get('wasPlayingOnClose'),
     eagerlyBakeOnImport: store.get('eagerlyBakeOnImport'),
     skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
+    fasterExport: store.get('fasterExport'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
     lastRunVersion: store.get('lastRunVersion')
@@ -100,6 +109,11 @@ export function setEagerlyBakeOnImportEnabled(enabled) {
 // silently the way it always would have if the user clicked "Yes."
 export function setSkipRemixLeaveConfirmEnabled(enabled) {
   store.set('skipRemixLeaveConfirm', Boolean(enabled))
+  return getSettings()
+}
+
+export function setFasterExportEnabled(enabled) {
+  store.set('fasterExport', Boolean(enabled))
   return getSettings()
 }
 

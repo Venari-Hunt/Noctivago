@@ -63,12 +63,18 @@ function renderState(state) {
     'not-available': `You already have the latest version${cur ? ` (${cur})` : ''}.`,
     error: state.message || 'Could not check for updates. Check your internet connection and try again later.',
     dev: 'Update checking only works in the installed version of Noctívago.',
-    'whats-new': `Noctívago updated${state.previousVersion ? ` from ${state.previousVersion}` : ''} to ${state.version}.`,
+    'whats-new': state.previousVersion
+      ? `Noctívago updated from ${state.previousVersion} to ${state.version}.`
+      : `You're running Noctívago v${state.version}.`,
     idle: ''
   }
   els.message.textContent = messages[status] || ''
 
-  const showVersionRow = status === 'available' || status === 'whats-new'
+  // The version row is a "from -> to" pair; only meaningful when there's a
+  // previous version to show. Opened manually from Settings there isn't one,
+  // so the row is hidden and the title/message carry the version instead.
+  const showVersionRow =
+    status === 'available' || (status === 'whats-new' && state.previousVersion)
   toggle(els.versionRow, showVersionRow)
   if (showVersionRow) {
     els.versionCurrent.textContent =
@@ -132,6 +138,17 @@ export async function openUpdateModal() {
   if (state && ['available', 'downloading', 'downloaded'].includes(state.status)) {
     renderState(state)
   }
+}
+
+// Opened from Settings ("What's new"). Shows the current version's changelog
+// entry on demand - the same 'whats-new' screen that auto-pops once after an
+// update installs, but reachable any time. Works in dev too (unlike the
+// update check).
+export async function openWhatsNewModal() {
+  if (!els) return
+  const wn = await window.noctivago.autoUpdate.getWhatsNewCurrent()
+  renderState({ status: 'whats-new', ...(wn || {}) })
+  show()
 }
 
 export function installUpdateModal() {
