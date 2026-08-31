@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.106 — Remix: full sound names, roomier top bar
+
+- The sound name at the top of the Remix panel now scrolls sideways on hover to reveal the whole thing when it's too long for the window, and shows the full name as a tooltip — matching how the Mixer list already behaves.
+- The sound picker shows a picked sound's name from the start (not its cut-off middle) and lists long names on one tidy line each instead of wrapping.
+- Tightened the spacing in the Remix top bar so its buttons don't feel so crammed at a narrow window width.
+
 ## v0.1.105 — Explicit "Fully random" for Random Interval / Scheduled
 
 - Random Interval and Scheduled sounds now have an explicit "Fully random pitch" checkbox in Remix. Before, leaving both pitch bounds at 0 secretly meant "random across the whole ±12 semitone range" — now 0 to 0 means literally no pitch change, and the checkbox is how you ask for the fully-random behavior.

@@ -42,6 +42,31 @@ const VOLUME_ICON_SVG =
 const MUTE_ICON_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>'
 
+// Hover marquee for the selected-sound title (#editor-sound-name) when the
+// window is too narrow to show the whole name - mirrors the Mixer's own
+// .sound-row-name marquee (src/renderer/ui/SoundRow.js), duplicated here for
+// the same "a plugin bundles its own copies" reason as the constants above.
+// The <h3> is white-space:nowrap + overflow:hidden + text-overflow:ellipsis
+// (styles.css), so scrollWidth > clientWidth is exactly "this name is cut off".
+const MARQUEE_BASE_PX_PER_SEC = 45
+const MARQUEE_SPEED_SCALE = 0.06
+const MARQUEE_MAX_PX_PER_SEC = 140
+
+function wireNameMarquee(el) {
+  el.addEventListener('mouseenter', () => {
+    const overflow = el.scrollWidth - el.clientWidth
+    if (overflow <= 0) return
+    const pxPerSec = Math.min(MARQUEE_MAX_PX_PER_SEC, MARQUEE_BASE_PX_PER_SEC + overflow * MARQUEE_SPEED_SCALE)
+    const duration = (overflow / pxPerSec) * 2 + 0.6
+    el.style.setProperty('--marquee-distance', `-${overflow}px`)
+    el.style.setProperty('--marquee-duration', `${duration}s`)
+    el.classList.add('editor-sound-name-marquee')
+  })
+  el.addEventListener('mouseleave', () => {
+    el.classList.remove('editor-sound-name-marquee')
+  })
+}
+
 // Mirrors library.js's defaultEqBands() exactly - a fresh/reset EQ starts
 // with zero bands now (user-managed via the graph's own +/trash controls),
 // not a fixed preset. Same cross-directory duplication reason as
@@ -675,6 +700,7 @@ export default class EditorPlugin {
       this.maybeFetchDetailPeaks(viewStart, viewEnd, duration)
     })
 
+    wireNameMarquee(this.els.soundName)
     this.wireControls()
     this.wireScrollTop()
     this.wireLeaveConfirmDialog()
@@ -1034,7 +1060,7 @@ export default class EditorPlugin {
     if (this.currentEntry) {
       const updated = this.editableSounds().find((s) => s.id === this.currentEntry.id)
       // Don't stomp on text the user is actively typing to search.
-      if (updated && document.activeElement !== this.els.soundSearch) this.els.soundSearch.value = updated.name
+      if (updated && document.activeElement !== this.els.soundSearch) this.setSearchValue(updated.name)
       else if (!updated) this.els.soundSearch.value = ''
     }
     if (!this.els.soundOptions.classList.contains('hidden')) this.renderPickerOptions()
@@ -1092,6 +1118,7 @@ export default class EditorPlugin {
       const li = document.createElement('li')
       li.className = 'editor-sound-option' + (index === this.pickerHighlightIndex ? ' editor-sound-option-highlighted' : '')
       li.textContent = entry.name
+      li.title = entry.name
       // mousedown + preventDefault, not click - stops the input from
       // blurring (and therefore closePicker() from firing) before this
       // handler runs, which would otherwise remove the option out from
@@ -1104,10 +1131,21 @@ export default class EditorPlugin {
     })
   }
 
+  // Show a picked/loaded sound's name in the search box left-aligned (so a
+  // name too long for the field shows its start, not its tail) with the full
+  // name on hover.
+  setSearchValue(name) {
+    const input = this.els.soundSearch
+    input.value = name
+    input.title = name
+    input.setSelectionRange(0, 0)
+    input.scrollLeft = 0
+  }
+
   selectPickerSound(id) {
     const entry = this.editableSounds().find((s) => s.id === id)
     if (!entry) return
-    this.els.soundSearch.value = entry.name
+    this.setSearchValue(entry.name)
     this.pickerQuery = ''
     this.closePicker()
     this.loadSound(id).catch((err) => console.error('Editor: failed to load sound', err))
@@ -1115,6 +1153,7 @@ export default class EditorPlugin {
 
   clearPickerSelection() {
     this.els.soundSearch.value = ''
+    this.els.soundSearch.title = ''
     this.pickerQuery = ''
     this.closePicker()
     this.showEmpty()
@@ -1999,6 +2038,7 @@ export default class EditorPlugin {
     this.els.empty.classList.add('hidden')
     this.els.panel.classList.remove('hidden')
     this.els.soundName.textContent = entry.name
+    this.els.soundName.title = entry.name
     this.setPlayPauseIcon(false)
     this.els.saveStatus.textContent = ''
 
