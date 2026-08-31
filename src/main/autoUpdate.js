@@ -7,7 +7,7 @@ import {
   setAutoUpdateEnabled as persistAutoUpdateEnabled,
   setAutoUpdateIntervalSeconds as persistAutoUpdateIntervalSeconds
 } from './settings.js'
-import { changelogTextBetween, changelogEntriesBetween } from './changelog.js'
+import { changelogTextBetween } from './changelog.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -271,11 +271,8 @@ export function getWhatsNew() {
 // CHANGELOG.md section yet.
 export function getWhatsNewForCurrentVersion() {
   const version = app.getVersion()
-  const entries = changelogEntriesBetween(version, version)
-  const notes = entries.length
-    ? entries.map((e) => `${e.heading}\n${e.body}`.trim()).join('\n\n')
-    : null
-  return { version, previousVersion: null, notes }
+  const text = changelogTextBetween(version, version)
+  return { version, previousVersion: null, notes: text.length ? text : null }
 }
 
 // The modal's "Download & install" button. Safe to call only after an

@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.102 — Small fixes
+
+- Fixed a sound quietly dropping back to normal Speed after it recovered from a playback stall.
+- Long looping sounds now keep the crossfade seam centred correctly when played at a non-default Speed.
+- Export with "Faster export" on: a failed export no longer keeps rendering in the background or leaves temp files behind — it now stops cleanly and cleans up.
+
 ## v0.1.101 — Seamless looping for long sounds
 
 - Sounds whose loop region is too long to pre-process (anything over ~10 minutes) now loop with a smooth crossfade at the seam instead of a hard jump back to the start — the same seamless feel shorter sounds already had.

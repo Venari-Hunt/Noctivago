@@ -85,18 +85,30 @@ const FASTER_EXPORT_CONCURRENCY_CAP = 4
 
 // Runs `worker` over `items` with at most `concurrency` in flight at once.
 // Preserves the pre-toggle behavior exactly at concurrency 1 (a plain
-// sequential walk). Rejects on the first worker error, like Promise.all.
+// sequential walk). On the first worker error every runner stops pulling new
+// items, but the pool still waits for the (at most `concurrency`-1) already
+// in-flight workers to settle before rethrowing - otherwise those stragglers
+// would keep spawning ffmpeg after exportMix has already returned failure,
+// and their temp paths would land in the cleanup arrays *after* the finally
+// block already ran (a real leak under "Faster export").
 async function mapPool(items, concurrency, worker) {
   const limit = Math.max(1, Math.min(concurrency, items.length))
   let next = 0
+  let firstError = null
   async function runner() {
-    while (true) {
+    while (firstError === null) {
       const i = next++
       if (i >= items.length) return
-      await worker(items[i], i)
+      try {
+        await worker(items[i], i)
+      } catch (err) {
+        if (firstError === null) firstError = err
+        return
+      }
     }
   }
   await Promise.all(Array.from({ length: limit }, runner))
+  if (firstError) throw firstError
 }
 
 function exportTempDir() {
@@ -192,7 +204,11 @@ async function bakeShotClip(sound, { forLoop }) {
   if (forLoop && sound.cachedClipPath && fs.existsSync(sound.cachedClipPath)) {
     return { path: sound.cachedClipPath, owned: false }
   }
-  const shotPath = tempPath(INTERMEDIATE_EXT)
+  // renderClipToPath always writes uncompressed pcm_s16le WAV regardless of
+  // the path's extension, so name it .wav honestly rather than .flac. (Only
+  // the sliced-batch tracks below, written via INTERMEDIATE_CODEC, are
+  // actually FLAC - that's where the temp-I/O saving is.)
+  const shotPath = tempPath('wav')
   const result = await renderClipToPath({
     inputPath: sound.inputPath,
     loopStart: sound.loopStart,

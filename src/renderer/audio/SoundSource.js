@@ -272,6 +272,10 @@ export class LocalFileSoundSource {
     log.info(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts}, resuming at ${resumeAt.toFixed(2)}s`)
     try {
       el.load()
+      // load() resets playbackRate to the default (1) per the HTML spec -
+      // restore the sound's Speed so a stall-recovered element doesn't
+      // silently revert to 1x.
+      el.playbackRate = this.speed
       el.currentTime = resumeAt
       await el.play()
       log.info(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts} succeeded`)
@@ -438,7 +442,10 @@ export class LocalFileSoundSource {
     if (Number.isFinite(end)) {
       const fade = this._crossfadeSeconds()
       if (fade > 0) {
-        if (!this._crossfading && this.audioEl.currentTime >= end - fade) {
+        // `fade` is wall-clock; at a non-default Speed the active element
+        // covers `speed * fade` media-seconds while the ramp runs, so start
+        // that much earlier to keep the swap centred on loopEnd.
+        if (!this._crossfading && this.audioEl.currentTime >= end - fade * this.speed) {
           this._startCrossfade(fade)
         }
       } else if (this.audioEl.currentTime >= end - LOOP_EPSILON_SECONDS) {
