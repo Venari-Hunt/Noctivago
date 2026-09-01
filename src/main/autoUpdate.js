@@ -52,6 +52,22 @@ let recheckIntervalId = null
 // result regardless of this, since the user explicitly asked.
 let dismissedVersion = null
 
+// When autoInstallUpdates is on, an available update no longer downloads
+// the instant it's detected - the modal shows a short countdown first so
+// there's a window to hit "Not now". The timer runs here in main, not in the
+// renderer, because the window is usually minimized to the tray by then and
+// Chromium throttles renderer timers hard in that state - the same reason
+// sleepTimer.js keeps its countdown in the main process. The renderer only
+// shows a cosmetic tick over the same duration.
+const AUTO_INSTALL_COUNTDOWN_SECONDS = 5
+let autoInstallCountdownId = null
+
+function clearAutoInstallCountdown() {
+  if (!autoInstallCountdownId) return
+  clearTimeout(autoInstallCountdownId)
+  autoInstallCountdownId = null
+}
+
 // Set right before a check triggered by the Settings menu's "Check for
 // updates" button. The result (found / already current / failed) is then
 // pushed to the in-app Update modal instead of staying silent - a plain
@@ -155,20 +171,33 @@ export function initAutoUpdate(win) {
     const wasManual = manualCheckPending
     manualCheckPending = false
 
-    // Opt-in Settings toggle - skips the modal entirely and goes straight
-    // to downloading. update-downloaded below already installs and restarts
-    // with no prompt, so this is the one remaining gate between "update
-    // detected" and "fully automatic."
-    if (getSettings().autoInstallUpdates) {
-      log.info(`Auto-update: ${info.version} available, downloading automatically (autoInstallUpdates is on)`)
-      autoUpdater.downloadUpdate()
-      return
-    }
-
     // A background re-check of a version the user already dismissed this run
     // stays quiet; an explicit "Check for updates" from Settings always
-    // surfaces, dismissed or not.
+    // surfaces, dismissed or not. Applies to the auto-install path too - a
+    // "Not now" on the countdown shouldn't just restart it a few hours later.
     if (info.version === dismissedVersion && !wasManual) return
+
+    // Opt-in Settings toggle - still fully automatic, but the modal now shows
+    // a short countdown before the download starts (see
+    // AUTO_INSTALL_COUNTDOWN_SECONDS above) so there's a moment to bail.
+    // update-downloaded below installs and restarts with no further prompt.
+    if (getSettings().autoInstallUpdates) {
+      log.info(`Auto-update: ${info.version} available, auto-install countdown started (${AUTO_INSTALL_COUNTDOWN_SECONDS}s)`)
+      clearAutoInstallCountdown()
+      autoInstallCountdownId = setTimeout(() => {
+        autoInstallCountdownId = null
+        log.info(`Auto-update: countdown elapsed, downloading ${info.version}`)
+        autoUpdater.downloadUpdate()
+      }, AUTO_INSTALL_COUNTDOWN_SECONDS * 1000)
+      send('update:available', {
+        version: info.version,
+        currentVersion: app.getVersion(),
+        notes,
+        releaseDate: info.releaseDate,
+        autoCountdownSeconds: AUTO_INSTALL_COUNTDOWN_SECONDS
+      })
+      return
+    }
 
     send('update:available', {
       version: info.version,
@@ -279,6 +308,9 @@ export function getWhatsNewForCurrentVersion() {
 // update-available; no-ops in a dev build.
 export function downloadUpdateNow() {
   if (!app.isPackaged) return { ok: false, reason: 'not-packaged' }
+  // "Download & install" pressed during the auto-install countdown - go now,
+  // and make sure the pending timer doesn't fire a second downloadUpdate().
+  clearAutoInstallCountdown()
   setState({ status: 'downloading', progress: { percent: 0 } })
   autoUpdater.downloadUpdate().catch((err) => log.error('Auto-update download failed', err))
   return { ok: true }
@@ -288,6 +320,9 @@ export function downloadUpdateNow() {
 // the version so the periodic re-check won't reopen the modal for the same
 // one (reset on next app start, or superseded by a newer version).
 export function dismissUpdate(version) {
+  // "Not now" also cancels a running auto-install countdown - the user opted
+  // into automatic updates but still gets to skip this one until next launch.
+  clearAutoInstallCountdown()
   if (version) dismissedVersion = version
   setState({ status: 'idle' })
   return { ok: true }
@@ -305,6 +340,7 @@ export function setAutoUpdateEnabled(enabled) {
       startPeriodicChecks()
     } else {
       stopPeriodicChecks()
+      clearAutoInstallCountdown()
     }
   }
   return settings

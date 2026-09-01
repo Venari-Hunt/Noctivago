@@ -8,6 +8,9 @@
 // Flow: available -> (Download & install) -> downloading (progress bar) ->
 // downloaded -> app restarts to install. Matches the existing
 // single-confirmation decision - the one Download click is the only prompt.
+// When autoInstallUpdates is on, the 'available' payload carries
+// autoCountdownSeconds: the modal shows a short countdown and main starts the
+// download on its own when it elapses ("Not now" cancels).
 // After the restart, this same modal reopens in a 'whats-new' state (driven
 // by autoUpdate.getWhatsNew(), a version-changed-since-last-run check against
 // the bundled CHANGELOG) with a rundown of what changed.
@@ -16,6 +19,18 @@ let els = null
 let renderedStatus = 'idle'
 let currentVersion = ''
 let offeredVersion = null
+
+// Cosmetic tick for the auto-install countdown (autoInstallUpdates on). The
+// real deadline lives in the main process - the window is usually in the tray
+// by now, where this interval gets throttled - so this only updates the
+// displayed number; "Not now" is what actually cancels it.
+let countdownIntervalId = null
+
+function clearCountdown() {
+  if (!countdownIntervalId) return
+  clearInterval(countdownIntervalId)
+  countdownIntervalId = null
+}
 
 const TITLES = {
   checking: 'Checking for updates…',
@@ -39,6 +54,7 @@ function show() {
 
 function hide() {
   els.modal.classList.add('hidden')
+  clearCountdown()
 }
 
 function toggle(el, visible) {
@@ -48,6 +64,7 @@ function toggle(el, visible) {
 function renderState(state) {
   const status = state.status
   renderedStatus = status
+  clearCountdown()
   const cur = state.currentVersion || currentVersion
   if (state.currentVersion) currentVersion = state.currentVersion
   if (status === 'available' && state.version) offeredVersion = state.version
@@ -69,6 +86,23 @@ function renderState(state) {
     idle: ''
   }
   els.message.textContent = messages[status] || ''
+
+  // Auto-install countdown: main sends autoCountdownSeconds alongside an
+  // available update when autoInstallUpdates is on. It downloads and installs
+  // on its own when the timer (in main) elapses; "Not now" cancels it.
+  if (status === 'available' && typeof state.autoCountdownSeconds === 'number') {
+    let remaining = state.autoCountdownSeconds
+    const paintCountdown = () => {
+      els.message.textContent =
+        `Noctívago ${state.version || ''} will download and install automatically in ${remaining}s, then restart. Choose "Not now" to skip this update.`
+    }
+    paintCountdown()
+    countdownIntervalId = setInterval(() => {
+      remaining = Math.max(0, remaining - 1)
+      paintCountdown()
+      if (remaining <= 0) clearCountdown()
+    }, 1000)
+  }
 
   // The version row is a "from -> to" pair; only meaningful when there's a
   // previous version to show. Opened manually from Settings there isn't one,

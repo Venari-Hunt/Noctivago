@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.108 — Countdown before an automatic update installs
+
+- With "Install updates automatically" turned on, a new update now shows a short in-app countdown before it starts downloading, with a "Not now" button to skip that update until the next launch. Previously it began installing with no warning.
+- If automatic updates are off, nothing changes — you still get the "Update available" window and choose when to install.
+
 ## v0.1.107 — Fix: shared presets losing their sound settings
 
 - Importing a shared preset (.ncvpreset with the audio bundled in) no longer substitutes your own sounds when a filename happens to match. It now always uses the audio and settings packed in the file — so a preset someone sends you plays with their trim, filters, EQ, play mode, and volume intact, instead of playing everything on loop at full volume.
