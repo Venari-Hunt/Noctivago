@@ -101,8 +101,15 @@ export async function renderComposite({ members, outputPath }) {
     // normalize=0 = honest summing, matching the live Mixer's own AudioContext
     // and the Export pipeline (v0.1.99). The default normalize=1 would divide
     // every member by n, making the per-member volume control meaningless.
+    // alimiter (limit 0.95, level=disabled so it never *boosts*) is a safety
+    // brick-wall: honest summing means a composite of several members
+    // overlapping at high volume can exceed 0 dBFS and hard-clip the
+    // pcm_s16le encoder, and unlike Export this tab has no whole-mix Gain to
+    // pull it back. It only acts on peaks that would clip anyway - inaudible
+    // below threshold (verified on the bundled binary: a quiet mix passes
+    // through untouched, an over-unity mix is pulled to ~-0.4 dB).
     graphParts.push(
-      `${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0:normalize=0[out]`
+      `${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=disabled[out]`
     )
 
     // -f wav is required here (not needed when writing straight to a real

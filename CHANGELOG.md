@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.113 — Composite bake won't clip
+
+- Baking a Composite now runs a brick-wall limiter on the final mix, so welding several loud, overlapping members together can no longer clip and distort the result. Mixes that weren't near clipping are unaffected.
+
 ## v0.1.112 — Small fixes from a self-review pass
 
 - Random Interval / Scheduled sounds with pitch variation: fixed a brief volume jump right before the end of a pitched shot, and stereo clips no longer smear when pitch-shifted.
