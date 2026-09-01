@@ -39,24 +39,24 @@ function randomVolumeScale(scatter) {
 // source uses to schedule its next shot) until the cumulative offset would
 // exceed durationSeconds - a dry run of the same process, no audio
 // scheduling involved. Each event carries the sound's own trimmed shot
-// duration (loopEnd - loopStart, pitch-adjusted the same way
-// ScatterSoundSource.js's real fade-envelope math already accounts for) so
-// exportMix.js can land a fade-out at the shot's real end.
+// duration (loopEnd - loopStart). Since v0.1.111 a per-shot pitch shift no
+// longer changes the shot's length - live playback pre-stretches the clip
+// (ScatterSoundSource.js) and exportMix.js pitches it with rubberband, both
+// duration-preserving - so this is the plain trimmed length, and
+// exportMix.js's fade-out lands on the shot's real end.
 function simulateScatterEvents(entry, durationSeconds) {
   const scatter = entry.scatter ?? {}
   const nominalShotDuration = Math.max(0, (entry.loopEnd ?? 0) - (entry.loopStart ?? 0))
   const events = []
   let offset = 0
   while (offset < durationSeconds) {
-    const pitchSemitones = randomPitchSemitones(scatter)
-    const effectiveRate = Math.pow(2, pitchSemitones / 12)
     events.push({
       offsetSeconds: offset,
-      pitchSemitones,
+      pitchSemitones: randomPitchSemitones(scatter),
       volumeScale: randomVolumeScale(scatter),
       fadeInMs: scatter.fadeInMs ?? 0,
       fadeOutMs: scatter.fadeOutMs ?? 0,
-      shotDurationSeconds: nominalShotDuration / effectiveRate
+      shotDurationSeconds: nominalShotDuration
     })
     offset += randomGapSeconds(scatter)
   }
@@ -82,9 +82,9 @@ function simulateScatterEvents(entry, durationSeconds) {
 // events - the reported bug: an hourly raven that "did not play once").
 //
 // Each event still carries randomized pitch/volume/fade the same way a
-// scatter shot does (only the *timing* is deterministic), and the same
-// nominal-shot-duration/pitch-rate math so exportMix.js's fade-out lands
-// on the shot's real end.
+// scatter shot does (only the *timing* is deterministic). A per-shot pitch
+// shift is duration-preserving since v0.1.111 (see simulateScatterEvents),
+// so shotDurationSeconds is the plain trimmed length.
 function simulateScheduledEvents(entry, durationSeconds) {
   const schedule = entry.schedule ?? {}
   if (schedule.type !== 'interval') return []
@@ -93,15 +93,13 @@ function simulateScheduledEvents(entry, durationSeconds) {
   const nominalShotDuration = Math.max(0, (entry.loopEnd ?? 0) - (entry.loopStart ?? 0))
   const events = []
   for (let offset = intervalSeconds; offset < durationSeconds; offset += intervalSeconds) {
-    const pitchSemitones = randomPitchSemitones(schedule)
-    const effectiveRate = Math.pow(2, pitchSemitones / 12)
     events.push({
       offsetSeconds: offset,
-      pitchSemitones,
+      pitchSemitones: randomPitchSemitones(schedule),
       volumeScale: randomVolumeScale(schedule),
       fadeInMs: schedule.fadeInMs ?? 0,
       fadeOutMs: schedule.fadeOutMs ?? 0,
-      shotDurationSeconds: nominalShotDuration / effectiveRate
+      shotDurationSeconds: nominalShotDuration
     })
   }
   return events

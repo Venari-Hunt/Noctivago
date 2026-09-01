@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.111 — Pitch shift keeps a sound's length
+
+- A Random Interval or Scheduled sound with pitch variation now keeps the length you trimmed it to — a pitched-up shot no longer plays faster and shorter, a pitched-down one no longer drags out. Pitch moves, timing doesn't.
+- This applies both in the Mixer and in exports (exports already kept length; the Mixer now matches).
+- The one exception: a Random Interval / Scheduled sound whose trim is long enough that it never gets a baked clip (over ~10 minutes) still couples pitch to speed — an unusual case for an event-style sound.
+
 ## v0.1.110 — Fixes: Composite sound picker, scheduled sounds in exports
 
 - Fix: the Composite tab's "Select a sound" dropdowns wouldn't open — clicking one did nothing. They work now.

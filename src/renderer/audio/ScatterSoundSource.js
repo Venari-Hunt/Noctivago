@@ -1,4 +1,5 @@
 import log from 'electron-log/renderer'
+import { pitchShiftBuffer } from './pitchStretch.js'
 
 const RAMP_SECONDS = 0.15
 // Matches the Remix plugin's Pitch slider range (plugins/editor/index.js) -
@@ -109,15 +110,14 @@ function normalizeScatter(scatter) {
 
 // Buffer variant: plays a small, already-baked (trimmed+filtered, no
 // crossfade - see library.js's effectiveCrossfadeSeconds) AudioBuffer via a
-// fresh AudioBufferSourceNode per shot. Pitch randomization uses the node's
-// native `detune` param (cents) rather than playbackRate, leaving the node's
-// own .playbackRate untouched - but per the Web Audio spec, detune still
-// combines into the same computedPlaybackRate .playbackRate alone would
-// produce (computedPlaybackRate = playbackRate * 2^(detune/1200)), so a
-// pitched shot still genuinely finishes sooner/later in real time, same
-// coupling the stream variant below has via .playbackRate directly - the
-// fade envelope below accounts for this. Mirrors BufferSoundSource's
-// structure otherwise.
+// fresh AudioBufferSourceNode per shot. Per-shot random pitch is applied by
+// pre-stretching the clip (pitchStretch.js) and then playing it back through
+// the node's `detune` at the matching ratio, so the shot keeps the length it
+// was trimmed to regardless of pitch (v0.1.111 - before that, detune alone
+// resampled, folding into computedPlaybackRate and making a pitched shot
+// genuinely shorter/longer). Only a clip too long to stretch on the main
+// thread falls back to the old resample-coupled behavior. Mirrors
+// BufferSoundSource's structure otherwise.
 export class BufferScatterSource {
   constructor(engine, { audioBuffer, volume, scatter, oneShot = false }) {
     this.engine = engine
@@ -175,16 +175,20 @@ export class BufferScatterSource {
     if (!this.playing) return
     if (!silent) this.onShotStart?.()
     const node = this.engine.context.createBufferSource()
-    node.buffer = this.audioBuffer
-    const detuneCents = randomPitchSemitones(this.scatter) * 100
-    node.detune.value = detuneCents
-    // detune resamples in real time (same computedPlaybackRate the Web Audio
-    // spec combines from .playbackRate * 2^(detune/1200) that .playbackRate
-    // alone would use) - a pitched-up shot genuinely finishes sooner, so the
-    // fade-out envelope below needs the real, pitch-adjusted duration, not
-    // the buffer's own nominal one, to land correctly at the actual end.
-    const effectiveRate = Math.pow(2, detuneCents / 1200)
-    const durationSeconds = this.audioBuffer.duration / effectiveRate
+    const semitones = randomPitchSemitones(this.scatter)
+    node.detune.value = semitones * 100
+    // Pre-stretch the clip in time by the pitch ratio, so playing it back at
+    // that same ratio (what detune does) lands the pitch shift *without*
+    // changing how long the shot lasts - the owner's ask (v0.1.111; see
+    // pitchStretch.js). pitchShiftBuffer returns the buffer unchanged for a
+    // negligible shift, and null for a clip too long to stretch on the main
+    // thread - in which case detune still resamples and the shot finishes
+    // early/late, so the fade-out envelope needs the pitch-adjusted length.
+    const shifted = pitchShiftBuffer(this.engine.context, this.audioBuffer, semitones)
+    node.buffer = shifted ?? this.audioBuffer
+    const durationSeconds = shifted
+      ? this.audioBuffer.duration
+      : this.audioBuffer.duration / Math.pow(2, semitones / 12)
     const shotGain = this.engine.context.createGain()
     node.connect(shotGain)
     shotGain.connect(this.gainNode)
@@ -314,12 +318,13 @@ export class BufferScatterSource {
 // streaming LocalFileSoundSource uses, so it works for a file of any
 // length), through the same highpass/lowpass/gain/echo chain so saved
 // filters still apply exactly like every other source in this app. Pitch
-// randomization uses playbackRate (no detune equivalent on <audio>), so -
-// same documented limitation as Speed/Pitch elsewhere in this codebase - a
-// pitch shift here also changes shot duration/tempo, which incidentally
-// matches how most game engines actually implement this (Unity's own
-// AudioSource.pitch is exactly a playback-rate scalar), just not how the
-// buffer variant above does it.
+// randomization uses playbackRate (no detune equivalent on <audio>, and no
+// in-memory samples to pre-stretch the way the buffer variant does), so a
+// pitch shift here still changes shot duration/tempo. This is now the *only*
+// place per-shot pitch stays coupled to length - the common (baked) path
+// keeps length constant (v0.1.111) - and it only bites a scatter trim long
+// enough to never bake, which is unusual. Documented accepted limitation,
+// same as Speed/Pitch elsewhere in this codebase.
 export class StreamScatterSource {
   constructor(engine, { soundId, loopStart, loopEnd, volume, filters, scatter, oneShot = false }) {
     this.engine = engine

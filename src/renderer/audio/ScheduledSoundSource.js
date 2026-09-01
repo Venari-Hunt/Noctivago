@@ -1,5 +1,6 @@
 import log from 'electron-log/renderer'
 import { randomPitchSemitones, randomVolumeScale, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
+import { pitchShiftBuffer } from './pitchStretch.js'
 
 const RAMP_SECONDS = 0.15
 
@@ -116,15 +117,17 @@ export class BufferScheduledSource {
     this._timeoutId = null
     if (!this.playing) return
     const node = this.engine.context.createBufferSource()
-    node.buffer = this.audioBuffer
-    const detuneCents = randomPitchSemitones(this.schedule) * 100
-    node.detune.value = detuneCents
-    // Same real coupling BufferScatterSource already accounts for: detune
-    // combines into computedPlaybackRate, so a pitched shot genuinely
-    // finishes sooner/later - the fade envelope below needs the real,
-    // pitch-adjusted duration to land at the shot's actual end.
-    const effectiveRate = Math.pow(2, detuneCents / 1200)
-    const durationSeconds = this.audioBuffer.duration / effectiveRate
+    const semitones = randomPitchSemitones(this.schedule)
+    node.detune.value = semitones * 100
+    // Pre-stretch the clip so the pitch shift doesn't change how long the
+    // shot lasts - same mechanism BufferScatterSource uses (v0.1.111, see
+    // pitchStretch.js). null (clip too long to stretch on the main thread)
+    // falls back to detune's resample coupling, so use the adjusted length.
+    const shifted = pitchShiftBuffer(this.engine.context, this.audioBuffer, semitones)
+    node.buffer = shifted ?? this.audioBuffer
+    const durationSeconds = shifted
+      ? this.audioBuffer.duration
+      : this.audioBuffer.duration / Math.pow(2, semitones / 12)
     const shotGain = this.engine.context.createGain()
     node.connect(shotGain)
     shotGain.connect(this.gainNode)
