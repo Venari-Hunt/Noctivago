@@ -72,6 +72,18 @@ const BATCH_TAIL_MARGIN_SECONDS = 0.25
 const INTERMEDIATE_EXT = 'flac'
 const INTERMEDIATE_CODEC = ['-c:a', 'flac', '-ar', '44100', '-ac', '2']
 
+// Windows caps a process command line at ~32,767 characters, and every
+// "-i <temp path>" pair is ~95 of them. The final mixdown - and any combine
+// pass - takes one input per piece it merges, so a big export (long
+// duration, or a Random Interval / Scheduled sound firing very often) can
+// produce enough sliced-batch tracks to blow that limit outright (reported:
+// "Export failed: spawn ENAMETOOLONG"). Keep every pass's input count under
+// this by pre-combining batch tracks in rounds before the final mixdown. 32
+// inputs is ~3 KB of command line, comfortably clear; a combine pass is just
+// adelay + amix (no rubberband), so even a wide one stays cheap and can't
+// hit the v0.1.85 memory blowup.
+const MAX_INPUTS_PER_PASS = 32
+
 // "Faster export" (settings.fasterExport, OFF by default, passed in by the
 // export:run handler). When on, the independent short passes - every shot
 // bake, every sliced batch - run several at a time instead of sequentially,
@@ -291,6 +303,62 @@ async function renderSlicedBatch({ shotPath, batch, volume, speedMode, reporter 
   }
 }
 
+// adelay every track to its absolute offset, then amix (honest sum,
+// normalize=0 - matching the rest of the pipeline). One ffmpeg pass, graph
+// via -filter_complex_script so the graph itself never touches the command
+// line. Returns one track, now absolute-positioned (offset 0).
+async function combineTracks(tracks) {
+  const outPath = tempPath(INTERMEDIATE_EXT)
+  const scriptPath = tempPath('txt')
+  const graph = []
+  const mixLabels = []
+  tracks.forEach((t, i) => {
+    const delayMs = Math.max(0, Math.round(t.offset * 1000))
+    graph.push(`[${i}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${i}]`)
+    mixLabels.push(`[m${i}]`)
+  })
+  graph.push(
+    `${mixLabels.join('')}amix=inputs=${tracks.length}:duration=longest:dropout_transition=0:normalize=0[out]`
+  )
+  fs.writeFileSync(scriptPath, graph.join(';'))
+  try {
+    await runFfmpegToFile([
+      '-y',
+      ...tracks.flatMap((t) => ['-i', t.path]),
+      '-filter_complex_script', scriptPath,
+      '-map', '[out]',
+      ...INTERMEDIATE_CODEC, outPath
+    ])
+    return { path: outPath, offset: 0 }
+  } finally {
+    await cleanupFiles([scriptPath])
+  }
+}
+
+// Reduce `tracks` to at most `target` entries by combining them in
+// fixed-size chunks, repeatedly, until few enough remain to hand the final
+// mixdown without overflowing the command line. Every intermediate created
+// is pushed onto `ownPaths` for end-of-export cleanup.
+async function reduceTrackCount(tracks, target, ownPaths, reporter) {
+  let current = tracks
+  while (current.length > target) {
+    reporter?.step(`Merging ${current.length} track groups…`)
+    const nextRound = []
+    for (let i = 0; i < current.length; i += MAX_INPUTS_PER_PASS) {
+      const chunk = current.slice(i, i + MAX_INPUTS_PER_PASS)
+      if (chunk.length === 1) {
+        nextRound.push(chunk[0])
+        continue
+      }
+      const combined = await combineTracks(chunk)
+      ownPaths.push(combined.path)
+      nextRound.push(combined)
+    }
+    current = nextRound
+  }
+  return current
+}
+
 const FORMAT_CODECS = {
   wav: ['-c:a', 'pcm_s16le'],
   mp3: ['-c:a', 'libmp3lame', '-b:a', '192k'],
@@ -476,10 +544,21 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       batchTracks.push(track)
     })
 
+    // Keep the final mixdown's input count under the OS command-line limit
+    // (see MAX_INPUTS_PER_PASS). Loop shots each take one input too and can't
+    // be pre-combined (they're -stream_loop tiled), so the batch tracks get
+    // whatever's left of the budget. Cheap no-op when the export is small
+    // enough that everything already fits.
+    const batchTrackBudget = Math.max(4, MAX_INPUTS_PER_PASS - loopShots.length)
+    const finalBatchTracks =
+      batchTracks.length > batchTrackBudget
+        ? await reduceTrackCount(batchTracks, batchTrackBudget, batchTrackPaths, reporter)
+        : batchTracks
+
     reporter.step('Final mixdown + whole-mix processing…')
     await renderFinalMixdown({
       loopShots,
-      batchTracks,
+      batchTracks: finalBatchTracks,
       durationSeconds,
       wholeMixFilters,
       fadeInSeconds,

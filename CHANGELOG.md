@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.116 — Fix: big exports failing with "spawn ENAMETOOLONG"
+
+- A long export, or one with a Random Interval / Scheduled sound that fires very often, could fail right at the end with "Export failed: spawn ENAMETOOLONG" — the command handed to the audio engine had grown past the operating system's length limit.
+- The export now merges its pieces together in rounds so that limit is never reached, no matter how long the export or how many times a sound plays.
+
 ## v0.1.115 — Bigger, centre-neutral volume sliders
 
 - The volume sliders (the global one and every per-sound one) are wider now, so you have more drag room and finer control.
