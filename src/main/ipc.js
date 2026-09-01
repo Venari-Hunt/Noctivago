@@ -14,7 +14,7 @@ import {
   clearImportSession,
   finalizeImport
 } from './presetPortable.js'
-import { renderLoopClip } from './ffmpeg/loopClip.js'
+import { renderLoopClip, probeDurationSeconds } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { suggestLoopPoints } from './ffmpeg/loopSuggest.js'
@@ -202,11 +202,22 @@ export function registerIpcHandlers() {
   ipcMain.handle('audio:getWaveformPeaks', async (_event, id, targetWidth, windowStart, windowEnd) => {
     const entry = library.listSounds().find((s) => s.id === id)
     const inputPath = library.getPlaybackPathForId(id)
-    if (!inputPath || entry?.durationSeconds == null) return null
+    if (!inputPath) return null
     try {
+      // durationSeconds is normally learned lazily when a sound first plays
+      // in the Mixer. A sound only ever opened in Composite/Remix may not
+      // have it yet - probe it directly rather than returning no waveform,
+      // and persist it (same as the Mixer's loadedmetadata path) so repeated
+      // calls (e.g. Remix zoom) don't re-probe.
+      let durationSeconds = entry?.durationSeconds
+      if (durationSeconds == null) {
+        durationSeconds = await probeDurationSeconds(inputPath)
+        if (durationSeconds != null && entry) library.updateMeta(id, { durationSeconds })
+      }
+      if (durationSeconds == null) return null
       return await extractWaveformPeaks({
         inputPath,
-        durationSeconds: entry.durationSeconds,
+        durationSeconds,
         targetWidth,
         windowStart,
         windowEnd
@@ -283,22 +294,32 @@ export function registerIpcHandlers() {
     return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: getSettings().fasterExport })
   })
 
-  // members: [{soundId, delayMs}] - resolves each to the real, current data
-  // (filters/trim/speedPitch) the Composite bake needs, mirroring
-  // export:run's own id -> path/data resolution boundary.
+  // members: [{soundId, delayMs, inSec, outSec, volume}] - resolves each to
+  // the real, current data the Composite bake needs, mirroring export:run's
+  // own id -> path/data resolution boundary. The trim (inSec/outSec) is the
+  // Composite timeline's own, independent of the sound's Remix loop points;
+  // the member's Remix filters/speedPitch still bake in. Older composites
+  // saved before the timeline (only {soundId, delayMs}) fall back to the
+  // sound's Remix trim, then its full duration.
   function resolveCompositeMembers(members) {
     return members
       .map((m) => {
         const entry = library.listSounds().find((s) => s.id === m.soundId)
         const inputPath = library.getPlaybackPathForId(m.soundId)
         if (!entry || !inputPath) return null
+        const fullEnd = entry.loopEnd ?? entry.durationSeconds ?? 0
+        const loopStart = m.inSec != null ? Math.max(0, m.inSec) : entry.loopStart ?? 0
+        let loopEnd = m.outSec != null ? m.outSec : fullEnd
+        if (entry.durationSeconds != null) loopEnd = Math.min(loopEnd, entry.durationSeconds)
+        if (loopEnd <= loopStart) loopEnd = loopStart + 0.05
         return {
           inputPath,
-          loopStart: entry.loopStart ?? 0,
-          loopEnd: entry.loopEnd ?? entry.durationSeconds ?? 0,
+          loopStart,
+          loopEnd,
           filters: entry.filters ?? {},
           speedPitch: entry.speedPitch ?? null,
-          delayMs: m.delayMs ?? 0
+          delayMs: m.delayMs ?? 0,
+          volume: m.volume ?? 1
         }
       })
       .filter(Boolean)

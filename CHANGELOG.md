@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.109 — Composite tab is now a weld workstation
+
+- The Composite tab is rebuilt as a mini timeline. Each sound is a clip you drag left/right to position, with edges you drag to trim, and its own volume on the left — so you can control exactly how the pieces overlap and how loud each one sits.
+- Each clip shows its waveform, and a Preview button plays the arrangement so you can judge the timing before baking.
+- Filters and EQ still live in the Remix tab — remix a member first, or remix the finished composite afterward.
+- Existing composites still open and re-bake in place; per-sound volume in a composite is now honest (no hidden level drop on mono sounds).
+
 ## v0.1.108 — Countdown before an automatic update installs
 
 - With "Install updates automatically" turned on, a new update now shows a short in-app countdown before it starts downloading, with a "Not now" button to skip that update until the next launch. Previously it began installing with no warning.

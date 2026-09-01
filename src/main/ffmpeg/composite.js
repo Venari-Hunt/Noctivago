@@ -27,6 +27,26 @@ function tempPath(dir, ext) {
   return path.join(dir, `${crypto.randomUUID()}.${ext}`)
 }
 
+// Channel count from a canonical PCM WAV header (which is exactly what
+// renderClipToPath writes - RIFF/WAVE/fmt with no chunks before fmt, so
+// NumChannels is always at byte offset 22). Falls back to 2 if the header
+// isn't what we expect, since treating an unknown as stereo just skips the
+// mono-upmix step below (worst case a genuine mono clip stays mono in the
+// mix, which amix still handles).
+function readWavChannels(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r')
+    const buf = Buffer.alloc(24)
+    fs.readSync(fd, buf, 0, 24, 0)
+    fs.closeSync(fd)
+    if (buf.toString('latin1', 0, 4) !== 'RIFF' || buf.toString('latin1', 8, 12) !== 'WAVE') return 2
+    const ch = buf.readUInt16LE(22)
+    return ch >= 1 && ch <= 8 ? ch : 2
+  } catch {
+    return 2
+  }
+}
+
 export async function renderComposite({ members, outputPath }) {
   const tmpDir = path.dirname(outputPath)
   fs.mkdirSync(tmpDir, { recursive: true })
@@ -47,7 +67,15 @@ export async function renderComposite({ members, outputPath }) {
         outputPath: shotPath
       })
       if (!result.ok) throw new Error(result.error ?? 'composite member render failed')
-      memberFiles.push({ path: shotPath, delayMs: Math.max(0, Math.round(member.delayMs ?? 0)) })
+      memberFiles.push({
+        path: shotPath,
+        delayMs: Math.max(0, Math.round(member.delayMs ?? 0)),
+        // Per-member weld volume, set on the Composite timeline. Linear gain;
+        // 1 = unchanged. Clamped to a sane ceiling so a fat-fingered value
+        // can't blow the mix out.
+        volume: Math.max(0, Math.min(4, member.volume ?? 1)),
+        channels: readWavChannels(shotPath)
+      })
     }
 
     const n = memberFiles.length
@@ -55,10 +83,27 @@ export async function renderComposite({ members, outputPath }) {
     const graphParts = []
     const mixLabels = []
     memberFiles.forEach((m, i) => {
-      graphParts.push(`[${i}:a]adelay=${m.delayMs}|${m.delayMs}[d${i}]`)
+      // Bring every branch to stereo/44.1k before the mix. Rate is normalized
+      // with aformat=sample_rates (which, unlike aformat=channel_layouts, is
+      // level-safe). A mono clip is upmixed with an explicit duplicate
+      // (pan ... c1=c0) rather than aformat=channel_layouts=stereo, which in
+      // this ffmpeg build does a -3 dB power-split upmix that would silently
+      // undercut the per-member volume - and wouldn't match how the live
+      // Mixer (Web Audio) plays a mono source, which is a full-level
+      // duplicate. adelay=...:all=1 delays every channel; volume is the weld
+      // level.
+      const toStereo = m.channels === 1 ? ',pan=stereo|c0=c0|c1=c0' : ''
+      graphParts.push(
+        `[${i}:a]aformat=sample_rates=44100${toStereo},volume=${m.volume.toFixed(4)},adelay=${m.delayMs}:all=1[d${i}]`
+      )
       mixLabels.push(`[d${i}]`)
     })
-    graphParts.push(`${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0[out]`)
+    // normalize=0 = honest summing, matching the live Mixer's own AudioContext
+    // and the Export pipeline (v0.1.99). The default normalize=1 would divide
+    // every member by n, making the per-member volume control meaningless.
+    graphParts.push(
+      `${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0:normalize=0[out]`
+    )
 
     // -f wav is required here (not needed when writing straight to a real
     // .wav path elsewhere in this codebase) because the .tmp-then-rename
@@ -72,7 +117,7 @@ export async function renderComposite({ members, outputPath }) {
       '-y', ...inputArgs,
       '-filter_complex', graphParts.join(';'),
       '-map', '[out]',
-      '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav',
+      '-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2', '-f', 'wav',
       tmpOutPath
     ])
     fs.renameSync(tmpOutPath, outputPath)
