@@ -289,11 +289,16 @@ export default class CompositePlugin {
     this.els.sidecol.querySelectorAll('.composite-side').forEach((box) => {
       const i = Number(box.dataset.index)
       box.addEventListener('mousedown', (e) => {
-        if (e.target.closest('button')) return
-        this.selectedIndex = i
-        this.render()
+        // Don't re-render on mousedown over an interactive control - doing so
+        // replaces the <select>/<input> under the pointer before the native
+        // dropdown or slider drag can start (the "sound picker isn't
+        // clickable" bug). A cheap highlight update is all selection needs.
+        if (e.target.closest('button, select, input')) return
+        this.selectMember(i)
       })
-      box.querySelector('.composite-side-sound').addEventListener('change', async (e) => {
+      const soundSel = box.querySelector('.composite-side-sound')
+      soundSel.addEventListener('focus', () => this.selectMember(i))
+      soundSel.addEventListener('change', async (e) => {
         this.members[i].soundId = e.target.value
         this.members[i].inSec = null
         this.members[i].outSec = null
@@ -302,6 +307,7 @@ export default class CompositePlugin {
         this.render()
       })
       const vol = box.querySelector('.composite-side-volume')
+      vol.addEventListener('focus', () => this.selectMember(i))
       vol.addEventListener('input', (e) => {
         this.members[i].volume = Number(e.target.value)
         box.querySelector('.composite-side-vol-val').textContent = `${Math.round(this.members[i].volume * 100)}%`
@@ -389,6 +395,21 @@ export default class CompositePlugin {
       ctx.lineTo(cssW, mid)
     }
     ctx.stroke()
+  }
+
+  // Cheap selection change - just move the highlight and refresh the
+  // "Selected clip" fields, without rebuilding the sidecol/lanes DOM (which
+  // would kill an in-progress <select>/slider interaction and refetch every
+  // waveform).
+  selectMember(i) {
+    this.selectedIndex = i
+    this.els.sidecol.querySelectorAll('.composite-side').forEach((c) =>
+      c.classList.toggle('selected', Number(c.dataset.index) === i)
+    )
+    this.els.lanes.querySelectorAll('.composite-clip').forEach((c) =>
+      c.classList.toggle('selected', Number(c.dataset.index) === i)
+    )
+    this.renderSelected()
   }
 
   renderSelected() {

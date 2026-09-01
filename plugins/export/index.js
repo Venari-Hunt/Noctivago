@@ -235,7 +235,6 @@ export default class ExportPlugin {
       return
     }
 
-    const now = new Date()
     const sounds = []
     for (const presetSound of preset.sounds) {
       const entry = this.library.find((e) => e.id === presetSound.soundId)
@@ -251,7 +250,7 @@ export default class ExportPlugin {
         speedPitch: entry.speedPitch ?? null,
         crossfadeSeconds: entry.crossfadeSeconds ?? null,
         volume: presetSound.volume ?? entry.volume ?? 0.7,
-        events: simulateEvents({ entry, durationSeconds, now })
+        events: simulateEvents({ entry, durationSeconds })
       })
     }
 

@@ -35,30 +35,6 @@ function randomVolumeScale(scatter) {
   return min + Math.random() * (max - min)
 }
 
-function secondsUntilNextTrigger(schedule, now) {
-  if (!schedule) return null
-  if (schedule.type === 'interval') {
-    const intervalMs = Math.max(1, schedule.intervalMinutes ?? 60) * 60000
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    const msSinceMidnight = now.getTime() - startOfDay
-    const msUntilNext = intervalMs - (msSinceMidnight % intervalMs)
-    return msUntilNext / 1000
-  }
-  const times = schedule.times ?? []
-  if (times.length === 0) return null
-  const candidates = times
-    .map((t) => {
-      const [h, m] = t.split(':').map(Number)
-      if (!Number.isFinite(h) || !Number.isFinite(m)) return null
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0)
-      if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1)
-      return d.getTime()
-    })
-    .filter((t) => t !== null)
-  if (candidates.length === 0) return null
-  return (Math.min(...candidates) - now.getTime()) / 1000
-}
-
 // Rolls randomGapSeconds repeatedly (the exact same function a live scatter
 // source uses to schedule its next shot) until the cumulative offset would
 // exceed durationSeconds - a dry run of the same process, no audio
@@ -87,32 +63,36 @@ function simulateScatterEvents(entry, durationSeconds) {
   return events
 }
 
-// Rolls secondsUntilNextTrigger repeatedly starting from the real current
-// wall-clock time - per the owner's own explicit instruction ("treat it as
-// a sound with timed intervals; if the event falls out of the time scope
-// just exclude it from the export"), a 'times' (fixed daily HH:MM) schedule
-// simply gets however many of its own real trigger moments happen to land
-// within [now, now + durationSeconds); one that wouldn't recur until after
-// the export window ends is naturally excluded, not specially handled -
-// this loop already stops the instant an offset would exceed
-// durationSeconds. 'interval' schedules recur densely enough that this
-// distinction rarely matters in practice.
-function simulateScheduledEvents(entry, durationSeconds, now) {
+// An export has no wall clock - it's a stretch of time N seconds long - so a
+// clock-anchored schedule can't be simulated against real time here. Per the
+// owner's explicit instruction (inbox, 2026-09-01):
+//
+//   - An 'interval' schedule (e.g. "every full hour") is treated as a fixed
+//     interval measured from the start of the export: it fires at
+//     1x, 2x, 3x... the interval, up to the export length. No randomized
+//     gap - the timing is exactly the interval, just relative to t=0
+//     instead of midnight.
+//   - A 'times' schedule (specific times of day like 07:30) is ignored
+//     entirely - there's no meaningful way to place "7:30 AM" inside an
+//     abstract 90-minute export, so those sounds are left out.
+//
+// This replaces the earlier approach of rolling secondsUntilNextTrigger from
+// the real current time, which meant an export's scheduled sounds depended
+// on what time of day you happened to run it (and often produced zero
+// events - the reported bug: an hourly raven that "did not play once").
+//
+// Each event still carries randomized pitch/volume/fade the same way a
+// scatter shot does (only the *timing* is deterministic), and the same
+// nominal-shot-duration/pitch-rate math so exportMix.js's fade-out lands
+// on the shot's real end.
+function simulateScheduledEvents(entry, durationSeconds) {
   const schedule = entry.schedule ?? {}
-  // Per direct owner request, a scheduled trigger's own character is
-  // randomized exactly the same way a scatter shot's is - only the *timing*
-  // stays deterministic. Reuses the same nominal-shot-duration/pitch-rate
-  // math simulateScatterEvents uses, so exportMix.js's fade-out (which
-  // needs a real, finite shot duration) works correctly here too.
+  if (schedule.type !== 'interval') return []
+
+  const intervalSeconds = Math.max(1, schedule.intervalMinutes ?? 60) * 60
   const nominalShotDuration = Math.max(0, (entry.loopEnd ?? 0) - (entry.loopStart ?? 0))
   const events = []
-  let cursor = new Date(now)
-  let offset = 0
-  while (true) {
-    const seconds = secondsUntilNextTrigger(schedule, cursor)
-    if (seconds === null) break
-    offset += seconds
-    if (offset >= durationSeconds) break
+  for (let offset = intervalSeconds; offset < durationSeconds; offset += intervalSeconds) {
     const pitchSemitones = randomPitchSemitones(schedule)
     const effectiveRate = Math.pow(2, pitchSemitones / 12)
     events.push({
@@ -123,7 +103,6 @@ function simulateScheduledEvents(entry, durationSeconds, now) {
       fadeOutMs: schedule.fadeOutMs ?? 0,
       shotDurationSeconds: nominalShotDuration / effectiveRate
     })
-    cursor = new Date(cursor.getTime() + seconds * 1000)
   }
   return events
 }
@@ -136,9 +115,9 @@ function simulateScheduledEvents(entry, durationSeconds, now) {
 // it, a lookup table) to slot into export automatically - 'loop' returns
 // null deliberately, since a looped sound has no discrete events at all
 // (exportMix.js tiles it directly instead).
-export function simulateEvents({ entry, durationSeconds, now = new Date() }) {
+export function simulateEvents({ entry, durationSeconds }) {
   const playMode = entry.playMode ?? 'loop'
   if (playMode === 'scatter') return simulateScatterEvents(entry, durationSeconds)
-  if (playMode === 'scheduled') return simulateScheduledEvents(entry, durationSeconds, now)
+  if (playMode === 'scheduled') return simulateScheduledEvents(entry, durationSeconds)
   return null
 }

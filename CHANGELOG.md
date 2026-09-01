@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.110 — Fixes: Composite sound picker, scheduled sounds in exports
+
+- Fix: the Composite tab's "Select a sound" dropdowns wouldn't open — clicking one did nothing. They work now.
+- Fix: a clock-scheduled sound was often missing entirely from an exported mix. A sound set to an interval (e.g. every hour) now fires on that interval measured from the start of the export — every hour, every 30 minutes, and so on.
+- A sound scheduled for specific times of day (e.g. 7:30 AM) is left out of exports, since an export is just a length of time with no clock attached to it.
+
 ## v0.1.109 — Composite tab is now a weld workstation
 
 - The Composite tab is rebuilt as a mini timeline. Each sound is a clip you drag left/right to position, with edges you drag to trim, and its own volume on the left — so you can control exactly how the pieces overlap and how loud each one sits.
