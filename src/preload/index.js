@@ -112,6 +112,7 @@ const api = {
     list: () => ipcRenderer.invoke('presets:list'),
     save: (payload) => ipcRenderer.invoke('presets:save', payload),
     delete: (id) => ipcRenderer.invoke('presets:delete', id),
+    updateWholeMix: (id, wholeMix) => ipcRenderer.invoke('presets:updateWholeMix', id, wholeMix),
     export: (presetId) => ipcRenderer.invoke('presets:export', presetId),
     pickImport: () => ipcRenderer.invoke('presets:pickImport'),
     resolveImportedSound: (portableSound) => ipcRenderer.invoke('presets:resolveImportedSound', portableSound),

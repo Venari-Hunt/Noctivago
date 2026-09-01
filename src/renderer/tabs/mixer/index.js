@@ -36,7 +36,13 @@ const state = {
   // comment for why this needs to be tracked separately from mutedSounds
   // itself. Session-only, like mute itself.
   soloedSoundId: null,
-  soloMutedIds: new Set()
+  soloMutedIds: new Set(),
+  // The preset most recently loaded via loadPreset(). Drives which preset's
+  // whole-mix processing is live on engine.wholeMix, and gates the Preset
+  // Remix plugin's live-preview events (only the active preset's edits are
+  // heard). Not cleared when the user then deviates from the preset by hand -
+  // it just tracks "what did we last load."
+  activePresetId: null
 }
 
 const els = {
@@ -1069,6 +1075,12 @@ async function loadPreset(preset) {
     }
   }
 
+  // Whole-mix processing (Preset Remix plugin). Installed on the shared
+  // engine chain here, with the preset's fade-in only on an actual load;
+  // swapped out / reset to neutral whenever another preset is loaded.
+  state.activePresetId = preset.id
+  engine.wholeMix.set(preset.wholeMix ?? null, { fadeInSeconds: preset.wholeMix?.fadeInSeconds ?? 0 })
+
   hideModal(els.presetsModal)
   render()
 }
@@ -1242,5 +1254,16 @@ export function mount(container) {
   window.addEventListener('noctivago:stop-all-playback', () => {
     for (const id of [...state.playing]) stopPlayback(id)
     render()
+  })
+  // The Preset Remix plugin (plugins/preset-remix/) dispatches this on every
+  // control change while editing a preset, and once more with the saved
+  // values when its tab is left (so an unsaved preview reverts). Same
+  // window-CustomEvent bridge as the Solo button - the plugin only has the
+  // curated window.noctivago IPC surface, no line to this module's engine.
+  // Only the currently-loaded preset's edits are applied, so editing preset A
+  // while preset B is the live mix changes nothing you can hear.
+  window.addEventListener('noctivago:whole-mix-preview', (e) => {
+    if (!e.detail || e.detail.presetId !== state.activePresetId) return
+    engine.wholeMix.set(e.detail.wholeMix ?? null)
   })
 }

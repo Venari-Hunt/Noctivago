@@ -1,0 +1,130 @@
+.premix-tab {
+  padding: 16px;
+  max-width: 560px;
+}
+
+.premix-tab h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.premix-tab h3 {
+  margin: 20px 0 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.premix-hint {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.premix-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.premix-row > span:first-child {
+  width: 84px;
+  flex-shrink: 0;
+}
+
+.premix-row input[type='number'],
+.premix-row select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  flex: 1;
+}
+
+.premix-row input[type='number'] {
+  max-width: 90px;
+  flex: 0 0 auto;
+}
+
+.premix-row input[type='range'] {
+  flex: 1;
+}
+
+.premix-value {
+  min-width: 56px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.premix-row input[type='number'] + .premix-value {
+  text-align: left;
+  min-width: 0;
+  flex: 1;
+}
+
+.premix-controls.premix-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.premix-eq-canvas {
+  display: block;
+  width: 100%;
+  height: 180px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  touch-action: none;
+  margin: 4px 0 8px;
+}
+
+.premix-eq-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.premix-eq-fields label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.premix-eq-fields input,
+.premix-eq-fields select {
+  width: 72px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.premix-eq-fields select {
+  width: 96px;
+}
+
+.premix-eq-fields input:disabled,
+.premix-eq-fields select:disabled {
+  opacity: 0.45;
+}
+
+.premix-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.premix-status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  min-height: 1em;
+}

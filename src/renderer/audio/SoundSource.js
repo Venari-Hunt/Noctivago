@@ -41,7 +41,10 @@ const MAX_RECOVERY_ATTEMPTS = 3
 // set to - muting is meant to be non-destructive, so it never touches
 // band.type itself, only whether the node actually applies it. Shared by
 // both construction and live updates (setFilters) so they can't drift.
-function eqNodeType(band) {
+// Exported so WholeMixChain.js (the Preset Remix whole-mix chain) can build
+// an identically-shaped EQ chain without a third private copy - this is
+// core-to-core, unlike the plugin-side duplicates.
+export function eqNodeType(band) {
   return band.muted || band.type === 'off' ? 'allpass' : (band.type ?? 'peaking')
 }
 
@@ -56,7 +59,7 @@ function eqNodeType(band) {
 // EqEditor.js's copy, used for the response-curve preview).
 const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
 const STEEP_STAGE_COUNT = 4
-function eqBandStageCount(band) {
+export function eqBandStageCount(band) {
   return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
 }
 

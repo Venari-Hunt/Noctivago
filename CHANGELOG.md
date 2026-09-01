@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.114 — Preset Remix: whole-mix processing
+
+- New "Preset Remix" tab. Pick a preset, then shape the whole mix with a highpass, a lowpass, an overall gain, a fade-in, and a parametric EQ.
+- The settings are saved on the preset and heard live on everything playing whenever you load that preset in the Mixer — the live counterpart of the Export tab's whole-mix section.
+- If the preset is already the one playing, your edits preview live as you drag. Leaving the tab without saving drops the preview.
+- The EQ works like the per-sound one: click the graph to add a band, drag to move it, scroll over it for width, right-click to remove.
+
 ## v0.1.113 — Composite bake won't clip
 
 - Baking a Composite now runs a brick-wall limiter on the final mix, so welding several loud, overlapping members together can no longer clip and distort the result. Mixes that weren't near clipping are unaffected.
