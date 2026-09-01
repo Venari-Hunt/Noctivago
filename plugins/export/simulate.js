@@ -49,7 +49,14 @@ function simulateScatterEvents(entry, durationSeconds) {
   const nominalShotDuration = Math.max(0, (entry.loopEnd ?? 0) - (entry.loopStart ?? 0))
   const events = []
   let offset = 0
-  while (offset < durationSeconds) {
+  // A gap of exactly 0 (both bounds set to 0, "fully random" off) would spin
+  // this loop forever and grow `events` unbounded - the shot just plays
+  // back-to-back, so advance by the shot's own length instead (floored so a
+  // zero-length trim can't stall it either). Also a hard event cap as a last
+  // resort against any other runaway, matching the pipeline's own bounded-
+  // resource discipline (v0.1.85).
+  const MAX_EVENTS = 200000
+  while (offset < durationSeconds && events.length < MAX_EVENTS) {
     events.push({
       offsetSeconds: offset,
       pitchSemitones: randomPitchSemitones(scatter),
@@ -58,7 +65,8 @@ function simulateScatterEvents(entry, durationSeconds) {
       fadeOutMs: scatter.fadeOutMs ?? 0,
       shotDurationSeconds: nominalShotDuration
     })
-    offset += randomGapSeconds(scatter)
+    const gap = randomGapSeconds(scatter)
+    offset += gap > 0.001 ? gap : Math.max(nominalShotDuration, 0.05)
   }
   return events
 }

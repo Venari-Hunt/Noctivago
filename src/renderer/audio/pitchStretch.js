@@ -89,34 +89,28 @@ function ncc(signal, aStart, bStart, len) {
   return denom > 1e-9 ? dot / denom : 0
 }
 
-// WSOLA time-stretch of a mono Float32Array by `stretch` (output length ~
-// input length * stretch, same pitch).
-export function timeStretch(input, stretch) {
-  if (!(stretch > 0) || input.length < FRAME_SIZE * 2) return input.slice()
-
+// Plans the WSOLA frame positions for a stretch of `guide` by `stretch`:
+// the input-sample offset each synthesis frame (1..K; frame 0 is always at
+// 0) should be read from, picked by the similarity search. Split out from
+// the render so a multi-channel clip can plan *once* on a mono guide and
+// then render every channel against that same plan - otherwise each channel
+// runs its own search, picks its own offsets, and L/R drift into
+// inter-channel phase differences that weren't in the source (stereo smear
+// / comb filtering when summed to mono).
+function planStretch(guide, stretch) {
   const frame = FRAME_SIZE
-  const half = SYNTH_HOP // overlap length between consecutive synthesis frames
   const anaHop = Math.max(1, Math.round(SYNTH_HOP / stretch))
-  const win = hann(frame)
+  const wantedLen = Math.round(guide.length * stretch)
+  const outLen = wantedLen + frame
 
-  const wantedLen = Math.round(input.length * stretch)
-  const out = new Float32Array(wantedLen + frame)
-
-  // Frame 0: copied straight in, but only its trailing half is Hann-tapered
-  // (the leading half stays at full level) so a sharp attack at t=0 survives
-  // instead of being faded in over ~12 ms.
-  for (let i = 0; i < frame; i++) {
-    const w = i < half ? 1 : win[i]
-    out[i] += input[i] * w
-  }
-
+  const frameStarts = []
   let anaPos = 0 // start (in input) of the frame just placed
   let synPos = SYNTH_HOP // where the next frame goes in output
 
   while (true) {
     // The join sounds best if the next frame's leading `half` samples
     // continue smoothly from where the previous frame was heading in the
-    // *input* - i.e. from input[anaPos + SYNTH_HOP ...]. Search around the
+    // *guide* - i.e. from guide[anaPos + SYNTH_HOP ...]. Search around the
     // nominal analysis position for the read offset that matches that best.
     const target = anaPos + SYNTH_HOP
     const center = anaPos + anaHop
@@ -126,8 +120,8 @@ export function timeStretch(input, stretch) {
     // and the search drifts, which shows up as a pitch change.
     const scoreAt = (delta) => {
       const cand = center + delta
-      if (cand < 0 || cand + MATCH_LEN >= input.length || target + MATCH_LEN >= input.length) return -Infinity
-      return ncc(input, cand, target, MATCH_LEN) - 0.05 * Math.abs(delta) / SEARCH_RADIUS
+      if (cand < 0 || cand + MATCH_LEN >= guide.length || target + MATCH_LEN >= guide.length) return -Infinity
+      return ncc(guide, cand, target, MATCH_LEN) - 0.05 * Math.abs(delta) / SEARCH_RADIUS
     }
     // Coarse scan (step 4) then a fine refine around the winner - a scatter
     // shot fires off a setTimeout, so this runs on the main thread and an
@@ -152,22 +146,57 @@ export function timeStretch(input, stretch) {
     }
 
     const frameStart = center + bestDelta
-    if (frameStart < 0 || frameStart + frame >= input.length) break
-    if (synPos + frame >= out.length) break
+    if (frameStart < 0 || frameStart + frame >= guide.length) break
+    if (synPos + frame >= outLen) break
 
-    const lastFrame = frameStart + anaHop + SEARCH_RADIUS + frame >= input.length
-    for (let i = 0; i < frame; i++) {
-      // Trailing half of the very last frame stays full-level too, so a
-      // decaying tail isn't chopped by an early fade.
-      const w = lastFrame && i >= half ? 1 : win[i]
-      out[synPos + i] += input[frameStart + i] * w
-    }
-
+    frameStarts.push(frameStart)
     anaPos = frameStart
     synPos += SYNTH_HOP
   }
 
+  return { frameStarts, wantedLen }
+}
+
+// Overlap-adds `input` (one channel) into an output buffer following a plan
+// from planStretch. `input` and the guide the plan was built from must be
+// the same length (guaranteed: every channel of an AudioBuffer is).
+function renderStretch(input, { frameStarts, wantedLen }) {
+  const frame = FRAME_SIZE
+  const half = SYNTH_HOP // overlap length between consecutive synthesis frames
+  const win = hann(frame)
+  const out = new Float32Array(wantedLen + frame)
+
+  // Frame 0: copied straight in, but only its trailing half is Hann-tapered
+  // (the leading half stays at full level) so a sharp attack at t=0 survives
+  // instead of being faded in over ~12 ms.
+  for (let i = 0; i < frame; i++) {
+    out[i] += (input[i] || 0) * (i < half ? 1 : win[i])
+  }
+
+  let synPos = SYNTH_HOP
+  for (let k = 0; k < frameStarts.length; k++) {
+    const frameStart = frameStarts[k]
+    // Only the genuine last frame (known now that the whole plan is built -
+    // the old code predicted it from the worst-case search offset and got it
+    // wrong, leaving a unity-gain trailing half *under* a following frame =>
+    // ~+6 dB spike ~10 ms before the shot's end) keeps its trailing half at
+    // full level, so a decaying tail isn't chopped by an early fade.
+    const isLast = k === frameStarts.length - 1
+    for (let i = 0; i < frame; i++) {
+      const w = isLast && i >= half ? 1 : win[i]
+      out[synPos + i] += (input[frameStart + i] || 0) * w
+    }
+    synPos += SYNTH_HOP
+  }
+
   return out.slice(0, wantedLen)
+}
+
+// WSOLA time-stretch of a mono Float32Array by `stretch` (output length ~
+// input length * stretch, same pitch).
+export function timeStretch(input, stretch) {
+  if (!(stretch > 0) || input.length < FRAME_SIZE * 2) return input.slice()
+  return renderStretch(input, planStretch(input, stretch))
 }
 
 // Build a new AudioBuffer that, when played back at rate `2^(semitones/12)`
@@ -184,10 +213,27 @@ export function pitchShiftBuffer(context, audioBuffer, semitones) {
 
   const ratio = Math.pow(2, semitones / 12)
   const channels = audioBuffer.numberOfChannels
+
+  // Plan the frame alignment once, on a mono downmix, then render every
+  // channel against that shared plan so a stereo clip keeps its inter-
+  // channel phase relationship (see planStretch).
+  let guide
+  if (channels === 1) {
+    guide = audioBuffer.getChannelData(0)
+  } else {
+    guide = new Float32Array(audioBuffer.length)
+    for (let ch = 0; ch < channels; ch++) {
+      const d = audioBuffer.getChannelData(ch)
+      for (let i = 0; i < guide.length; i++) guide[i] += d[i] / channels
+    }
+  }
+  if (guide.length < FRAME_SIZE * 2) return audioBuffer
+
+  const plan = planStretch(guide, ratio)
   const stretched = []
   let outLen = 0
   for (let ch = 0; ch < channels; ch++) {
-    const s = timeStretch(audioBuffer.getChannelData(ch), ratio)
+    const s = renderStretch(audioBuffer.getChannelData(ch), plan)
     stretched.push(s)
     if (s.length > outLen) outLen = s.length
   }

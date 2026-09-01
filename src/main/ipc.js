@@ -212,9 +212,13 @@ export function registerIpcHandlers() {
       let durationSeconds = entry?.durationSeconds
       if (durationSeconds == null) {
         durationSeconds = await probeDurationSeconds(inputPath)
-        if (durationSeconds != null && entry) library.updateMeta(id, { durationSeconds })
+        // probeDurationSeconds returns 0 (not null) if ffmpeg decodes no
+        // samples - don't persist that as real metadata (it'd permanently
+        // suppress the Mixer's own null-guarded re-probe and feed 0 into
+        // loop-clip eligibility), matching library.js's `<= 0` eager-bake guard.
+        if (durationSeconds > 0 && entry) library.updateMeta(id, { durationSeconds })
       }
-      if (durationSeconds == null) return null
+      if (!(durationSeconds > 0)) return null
       return await extractWaveformPeaks({
         inputPath,
         durationSeconds,

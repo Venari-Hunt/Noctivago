@@ -41,6 +41,9 @@ export default class CompositePlugin {
     this.api = app.noctivago
     this.library = []
     this.durations = {} // soundId -> seconds (from the entry, or learned lazily)
+    this.shown = false
+    this._peaksCache = new Map() // "soundId|w|in|out" -> peaks (each entry = a real ffmpeg pass)
+    this._resizeTimer = null
     this.members = [] // [{ soundId, delayMs, inSec, outSec, volume }]
     this.editingId = null
     this.selectedIndex = -1
@@ -55,16 +58,28 @@ export default class CompositePlugin {
       id: 'composite',
       title: 'Composite',
       mount: (container) => this.mount(container),
-      onShow: () => this.refresh()
+      onShow: () => {
+        this.shown = true
+        this.refresh()
+      },
+      onHide: () => {
+        this.shown = false
+      }
     })
     // Pick up sounds added elsewhere (the + menu, a watched folder) without
-    // needing to leave and re-enter the tab.
-    this._unsubLibrary = this.api.library.onChanged(() => this.refresh())
+    // needing to leave and re-enter the tab. Only act while the tab is
+    // actually visible - refresh() re-extracts every clip waveform via
+    // ffmpeg, and this fires on any app-wide library mutation (e.g. every
+    // debounced Mixer volume save). onShow catches up whatever was missed.
+    this._unsubLibrary = this.api.library.onChanged(() => {
+      if (this.shown) this.refresh()
+    })
   }
 
   async onunload() {
     this.stopPreview()
     this._unsubLibrary?.()
+    clearTimeout(this._resizeTimer)
     if (this._onMove) window.removeEventListener('pointermove', this._onMove)
     if (this._onUp) window.removeEventListener('pointerup', this._onUp)
     if (this._onResize) window.removeEventListener('resize', this._onResize)
@@ -136,7 +151,14 @@ export default class CompositePlugin {
     this.els.lanes.addEventListener('pointerdown', (e) => this.onPointerDown(e))
     window.addEventListener('pointermove', this._onMove = (e) => this.onPointerMove(e))
     window.addEventListener('pointerup', this._onUp = (e) => this.onPointerUp(e))
-    window.addEventListener('resize', this._onResize = () => this.render())
+    // Debounced: a window-border drag fires `resize` continuously, and each
+    // render() re-lays-out every clip (waveforms come from the cache unless
+    // the pixel width actually changed).
+    window.addEventListener('resize', this._onResize = () => {
+      if (!this.shown) return
+      clearTimeout(this._resizeTimer)
+      this._resizeTimer = setTimeout(() => this.render(), 120)
+    })
 
     this.members = [this.blankMember(), this.blankMember()]
     this.render()
@@ -148,6 +170,9 @@ export default class CompositePlugin {
   }
 
   async refresh() {
+    // A member's underlying audio may have been re-baked/re-trimmed elsewhere
+    // (Remix); drop the cache so waveforms re-fetch once here.
+    this._peaksCache.clear()
     this.library = await this.api.library.list()
     for (const s of this.library) {
       if (s.durationSeconds != null && this.durations[s.id] == null) this.durations[s.id] = s.durationSeconds
@@ -367,16 +392,16 @@ export default class CompositePlugin {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, cssW, cssH)
 
-    let peaks = null
-    try {
-      peaks = await this.api.audio.getWaveformPeaks(
-        m.soundId,
-        Math.max(8, Math.round(cssW)),
-        this.memberIn(m),
-        this.memberOut(m)
-      )
-    } catch {
-      peaks = null
+    const w = Math.max(8, Math.round(cssW))
+    const cacheKey = `${m.soundId}|${w}|${this.memberIn(m).toFixed(3)}|${this.memberOut(m).toFixed(3)}`
+    let peaks = this._peaksCache.get(cacheKey) ?? null
+    if (!peaks) {
+      try {
+        peaks = await this.api.audio.getWaveformPeaks(m.soundId, w, this.memberIn(m), this.memberOut(m))
+        if (peaks) this._peaksCache.set(cacheKey, peaks)
+      } catch {
+        peaks = null
+      }
     }
     // The canvas may have been recycled by a re-render while we awaited.
     if (!canvas.isConnected) return

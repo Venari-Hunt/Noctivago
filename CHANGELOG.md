@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.112 — Small fixes from a self-review pass
+
+- Random Interval / Scheduled sounds with pitch variation: fixed a brief volume jump right before the end of a pitched shot, and stereo clips no longer smear when pitch-shifted.
+- Export no longer hangs on a Random Interval sound whose gap is set to exactly 0 (both bounds) with "Fully random gap" off — the shot is now treated as playing back-to-back.
+- The Composite tab no longer re-reads every clip's waveform on every window resize or on unrelated edits made in other tabs.
+- A rare file that reports no length no longer gets a bad zero length saved for it.
+
 ## v0.1.111 — Pitch shift keeps a sound's length
 
 - A Random Interval or Scheduled sound with pitch variation now keeps the length you trimmed it to — a pitched-up shot no longer plays faster and shorter, a pitched-down one no longer drags out. Pitch moves, timing doesn't.
