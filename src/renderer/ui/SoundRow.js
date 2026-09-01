@@ -1,9 +1,5 @@
 import { formatDuration } from '../util/time.js'
-
-// Matches the default new sounds get in tabs/mixer/index.js's state.volumes
-// fallback (state.volumes.get(id) ?? 0.7) — a double-click reset should land
-// a sound back at its untampered default, not silence (0).
-const DEFAULT_VOLUME = 0.7
+import { gainToSlider, sliderToGain, DEFAULT_VOLUME } from '../core/volumeScale.js'
 
 // Speaker (unmuted) / speaker-with-X (muted) - same icon pair as the global
 // volume mute button in tabs/mixer/index.js (duplicated rather than shared
@@ -331,18 +327,24 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     volumeSlider.type = 'range'
     volumeSlider.min = '0'
     volumeSlider.max = '100'
-    // defaultValue (the fixed reset target for the app-wide double-click-
-    // resets-a-slider behavior, see main.js) is set separately from value
-    // (this render's live volume) since this element is rebuilt from
-    // scratch on every render — value alone wouldn't preserve "what the
-    // untampered default is" across re-renders.
-    volumeSlider.defaultValue = String(DEFAULT_VOLUME * 100)
-    volumeSlider.value = String(Math.round(volume * 100))
+    // The slider is bipolar: its centre (50) is unity gain, left attenuates,
+    // right boosts (see core/volumeScale.js). defaultValue (the fixed reset
+    // target for the app-wide double-click-resets-a-slider behavior, see
+    // main.js) is set separately from value (this render's live volume) since
+    // this element is rebuilt from scratch on every render — value alone
+    // wouldn't preserve "what the untampered default is" across re-renders.
+    volumeSlider.defaultValue = String(gainToSlider(DEFAULT_VOLUME))
+    volumeSlider.value = String(gainToSlider(volume))
     volumeSlider.className = 'sound-row-volume'
     volumeSlider.addEventListener('input', () => {
-      callbacks.onVolumeChange(entry.id, Number(volumeSlider.value) / 100)
+      callbacks.onVolumeChange(entry.id, sliderToGain(volumeSlider.value))
     })
-    li.appendChild(volumeSlider)
+    // Wrapper carries the centre-tick marker (::after), so "neutral" is
+    // eyeball-able on the wider bar.
+    const volumeWrap = document.createElement('span')
+    volumeWrap.className = 'volume-slider-wrap'
+    volumeWrap.appendChild(volumeSlider)
+    li.appendChild(volumeWrap)
 
     const muteBtn = document.createElement('button')
     muteBtn.className = 'btn btn-svg-icon' + (muted ? ' btn-svg-icon-active' : '')

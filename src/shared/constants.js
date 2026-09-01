@@ -6,3 +6,10 @@
 // of decoding. Renderer checks this before ever asking main to render a clip;
 // main enforces it too so the two can't drift.
 export const MAX_BUFFER_CLIP_SECONDS = 600
+
+// A fresh sound's volume. The volume sliders are bipolar - their center is
+// unity gain (the sound at its own recorded level), so a new sound sits dead
+// center. Was 0.7 (an arbitrary slight attenuation) before the bipolar
+// sliders. Imported by both the renderer (core/volumeScale.js) and main
+// (library.js) so the default can't drift between them.
+export const DEFAULT_SOUND_VOLUME = 1

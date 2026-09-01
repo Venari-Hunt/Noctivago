@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.115 — Bigger, centre-neutral volume sliders
+
+- The volume sliders (the global one and every per-sound one) are wider now, so you have more drag room and finer control.
+- They're also bipolar: the centre is the sound's own level, drag left to make it quieter (down to silent), drag right to make it louder (up to double). A faint tick marks the centre.
+- A newly added sound sits at the centre — its own recorded level. Sounds you'd already turned down keep exactly the volume they had; they just show left of centre now.
+
 ## v0.1.114 — Preset Remix: whole-mix processing
 
 - New "Preset Remix" tab. Pick a preset, then shape the whole mix with a highpass, a lowpass, an overall gain, a fade-in, and a parametric EQ.

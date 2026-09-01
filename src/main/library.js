@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 import { getLoopClipPath, deleteLoopClip, renderLoopClip, probeDurationSeconds } from './ffmpeg/loopClip.js'
 import { runFfmpegToFile } from './ffmpeg/runFfmpeg.js'
 import { getSettings } from './settings.js'
-import { MAX_BUFFER_CLIP_SECONDS } from '../shared/constants.js'
+import { MAX_BUFFER_CLIP_SECONDS, DEFAULT_SOUND_VOLUME } from '../shared/constants.js'
 
 const store = new Store({
   name: 'library',
@@ -301,7 +301,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     storedFileName,
     fileSizeBytes: stats.size,
     durationSeconds: null,
-    volume: 0.7,
+    volume: DEFAULT_SOUND_VOLUME,
     included: false,
     loopStart: 0,
     loopEnd: null,

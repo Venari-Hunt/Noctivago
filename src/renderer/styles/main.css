@@ -533,8 +533,32 @@ main {
   color: var(--danger);
 }
 
+/* Volume sliders (global + per-sound) are bipolar - centre is unity gain,
+   drag left to attenuate, right to boost (see core/volumeScale.js). Wider
+   than a plain slider so there's real drag resolution, and wrapped in
+   .volume-slider-wrap which draws a faint centre tick behind the thumb. */
+.volume-slider-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.volume-slider-wrap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  transform: translateY(-50%);
+  background: var(--text-dim);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .sound-row-volume {
-  width: 100px;
+  width: 140px;
 }
 
 .global-volume-label {
@@ -546,7 +570,7 @@ main {
 }
 
 .global-volume {
-  width: 100px;
+  width: 170px;
 }
 
 .empty-state {

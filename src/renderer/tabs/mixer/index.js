@@ -8,6 +8,7 @@ import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
 import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
+import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -373,7 +374,7 @@ async function refreshList() {
     // entry is seen in a session (e.g. right after app startup, when
     // state.volumes is empty) - never overwrites a value already set this
     // session, so it doesn't fight an in-progress slider drag.
-    if (!state.volumes.has(entry.id)) state.volumes.set(entry.id, entry.volume ?? 0.7)
+    if (!state.volumes.has(entry.id)) state.volumes.set(entry.id, entry.volume ?? DEFAULT_VOLUME)
     reconcileSource(entry)
   }
   render()
@@ -441,7 +442,7 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
     if (!response.ok) return null
     const arrayBuffer = await response.arrayBuffer()
     const audioBuffer = await engine.context.decodeAudioData(arrayBuffer)
-    const volume = state.volumes.get(entry.id) ?? 0.7
+    const volume = state.volumes.get(entry.id) ?? DEFAULT_VOLUME
     let source
     if (isScatter) {
       source = new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter, oneShot })
@@ -471,7 +472,7 @@ async function getOrCreateSource(entry) {
   if (!source) {
     const isScatter = entry.playMode === 'scatter'
     const isScheduled = entry.playMode === 'scheduled'
-    const volume = state.volumes.get(entry.id) ?? 0.7
+    const volume = state.volumes.get(entry.id) ?? DEFAULT_VOLUME
     source = isScatter
       ? new StreamScatterSource(engine, {
           soundId: entry.id,
@@ -546,7 +547,7 @@ function persistPlayingState() {
 // destructive "set volume to 0" - unmuting always restores exactly whatever
 // the slider was already showing (see state.mutedSounds above).
 function effectiveVolume(id) {
-  return state.mutedSounds.has(id) ? 0 : (state.volumes.get(id) ?? 0.7)
+  return state.mutedSounds.has(id) ? 0 : (state.volumes.get(id) ?? DEFAULT_VOLUME)
 }
 
 async function startPlayback(id, entry) {
@@ -555,7 +556,7 @@ async function startPlayback(id, entry) {
   render()
   try {
     const source = await getOrCreateSource(entry)
-    if (!state.volumes.has(id)) state.volumes.set(id, 0.7)
+    if (!state.volumes.has(id)) state.volumes.set(id, entry.volume ?? DEFAULT_VOLUME)
     source.setVolume(effectiveVolume(id))
     await source.play()
     state.playing.add(id)
@@ -731,7 +732,7 @@ async function testFireOneShot(id) {
   }
 
   await engine.resume()
-  const volume = state.volumes.get(id) ?? entry.volume ?? 0.7
+  const volume = state.volumes.get(id) ?? entry.volume ?? DEFAULT_VOLUME
   const isScatter = entry.playMode === 'scatter'
   let source = null
   if (loopClipEligible(entry)) {
@@ -808,7 +809,8 @@ function updateGlobalMuteIcon() {
 }
 
 function applyGlobalVolume() {
-  const volume = state.globalMuted ? 0 : Number(els.globalVolume.value) / 100
+  // Bipolar slider - centre (50) is unity gain, see core/volumeScale.js.
+  const volume = state.globalMuted ? 0 : positionToGain(Number(els.globalVolume.value) / 100)
   const now = engine.context.currentTime
   engine.masterGain.gain.cancelScheduledValues(now)
   engine.masterGain.gain.linearRampToValueAtTime(volume, now + 0.05)
@@ -935,7 +937,7 @@ els.addFolderPresetConfirm.addEventListener('click', async () => {
 
   await api.presets.save({
     name,
-    sounds: added.map((entry) => ({ soundId: entry.id, volume: 0.7 }))
+    sounds: added.map((entry) => ({ soundId: entry.id, volume: DEFAULT_VOLUME }))
   })
 
   if (els.addFolderPresetTag.checked && pickedFolderPresetTagName) {
@@ -1041,7 +1043,7 @@ els.savePresetBtn.addEventListener('click', async () => {
   els.presetSaveHint.textContent = ''
   const sounds = [...state.included].map((id) => ({
     soundId: id,
-    volume: state.volumes.get(id) ?? 0.7
+    volume: state.volumes.get(id) ?? DEFAULT_VOLUME
   }))
   await api.presets.save({ name, sounds })
   els.newPresetName.value = ''
