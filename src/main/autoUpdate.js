@@ -8,6 +8,7 @@ import {
   setAutoUpdateIntervalSeconds as persistAutoUpdateIntervalSeconds
 } from './settings.js'
 import { changelogTextBetween } from './changelog.js'
+import { isExportInProgress, whenExportIdle } from './exportState.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -116,6 +117,16 @@ function normalizeNotes(releaseNotes) {
 }
 
 function runCheck() {
+  // Owner instruction, flagged as taking precedence over anything: the
+  // update cycle shouldn't even start while a preset export is baking. A
+  // manual "Check for updates" click (Settings) is deliberate user action
+  // and still goes through - only the periodic background check defers,
+  // since the actual close-the-app risk (quitAndInstall) is guarded
+  // separately below regardless of how the check was triggered.
+  if (isExportInProgress() && !manualCheckPending) {
+    log.info('Auto-update: skipping check - a preset export is running')
+    return
+  }
   log.info(`Auto-update: checking (current version ${app.getVersion()}, token present: ${Boolean(__UPDATE_TOKEN__)})`)
   autoUpdater.checkForUpdates().catch((err) => log.error('Auto-update check failed', err))
 }
@@ -186,8 +197,13 @@ export function initAutoUpdate(win) {
       clearAutoInstallCountdown()
       autoInstallCountdownId = setTimeout(() => {
         autoInstallCountdownId = null
-        log.info(`Auto-update: countdown elapsed, downloading ${info.version}`)
-        autoUpdater.downloadUpdate()
+        // A preset export that started during the countdown shouldn't have
+        // its window closed out from under it either - wait it out, same
+        // guard as the final quitAndInstall step below.
+        whenExportIdle(() => {
+          log.info(`Auto-update: countdown elapsed, downloading ${info.version}`)
+          autoUpdater.downloadUpdate()
+        })
       }, AUTO_INSTALL_COUNTDOWN_SECONDS * 1000)
       send('update:available', {
         version: info.version,
@@ -228,9 +244,18 @@ export function initAutoUpdate(win) {
   // relaunches the app once the silent install finishes.
   autoUpdater.on('update-downloaded', (info) => {
     setState({ status: 'downloaded', version: info.version })
-    log.info(`Auto-update: ${info.version} downloaded, installing and restarting now`)
     send('update:downloaded', { version: info.version })
-    setTimeout(() => autoUpdater.quitAndInstall(true, true), 1500)
+    // Never quit-and-restart out from under a running export - direct
+    // owner instruction, flagged as taking precedence over anything. Guarded
+    // twice: once before the paint delay starts, once right before the
+    // actual quitAndInstall call, since an export could start in that
+    // 1.5s window too.
+    whenExportIdle(() => {
+      log.info(`Auto-update: ${info.version} downloaded, installing and restarting now`)
+      setTimeout(() => {
+        whenExportIdle(() => autoUpdater.quitAndInstall(true, true))
+      }, 1500)
+    })
   })
 
   autoUpdater.on('update-not-available', (info) => {

@@ -19,6 +19,7 @@ import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { suggestLoopPoints } from './ffmpeg/loopSuggest.js'
 import { exportMix } from './ffmpeg/exportMix.js'
+import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
@@ -296,7 +297,15 @@ export function registerIpcHandlers() {
         if (!event.sender.isDestroyed()) event.sender.send('export:progress', payload)
       }
     }
-    return exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: getSettings().fasterExport })
+    // Bracketed around the whole bake, not just the ffmpeg calls, so
+    // autoUpdate.js's guard covers the entire window an export could still
+    // be running - see exportState.js.
+    beginExport()
+    try {
+      return await exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: getSettings().fasterExport })
+    } finally {
+      endExport()
+    }
   })
 
   // members: [{soundId, delayMs, inSec, outSec, volume}] - resolves each to
