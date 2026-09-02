@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.126 — Remix: drag the sticky bar to seek
+
+- The Remix preview's progress bar now has a little draggable circle — click or drag anywhere on it to jump to that point in the trimmed sound, whether it's playing or paused.
+
 ## v0.1.125 — Export: simpler tab, clearer finish
 
 - Removed the Export tab's own Highpass/Lowpass/Gain section — whole-mix processing now lives only on the Preset Remix tab. Fade in/out stay on the Export tab.
