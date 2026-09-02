@@ -1151,7 +1151,8 @@ els.presetImportConfirm.addEventListener('click', async () => {
   const result = await api.presets.finalizeImport({
     importSessionId: importAnalysis.importSessionId ?? null,
     name: importAnalysis.name,
-    sounds: importAnalysis.sounds
+    sounds: importAnalysis.sounds,
+    wholeMix: importAnalysis.wholeMix ?? null
   })
   importAnalysis = null
   hideModal(els.presetImportDialog)

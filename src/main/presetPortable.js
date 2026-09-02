@@ -97,6 +97,11 @@ export function buildPortableBundle(presetId) {
     exportedAt: new Date().toISOString(),
     appVersion: app.getVersion(),
     name: preset.name,
+    // Preset Remix's whole-mix processing (HP/LP/Gain/fade/EQ) - owner
+    // inbox request, v0.1.114 follow-up: "add the preset mix on the
+    // exported noctivago file." null when the preset has none (matches
+    // presets.js's own normalizeWholeMix truthiness convention).
+    wholeMix: preset.wholeMix ?? null,
     sounds: portableSounds
   }
   return { manifest, files }
@@ -239,6 +244,10 @@ export function analyzePortablePreset(manifest, bundle = null) {
     ok: true,
     name: manifest.name ?? 'Imported preset',
     appVersion: manifest.appVersion ?? null,
+    // Absent entirely on a Phase-1 file predating this field, or an older
+    // export from before Preset Remix existed - null either way, same as a
+    // preset that just never had whole-mix settings.
+    wholeMix: manifest.wholeMix ?? null,
     sounds
   }
 }
@@ -312,7 +321,7 @@ export function sweepImportSessions() {
 // "Create preset" from the import dialog. Resolves every sound (existing
 // match, the user's manual Locate, or the bundle), saves the preset, and
 // tears down the temp session.
-export function finalizeImport({ importSessionId, name, sounds }) {
+export function finalizeImport({ importSessionId, name, sounds, wholeMix }) {
   const resolved = []
   for (const s of sounds || []) {
     let soundId = s.matchedSoundId
@@ -327,6 +336,6 @@ export function finalizeImport({ importSessionId, name, sounds }) {
   if (importSessionId) clearImportSession(importSessionId)
 
   if (resolved.length === 0) return { ok: false, error: 'None of the sounds could be added.' }
-  const preset = savePreset({ name: name || 'Imported preset', sounds: resolved })
+  const preset = savePreset({ name: name || 'Imported preset', sounds: resolved, wholeMix: wholeMix ?? null })
   return { ok: true, preset, soundCount: resolved.length }
 }

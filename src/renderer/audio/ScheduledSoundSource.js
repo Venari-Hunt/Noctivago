@@ -255,6 +255,18 @@ export class BufferScheduledSource {
 // (v0.1.71) for why: rAF is throttled to near-zero once the window is
 // hidden/unfocused, the normal state for this app, which would otherwise
 // silently kill scheduling after the first shot.
+//
+// DISCLAIMER (owner-requested, v0.1.111 Questions): pitch randomization here
+// uses playbackRate (no detune equivalent on <audio>, and no in-memory
+// samples to pre-stretch the way BufferScheduledSource's WSOLA path does),
+// so a pitch shift still changes shot duration/tempo - exactly the same
+// coupling StreamScatterSource has, and for the same reason (see its own
+// identical disclaimer). This only bites a scheduled trim long enough to
+// never bake, which is unusual. If you're here chasing a "pitched shots play
+// faster/slower than expected" bug: this is that bug, it's a known/accepted
+// limitation, not a regression - fixing it for real needs a realtime
+// pitch-shift node in the stream chain, which is a real chunk of new work,
+// not a quick patch. Don't spend time re-diagnosing this from scratch.
 export class StreamScheduledSource {
   constructor(engine, { soundId, loopStart, loopEnd, volume, filters, schedule, oneShot = false }) {
     this.engine = engine
