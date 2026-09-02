@@ -6,6 +6,25 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.120 — Shared presets now carry their Preset Remix mix settings too
+
+- Exporting a preset to share (.ncvpreset) now includes its Preset Remix whole-mix settings (highpass/lowpass/gain/fade/EQ), if it has any — importing it on another machine restores them, not just the sounds.
+- Older shared preset files without this still import fine.
+
+## v0.1.119 — A chime when an export finishes
+
+- The Export tab now plays a short chime when a preset finishes exporting to audio — a rising tone on success, a falling tone if it failed — so you don't have to keep checking a long export's progress.
+
+## v0.1.118 — Drag to set fade in/out on Random Interval / Scheduled sounds
+
+- Remix's waveform now has draggable fade handles for the two Fade in/out (ms) fields on Random Interval and Scheduled sounds — small triangle grips in the top corners of the trimmed region, same idea as a DAW clip's fade handles.
+- Drag them like you'd drag the trim handles; the ms fields still work too and stay in sync either way.
+
+## v0.1.117 — Exporting now blocks an update from installing until it's done
+
+- An update that finished downloading while you were exporting a preset could restart the app and interrupt the export. Now the app waits until your export is completely finished before it installs and restarts.
+- Automatic background update checks (and, for anyone with "install updates automatically" turned on, the auto-download) also pause while an export is running.
+
 ## v0.1.116 — Fix: big exports failing with "spawn ENAMETOOLONG"
 
 - A long export, or one with a Random Interval / Scheduled sound that fires very often, could fail right at the end with "Export failed: spawn ENAMETOOLONG" — the command handed to the audio engine had grown past the operating system's length limit.
