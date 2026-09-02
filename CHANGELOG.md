@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.125 — Export: simpler tab, clearer finish
+
+- Removed the Export tab's own Highpass/Lowpass/Gain section — whole-mix processing now lives only on the Preset Remix tab. Fade in/out stay on the Export tab.
+- The status line now shows how long the export actually took to render, and turns green (or red on failure) so it's obvious at a glance that it's done.
+- The progress bar clears when the export finishes instead of sitting frozen at 100%.
+
 ## v0.1.124 — Mixer: sound names get their own row
 
 - Each sound's name now sits on its own full-width line at the top of its box, instead of squeezed in next to the buttons — it should stay readable even with a long name.
