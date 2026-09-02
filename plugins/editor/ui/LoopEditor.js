@@ -99,6 +99,15 @@ export function createLoopEditorController(canvas) {
   let moveRegionStartClientX = 0
   let moveRegionStartLoopStart = 0
   let moveRegionStartLoopEnd = 0
+  // Absolute waveform-time position the fade-in/out ball sat at when a
+  // start/end trim drag began - captured so the ball can be held fixed in
+  // place (independent of the trim handle) for the rest of that drag, rather
+  // than sliding along with it purely because it's normally defined as an
+  // offset from loopStart/loopEnd. Reported directly: dragging the cut
+  // handle was visibly dragging the fade ball along with it, which read as
+  // one drag controlling two things. null outside of a start/end drag.
+  let dragFadeInAnchor = null
+  let dragFadeOutAnchor = null
   let lastPointerClientX = 0
   let edgeScrollDirection = 0
   let edgeScrollRafId = null
@@ -327,6 +336,8 @@ export function createLoopEditorController(canvas) {
       if (dragging === 'start' || dragging === 'end') {
         dragStartViewStart = viewStart
         dragStartViewEnd = viewEnd
+        dragFadeInAnchor = loopStart + fadeInSec
+        dragFadeOutAnchor = loopEnd - fadeOutSec
         scheduleHoldZoom(evt.clientX)
       }
     }
@@ -357,10 +368,30 @@ export function createLoopEditorController(canvas) {
 
     if (dragging === 'start') {
       loopStart = Math.min(snapToPlayhead(t, rect), loopEnd - MIN_LOOP_SECONDS)
+      // Hold the fade-in ball at its own fixed absolute position rather than
+      // letting it ride along with loopStart - only clamped back in once the
+      // shrinking region would otherwise put it outside [0, regionLen].
+      if (fadesEnabled && dragFadeInAnchor != null) {
+        const regionLen = Math.max(0, loopEnd - loopStart)
+        const newFadeInSec = Math.min(Math.max(dragFadeInAnchor - loopStart, 0), Math.max(0, regionLen - fadeOutSec))
+        if (newFadeInSec !== fadeInSec) {
+          fadeInSec = newFadeInSec
+          onFadesChange({ fadeInSec, fadeOutSec })
+        }
+      }
       redraw()
       onChange({ loopStart, loopEnd })
     } else if (dragging === 'end') {
       loopEnd = Math.max(snapToPlayhead(t, rect), loopStart + MIN_LOOP_SECONDS)
+      // Same anchor-hold for the fade-out ball, mirrored off loopEnd.
+      if (fadesEnabled && dragFadeOutAnchor != null) {
+        const regionLen = Math.max(0, loopEnd - loopStart)
+        const newFadeOutSec = Math.min(Math.max(loopEnd - dragFadeOutAnchor, 0), Math.max(0, regionLen - fadeInSec))
+        if (newFadeOutSec !== fadeOutSec) {
+          fadeOutSec = newFadeOutSec
+          onFadesChange({ fadeInSec, fadeOutSec })
+        }
+      }
       redraw()
       onChange({ loopStart, loopEnd })
     } else if (dragging === 'playhead') {
