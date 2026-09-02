@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.129 — Export now carries a preset's Preset Remix sound
+
+- An exported file now applies the preset's own Preset Remix whole-mix settings (highpass/lowpass/gain/EQ), the same as what you hear live in the Mixer — applied last, over the whole mixed-down export.
+- A preset with no Preset Remix settings saved exports exactly as before (no change).
+
 ## v0.1.128 — Export: experimental parallel mixdown + per-step timing
 
 - New "Parallel mixdown (experimental)" checkbox on the Export tab. Renders every Loop-mode sound's own track at once instead of one after another on a long export — try it on a slow export and see if it actually helps; test-scale benchmarking didn't show a clear win, so this is a genuine experiment, not a guaranteed speedup.
