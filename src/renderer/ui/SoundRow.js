@@ -233,6 +233,16 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
 
+  // The name gets its own full-width top section so it doesn't compete with
+  // the button row for space - requested directly ("the name should
+  // populate a top section of the box so it can always or most of the time
+  // display it's complete name"). Everything else (meta/tags/buttons) moves
+  // to a second row below; the name's existing hover-marquee already covers
+  // "still cut off" (a name too long even for the full row width, e.g. at a
+  // very narrow window) without any new code.
+  const nameRow = document.createElement('div')
+  nameRow.className = 'sound-row-name-row'
+
   const info = document.createElement('div')
   info.className = 'sound-row-info'
 
@@ -270,7 +280,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     })
   })
   wireMarquee(name)
-  info.appendChild(name)
+  nameRow.appendChild(name)
 
   // Purely a display marker - a composite-derived sound (see the Composite
   // plugin) is otherwise a completely normal entry with no different
@@ -282,8 +292,16 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     badge.className = 'sound-row-composite-badge'
     badge.textContent = 'Composite'
     badge.title = `Baked from ${entry.compositeSource.members.length} sounds - open the Composite tab to edit`
-    info.appendChild(badge)
+    nameRow.appendChild(badge)
   }
+
+  li.appendChild(nameRow)
+
+  // Everything below the name - meta/tags plus every button and slider -
+  // shares this second row, so the name above never has to shrink to make
+  // room for them.
+  const controlsRow = document.createElement('div')
+  controlsRow.className = 'sound-row-controls'
 
   const meta = document.createElement('span')
   meta.className = 'sound-row-meta'
@@ -299,13 +317,13 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
 
   info.appendChild(buildTagsRow(entry, callbacks, allTags))
 
-  li.appendChild(info)
+  controlsRow.appendChild(info)
 
   if (entry.status === 'missing') {
     const missingLabel = document.createElement('span')
     missingLabel.className = 'sound-row-missing-label'
     missingLabel.textContent = 'Missing'
-    li.appendChild(missingLabel)
+    controlsRow.appendChild(missingLabel)
 
     const relinkBtn = document.createElement('button')
     relinkBtn.className = 'btn btn-small btn-icon-text'
@@ -313,7 +331,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     relinkBtn.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Relink'
     relinkBtn.addEventListener('click', () => callbacks.onRelink(entry.id))
-    li.appendChild(relinkBtn)
+    controlsRow.appendChild(relinkBtn)
   } else {
     const includeBtn = document.createElement('button')
     includeBtn.className = 'btn btn-small' + (included ? ' btn-active' : '')
@@ -321,7 +339,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     includeBtn.disabled = loading
     includeBtn.textContent = loading ? 'Loading…' : included ? 'In Mix' : 'Add'
     includeBtn.addEventListener('click', () => callbacks.onToggleIncluded(entry.id))
-    li.appendChild(includeBtn)
+    controlsRow.appendChild(includeBtn)
 
     const volumeSlider = document.createElement('input')
     volumeSlider.type = 'range'
@@ -344,7 +362,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     const volumeWrap = document.createElement('span')
     volumeWrap.className = 'volume-slider-wrap'
     volumeWrap.appendChild(volumeSlider)
-    li.appendChild(volumeWrap)
+    controlsRow.appendChild(volumeWrap)
 
     const muteBtn = document.createElement('button')
     muteBtn.className = 'btn btn-svg-icon' + (muted ? ' btn-svg-icon-active' : '')
@@ -352,7 +370,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     muteBtn.title = muted ? 'Unmute' : 'Mute'
     muteBtn.innerHTML = muted ? MUTE_ICON_SVG : VOLUME_ICON_SVG
     muteBtn.addEventListener('click', () => callbacks.onToggleMute(entry.id))
-    li.appendChild(muteBtn)
+    controlsRow.appendChild(muteBtn)
 
     // Single-target solo (like a DAW's own Solo button) - mutes every other
     // currently-playing sound so this one can be heard on its own, requested
@@ -370,7 +388,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     soloBtn.title = soloed ? 'Unsolo' : 'Solo (mute every other sound)'
     soloBtn.textContent = 'S'
     soloBtn.addEventListener('click', () => callbacks.onToggleSolo(entry.id))
-    li.appendChild(soloBtn)
+    controlsRow.appendChild(soloBtn)
 
     // Test-fire, scatter and scheduled sounds - requested directly for
     // scatter ("an override play button on the mixer tab for audios that
@@ -389,7 +407,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
       testFireBtn.title = 'Play one shot now (test this configuration)'
       testFireBtn.innerHTML = TEST_FIRE_ICON_SVG
       testFireBtn.addEventListener('click', () => callbacks.onTestFire(entry.id))
-      li.appendChild(testFireBtn)
+      controlsRow.appendChild(testFireBtn)
     }
   }
 
@@ -399,7 +417,9 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
   removeBtn.innerHTML =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg> Remove'
   removeBtn.addEventListener('click', () => callbacks.onRemove(entry.id))
-  li.appendChild(removeBtn)
+  controlsRow.appendChild(removeBtn)
+
+  li.appendChild(controlsRow)
 
   return li
 }

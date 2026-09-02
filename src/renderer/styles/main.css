@@ -346,14 +346,33 @@ main {
   color: var(--text-dim);
 }
 
+/* Two stacked sections: the name gets its own full-width top row so it
+   never has to shrink to make room for the button row below it (requested
+   directly - the name used to share a row with every button/slider and lost
+   the space contest as more buttons were added). See .sound-row-name-row and
+   .sound-row-controls. */
 .sound-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.sound-row-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sound-row-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
 }
 
 .sound-row:hover {
@@ -381,7 +400,10 @@ main {
 }
 
 .sound-row-name {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
+  font-size: 15px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
