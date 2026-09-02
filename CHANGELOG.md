@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.128 — Export: experimental parallel mixdown + per-step timing
+
+- New "Parallel mixdown (experimental)" checkbox on the Export tab. Renders every Loop-mode sound's own track at once instead of one after another on a long export — try it on a slow export and see if it actually helps; test-scale benchmarking didn't show a clear win, so this is a genuine experiment, not a guaranteed speedup.
+- The export log now shows how long each step actually took, so you can see exactly where a slow export's time is going.
+
 ## v0.1.127 — Remix: hear the actual saved audio, not just the preview
 
 - New "Live edit" / "Saved audio" toggle next to Play in Remix's sticky bar. The live preview can't be 100% accurate for everything (Doppler and Reverse have no live preview at all, and Pitch is only approximate) — switch to "Saved audio" to hear the real baked file instead, once you've saved.
