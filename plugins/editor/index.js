@@ -954,8 +954,11 @@ export default class EditorPlugin {
           <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
         </svg>
       </button>
-      <div class="editor-sticky-progress">
-        <div id="editor-sticky-progress-fill" class="editor-sticky-progress-fill"></div>
+      <div id="editor-sticky-progress" class="editor-sticky-progress" title="Drag to seek">
+        <div class="editor-sticky-progress-track">
+          <div id="editor-sticky-progress-fill" class="editor-sticky-progress-fill"></div>
+        </div>
+        <div id="editor-sticky-progress-thumb" class="editor-sticky-progress-thumb"></div>
       </div>
       <span id="editor-sticky-time" class="editor-sticky-time">0:00 / 0:00</span>
       <input id="editor-sticky-volume" type="range" min="0" max="100" value="${Math.round(this.previewVolume * 100)}" class="editor-sticky-volume" title="Preview volume" />
@@ -983,8 +986,11 @@ export default class EditorPlugin {
 
     this.els.playPause = container.querySelector('#editor-play-pause')
     this.els.loopToggle = container.querySelector('#editor-loop-toggle')
+    this.els.stickyProgress = container.querySelector('#editor-sticky-progress')
     this.els.stickyProgressFill = container.querySelector('#editor-sticky-progress-fill')
+    this.els.stickyProgressThumb = container.querySelector('#editor-sticky-progress-thumb')
     this.els.stickyTime = container.querySelector('#editor-sticky-time')
+    this.wireStickyProgressDrag()
     this.els.stickyVolume = container.querySelector('#editor-sticky-volume')
     this.els.stickyMute = container.querySelector('#editor-sticky-mute')
     this.els.stickySolo = container.querySelector('#editor-sticky-solo')
@@ -2012,6 +2018,42 @@ export default class EditorPlugin {
     this.previewRafId = requestAnimationFrame(() => this.tickPreviewPlayhead())
   }
 
+  // Drag-to-seek on the sticky progress bar - inbox answer to the v0.1.115
+  // volume-slider follow-up ("make it so you can control the needle via the
+  // progress bar on the sticky topbar... put a little circle on it so you
+  // can drag"). Works whether the preview is playing or paused -
+  // PreviewSource.scrubTo() already handles both (just repositions
+  // currentTime, doesn't change play state). A click anywhere on the bar
+  // seeks too, not just a precise grab on the thumb - matches how a normal
+  // scrubbable progress bar works elsewhere (e.g. a video player).
+  wireStickyProgressDrag() {
+    let dragging = false
+
+    const seekFromClientX = (clientX) => {
+      if (!this.previewSource || !this.loopEditorController) return
+      const rect = this.els.stickyProgress.getBoundingClientRect()
+      const fraction = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1)
+      const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+      const t = loopStart + fraction * Math.max(0, loopEnd - loopStart)
+      this.previewSource.scrubTo(t)
+      this.loopEditorController.setPlayhead(t)
+      this.updateStickyProgress(t)
+    }
+
+    this.els.stickyProgress.addEventListener('mousedown', (evt) => {
+      if (!this.previewSource) return
+      dragging = true
+      seekFromClientX(evt.clientX)
+    })
+    window.addEventListener('mousemove', (evt) => {
+      if (!dragging) return
+      seekFromClientX(evt.clientX)
+    })
+    window.addEventListener('mouseup', () => {
+      dragging = false
+    })
+  }
+
   // Progress is relative to the trimmed loop region (loopStart..loopEnd),
   // not the whole original file - that's what's actually being previewed/
   // looped, matching what the waveform's own highlighted region already
@@ -2024,6 +2066,7 @@ export default class EditorPlugin {
     const elapsed = Math.min(Math.max(currentTime - loopStart, 0), span)
     const pct = span > 0 ? (elapsed / span) * 100 : 0
     this.els.stickyProgressFill.style.width = `${pct}%`
+    this.els.stickyProgressThumb.style.left = `${pct}%`
     this.els.stickyTime.textContent = `${formatDuration(elapsed)} / ${formatDuration(span)}`
   }
 
@@ -2036,6 +2079,7 @@ export default class EditorPlugin {
     this.loopEditorController?.clearPlayhead()
     if (this.els.stickyProgressFill) {
       this.els.stickyProgressFill.style.width = '0%'
+      this.els.stickyProgressThumb.style.left = '0%'
       this.els.stickyTime.textContent = '0:00 / 0:00'
     }
     this.setPlayPauseIcon(false)
