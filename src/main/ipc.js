@@ -116,6 +116,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('presets:save', (_event, payload) => presets.savePreset(payload))
   ipcMain.handle('presets:delete', (_event, id) => presets.deletePreset(id))
   ipcMain.handle('presets:updateWholeMix', (_event, id, wholeMix) => presets.updatePresetWholeMix(id, wholeMix))
+  ipcMain.handle('presets:updateSounds', (_event, id, sounds) => presets.updatePresetSounds(id, sounds))
 
   // Portable preset export/import (src/main/presetPortable.js) - a .ncvpreset
   // file (a zip) carrying the preset, every sound's settings, and the audio

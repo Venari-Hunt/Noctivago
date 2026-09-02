@@ -87,6 +87,31 @@ export function updatePresetWholeMix(id, wholeMix) {
   return presets[idx]
 }
 
+// Edits an existing preset's own sound list/volumes in place (the Mixer's
+// "Save changes" button on whatever preset was last loaded - direct request,
+// 2026-09-02: "Save button for saving changes made on the current preset
+// without the need of creating a new one"). Mirrors savePreset's own
+// sounds.map shape exactly so a preset updated this way is byte-identical in
+// structure to one created fresh. name/createdAt/wholeMix are left untouched
+// - this only ever touches the sound list, matching the button's own scope.
+// Returns the updated preset, or null if the id is unknown.
+export function updatePresetSounds(id, sounds) {
+  const presets = store.get('presets')
+  const idx = presets.findIndex((p) => p.id === id)
+  if (idx === -1) return null
+  presets[idx] = {
+    ...presets[idx],
+    sounds: sounds.map((s) => ({
+      soundId: s.soundId,
+      type: 'local',
+      volume: s.volume,
+      effects: []
+    }))
+  }
+  store.set('presets', presets)
+  return presets[idx]
+}
+
 export function deletePreset(id) {
   const presets = store.get('presets')
   store.set('presets', presets.filter((p) => p.id !== id))

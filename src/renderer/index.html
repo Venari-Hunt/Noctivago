@@ -190,11 +190,15 @@
     <div id="presets-modal" class="modal hidden">
       <div class="modal-card">
         <h2>Presets</h2>
+        <button id="update-active-preset" class="btn btn-primary btn-icon-text hidden" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <span id="update-active-preset-label">Save changes</span>
+        </button>
         <div class="preset-save-row">
           <input id="new-preset-name" type="text" placeholder="Preset name" />
-          <button id="save-preset" class="btn btn-primary btn-icon-text" type="button">
+          <button id="save-preset" class="btn btn-icon-text" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            Save current mix
+            Save as new preset
           </button>
         </div>
         <p id="preset-save-hint" class="preset-save-hint"></p>

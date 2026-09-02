@@ -411,6 +411,11 @@ async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
 // export as they do live in the Mixer. Reuses loopClip.js's
 // buildEqBandFilter/eqBandStageCount directly for the eq bands - same
 // directory, no plugin-boundary duplication needed.
+// NOT inherited on purpose: wholeMix.fadeInSeconds (Preset Remix's own
+// "fade the live mix in when this preset loads" setting) - a different
+// concept from the fadeInSeconds/fadeOutSeconds params here, which are the
+// Export tab's own start/end fade for the whole rendered file. Only
+// highpass/lowpass/gain/eq are shared between live and export.
 function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds }) {
   const post = []
   if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)

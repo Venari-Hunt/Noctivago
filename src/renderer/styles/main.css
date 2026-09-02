@@ -715,6 +715,12 @@ main {
   margin-top: 16px;
 }
 
+#update-active-preset {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
 .preset-save-row {
   display: flex;
   gap: 8px;

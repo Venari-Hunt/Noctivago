@@ -86,6 +86,8 @@ const els = {
   addFolderTagConfirm: document.getElementById('add-folder-tag-confirm'),
 
   presetsModal: document.getElementById('presets-modal'),
+  updateActivePresetBtn: document.getElementById('update-active-preset'),
+  updateActivePresetLabel: document.getElementById('update-active-preset-label'),
   newPresetName: document.getElementById('new-preset-name'),
   savePresetBtn: document.getElementById('save-preset'),
   presetSaveHint: document.getElementById('preset-save-hint'),
@@ -1008,6 +1010,21 @@ async function refreshPresetList() {
     onDelete: deletePreset,
     onExport: exportPreset
   })
+  updateActivePresetButtonState(presets)
+}
+
+// Shows/labels the "Save changes" button for whatever preset was last
+// loaded (state.activePresetId - set by loadPreset, never cleared just by
+// editing the mix by hand, see loadPreset's own comment) - hidden entirely
+// if nothing's been loaded yet, or if that preset was deleted since.
+function updateActivePresetButtonState(presets) {
+  const active = presets.find((p) => p.id === state.activePresetId)
+  if (!active) {
+    els.updateActivePresetBtn.classList.add('hidden')
+    return
+  }
+  els.updateActivePresetBtn.classList.remove('hidden')
+  els.updateActivePresetLabel.textContent = `Save changes to "${active.name}"`
 }
 
 async function exportPreset(preset) {
@@ -1035,6 +1052,30 @@ els.openPresetsBtn.addEventListener('click', async () => {
 
 els.presetsClose.addEventListener('click', () => hideModal(els.presetsModal))
 
+// Shared by both the "Save changes" (update-in-place) and "Save as new
+// preset" (always creates) buttons - the currently-included sounds/volumes,
+// in the exact shape both api.presets.save and api.presets.updateSounds
+// expect.
+function currentMixSounds() {
+  return [...state.included].map((id) => ({
+    soundId: id,
+    volume: state.volumes.get(id) ?? DEFAULT_VOLUME
+  }))
+}
+
+els.updateActivePresetBtn.addEventListener('click', async () => {
+  if (!state.activePresetId) return
+  if (state.included.size === 0) {
+    els.presetSaveHint.classList.remove('ok')
+    els.presetSaveHint.textContent = 'Add at least one sound to the mix before saving.'
+    return
+  }
+  const updated = await api.presets.updateSounds(state.activePresetId, currentMixSounds())
+  els.presetSaveHint.classList.add('ok')
+  els.presetSaveHint.textContent = updated ? `Saved changes to "${updated.name}".` : 'Could not save - that preset may have been deleted.'
+  await refreshPresetList()
+})
+
 els.savePresetBtn.addEventListener('click', async () => {
   const name = els.newPresetName.value.trim()
   if (!name) {
@@ -1048,11 +1089,7 @@ els.savePresetBtn.addEventListener('click', async () => {
     return
   }
   els.presetSaveHint.textContent = ''
-  const sounds = [...state.included].map((id) => ({
-    soundId: id,
-    volume: state.volumes.get(id) ?? DEFAULT_VOLUME
-  }))
-  await api.presets.save({ name, sounds })
+  await api.presets.save({ name, sounds: currentMixSounds() })
   els.newPresetName.value = ''
   await refreshPresetList()
 })
