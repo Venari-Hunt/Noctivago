@@ -246,14 +246,23 @@ async function bakeShotClip(sound, { forLoop }) {
 
 function eventBranchChain(evt, volume, batchStart, speedMode) {
   const semitones = evt.pitchSemitones ?? 0
+  const speedFactor = evt.speedFactor ?? 1
   const gain = (evt.volumeScale ?? 1) * volume
   const parts = []
-  if (Math.abs(semitones) >= IDENTITY_PITCH_EPSILON_SEMITONES) {
-    // pitchq=speed: rubberband's fast (slightly lower quality) pitch mode -
-    // only under the faster-export toggle, since it's an unexpected quality
-    // change, not just a resource one.
-    const rb = `rubberband=pitch=${Math.pow(2, semitones / 12).toFixed(6)}`
-    parts.push(speedMode ? `${rb}:pitchq=speed` : rb)
+  const pitchActive = Math.abs(semitones) >= IDENTITY_PITCH_EPSILON_SEMITONES
+  const speedActive = Math.abs(speedFactor - 1) >= 0.005
+  if (pitchActive || speedActive) {
+    // One rubberband pass handles both: `pitch` shifts pitch without
+    // touching length (per-shot Pitch range, v0.1.111), `tempo` changes
+    // length/tempo without touching pitch (per-shot Speed range). tempo>1 =
+    // faster/shorter. pitchq=speed is rubberband's fast (slightly lower
+    // quality) mode - only under the faster-export toggle, an unexpected
+    // quality change rather than just a resource one.
+    const rbParts = []
+    if (pitchActive) rbParts.push(`pitch=${Math.pow(2, semitones / 12).toFixed(6)}`)
+    if (speedActive) rbParts.push(`tempo=${speedFactor.toFixed(6)}`)
+    if (speedMode) rbParts.push('pitchq=speed')
+    parts.push(`rubberband=${rbParts.join(':')}`)
   }
   parts.push(`volume=${gain.toFixed(6)}`)
   if (evt.fadeInMs > 0) parts.push(`afade=t=in:d=${(evt.fadeInMs / 1000).toFixed(3)}`)
@@ -593,7 +602,8 @@ async function renderFinalMixdown({
 //   already fully resolved by the renderer + IPC handler (library lookup,
 //   path resolution, event simulation). events is null/empty for 'loop'
 //   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
-//   fadeInMs, fadeOutMs, shotDurationSeconds } for 'scatter'/'scheduled'.
+//   speedFactor, fadeInMs, fadeOutMs, shotDurationSeconds } for
+//   'scatter'/'scheduled' (shotDurationSeconds already reflects speedFactor).
 export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })

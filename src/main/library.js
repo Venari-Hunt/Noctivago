@@ -378,6 +378,13 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
       pitchFullyRandom: false,
       minVolume: 1,
       maxVolume: 1,
+      // Per-shot wall-clock playback speed range, as a multiplier (1 = original
+      // tempo). Both at 1 (default) = no speed variation. Pitch-preserved: the
+      // shot clip is time-stretched, so the shot just gets shorter/longer, not
+      // higher/lower - same behavior as the Remix "Speed" control. See
+      // ScatterSoundSource.js's randomSpeedFactor.
+      minSpeed: 1,
+      maxSpeed: 1,
       fadeInMs: 0,
       fadeOutMs: 0,
       // Two or more scatter sounds sharing a non-empty, case-sensitive group
@@ -406,6 +413,8 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
       pitchFullyRandom: false,
       minVolume: 1,
       maxVolume: 1,
+      minSpeed: 1,
+      maxSpeed: 1,
       fadeInMs: 0,
       fadeOutMs: 0
     },

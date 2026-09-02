@@ -51,6 +51,11 @@ export const IDENTITY_PITCH_EPSILON_SEMITONES = 0.02
 // shot - a scatter/scheduled "shot" clip this long is unusual anyway.
 const MAX_STRETCH_SECONDS = 12
 
+// Below this, a per-shot speed change (Random Interval / Scheduled "Speed"
+// range) is inaudible - skip the stretch, same "a true no-op is skipped, not
+// run at neutral settings" convention as IDENTITY_PITCH_EPSILON_SEMITONES.
+export const IDENTITY_SPEED_EPSILON = 0.005
+
 const FRAME_SIZE = 1024
 // Synthesis hop = FRAME_SIZE / 2 => 50% overlap, where a Hann window has
 // exact constant-overlap-add (consecutive windows sum to 1.0 everywhere).
@@ -208,10 +213,28 @@ export function timeStretch(input, stretch) {
 // if the clip is too long to stretch synchronously (caller should fall back
 // to plain resampling for that shot).
 export function pitchShiftBuffer(context, audioBuffer, semitones) {
-  if (Math.abs(semitones) < IDENTITY_PITCH_EPSILON_SEMITONES) return audioBuffer
+  return shiftAndStretchBuffer(context, audioBuffer, semitones, 1)
+}
+
+// Generalization of pitchShiftBuffer that *also* applies a wall-clock speed
+// change (Random Interval / Scheduled per-shot "Speed" range). The caller
+// still sets `detune = semitones * 100` and leaves `playbackRate` at 1;
+// this returns a buffer pre-stretched by `2^(semitones/12) / speedFactor`,
+// so playing it back at the detune ratio (2^(semitones/12)) lands:
+//   - pitch shifted by exactly `semitones` (the resample ratio), and
+//   - lasting `originalDuration / speedFactor` wall-clock (the stretch factor
+//     divided by the resample ratio) - i.e. speed changes tempo/length with
+//     pitch preserved, matching how the Remix "Speed" control behaves.
+// speedFactor 1 collapses to plain pitchShiftBuffer. Returns the original
+// buffer unchanged when both are no-ops, and null if the clip is too long to
+// stretch synchronously (caller falls back to resampling for that shot).
+export function shiftAndStretchBuffer(context, audioBuffer, semitones, speedFactor = 1) {
+  const speedIsNoop = Math.abs(speedFactor - 1) < IDENTITY_SPEED_EPSILON
+  if (Math.abs(semitones) < IDENTITY_PITCH_EPSILON_SEMITONES && speedIsNoop) return audioBuffer
   if (audioBuffer.duration > MAX_STRETCH_SECONDS) return null
 
-  const ratio = Math.pow(2, semitones / 12)
+  const pitchRatio = Math.pow(2, semitones / 12)
+  const ratio = pitchRatio / (speedIsNoop ? 1 : speedFactor)
   const channels = audioBuffer.numberOfChannels
 
   // Plan the frame alignment once, on a mono downmix, then render every

@@ -349,6 +349,16 @@ export default class EditorPlugin {
               <span id="editor-scatter-volume-max-value" class="editor-filter-value">100%</span>
             </label>
             <label>
+              <span>Speed (min)</span>
+              <input id="editor-scatter-speed-min" type="range" min="50" max="200" value="100" step="5" />
+              <span id="editor-scatter-speed-min-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
+              <span>Speed (max)</span>
+              <input id="editor-scatter-speed-max" type="range" min="50" max="200" value="100" step="5" />
+              <span id="editor-scatter-speed-max-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
               <span>Fade in</span>
               <input id="editor-scatter-fade-in" type="number" min="0" max="10000" step="50" value="0" />
               <span class="editor-filter-value">ms</span>
@@ -362,7 +372,7 @@ export default class EditorPlugin {
               <span>Sync group</span>
               <input id="editor-scatter-sync-group" type="text" placeholder="e.g. door-effects" />
             </label>
-            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, and volume within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
+            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
           </div>
           <div id="editor-schedule-section" class="editor-scatter-controls hidden">
             <label class="editor-playmode-option">
@@ -407,6 +417,16 @@ export default class EditorPlugin {
               <span id="editor-schedule-volume-max-value" class="editor-filter-value">100%</span>
             </label>
             <label>
+              <span>Speed (min)</span>
+              <input id="editor-schedule-speed-min" type="range" min="50" max="200" value="100" step="5" />
+              <span id="editor-schedule-speed-min-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
+              <span>Speed (max)</span>
+              <input id="editor-schedule-speed-max" type="range" min="50" max="200" value="100" step="5" />
+              <span id="editor-schedule-speed-max-value" class="editor-filter-value">100%</span>
+            </label>
+            <label>
               <span>Fade in</span>
               <input id="editor-schedule-fade-in" type="number" min="0" max="10000" step="50" value="0" />
               <span class="editor-filter-value">ms</span>
@@ -416,7 +436,7 @@ export default class EditorPlugin {
               <input id="editor-schedule-fade-out" type="number" min="0" max="10000" step="50" value="0" />
               <span class="editor-filter-value">ms</span>
             </label>
-            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch and volume within these ranges, same as Random Interval — or check "Fully random pitch" to roll the whole ±12 st range regardless of the min/max. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
+            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, and speed within these ranges, same as Random Interval — or check "Fully random pitch" to roll the whole ±12 st range regardless of the min/max. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -605,6 +625,10 @@ export default class EditorPlugin {
       scatterVolumeMinValue: container.querySelector('#editor-scatter-volume-min-value'),
       scatterVolumeMax: container.querySelector('#editor-scatter-volume-max'),
       scatterVolumeMaxValue: container.querySelector('#editor-scatter-volume-max-value'),
+      scatterSpeedMin: container.querySelector('#editor-scatter-speed-min'),
+      scatterSpeedMinValue: container.querySelector('#editor-scatter-speed-min-value'),
+      scatterSpeedMax: container.querySelector('#editor-scatter-speed-max'),
+      scatterSpeedMaxValue: container.querySelector('#editor-scatter-speed-max-value'),
       scatterFadeIn: container.querySelector('#editor-scatter-fade-in'),
       scatterFadeOut: container.querySelector('#editor-scatter-fade-out'),
       scatterSyncGroup: container.querySelector('#editor-scatter-sync-group'),
@@ -624,6 +648,10 @@ export default class EditorPlugin {
       scheduleVolumeMinValue: container.querySelector('#editor-schedule-volume-min-value'),
       scheduleVolumeMax: container.querySelector('#editor-schedule-volume-max'),
       scheduleVolumeMaxValue: container.querySelector('#editor-schedule-volume-max-value'),
+      scheduleSpeedMin: container.querySelector('#editor-schedule-speed-min'),
+      scheduleSpeedMinValue: container.querySelector('#editor-schedule-speed-min-value'),
+      scheduleSpeedMax: container.querySelector('#editor-schedule-speed-max'),
+      scheduleSpeedMaxValue: container.querySelector('#editor-schedule-speed-max-value'),
       scheduleFadeIn: container.querySelector('#editor-schedule-fade-in'),
       scheduleFadeOut: container.querySelector('#editor-schedule-fade-out'),
       speed: container.querySelector('#editor-speed'),
@@ -842,6 +870,8 @@ export default class EditorPlugin {
     this.els.scatterPitchFullyRandom.addEventListener('change', () => this.applyScatterControls())
     this.els.scatterVolumeMin.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterVolumeMax.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterSpeedMin.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterSpeedMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeIn.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeOut.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterSyncGroup.addEventListener('input', () => this.applyScatterControls())
@@ -855,6 +885,8 @@ export default class EditorPlugin {
     this.els.schedulePitchFullyRandom.addEventListener('change', () => this.applyScheduleControls())
     this.els.scheduleVolumeMin.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleVolumeMax.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleSpeedMin.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleSpeedMax.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleFadeIn.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleFadeOut.addEventListener('input', () => this.applyScheduleControls())
 
@@ -1626,6 +1658,8 @@ export default class EditorPlugin {
       pitchFullyRandom: this.els.scatterPitchFullyRandom.checked,
       minVolume: Number(this.els.scatterVolumeMin.value) / 100,
       maxVolume: Number(this.els.scatterVolumeMax.value) / 100,
+      minSpeed: Number(this.els.scatterSpeedMin.value) / 100,
+      maxSpeed: Number(this.els.scatterSpeedMax.value) / 100,
       fadeInMs: Number(this.els.scatterFadeIn.value),
       fadeOutMs: Number(this.els.scatterFadeOut.value),
       syncGroup: this.els.scatterSyncGroup.value.trim()
@@ -1641,6 +1675,8 @@ export default class EditorPlugin {
     pitchFullyRandom = false,
     minVolume = 1,
     maxVolume = 1,
+    minSpeed = 1,
+    maxSpeed = 1,
     fadeInMs = 0,
     fadeOutMs = 0,
     syncGroup = ''
@@ -1653,17 +1689,21 @@ export default class EditorPlugin {
     this.els.scatterPitchFullyRandom.checked = Boolean(pitchFullyRandom)
     this.els.scatterVolumeMin.value = String(Math.round(minVolume * 100))
     this.els.scatterVolumeMax.value = String(Math.round(maxVolume * 100))
+    this.els.scatterSpeedMin.value = String(Math.round(minSpeed * 100))
+    this.els.scatterSpeedMax.value = String(Math.round(maxSpeed * 100))
     this.els.scatterFadeIn.value = String(fadeInMs)
     this.els.scatterFadeOut.value = String(fadeOutMs)
     this.els.scatterSyncGroup.value = syncGroup
     this.updateScatterRangeDisabled()
   }
 
-  updateScatterLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1 }) {
+  updateScatterLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1, minSpeed = 1, maxSpeed = 1 }) {
     this.els.scatterPitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
     this.els.scatterPitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
     this.els.scatterVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
     this.els.scatterVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
+    this.els.scatterSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
+    this.els.scatterSpeedMaxValue.textContent = `${Math.round(maxSpeed * 100)}%`
   }
 
   applyPlayModeControl() {
@@ -1725,6 +1765,8 @@ export default class EditorPlugin {
       pitchFullyRandom: this.els.schedulePitchFullyRandom.checked,
       minVolume: Number(this.els.scheduleVolumeMin.value) / 100,
       maxVolume: Number(this.els.scheduleVolumeMax.value) / 100,
+      minSpeed: Number(this.els.scheduleSpeedMin.value) / 100,
+      maxSpeed: Number(this.els.scheduleSpeedMax.value) / 100,
       fadeInMs: Number(this.els.scheduleFadeIn.value),
       fadeOutMs: Number(this.els.scheduleFadeOut.value)
     }
@@ -1739,6 +1781,8 @@ export default class EditorPlugin {
     pitchFullyRandom = false,
     minVolume = 1,
     maxVolume = 1,
+    minSpeed = 1,
+    maxSpeed = 1,
     fadeInMs = 0,
     fadeOutMs = 0
   }) {
@@ -1753,17 +1797,21 @@ export default class EditorPlugin {
     this.els.schedulePitchFullyRandom.checked = Boolean(pitchFullyRandom)
     this.els.scheduleVolumeMin.value = String(Math.round(minVolume * 100))
     this.els.scheduleVolumeMax.value = String(Math.round(maxVolume * 100))
+    this.els.scheduleSpeedMin.value = String(Math.round(minSpeed * 100))
+    this.els.scheduleSpeedMax.value = String(Math.round(maxSpeed * 100))
     this.els.scheduleFadeIn.value = String(fadeInMs)
     this.els.scheduleFadeOut.value = String(fadeOutMs)
-    this.updateScheduleLabels({ minPitchSemitones, maxPitchSemitones, minVolume, maxVolume })
+    this.updateScheduleLabels({ minPitchSemitones, maxPitchSemitones, minVolume, maxVolume, minSpeed, maxSpeed })
     this.updateSchedulePitchDisabled()
   }
 
-  updateScheduleLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1 }) {
+  updateScheduleLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1, minSpeed = 1, maxSpeed = 1 }) {
     this.els.schedulePitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
     this.els.schedulePitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
     this.els.scheduleVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
     this.els.scheduleVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
+    this.els.scheduleSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
+    this.els.scheduleSpeedMaxValue.textContent = `${Math.round(maxSpeed * 100)}%`
   }
 
   updateSchedulePitchDisabled() {
@@ -1890,6 +1938,8 @@ export default class EditorPlugin {
         pitchFullyRandom: Boolean(scatter.pitchFullyRandom),
         minVolume: scatter.minVolume ?? 1,
         maxVolume: scatter.maxVolume ?? 1,
+        minSpeed: scatter.minSpeed ?? 1,
+        maxSpeed: scatter.maxSpeed ?? 1,
         fadeInMs: scatter.fadeInMs ?? 0,
         fadeOutMs: scatter.fadeOutMs ?? 0,
         syncGroup: scatter.syncGroup ?? ''
@@ -1903,6 +1953,8 @@ export default class EditorPlugin {
         pitchFullyRandom: Boolean(schedule?.pitchFullyRandom),
         minVolume: schedule?.minVolume ?? 1,
         maxVolume: schedule?.maxVolume ?? 1,
+        minSpeed: schedule?.minSpeed ?? 1,
+        maxSpeed: schedule?.maxSpeed ?? 1,
         fadeInMs: schedule?.fadeInMs ?? 0,
         fadeOutMs: schedule?.fadeOutMs ?? 0
       }
@@ -2334,6 +2386,8 @@ export default class EditorPlugin {
       pitchFullyRandom: false,
       minVolume: 1,
       maxVolume: 1,
+      minSpeed: 1,
+      maxSpeed: 1,
       fadeInMs: 0,
       fadeOutMs: 0,
       syncGroup: ''
@@ -2347,6 +2401,8 @@ export default class EditorPlugin {
       pitchFullyRandom: false,
       minVolume: 1,
       maxVolume: 1,
+      minSpeed: 1,
+      maxSpeed: 1,
       fadeInMs: 0,
       fadeOutMs: 0
     }

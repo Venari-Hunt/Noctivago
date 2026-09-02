@@ -1,5 +1,5 @@
 import log from 'electron-log/renderer'
-import { pitchShiftBuffer } from './pitchStretch.js'
+import { shiftAndStretchBuffer } from './pitchStretch.js'
 
 const RAMP_SECONDS = 0.15
 // Matches the Remix plugin's Pitch slider range (plugins/editor/index.js) -
@@ -61,6 +61,20 @@ export function randomVolumeScale(scatter) {
   return min + Math.random() * (max - min)
 }
 
+// Per-shot wall-clock playback speed (Random Interval / Scheduled "Speed"
+// range), as a multiplier - 1 = original tempo, 2 = twice as fast (half as
+// long), 0.5 = half speed. Pitch is preserved (the shot clip is time-
+// stretched, see shiftAndStretchBuffer / the export's rubberband tempo pass),
+// matching the Remix "Speed" control. Like volume, 1 isn't silence so there's
+// no "both 0" special case - both bounds at 1 (the default) means no speed
+// variation. Floored at 0.1 so a stray 0 can't divide-by-zero the duration
+// math or ask for an infinite stretch.
+export function randomSpeedFactor(scatter) {
+  const min = Math.max(0.1, scatter?.minSpeed ?? 1)
+  const max = Math.max(min, scatter?.maxSpeed ?? 1)
+  return min + Math.random() * (max - min)
+}
+
 // Ease in/out envelope for one shot, in seconds, clamped so fade-in and
 // fade-out can never overlap/invert on a short shot (same "clamp to a
 // fraction of the clip's own duration" pattern loopClip.js's crossfade
@@ -102,6 +116,8 @@ function normalizeScatter(scatter) {
     pitchFullyRandom: Boolean(scatter?.pitchFullyRandom),
     minVolume: scatter?.minVolume ?? 1,
     maxVolume: scatter?.maxVolume ?? 1,
+    minSpeed: scatter?.minSpeed ?? 1,
+    maxSpeed: scatter?.maxSpeed ?? 1,
     fadeInMs: scatter?.fadeInMs ?? 0,
     fadeOutMs: scatter?.fadeOutMs ?? 0,
     syncGroup: scatter?.syncGroup ?? ''
@@ -176,19 +192,23 @@ export class BufferScatterSource {
     if (!silent) this.onShotStart?.()
     const node = this.engine.context.createBufferSource()
     const semitones = randomPitchSemitones(this.scatter)
+    const speedFactor = randomSpeedFactor(this.scatter)
     node.detune.value = semitones * 100
-    // Pre-stretch the clip in time by the pitch ratio, so playing it back at
-    // that same ratio (what detune does) lands the pitch shift *without*
-    // changing how long the shot lasts - the owner's ask (v0.1.111; see
-    // pitchStretch.js). pitchShiftBuffer returns the buffer unchanged for a
-    // negligible shift, and null for a clip too long to stretch on the main
-    // thread - in which case detune still resamples and the shot finishes
-    // early/late, so the fade-out envelope needs the pitch-adjusted length.
-    const shifted = pitchShiftBuffer(this.engine.context, this.audioBuffer, semitones)
+    // Pre-stretch the clip in time by the pitch ratio divided by the speed
+    // factor, so playing it back at the detune ratio (what detune does) lands
+    // the pitch shift without changing length (v0.1.111) *and* the speed
+    // change as a pure tempo/length change with pitch preserved (see
+    // shiftAndStretchBuffer). Returns the buffer unchanged when both are
+    // negligible, and null for a clip too long to stretch on the main thread
+    // - in which case detune only resamples the pitch, so also apply the
+    // speed via playbackRate (couples pitch there, a rare-corner fallback)
+    // and size the fade-out envelope to the real shot length.
+    const shifted = shiftAndStretchBuffer(this.engine.context, this.audioBuffer, semitones, speedFactor)
     node.buffer = shifted ?? this.audioBuffer
+    if (!shifted) node.playbackRate.value = speedFactor
     const durationSeconds = shifted
-      ? this.audioBuffer.duration
-      : this.audioBuffer.duration / Math.pow(2, semitones / 12)
+      ? this.audioBuffer.duration / speedFactor
+      : this.audioBuffer.duration / (Math.pow(2, semitones / 12) * speedFactor)
     const shotGain = this.engine.context.createGain()
     node.connect(shotGain)
     shotGain.connect(this.gainNode)
@@ -481,7 +501,12 @@ export class StreamScatterSource {
     this._timeoutId = null
     if (!this.playing) return
     if (!silent) this.onShotStart?.()
-    const playbackRate = Math.pow(2, randomPitchSemitones(this.scatter) / 12)
+    // Both pitch and speed go through playbackRate here (no detune / no
+    // in-memory samples on an <audio> element), so a pitch shift still
+    // changes tempo - the documented accepted limitation for this
+    // never-baked fallback. Speed is *meant* to change tempo, so it rides
+    // the same knob cleanly; it just also nudges pitch here, same corner.
+    const playbackRate = Math.pow(2, randomPitchSemitones(this.scatter) / 12) * randomSpeedFactor(this.scatter)
     this.audioEl.playbackRate = playbackRate
     this.audioEl.currentTime = this.loopStart
     try {

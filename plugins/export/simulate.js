@@ -35,15 +35,27 @@ function randomVolumeScale(scatter) {
   return min + Math.random() * (max - min)
 }
 
+// Per-shot wall-clock playback speed multiplier - mirror of
+// ScatterSoundSource.js's randomSpeedFactor. 1 = original tempo; both bounds
+// at 1 (default) = no variation. exportMix.js applies it pitch-preserved via
+// rubberband tempo, and each event's shotDurationSeconds is divided by it so
+// the fade-out envelope lands on the shot's real (sped) end.
+function randomSpeedFactor(scatter) {
+  const min = Math.max(0.1, scatter?.minSpeed ?? 1)
+  const max = Math.max(min, scatter?.maxSpeed ?? 1)
+  return min + Math.random() * (max - min)
+}
+
 // Rolls randomGapSeconds repeatedly (the exact same function a live scatter
 // source uses to schedule its next shot) until the cumulative offset would
 // exceed durationSeconds - a dry run of the same process, no audio
-// scheduling involved. Each event carries the sound's own trimmed shot
-// duration (loopEnd - loopStart). Since v0.1.111 a per-shot pitch shift no
-// longer changes the shot's length - live playback pre-stretches the clip
-// (ScatterSoundSource.js) and exportMix.js pitches it with rubberband, both
-// duration-preserving - so this is the plain trimmed length, and
-// exportMix.js's fade-out lands on the shot's real end.
+// scheduling involved. Each event carries the sound's own shot duration:
+// the trimmed length (loopEnd - loopStart) divided by that shot's random
+// speed factor. A per-shot *pitch* shift is duration-preserving (v0.1.111 -
+// live pre-stretches the clip, exportMix.js uses rubberband pitch), but a
+// per-shot *speed* change is a deliberate tempo/length change (rubberband
+// tempo in the export), so shotDurationSeconds tracks it and exportMix.js's
+// fade-out lands on the shot's real (sped) end.
 function simulateScatterEvents(entry, durationSeconds) {
   const scatter = entry.scatter ?? {}
   const nominalShotDuration = Math.max(0, (entry.loopEnd ?? 0) - (entry.loopStart ?? 0))
@@ -57,16 +69,19 @@ function simulateScatterEvents(entry, durationSeconds) {
   // resource discipline (v0.1.85).
   const MAX_EVENTS = 200000
   while (offset < durationSeconds && events.length < MAX_EVENTS) {
+    const speedFactor = randomSpeedFactor(scatter)
+    const shotDurationSeconds = nominalShotDuration / speedFactor
     events.push({
       offsetSeconds: offset,
       pitchSemitones: randomPitchSemitones(scatter),
       volumeScale: randomVolumeScale(scatter),
+      speedFactor,
       fadeInMs: scatter.fadeInMs ?? 0,
       fadeOutMs: scatter.fadeOutMs ?? 0,
-      shotDurationSeconds: nominalShotDuration
+      shotDurationSeconds
     })
     const gap = randomGapSeconds(scatter)
-    offset += gap > 0.001 ? gap : Math.max(nominalShotDuration, 0.05)
+    offset += gap > 0.001 ? gap : Math.max(shotDurationSeconds, 0.05)
   }
   return events
 }
@@ -101,13 +116,15 @@ function simulateScheduledEvents(entry, durationSeconds) {
   const nominalShotDuration = Math.max(0, (entry.loopEnd ?? 0) - (entry.loopStart ?? 0))
   const events = []
   for (let offset = intervalSeconds; offset < durationSeconds; offset += intervalSeconds) {
+    const speedFactor = randomSpeedFactor(schedule)
     events.push({
       offsetSeconds: offset,
       pitchSemitones: randomPitchSemitones(schedule),
       volumeScale: randomVolumeScale(schedule),
+      speedFactor,
       fadeInMs: schedule.fadeInMs ?? 0,
       fadeOutMs: schedule.fadeOutMs ?? 0,
-      shotDurationSeconds: nominalShotDuration
+      shotDurationSeconds: nominalShotDuration / speedFactor
     })
   }
   return events

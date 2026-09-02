@@ -1,6 +1,6 @@
 import log from 'electron-log/renderer'
-import { randomPitchSemitones, randomVolumeScale, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
-import { pitchShiftBuffer } from './pitchStretch.js'
+import { randomPitchSemitones, randomVolumeScale, randomSpeedFactor, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
+import { shiftAndStretchBuffer } from './pitchStretch.js'
 
 const RAMP_SECONDS = 0.15
 
@@ -60,6 +60,8 @@ function normalizeSchedule(schedule) {
     pitchFullyRandom: Boolean(schedule?.pitchFullyRandom),
     minVolume: schedule?.minVolume ?? 1,
     maxVolume: schedule?.maxVolume ?? 1,
+    minSpeed: schedule?.minSpeed ?? 1,
+    maxSpeed: schedule?.maxSpeed ?? 1,
     fadeInMs: schedule?.fadeInMs ?? 0,
     fadeOutMs: schedule?.fadeOutMs ?? 0
   })
@@ -118,16 +120,20 @@ export class BufferScheduledSource {
     if (!this.playing) return
     const node = this.engine.context.createBufferSource()
     const semitones = randomPitchSemitones(this.schedule)
+    const speedFactor = randomSpeedFactor(this.schedule)
     node.detune.value = semitones * 100
-    // Pre-stretch the clip so the pitch shift doesn't change how long the
-    // shot lasts - same mechanism BufferScatterSource uses (v0.1.111, see
-    // pitchStretch.js). null (clip too long to stretch on the main thread)
-    // falls back to detune's resample coupling, so use the adjusted length.
-    const shifted = pitchShiftBuffer(this.engine.context, this.audioBuffer, semitones)
+    // Pre-stretch the clip so a pitch shift doesn't change shot length
+    // (v0.1.111) and a per-shot Speed change is a pure tempo/length change
+    // with pitch preserved - same mechanism BufferScatterSource uses, see
+    // shiftAndStretchBuffer. null (clip too long to stretch on the main
+    // thread) falls back to resampling, so also apply speed via playbackRate
+    // there and use the adjusted length for the envelope.
+    const shifted = shiftAndStretchBuffer(this.engine.context, this.audioBuffer, semitones, speedFactor)
     node.buffer = shifted ?? this.audioBuffer
+    if (!shifted) node.playbackRate.value = speedFactor
     const durationSeconds = shifted
-      ? this.audioBuffer.duration
-      : this.audioBuffer.duration / Math.pow(2, semitones / 12)
+      ? this.audioBuffer.duration / speedFactor
+      : this.audioBuffer.duration / (Math.pow(2, semitones / 12) * speedFactor)
     const shotGain = this.engine.context.createGain()
     node.connect(shotGain)
     shotGain.connect(this.gainNode)
@@ -398,7 +404,10 @@ export class StreamScheduledSource {
   async _playOneShot() {
     this._timeoutId = null
     if (!this.playing) return
-    const playbackRate = Math.pow(2, randomPitchSemitones(this.schedule) / 12)
+    // Pitch and speed both ride playbackRate here (no detune on <audio>), so
+    // pitch still couples to tempo - the documented accepted limitation for
+    // this never-baked fallback. Speed is meant to change tempo anyway.
+    const playbackRate = Math.pow(2, randomPitchSemitones(this.schedule) / 12) * randomSpeedFactor(this.schedule)
     this.audioEl.playbackRate = playbackRate
     this.audioEl.currentTime = this.loopStart
     try {
