@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.134 — Whole-mix processing can't clip anymore
+
+- A preset's Preset Remix whole-mix gain and EQ (which can each add a lot of boost) now run through a brick-wall limiter, so an aggressive preset can't clip or distort the whole mix — live in the Mixer and baked into an export alike. Presets that don't boost anything are unaffected.
+
 ## v0.1.133 — BUG FIX: exporting to Opus format always failed
 
 - Every export to Opus format failed outright with a "sample rate not supported" ffmpeg error — the export pipeline was always encoding at 44100Hz, a rate the Opus encoder doesn't accept. Fixed; Opus exports now encode at the correct 48000Hz. Every other format is unaffected.
