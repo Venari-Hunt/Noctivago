@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.135 — Speed range for Random Interval / Scheduled sounds
+
+- Random Interval and Scheduled sounds now have a Speed (min/max) range in the Remix tab, alongside the pitch and volume ranges — each replay/trigger picks a random speed within it.
+- Speed changes a shot's tempo and length only; its pitch is left alone (a pitched-preserving time-stretch, same as the main Speed control). Both bounds at 100% means no speed variation.
+- Applies live in the Mixer and is baked into exports the same way.
+
 ## v0.1.134 — Whole-mix processing can't clip anymore
 
 - A preset's Preset Remix whole-mix gain and EQ (which can each add a lot of boost) now run through a brick-wall limiter, so an aggressive preset can't clip or distort the whole mix — live in the Mixer and baked into an export alike. Presets that don't boost anything are unaffected.
