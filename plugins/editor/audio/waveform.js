@@ -66,7 +66,7 @@ function resizeCanvasForDisplay(canvas) {
 // fetch (see waveformPeaks.js) covers just a narrow zoomed window instead,
 // so the caller passes that window's own bounds here rather than this
 // function assuming peaks always covers the whole file.
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5, dopplerReversed = false }) {
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5, dopplerReversed = false, fadesEnabled = false, fadeInSec = 0, fadeOutSec = 0 }) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -84,6 +84,36 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
 
   ctx.fillStyle = 'rgba(122, 162, 247, 0.35)'
   ctx.fillRect(startX, 0, endX - startX, height)
+
+  // Fade in/out visual (draggable via the corner pins below) - the trimmed
+  // region here *is* the one-shot clip a Random Interval/Scheduled sound
+  // replays, so a fade drawn directly on it maps 1:1 to what actually plays,
+  // same idea as a DAW clip's own corner fade handles. Shaded wedge = the
+  // attenuated corner (darker near the true start/end, fading to nothing at
+  // the point full volume is reached); the diagonal line marks that boundary
+  // exactly. Drawn under the waveform fill so the waveform itself stays
+  // legible on top, same layering as the plain trim tint above.
+  if (fadesEnabled && loopEnd > loopStart) {
+    const fadeInEndX = timeToX(loopStart + fadeInSec)
+    const fadeOutStartX = timeToX(loopEnd - fadeOutSec)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
+    if (fadeInEndX > startX) {
+      ctx.beginPath()
+      ctx.moveTo(startX, 0)
+      ctx.lineTo(fadeInEndX, 0)
+      ctx.lineTo(startX, height)
+      ctx.closePath()
+      ctx.fill()
+    }
+    if (endX > fadeOutStartX) {
+      ctx.beginPath()
+      ctx.moveTo(fadeOutStartX, 0)
+      ctx.lineTo(endX, 0)
+      ctx.lineTo(endX, height)
+      ctx.closePath()
+      ctx.fill()
+    }
+  }
 
   // Doppler visual: dopplerClosestFraction (0-1 across the loop region,
   // draggable via the pin below) marks the marker point - normally the
@@ -194,6 +224,31 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 1.5
     ctx.stroke()
+  }
+
+  if (fadesEnabled && loopEnd > loopStart) {
+    const fadeInEndX = timeToX(loopStart + fadeInSec)
+    const fadeOutStartX = timeToX(loopEnd - fadeOutSec)
+    ctx.strokeStyle = '#9ece6a'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(startX, height)
+    ctx.lineTo(fadeInEndX, 0)
+    ctx.moveTo(fadeOutStartX, 0)
+    ctx.lineTo(endX, height)
+    ctx.stroke()
+    // Corner pins, same draggable-white-ring convention as the Doppler
+    // marker above - grabbable in the top FADE_HANDLE_ZONE_PX band
+    // (LoopEditor.js), drawn at the point each ramp reaches full volume.
+    ctx.fillStyle = '#9ece6a'
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.5
+    for (const x of [fadeInEndX, fadeOutStartX]) {
+      ctx.beginPath()
+      ctx.arc(x, 8, 5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
   }
 
   if (Number.isFinite(playhead)) {

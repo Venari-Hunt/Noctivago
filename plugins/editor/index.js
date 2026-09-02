@@ -667,6 +667,24 @@ export default class EditorPlugin {
     // speedPitch's own doc comment), just the dirty-check/history hook every
     // other field-change handler already ends with.
     this.loopEditorController.onDopplerChange(() => this.updateSaveButtonState())
+    // Dragging a fade handle (see waveform.js's corner pins) writes straight
+    // back into whichever numeric field is currently showing (scatter vs.
+    // scheduled - the two can't both be active) so the precision text
+    // inputs and the visual drag stay the same single source of truth in
+    // both directions, same pattern onLoopChange already sets for Start/End.
+    this.loopEditorController.onFadesChange(({ fadeInSec, fadeOutSec }) => {
+      const fadeInMs = Math.round(fadeInSec * 1000)
+      const fadeOutMs = Math.round(fadeOutSec * 1000)
+      const playMode = this.currentPlayMode()
+      if (playMode === 'scatter') {
+        this.els.scatterFadeIn.value = String(fadeInMs)
+        this.els.scatterFadeOut.value = String(fadeOutMs)
+      } else if (playMode === 'scheduled') {
+        this.els.scheduleFadeIn.value = String(fadeInMs)
+        this.els.scheduleFadeOut.value = String(fadeOutMs)
+      }
+      this.updateSaveButtonState()
+    })
 
     this.eqEditorController = createEqEditorController(this.els.eqCanvas)
     this.eqEditorController.onChange(() => this.applyEqControls())
@@ -1529,13 +1547,31 @@ export default class EditorPlugin {
     this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
     this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
+    this.updateFadeVisual()
     this.updateSaveButtonState()
+  }
+
+  // Pushes the current playMode's fadeInMs/fadeOutMs into the waveform's
+  // draggable fade handles (see LoopEditor.js/waveform.js) - only scatter/
+  // scheduled shots have a per-shot fade to show, since the trimmed region is
+  // exactly the one-shot clip that fade applies to (a continuously-looping
+  // sound has no such thing). Called both ways: after a playMode switch or a
+  // numeric fade-field edit (pushes field -> visual), and the reverse is
+  // wired separately via loopEditorController.onFadesChange (drag -> field).
+  updateFadeVisual() {
+    const playMode = this.currentPlayMode()
+    const enabled = playMode === 'scatter' || playMode === 'scheduled'
+    this.loopEditorController?.setFadesEnabled(enabled)
+    if (!enabled) return
+    const { fadeInMs, fadeOutMs } = playMode === 'scatter' ? this.currentScatterConfig() : this.currentScheduleConfig()
+    this.loopEditorController?.setFades(fadeInMs / 1000, fadeOutMs / 1000)
   }
 
   applyScatterControls() {
     const scatter = this.currentScatterConfig()
     this.updateScatterLabels(scatter)
     this.updateScatterRangeDisabled()
+    this.updateFadeVisual()
     this.updateSaveButtonState()
   }
 
@@ -1618,6 +1654,7 @@ export default class EditorPlugin {
     this.els.scheduleIntervalRow.classList.toggle('hidden', schedule.type !== 'interval')
     this.updateScheduleLabels(schedule)
     this.updateSchedulePitchDisabled()
+    this.updateFadeVisual()
     this.updateSaveButtonState()
   }
 
@@ -2147,6 +2184,7 @@ export default class EditorPlugin {
     this.loopEditorController.setDopplerEnabled(speedPitch.dopplerEnabled ?? false)
     this.loopEditorController.setDopplerClosestFraction(speedPitch.dopplerClosestFraction ?? 0.5)
     this.loopEditorController.setDopplerReversed(speedPitch.dopplerReversed ?? false)
+    this.updateFadeVisual()
     this.updateLoopTimeInputs(loopStart, loopEnd)
     this.loopEditorController.setPlayhead(loopStart)
     this.updateStickyProgress(loopStart)

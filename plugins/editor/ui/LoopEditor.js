@@ -3,6 +3,13 @@ import { drawWaveform } from '../audio/waveform.js'
 const HANDLE_HIT_PX = 8
 const SNAP_PX = 12
 const MIN_LOOP_SECONDS = 0.05
+// Fade-in/out handles (see waveform.js's diagonal ramp + corner pin) are only
+// grabbable in a band along the very top of the canvas - the same x-position
+// a fade handle sits at can coincide with the full-height start/end trim
+// line (e.g. fade at 0), so hit-testing is disambiguated by y instead of
+// competing purely on x distance the way start/end/playhead/doppler already
+// do among themselves.
+const FADE_HANDLE_ZONE_PX = 20
 // How close the draggable Doppler "closest point" marker can get to either
 // edge of the loop region - matches the identical floor in loopClip.js's
 // buildDopplerSendCmd (duplicated for the usual cross-process reason), so
@@ -64,6 +71,16 @@ export function createLoopEditorController(canvas) {
   // mode is on, so it's visually obvious which shape the drag is currently
   // controlling (see waveform.js's own comment for what actually changes).
   let dopplerReversed = false
+  // Visual/draggable counterpart to the plain Fade in/out (ms) numeric
+  // fields on scatter/schedule shots - "impossible to predict how it will
+  // work out just typing numbers" per the owner's own inbox report. Seconds,
+  // same time domain as loopStart/loopEnd; only drawn/interactive while
+  // fadesEnabled (index.js sets this for scatter/schedule playModes, where
+  // the trimmed region *is* the one-shot clip a fade actually applies to -
+  // a continuously-looping sound has no per-shot fade to show here).
+  let fadesEnabled = false
+  let fadeInSec = 0
+  let fadeOutSec = 0
   // A single finer-grained peaks fetch for whatever narrow window the caller
   // last requested (see plugins/editor/index.js's maybeFetchDetailPeaks) -
   // just one slot, not a cache of every window ever visited, so re-zooming
@@ -107,6 +124,7 @@ export function createLoopEditorController(canvas) {
   let onScrub = () => {}
   let onViewportChange = () => {}
   let onDopplerChange = () => {}
+  let onFadesChange = () => {}
 
   // The currently visible time window - [0, duration] at full zoom-out.
   // Everything below maps time<->x through this, not through [0, duration]
@@ -125,8 +143,22 @@ export function createLoopEditorController(canvas) {
     return ((t - viewStart) / span) * displayWidth
   }
 
+  // loopStart/loopEnd can shrink (dragging a trim handle) to less than
+  // fadeInSec+fadeOutSec's own already-set span - clamped here for drawing/
+  // hit-testing rather than mutating the stored values on every redraw, so a
+  // trim drag that temporarily overlaps them doesn't silently discard a fade
+  // the user dragged in on purpose; a real fade-handle drag (updateDragValue
+  // below) is what actually commits a new value.
+  function clampedFades() {
+    const regionLen = Math.max(0, loopEnd - loopStart)
+    const fi = Math.min(Math.max(fadeInSec, 0), regionLen)
+    const fo = Math.min(Math.max(fadeOutSec, 0), regionLen - fi)
+    return { fadeIn: fi, fadeOut: fo }
+  }
+
   function redraw() {
     const useDetail = detailPeaks && viewStart >= detailPeaksStart && viewEnd <= detailPeaksEnd
+    const { fadeIn, fadeOut } = clampedFades()
     drawWaveform(canvas, duration, {
       loopStart,
       loopEnd,
@@ -138,7 +170,10 @@ export function createLoopEditorController(canvas) {
       peaksEnd: useDetail ? detailPeaksEnd : duration,
       dopplerEnabled,
       dopplerClosestFraction,
-      dopplerReversed
+      dopplerReversed,
+      fadesEnabled,
+      fadeInSec: fadeIn,
+      fadeOutSec: fadeOut
     })
   }
 
@@ -257,6 +292,25 @@ export function createLoopEditorController(canvas) {
       return
     }
 
+    // Fade handles live in a thin band along the top edge (see waveform.js's
+    // corner pins) so they can sit at the same x as the start/end trim line
+    // (e.g. a fade of 0) without competing with it on x-distance alone -
+    // checked first, and only within that band; a click anywhere else in the
+    // canvas's height falls through to the normal candidates below exactly
+    // as before fades existed.
+    if (fadesEnabled && loopEnd > loopStart && evt.clientY - rect.top <= FADE_HANDLE_ZONE_PX) {
+      const { fadeIn, fadeOut } = clampedFades()
+      const fadeCandidates = [
+        { type: 'fadeIn', dist: Math.abs(x - timeToX(loopStart + fadeIn, rect.width)) },
+        { type: 'fadeOut', dist: Math.abs(x - timeToX(loopEnd - fadeOut, rect.width)) }
+      ]
+      const closestFade = fadeCandidates.reduce((a, b) => (a.dist <= b.dist ? a : b))
+      if (closestFade.dist <= HANDLE_HIT_PX) {
+        dragging = closestFade.type
+        return
+      }
+    }
+
     const candidates = [
       { type: 'start', dist: Math.abs(x - timeToX(loopStart, rect.width)) },
       { type: 'end', dist: Math.abs(x - timeToX(loopEnd, rect.width)) }
@@ -313,6 +367,16 @@ export function createLoopEditorController(canvas) {
       playhead = t
       redraw()
       onScrub(t)
+    } else if (dragging === 'fadeIn') {
+      const maxFade = Math.max(0, loopEnd - loopStart - fadeOutSec)
+      fadeInSec = Math.min(Math.max(t - loopStart, 0), maxFade)
+      redraw()
+      onFadesChange({ fadeInSec, fadeOutSec })
+    } else if (dragging === 'fadeOut') {
+      const maxFade = Math.max(0, loopEnd - loopStart - fadeInSec)
+      fadeOutSec = Math.min(Math.max(loopEnd - t, 0), maxFade)
+      redraw()
+      onFadesChange({ fadeInSec, fadeOutSec })
     } else if (dragging === 'doppler') {
       const span = loopEnd - loopStart
       const rawFraction = span > 0 ? (t - loopStart) / span : 0.5
@@ -551,6 +615,9 @@ export function createLoopEditorController(canvas) {
       dopplerEnabled = false
       dopplerClosestFraction = 0.5
       dopplerReversed = false
+      fadesEnabled = false
+      fadeInSec = 0
+      fadeOutSec = 0
       viewStart = 0
       viewEnd = totalDuration
       redraw()
@@ -609,11 +676,31 @@ export function createLoopEditorController(canvas) {
     setViewport(newStart, newEnd) {
       applyViewport(newStart, newEnd)
     },
+    // fadeInSec/fadeOutSec are the same seconds domain as loopStart/loopEnd -
+    // index.js converts to/from its own fadeInMs/fadeOutMs fields at the
+    // boundary. enabled toggles both drawing and hit-testing at once (see
+    // waveform.js and pointerDown above).
+    setFadesEnabled(enabled) {
+      fadesEnabled = Boolean(enabled)
+      redraw()
+    },
+    setFades(newFadeInSec, newFadeOutSec) {
+      fadeInSec = Math.max(0, newFadeInSec ?? 0)
+      fadeOutSec = Math.max(0, newFadeOutSec ?? 0)
+      redraw()
+    },
+    getFades() {
+      const { fadeIn, fadeOut } = clampedFades()
+      return { fadeInSec: fadeIn, fadeOutSec: fadeOut }
+    },
     onLoopChange(fn) {
       onChange = fn
     },
     onDopplerChange(fn) {
       onDopplerChange = fn
+    },
+    onFadesChange(fn) {
+      onFadesChange = fn
     },
     onScrub(fn) {
       onScrub = fn
