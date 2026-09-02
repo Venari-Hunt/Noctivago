@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.122 — Reverb is now a real reverb
+
+- "Reverb" in Remix used to just be a short delay dressed up to sound roomy — it's now a real convolution reverb (Reverb size + Reverb mix sliders), independent of Echo so you can use either or both together.
+- Applies live while you preview, and bakes into the sound the same way every other filter does.
+
 ## v0.1.121 — Add a sound from a direct audio link
 
 - The "+" add-sound menu has a new "Add from link…" option — paste a direct http(s) audio URL and it downloads and imports it, just like adding a local file.
