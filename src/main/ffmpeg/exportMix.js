@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { runFfmpegToFile } from './runFfmpeg.js'
-import { renderClipToPath } from './loopClip.js'
+import { renderClipToPath, buildEqBandFilter, eqBandStageCount } from './loopClip.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -403,6 +403,32 @@ async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
   return { path: outPath, offset: 0 }
 }
 
+// Builds the whole-mix post-processing filter chain fragment, matching
+// WholeMixChain.js's own live node order (highpass -> lowpass -> eq bands ->
+// gain -> fade) so a preset's Preset Remix settings (2026-09-02: exportMix.js
+// now inherits a preset's own wholeMix, applied last, over the whole export -
+// see the plugins/export/index.js call site) sound the same baked into an
+// export as they do live in the Mixer. Reuses loopClip.js's
+// buildEqBandFilter/eqBandStageCount directly for the eq bands - same
+// directory, no plugin-boundary duplication needed.
+function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds }) {
+  const post = []
+  if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)
+  if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) post.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
+  for (const band of wholeMixFilters?.eq ?? []) {
+    const bandFilter = buildEqBandFilter(band)
+    if (bandFilter) {
+      for (let stage = 0; stage < eqBandStageCount(band); stage++) post.push(bandFilter)
+    }
+  }
+  if (wholeMixFilters?.gainDb) post.push(`volume=${wholeMixFilters.gainDb}dB`)
+  if (fadeInSeconds > 0) post.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
+  if (fadeOutSeconds > 0) {
+    post.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
+  }
+  return post
+}
+
 // The lightweight tail once every track (pre-tiled loop tracks at offset 0 +
 // sliced batch tracks at their own offsets, already reduced under
 // MAX_INPUTS_PER_PASS) is ready: adelay each to its offset, amix, apply
@@ -426,14 +452,7 @@ async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilte
     })
   }
 
-  const post = []
-  if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)
-  if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) post.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
-  if (wholeMixFilters?.gainDb) post.push(`volume=${wholeMixFilters.gainDb}dB`)
-  if (fadeInSeconds > 0) post.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
-  if (fadeOutSeconds > 0) {
-    post.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
-  }
+  const post = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds })
 
   graph.push(
     `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
@@ -515,14 +534,7 @@ async function renderFinalMixdown({
     idx = 1
   }
 
-  const post = []
-  if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)
-  if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) post.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
-  if (wholeMixFilters?.gainDb) post.push(`volume=${wholeMixFilters.gainDb}dB`)
-  if (fadeInSeconds > 0) post.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
-  if (fadeOutSeconds > 0) {
-    post.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
-  }
+  const post = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds })
 
   graph.push(
     `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +

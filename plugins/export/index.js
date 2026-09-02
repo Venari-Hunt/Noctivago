@@ -168,15 +168,18 @@ export default class ExportPlugin {
         <!-- Highpass/Lowpass/Gain used to live here too ("whole-mix
              processing"), but the owner asked directly for them to be
              removed and for whole-mix processing to live only on the
-             Preset Remix tab: "Get rid of the whole mix processing section
-             on the export tab. Keep only the Fade in and fade out options
-             because this is still relevant. But the whole mix thing should
-             be kept on the preset remix tab." An export no longer applies
-             any highpass/lowpass/gain/EQ of its own - exportMix.js's
-             wholeMixFilters param is always passed neutral now. A preset's
-             Preset Remix settings are a *live Mixer* effect only; they are
-             not (yet) baked into what Export renders - flagged to the owner
-             in the inbox as a real trade-off worth a follow-up call. -->
+             Preset Remix tab (v0.1.125): "Get rid of the whole mix
+             processing section on the export tab... the whole mix thing
+             should be kept on the preset remix tab." That left exports with
+             no whole-mix coloring at all even when the exported preset had
+             real Preset Remix settings - flagged to the owner as a
+             trade-off worth a follow-up call. Answered directly (2026-09-02):
+             "Yeah it should [inherit them]. Should be the last thing applied
+             tho." So there's still no UI here - currentWholeMixFilters()
+             instead reads the selected preset's own saved `wholeMix`
+             (highpass/lowpass/gain/EQ) straight from presets.list() and
+             exportMix.js applies it last, over the whole mixed-down export,
+             matching WholeMixChain.js's own live node order. -->
         <label>
           <span>Fade in</span>
           <input id="export-fade-in" type="number" min="0" max="60" step="0.5" value="2" />
@@ -262,10 +265,22 @@ export default class ExportPlugin {
     if (presets.some((p) => p.id === previouslySelected)) this.els.preset.value = previouslySelected
   }
 
-  // No Export-tab UI for these anymore (see the mount() comment above) -
-  // always neutral, so exportMix.js's post-processing step is a no-op.
-  currentWholeMixFilters() {
-    return { highpassHz: 0, lowpassHz: 20000, gainDb: 0 }
+  // No Export-tab UI of its own for these (see the mount() comment above) -
+  // instead inherits the exported preset's own Preset Remix `wholeMix`
+  // (highpass/lowpass/gain/EQ) directly, applied last over the whole export.
+  // Direct owner answer (2026-09-02) to the "keep it on Preset Remix" v0.1.125
+  // ambiguity: "Yeah it should [inherit them]. Should be the last thing
+  // applied tho." `wholeMix` is `null` on a preset with no Preset Remix
+  // settings saved, which correctly collapses to the same all-neutral
+  // shape this always returned before.
+  currentWholeMixFilters(preset) {
+    const wholeMix = preset?.wholeMix
+    return {
+      highpassHz: wholeMix?.highpassHz ?? 0,
+      lowpassHz: wholeMix?.lowpassHz ?? 20000,
+      gainDb: wholeMix?.gainDb ?? 0,
+      eq: wholeMix?.eq ?? []
+    }
   }
 
   async runExport() {
@@ -331,7 +346,7 @@ export default class ExportPlugin {
         sounds,
         durationSeconds,
         format,
-        wholeMixFilters: this.currentWholeMixFilters(),
+        wholeMixFilters: this.currentWholeMixFilters(preset),
         fadeInSeconds: Number(this.els.fadeIn.value) || 0,
         fadeOutSeconds: Number(this.els.fadeOut.value) || 0,
         outputPath

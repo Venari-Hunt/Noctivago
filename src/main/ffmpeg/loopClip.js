@@ -157,11 +157,16 @@ function buildEchoFilter(delayMs, decay) {
 // identical helper.
 const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
 const STEEP_STAGE_COUNT = 4
-function eqBandStageCount(band) {
+export function eqBandStageCount(band) {
   return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
 }
 
-function buildEqBandFilter(band) {
+// Exported (2026-09-02) so exportMix.js's whole-mix post-processing chain
+// can build the exact same per-band ffmpeg filter for a preset's Preset
+// Remix EQ, rather than a second, duplicated implementation - both live in
+// src/main/ffmpeg/ (not across a plugin boundary), so a plain import is the
+// right call here, unlike every plugins/ duplication elsewhere in this app.
+export function buildEqBandFilter(band) {
   if (band.muted) return null
   const type = band.type ?? 'peaking'
   const { freqHz: f, q, gainDb: g } = band
