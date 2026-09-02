@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.133 — BUG FIX: exporting to Opus format always failed
+
+- Every export to Opus format failed outright with a "sample rate not supported" ffmpeg error — the export pipeline was always encoding at 44100Hz, a rate the Opus encoder doesn't accept. Fixed; Opus exports now encode at the correct 48000Hz. Every other format is unaffected.
+
 ## v0.1.132 — Add from link now works with YouTube and other video sites
 
 - "Add from link" now handles YouTube (and hundreds of other video/audio sites, via yt-dlp) in addition to plain direct audio URLs — paste any of them and it downloads the audio.
