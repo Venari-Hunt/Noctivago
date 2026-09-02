@@ -1,4 +1,5 @@
 import log from 'electron-log/renderer'
+import { createReverbImpulse } from './reverbIR.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -193,6 +194,24 @@ export class LocalFileSoundSource {
     this.echoFeedbackGain = engine.context.createGain()
     this.echoFeedbackGain.gain.value = this.filters.echoDecay ?? 0
 
+    // Reverb: a real convolution reverb (ConvolverNode), replacing the old
+    // idea of "Reverb" as just a preset combination of the Echo knobs above
+    // (a short delay + high decay was never an actual reverb algorithm - see
+    // reverbIR.js). A third parallel send off filterGainNode, same pattern
+    // as echoSendGain right above rather than chained after it - Echo and
+    // Reverb are independent, stackable effects, not one feeding the other.
+    // reverbConvolver.buffer is a synthetic impulse response regenerated
+    // only when reverbSizeMs actually changes (see setFilters) - _reverbSizeMs
+    // tracks what it was last built for.
+    this._reverbSizeMs = this.filters.reverbSizeMs ?? 0
+    this.reverbSendGain = engine.context.createGain()
+    this.reverbSendGain.gain.value = this.filters.reverbMix ?? 0
+    this.reverbConvolver = engine.context.createConvolver()
+    this.reverbConvolver.normalize = true
+    if (this._reverbSizeMs > 0) {
+      this.reverbConvolver.buffer = createReverbImpulse(engine.context, this._reverbSizeMs / 1000)
+    }
+
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
@@ -207,6 +226,10 @@ export class LocalFileSoundSource {
     this.echoDelayNode.connect(this.echoFeedbackGain)
     this.echoFeedbackGain.connect(this.echoDelayNode)
     this.echoDelayNode.connect(this.gainNode)
+
+    this.filterGainNode.connect(this.reverbSendGain)
+    this.reverbSendGain.connect(this.reverbConvolver)
+    this.reverbConvolver.connect(this.gainNode)
 
     this.gainNode.connect(engine.masterGain)
   }
@@ -331,6 +354,16 @@ export class LocalFileSoundSource {
     this.echoDelayNode.delayTime.setTargetAtTime((this.filters.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
     this.echoSendGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.echoFeedbackGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    this.reverbSendGain.gain.setTargetAtTime(this.filters.reverbMix ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    // Regenerating the impulse response is real work (fills a whole buffer of
+    // noise samples) and would also restart the convolver's own internal
+    // history - only do it when the size actually changed, same "topology
+    // fingerprint" guard the EQ chain rebuild uses below.
+    const reverbSizeMs = this.filters.reverbSizeMs ?? 0
+    if (reverbSizeMs !== this._reverbSizeMs) {
+      this._reverbSizeMs = reverbSizeMs
+      this.reverbConvolver.buffer = reverbSizeMs > 0 ? createReverbImpulse(this.engine.context, reverbSizeMs / 1000) : null
+    }
     // The EQ chain's shape now varies with both how many bands exist AND how
     // many stages each one needs (a plain length check alone can't tell a
     // type/slope change apart from a same-length no-op) - only rebuild the
@@ -622,6 +655,8 @@ export class LocalFileSoundSource {
     this.echoDelayNode.disconnect()
     this.echoSendGain.disconnect()
     this.echoFeedbackGain.disconnect()
+    this.reverbSendGain.disconnect()
+    this.reverbConvolver.disconnect()
     this.gainNode.disconnect()
   }
 }

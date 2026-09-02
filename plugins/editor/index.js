@@ -77,20 +77,21 @@ function defaultEqBands() {
   return []
 }
 
-const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: defaultEqBands() }
+const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() }
 
 // Curated highpass/lowpass/gain/echo combos for the one-click preset
 // buttons. "Underwater" needs the lowpass slider's range extended below its
 // old 500Hz floor (see the HTML below) to sound convincing; everything else
 // fits the controls' original range.
 //
-// Echo and Reverb are the two presets that actually use echoDelayMs/
-// echoDecay - "Reverb" isn't a real reverb algorithm (this ffmpeg build has
-// no dedicated reverb filter, only aecho/chorus/flanger/etc., see the
-// backlog note this preset was scoped from), it's a short delay + fairly
-// high decay + a touch of lowpass tuned to read as a diffuse wash rather
-// than distinct repeats; "Echo" uses a longer delay + lower decay for
-// clear, separated slapback repeats instead.
+// "Echo" uses echoDelayMs/echoDecay (a feedback delay line - clear, separated
+// slapback repeats). "Reverb" used to be just a short-delay/high-decay
+// approximation of the same knobs, since this ffmpeg build has no dedicated
+// `reverb` filter - it's now real convolution reverb (reverbSizeMs/
+// reverbMix, a synthetic impulse response via afir/ConvolverNode - see
+// reverbIR.js), owner-requested ("if you need to write a better way to work
+// with echo and delay you should absolutely do it"). Echo and Reverb are
+// independent, stackable effects now, not two presets sharing one engine.
 const FILTER_PRESETS = {
   muffled: { label: 'Muffled', highpassHz: 0, lowpassHz: 700, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
   phone: { label: 'Over the Phone', highpassHz: 300, lowpassHz: 3400, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
@@ -98,7 +99,7 @@ const FILTER_PRESETS = {
   distant: { label: 'Distant', highpassHz: 0, lowpassHz: 2500, gainDb: -8, echoDelayMs: 0, echoDecay: 0 },
   underwater: { label: 'Underwater', highpassHz: 0, lowpassHz: 250, gainDb: -3, echoDelayMs: 0, echoDecay: 0 },
   echo: { label: 'Echo', highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 350, echoDecay: 0.4 },
-  reverb: { label: 'Reverb', highpassHz: 0, lowpassHz: 8000, gainDb: 0, echoDelayMs: 50, echoDecay: 0.55 }
+  reverb: { label: 'Reverb', highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 1500, reverbMix: 0.35 }
 }
 
 export default class EditorPlugin {
@@ -450,6 +451,16 @@ export default class EditorPlugin {
               <input id="editor-echo-decay" type="range" min="0" max="0.85" value="0" step="0.01" />
               <span id="editor-echo-decay-value" class="editor-filter-value">Off</span>
             </label>
+            <label>
+              <span>Reverb size</span>
+              <input id="editor-reverb-size" type="range" min="0" max="4000" value="0" step="100" />
+              <span id="editor-reverb-size-value" class="editor-filter-value">Off</span>
+            </label>
+            <label>
+              <span>Reverb mix</span>
+              <input id="editor-reverb-mix" type="range" min="0" max="1" value="0" step="0.01" />
+              <span id="editor-reverb-mix-value" class="editor-filter-value">Off</span>
+            </label>
           </div>
           <div class="editor-eq">
             <div class="editor-eq-header">
@@ -628,6 +639,10 @@ export default class EditorPlugin {
       echoDelayValue: container.querySelector('#editor-echo-delay-value'),
       echoDecay: container.querySelector('#editor-echo-decay'),
       echoDecayValue: container.querySelector('#editor-echo-decay-value'),
+      reverbSize: container.querySelector('#editor-reverb-size'),
+      reverbSizeValue: container.querySelector('#editor-reverb-size-value'),
+      reverbMix: container.querySelector('#editor-reverb-mix'),
+      reverbMixValue: container.querySelector('#editor-reverb-mix-value'),
       eqCanvas: container.querySelector('#editor-eq-canvas'),
       eqReset: container.querySelector('#editor-eq-reset'),
       eqAddBand: container.querySelector('#editor-eq-add-band'),
@@ -841,6 +856,8 @@ export default class EditorPlugin {
     this.els.gain.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDelay.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDecay.addEventListener('input', () => this.applyFilterControls())
+    this.els.reverbSize.addEventListener('input', () => this.applyFilterControls())
+    this.els.reverbMix.addEventListener('input', () => this.applyFilterControls())
 
     // 'input' (fires live, on every change) not 'change' (fires only on
     // blur/Enter) - matches every other numeric field in this app (Scatter
@@ -1270,6 +1287,8 @@ export default class EditorPlugin {
     this.els.gain.value = String(filters.gainDb)
     this.els.echoDelay.value = String(filters.echoDelayMs ?? 0)
     this.els.echoDecay.value = String(filters.echoDecay ?? 0)
+    this.els.reverbSize.value = String(filters.reverbSizeMs ?? 0)
+    this.els.reverbMix.value = String(filters.reverbMix ?? 0)
     if (filters.eq) {
       this.eqEditorController.load(filters.eq)
       this.updateEqFieldsFromSelection()
@@ -1283,6 +1302,8 @@ export default class EditorPlugin {
       gainDb: Number(this.els.gain.value),
       echoDelayMs: Number(this.els.echoDelay.value),
       echoDecay: Number(this.els.echoDecay.value),
+      reverbSizeMs: Number(this.els.reverbSize.value),
+      reverbMix: Number(this.els.reverbMix.value),
       eq: this.eqEditorController.getBands()
     }
   }
@@ -1453,6 +1474,8 @@ export default class EditorPlugin {
     this.els.gainValue.textContent = `${filters.gainDb > 0 ? '+' : ''}${filters.gainDb} dB`
     this.els.echoDelayValue.textContent = filters.echoDelayMs > 0 ? `${filters.echoDelayMs} ms` : 'Off'
     this.els.echoDecayValue.textContent = filters.echoDecay > 0 ? filters.echoDecay.toFixed(2) : 'Off'
+    this.els.reverbSizeValue.textContent = filters.reverbSizeMs > 0 ? `${(filters.reverbSizeMs / 1000).toFixed(1)}s` : 'Off'
+    this.els.reverbMixValue.textContent = filters.reverbMix > 0 ? `${Math.round(filters.reverbMix * 100)}%` : 'Off'
   }
 
   applyFilterControls() {
@@ -1734,6 +1757,8 @@ export default class EditorPlugin {
         gainDb: filters.gainDb ?? 0,
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0,
+        reverbSizeMs: filters.reverbSizeMs ?? 0,
+        reverbMix: filters.reverbMix ?? 0,
         eq: (filters.eq ?? defaultEqBands()).map((b) => ({
           freqHz: b.freqHz,
           gainDb: b.gainDb,

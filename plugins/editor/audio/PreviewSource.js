@@ -1,3 +1,5 @@
+import { createReverbImpulse } from './reverbIR.js'
+
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
 const FILTER_SMOOTHING_SECONDS = 0.01
@@ -83,6 +85,16 @@ function createVoice(engine, soundId) {
   const echoFeedbackGain = engine.context.createGain()
   echoFeedbackGain.gain.value = 0
 
+  // Reverb: a real convolution reverb (ConvolverNode), mirroring
+  // SoundSource.js's identical addition - a third parallel send off
+  // filterGainNode, independent of Echo rather than chained after it. See
+  // reverbIR.js for why the impulse response is synthetic (procedurally
+  // generated) rather than a bundled recorded IR.
+  const reverbSendGain = engine.context.createGain()
+  reverbSendGain.gain.value = 0
+  const reverbConvolver = engine.context.createConvolver()
+  reverbConvolver.normalize = true
+
   const crossfadeGain = engine.context.createGain()
   crossfadeGain.gain.value = 0
 
@@ -101,7 +113,11 @@ function createVoice(engine, soundId) {
   echoFeedbackGain.connect(echoDelayNode)
   echoDelayNode.connect(crossfadeGain)
 
-  return { audioEl, sourceNode, highpassNode, lowpassNode, eqNodes, eqNodeGroups, eqTopology: '', filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, crossfadeGain }
+  filterGainNode.connect(reverbSendGain)
+  reverbSendGain.connect(reverbConvolver)
+  reverbConvolver.connect(crossfadeGain)
+
+  return { audioEl, sourceNode, highpassNode, lowpassNode, eqNodes, eqNodeGroups, eqTopology: '', filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, reverbSendGain, reverbConvolver, reverbSizeMs: 0, crossfadeGain }
 }
 
 // Tears down and rebuilds a voice's eqNodes chain to match a new band
@@ -139,7 +155,7 @@ function rebuildEqChain(voice, context, eq) {
   eqChainEnd.connect(voice.filterGainNode)
 }
 
-function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0, eq = [] }) {
+function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0, reverbSizeMs = 0, reverbMix = 0, eq = [] }) {
   const now = context.currentTime
   voice.highpassNode.frequency.setTargetAtTime(highpassHz, now, FILTER_SMOOTHING_SECONDS)
   voice.lowpassNode.frequency.setTargetAtTime(lowpassHz, now, FILTER_SMOOTHING_SECONDS)
@@ -147,6 +163,11 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
   voice.echoDelayNode.delayTime.setTargetAtTime(echoDelayMs / 1000, now, FILTER_SMOOTHING_SECONDS)
   voice.echoSendGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
   voice.echoFeedbackGain.gain.setTargetAtTime(echoDecay, now, FILTER_SMOOTHING_SECONDS)
+  voice.reverbSendGain.gain.setTargetAtTime(reverbMix, now, FILTER_SMOOTHING_SECONDS)
+  if (reverbSizeMs !== voice.reverbSizeMs) {
+    voice.reverbSizeMs = reverbSizeMs
+    voice.reverbConvolver.buffer = reverbSizeMs > 0 ? createReverbImpulse(context, reverbSizeMs / 1000) : null
+  }
   // The EQ chain's shape now varies with both how many bands exist AND how
   // many stages each one needs (a plain length check alone can't tell a
   // type/slope change apart from a same-length no-op) - only rebuild the
@@ -210,6 +231,8 @@ function disposeVoice(voice) {
   voice.echoDelayNode.disconnect()
   voice.echoSendGain.disconnect()
   voice.echoFeedbackGain.disconnect()
+  voice.reverbSendGain.disconnect()
+  voice.reverbConvolver.disconnect()
   voice.crossfadeGain.disconnect()
 }
 

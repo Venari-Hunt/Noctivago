@@ -2,6 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { runFfmpegToFile, runFfmpegPipe } from './runFfmpeg.js'
+import { getOrCreateReverbIR } from './reverbIR.js'
 
 const pending = new Map()
 
@@ -189,7 +190,10 @@ function buildEqBandFilter(band) {
 // Builds an ffmpeg filter chain fragment from a {highpassHz, lowpassHz,
 // gainDb, echoDelayMs, echoDecay, eq} filter set, skipping any band left at
 // its neutral/no-op value. Returns null if every band is neutral (nothing
-// to apply).
+// to apply). Deliberately excludes reverbSizeMs/reverbMix - afir needs a
+// second ffmpeg *input* (the impulse response), which can't join this plain
+// comma-separated -af fragment; see applyReverbPass/doRender below for its
+// own isolated pass.
 function buildFilterChain(filters) {
   if (!filters) return null
   const parts = []
@@ -535,14 +539,57 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
   fs.renameSync(tmpPath, outputPath)
 }
 
+// Convolves a rendered .wav (already filters/speedPitch-baked, pre-crossfade)
+// with a synthetic reverb impulse response, dry+wet mixed and trimmed back to
+// its own original duration - see getOrCreateReverbIR for the IR itself.
+//
+// afir's own `dry`/`wet` options turned out NOT to be a dry/wet *mix* at all
+// despite the name - confirmed directly against the real bundled binary
+// before writing this (per this project's standing discipline): both are
+// just two gain stages multiplied into the *same* always-fully-convolved
+// output (dry=1,wet=0 produced total silence, not a dry passthrough; level
+// scaled with dry*wet's product, not a crossfade). A real dry/wet blend is
+// built by hand instead - split the input, run only the wet branch through
+// afir (dry=1:wet=1, i.e. unmodified by afir's own gains), scale each
+// branch by the desired mix, then sum. `alimiter` (ceiling only, matching
+// Composite's own identical brick-wall-limiter use, v0.1.113) guards against
+// a sustained ambient sound's reverb tail building up real level over the
+// mix - measured directly: a continuous tone at mix 0.5+ was already
+// clipping-adjacent before this was added.
+async function applyReverbPass(inputPath, outputPath, reverbSizeMs, reverbMix) {
+  const irPath = await getOrCreateReverbIR(reverbSizeMs / 1000)
+  const mix = Math.max(0, Math.min(1, reverbMix))
+  const dryGain = (1 - mix).toFixed(4)
+  const wetGain = mix.toFixed(4)
+  const duration = readWavDuration(inputPath)
+  await runFfmpegToFile([
+    '-y', '-i', inputPath, '-i', irPath,
+    '-filter_complex',
+    `[0]asplit=2[rvdry][rvwet];` +
+      `[rvwet][1]afir=dry=1:wet=1:gtype=none[rvwetraw];` +
+      `[rvdry]volume=${dryGain}[rvdryout];` +
+      `[rvwetraw]volume=${wetGain}[rvwetout];` +
+      `[rvdryout][rvwetout]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=disabled[out]`,
+    '-map', '[out]',
+    '-t', duration.toFixed(6),
+    '-vn', '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', outputPath
+  ])
+}
+
 async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, outputPath: explicitOutputPath }) {
   const outputPath = explicitOutputPath ?? getLoopClipPath(id)
   const tmpPath = `${outputPath}.tmp`
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
   const speedPitchChain = buildSpeedPitchReverseChain(speedPitch, loopEnd - loopStart)
+  // Reverb (afir convolution) needs a second ffmpeg *input* (the impulse
+  // response) - it can't join buildFilterChain's plain comma-separated -af
+  // fragment the way highpass/lowpass/echo/EQ do, so it always needs its own
+  // isolated pass, same as speed/pitch/reverse - see the pre-pass branch
+  // below and applyReverbPass above.
+  const reverbActive = Boolean(filters?.reverbMix > 0 && filters?.reverbSizeMs > 0)
 
-  if (!speedPitchChain) {
+  if (!speedPitchChain && !reverbActive) {
     try {
       await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, outputPath })
       return { ok: true }
@@ -578,21 +625,34 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // hiding exactly this kind of discontinuity, regardless of what caused it,
   // as long as it runs *last*.
   const tmpIntermediatePath = `${outputPath}.pre.tmp.wav`
+  const tmpReverbPath = `${outputPath}.reverb.tmp.wav`
   try {
     const filterChain = buildFilterChain(filters)
     const preChain = [filterChain, speedPitchChain].filter(Boolean).join(',')
     await runFfmpegToFile([
       '-y',
       '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
-      '-af', preChain,
+      ...(preChain ? ['-af', preChain] : []),
       '-vn',
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
     ])
-    const intermediateDuration = readWavDuration(tmpIntermediatePath)
+    // Reverb runs as its own isolated pass, same "pre-process first, THEN
+    // crossfade" reasoning as speed/pitch/reverse above - it's linear/time-
+    // invariant so it can't reintroduce the class of edge-effect seam
+    // rubberband did, but doing it before rotation still means the
+    // convolution's own start-of-buffer warm-up settles against real
+    // preceding audio (this clip's own tail-adjacent content) rather than
+    // digital silence.
+    let sourceForCrossfade = tmpIntermediatePath
+    if (reverbActive) {
+      await applyReverbPass(tmpIntermediatePath, tmpReverbPath, filters.reverbSizeMs, filters.reverbMix)
+      sourceForCrossfade = tmpReverbPath
+    }
+    const intermediateDuration = readWavDuration(sourceForCrossfade)
     // filters were already baked into the intermediate above - passing null
     // here avoids applying them a second time.
     await renderCrossfadedLoop({
-      inputPath: tmpIntermediatePath,
+      inputPath: sourceForCrossfade,
       loopStart: 0,
       loopEnd: intermediateDuration,
       filters: null,
@@ -608,9 +668,16 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
         // best-effort cleanup
       }
     }
-    console.error('renderLoopClip (speed/pitch/reverse) failed', id, err)
+    console.error('renderLoopClip (speed/pitch/reverse/reverb) failed', id, err)
     return { ok: false, error: err.message }
   } finally {
+    if (fs.existsSync(tmpReverbPath)) {
+      try {
+        fs.unlinkSync(tmpReverbPath)
+      } catch {
+        // best-effort cleanup
+      }
+    }
     if (fs.existsSync(tmpIntermediatePath)) {
       try {
         fs.unlinkSync(tmpIntermediatePath)
