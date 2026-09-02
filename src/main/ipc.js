@@ -81,6 +81,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:pickFolder', () => library.pickFolder())
   ipcMain.handle('library:addSound', (_event, payload) => library.addSound(payload))
   ipcMain.handle('library:addRecordedSound', (_event, payload) => library.addRecordedSound(payload))
+  ipcMain.handle('library:addSoundFromUrl', (_event, payload) => library.addSoundFromUrl(payload))
   ipcMain.handle('library:addFolderSounds', (_event, folderPath, options) => library.addFolderSounds(folderPath, options))
   ipcMain.handle('library:updateMeta', (_event, id, meta) => library.updateMeta(id, meta))
   ipcMain.handle('library:updateLoopPoints', (_event, id, points) => library.updateLoopPoints(id, points))

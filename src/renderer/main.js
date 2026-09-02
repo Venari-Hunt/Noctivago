@@ -7,12 +7,14 @@ import { installUpdateModal } from './core/UpdateModal.js'
 import { installSleepTimer } from './core/SleepTimer.js'
 import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { installRecordDialog } from './core/RecordDialog.js'
+import { installAddLinkDialog } from './core/AddLinkDialog.js'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
 installSliderDoubleClickReset()
 installNumberBoxStepper()
 installWatchFolderDialog()
 installRecordDialog()
+installAddLinkDialog()
 installUpdateModal()
 installSleepTimer()
 installSettingsMenu()

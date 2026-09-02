@@ -7,6 +7,7 @@ import { renderSoundList, sortForDisplay, SORT_MODES, GROUP_MODES } from '../../
 import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
+import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
 import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
 import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
 
@@ -59,6 +60,7 @@ const els = {
   addSoundFolderTagItem: document.getElementById('add-sound-folder-tag'),
   addSoundWatchFolderItem: document.getElementById('add-sound-watch-folder'),
   addSoundRecordItem: document.getElementById('add-sound-record'),
+  addSoundLinkItem: document.getElementById('add-sound-link'),
   openPresetsBtn: document.getElementById('open-presets'),
 
   addSoundDialog: document.getElementById('add-sound-dialog'),
@@ -897,6 +899,11 @@ els.addSoundRecordItem.addEventListener('click', () => {
   openRecordDialog()
 })
 
+els.addSoundLinkItem.addEventListener('click', () => {
+  closeAddSoundMenu()
+  openAddLinkDialog()
+})
+
 els.addSoundFolderPresetItem.addEventListener('click', async () => {
   closeAddSoundMenu()
   const folder = await api.library.pickFolder()
@@ -1246,6 +1253,7 @@ export function mount(container) {
   // module talks to the Mixer via a DOM event" pattern the Solo bridge below
   // already established.
   document.addEventListener('library:recorded', refreshList)
+document.addEventListener('library:linked', refreshList)
   // See applySolo's own comment for why this is a window event rather than a
   // direct call - Remix's Solo button dispatches { soundId, active }.
   window.addEventListener('noctivago:solo', (e) => {

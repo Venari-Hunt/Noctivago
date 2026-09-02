@@ -463,6 +463,63 @@ export async function addRecordedSound({ name, buffer }) {
   }
 }
 
+// Download-from-a-direct-link import (owner's own backlog steer answer,
+// 2026-09-01: "ffmpeg also downloads stuff from links... get a hold of some
+// infrastructure to download an audio and using it on the app"). Same shape
+// as addRecordedSound right above - ffmpeg reads the URL directly (its own
+// http/https client, confirmed compiled into the bundled binary via
+// `-protocols` before writing this) and transcodes straight to a scratch
+// .wav, which then goes through the exact same addSound(keepCopy: true)
+// path any other imported file does. `-rw_timeout` (microseconds) bounds how
+// long a stalled/dead connection can hang the app on - confirmed accepted by
+// the real bundled binary (an unsupported option would fail every download
+// outright, so this was checked directly rather than assumed). `-vn` drops
+// any video stream a mistakenly-pasted video-with-audio link might have,
+// keeping just the audio - same reasoning as the recording path not needing
+// one (its own input is always audio-only).
+//
+// Deliberately distinct from the parked YouTube/yt-dlp idea: this only ever
+// touches a plain HTTP(S) URL the user supplies directly, not a scraper for
+// a specific platform's content - no comparable ToS question, since fetching
+// a URL you were given is not different from what any browser does.
+const DOWNLOAD_RW_TIMEOUT_MICROSECONDS = 30_000_000 // 30s
+
+export async function addSoundFromUrl({ name, url }) {
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error('That doesn\'t look like a valid URL.')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only http:// and https:// links are supported.')
+  }
+
+  const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const id = crypto.randomUUID()
+  const wavPath = path.join(tmpDir, `${id}.wav`)
+  try {
+    await runFfmpegToFile([
+      '-y',
+      '-rw_timeout',
+      String(DOWNLOAD_RW_TIMEOUT_MICROSECONDS),
+      '-i',
+      parsed.toString(),
+      '-vn',
+      wavPath
+    ])
+    const fallbackName = decodeURIComponent(path.basename(parsed.pathname)).replace(/\.[^.]+$/, '') || 'Downloaded audio'
+    return addSound({ path: wavPath, name: name || fallbackName, keepCopy: true })
+  } finally {
+    try {
+      if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+    } catch {
+      // best-effort cleanup, same as addRecordedSound's own
+    }
+  }
+}
+
 // "Save as copy" in the Remix plugin - trims a segment out of a longer
 // recording (e.g. one bird call out of a field recording with several) into
 // its own independent sound, without touching the source entry's own saved
