@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.124 — Mixer: sound names get their own row
+
+- Each sound's name now sits on its own full-width line at the top of its box, instead of squeezed in next to the buttons — it should stay readable even with a long name.
+- If a name is still too long to fit, hovering over it scrolls it sideways to show the whole thing, same as before.
+
 ## v0.1.123 — Fix: fade handles moving with the trim handle in Remix
 
 - Dragging a trim (cut) handle on a Random Interval / Scheduled sound's waveform used to also drag the fade-in/out balls along with it. They now stay put in their own position on the waveform while you drag the trim handle, independent of it.
