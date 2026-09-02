@@ -23,6 +23,16 @@ const store = new Store({
     // history of a "took all my RAM and never finished" bug, so the
     // higher-resource path is strictly opt-in and hard-capped.
     fasterExport: false,
+    // Export Part B (2026-09-02 owner ask, a second/separate opt-in toggle
+    // from fasterExport above): when on, exportMix.js's final mixdown tiles
+    // each loop-mode sound to its own full-duration track as an independent
+    // ffmpeg process, several at once, instead of every loop sound sharing
+    // one single-threaded final pass - see exportMix.js's own doc comment
+    // for why this beats literal time-chunking (targets the real bottleneck,
+    // zero seam risk). Off by default: real correctness/resource trade-offs
+    // (extra temp disk I/O for the per-sound tiles, same CPU/RAM profile as
+    // fasterExport) the owner explicitly accepted as opt-in only.
+    parallelMixdown: false,
     // Remembered so a nightly-use sleep timer doesn't need re-picking every
     // time - just the last chosen values, not an active timer (that's
     // session-only, main-process state in sleepTimer.js).
@@ -46,6 +56,7 @@ export function getSettings() {
     eagerlyBakeOnImport: store.get('eagerlyBakeOnImport'),
     skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
     fasterExport: store.get('fasterExport'),
+    parallelMixdown: store.get('parallelMixdown'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
     lastRunVersion: store.get('lastRunVersion')
@@ -114,6 +125,11 @@ export function setSkipRemixLeaveConfirmEnabled(enabled) {
 
 export function setFasterExportEnabled(enabled) {
   store.set('fasterExport', Boolean(enabled))
+  return getSettings()
+}
+
+export function setParallelMixdownEnabled(enabled) {
+  store.set('parallelMixdown', Boolean(enabled))
   return getSettings()
 }
 

@@ -95,6 +95,16 @@ export default class ExportPlugin {
     this.unregister?.()
   }
 
+  // Stamps how long the just-finished log line's phase actually took, right
+  // onto that line - see onExportProgress's own comment for why.
+  closeLastLogLineTiming() {
+    if (this.lastStepAt == null) return
+    const elapsed = formatDuration((Date.now() - this.lastStepAt) / 1000)
+    const prevLine = this.els.log?.lastElementChild
+    if (prevLine) prevLine.textContent += ` (${elapsed})`
+    this.lastStepAt = null
+  }
+
   onExportProgress(payload) {
     if (!this.exporting || !this.els.progressBar) return
     const pct = Math.round((payload.fraction ?? 0) * 100)
@@ -102,6 +112,16 @@ export default class ExportPlugin {
     this.els.progressPct.textContent = `${pct}%`
     if (payload.type === 'step' && payload.label) {
       this.els.status.textContent = payload.label
+      // Per-phase wall-clock timing (2026-09-02, Export Part B investigation):
+      // synthetic benchmarking of the parallelMixdown toggle showed no real
+      // speedup on test content, casting doubt on the earlier circumstantial
+      // reasoning that the final mixdown is the actual bottleneck on a real
+      // multi-hour export. Rather than guess further, surface how long each
+      // phase actually took, right in the log every export already writes -
+      // the next real slow export will show definitively where the time
+      // goes, instead of relying on speculation.
+      this.closeLastLogLineTiming()
+      this.lastStepAt = Date.now()
       const line = document.createElement('div')
       line.className = 'export-log-line'
       line.textContent = payload.label
@@ -138,6 +158,11 @@ export default class ExportPlugin {
         <label class="export-check">
           <input id="export-faster" type="checkbox" />
           <span>Faster export — uses more CPU and memory. Renders several parts of the export at once; noticeably quicker on long presets with lots of Random Interval or Scheduled sounds. Leave off if you want to keep working on the PC while it runs.</span>
+        </label>
+
+        <label class="export-check">
+          <input id="export-parallel-mixdown" type="checkbox" />
+          <span>Parallel mixdown (experimental) — uses more CPU, memory, and disk space. Renders every Loop-mode sound's own track at once instead of one after another, on a long export with several of them playing the whole time. Test-scale benchmarks didn't show a clear speedup, so try it on your real slow export and see — the log below now shows how long each step actually took either way. Independent of "Faster export" above — turn on either, both, or neither.</span>
         </label>
 
         <!-- Highpass/Lowpass/Gain used to live here too ("whole-mix
@@ -178,6 +203,7 @@ export default class ExportPlugin {
       length: container.querySelector('#export-length'),
       format: container.querySelector('#export-format'),
       faster: container.querySelector('#export-faster'),
+      parallelMixdown: container.querySelector('#export-parallel-mixdown'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
@@ -204,10 +230,14 @@ export default class ExportPlugin {
     this.els.faster.addEventListener('change', () => {
       this.api.settings.setFasterExportEnabled(this.els.faster.checked)
     })
+    this.els.parallelMixdown.addEventListener('change', () => {
+      this.api.settings.setParallelMixdownEnabled(this.els.parallelMixdown.checked)
+    })
     this.api.settings
       .get()
       .then((settings) => {
         this.els.faster.checked = Boolean(settings.fasterExport)
+        this.els.parallelMixdown.checked = Boolean(settings.parallelMixdown)
       })
       .catch((err) => console.error('Export: failed to read settings', err))
 
@@ -294,6 +324,7 @@ export default class ExportPlugin {
     // finished exporting"), since a multi-hour export gives no sense of its
     // own pace otherwise.
     const renderStartedAt = Date.now()
+    this.lastStepAt = renderStartedAt
 
     try {
       const result = await this.api.export.run({
@@ -305,6 +336,7 @@ export default class ExportPlugin {
         fadeOutSeconds: Number(this.els.fadeOut.value) || 0,
         outputPath
       })
+      this.closeLastLogLineTiming()
       const elapsed = formatDuration((Date.now() - renderStartedAt) / 1000)
       // "Clear the progress bar when it finishes" - a static bar frozen at
       // 100% forever looked ambiguous (still running? actually done?) next to
@@ -323,6 +355,7 @@ export default class ExportPlugin {
       }
     } catch (err) {
       console.error('Export failed', err)
+      this.closeLastLogLineTiming()
       const elapsed = formatDuration((Date.now() - renderStartedAt) / 1000)
       this.els.progressWrap.classList.add('hidden')
       this.els.status.className = 'export-status export-status-error'

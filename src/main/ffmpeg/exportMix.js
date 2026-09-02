@@ -49,7 +49,10 @@ import { renderClipToPath } from './loopClip.js'
 // passes settings.fasterExport straight through) they run `concurrency` at a
 // time via mapPool - bounded by core count and FASTER_EXPORT_CONCURRENCY_CAP
 // - and rubberband switches to its faster pitch mode. Step 3 is one pass
-// regardless.
+// regardless, UNLESS `parallelMixdown` (Export Part B, a second/separate
+// opt-in toggle) is also on - see tileLoopShotFull/renderFinalMixFromTracks
+// below for why and how step 3 itself gets split into independent
+// per-loop-sound passes in that case.
 
 // EVENT_BATCH_SIZE branches of rubberband+volume+fade+adelay go into one
 // ffmpeg graph per batch. rubberband's cost is proportional to a shot's
@@ -359,6 +362,107 @@ async function reduceTrackCount(tracks, target, ownPaths, reporter) {
   return current
 }
 
+// PARALLEL MIXDOWN (opt-in, `parallelMixdown` - Export Part B). The
+// 2026-09-02 research pass found the final mixdown is the one remaining
+// serial bottleneck: ffmpeg's audio filtergraph runs on one thread, so N
+// loop-mode sounds each tiled for the *whole* export duration inside one
+// shared renderFinalMixdown pass costs N x duration of serial processing,
+// even though those N tilings are fully independent of each other.
+// The shape first floated to the owner was literal time-chunking (split the
+// timeline into pieces, render each in parallel, concat) - but that only
+// pays off for a *stateless* per-sample operation; a loop shot's `-stream_
+// loop -1` input can't be seeked into an arbitrary chunk without ffmpeg
+// re-decoding everything before it, so time-chunking wouldn't actually
+// speed up the layer the research identified as the real cost, and it adds
+// a genuine seam-artifact risk at every chunk boundary.
+// This instead parallelizes by SOUND: each loop sound's full-duration tile
+// becomes its OWN ffmpeg process (tileLoopShotFull), several running at once
+// via mapPool - directly parallelizing the N-independent-tilings bottleneck
+// with zero seam risk (every sound's own track is still one continuous
+// render, no time-domain split anywhere). renderFinalMixFromTracks is then
+// a cheap tail: adelay+amix the pre-tiled tracks (loop + batch, same shape),
+// apply whole-mix post-processing/fades last, encode - no per-sound tiling
+// left to do in that final pass regardless of export length.
+// Real cost of this trade: one full-duration intermediate file per loop
+// sound gets written to temp disk (previously loop shots were tiled inline,
+// never materialized past their short shot length) - more temp I/O/space on
+// a long export with several loop layers, cleaned up like every other
+// intermediate here.
+async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
+  const outPath = tempPath(INTERMEDIATE_EXT)
+  await runFfmpegToFile(
+    [
+      '-y', '-stream_loop', '-1', '-i', shot.path,
+      '-af', `volume=${shot.volume.toFixed(6)}`,
+      '-t', durationSeconds.toFixed(6),
+      ...INTERMEDIATE_CODEC, outPath
+    ],
+    { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+  )
+  reporter?.completePhase(durationSeconds)
+  return { path: outPath, offset: 0 }
+}
+
+// The lightweight tail once every track (pre-tiled loop tracks at offset 0 +
+// sliced batch tracks at their own offsets, already reduced under
+// MAX_INPUTS_PER_PASS) is ready: adelay each to its offset, amix, apply
+// whole-mix processing + fades last, encode. Mirrors renderFinalMixdown's
+// own post-filter/encode tail exactly, minus the -stream_loop tiling this
+// version doesn't need to do inline anymore.
+async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
+  const graph = []
+  const mixLabels = []
+  let idx = tracks.length
+
+  if (idx === 0) {
+    graph.push('[0:a]anull[m0]')
+    mixLabels.push('[m0]')
+    idx = 1
+  } else {
+    tracks.forEach((t, i) => {
+      const delayMs = Math.max(0, Math.round(t.offset * 1000))
+      graph.push(`[${i}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${i}]`)
+      mixLabels.push(`[m${i}]`)
+    })
+  }
+
+  const post = []
+  if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)
+  if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) post.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
+  if (wholeMixFilters?.gainDb) post.push(`volume=${wholeMixFilters.gainDb}dB`)
+  if (fadeInSeconds > 0) post.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
+  if (fadeOutSeconds > 0) {
+    post.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
+  }
+
+  graph.push(
+    `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
+      `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
+  )
+
+  const scriptPath = tempPath('txt')
+  fs.writeFileSync(scriptPath, graph.join(';'))
+  const codecArgs = FORMAT_CODECS[format] ?? FORMAT_CODECS.wav
+  const inputArgs =
+    tracks.length > 0 ? tracks.flatMap((t) => ['-i', t.path]) : ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo']
+  try {
+    await runFfmpegToFile(
+      [
+        '-y', ...inputArgs,
+        '-filter_complex_script', scriptPath,
+        '-map', '[out]',
+        '-t', durationSeconds.toFixed(6),
+        ...codecArgs, '-ar', '44100', '-ac', '2',
+        outputPath
+      ],
+      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+    )
+    reporter?.completePhase(durationSeconds)
+  } finally {
+    await cleanupFiles([scriptPath])
+  }
+}
+
 const FORMAT_CODECS = {
   wav: ['-c:a', 'pcm_s16le'],
   mp3: ['-c:a', 'libmp3lame', '-b:a', '192k'],
@@ -452,7 +556,7 @@ async function renderFinalMixdown({
 //   path resolution, event simulation). events is null/empty for 'loop'
 //   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
 //   fadeInMs, fadeOutMs, shotDurationSeconds } for 'scatter'/'scheduled'.
-export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false }) {
+export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
@@ -471,8 +575,14 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     }
   }
 
+  // Under parallelMixdown, every loop sound gets its own full-duration
+  // tiling pass (see tileLoopShotFull) instead of sharing one - so the work
+  // estimate is N x duration for that phase plus another duration for the
+  // (now cheap) final combine, rather than just the one duration the
+  // default single-pass mixdown costs.
+  const mixdownWorkSeconds = parallelMixdown ? loopSounds.length * durationSeconds + durationSeconds : durationSeconds
   const totalWorkSeconds =
-    durationSeconds + eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0)
+    mixdownWorkSeconds + eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0)
   const reporter = makeReporter(onProgress, totalWorkSeconds)
 
   if (sounds.length === 0) return { ok: false, error: 'No sounds to export' }
@@ -485,9 +595,18 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   const concurrency = fasterExport
     ? Math.max(1, Math.min((os.cpus()?.length ?? 2) - 1, FASTER_EXPORT_CONCURRENCY_CAP))
     : 1
+  // parallelMixdown's own concurrency, independent of fasterExport (see
+  // exportMix.js's doc comment - "a second, separate opt-in toggle" per the
+  // owner's own framing) - the whole point is parallelizing the final
+  // mixdown's loop-tiling regardless of whether the earlier phases are sped
+  // up too. Same core-count/cap logic as fasterExport's.
+  const mixdownConcurrency = parallelMixdown
+    ? Math.max(1, Math.min((os.cpus()?.length ?? 2) - 1, FASTER_EXPORT_CONCURRENCY_CAP))
+    : 1
 
   const ownedShotPaths = [] // every owned shot clip - kept alive through the batch phase, cleaned at the very end
   const batchTrackPaths = []
+  const tiledLoopTrackPaths = [] // parallelMixdown's per-sound full-duration tiles
   try {
     if (fasterExport && concurrency > 1) {
       reporter.step(`Faster export on — up to ${concurrency} passes at once.`)
@@ -555,24 +674,56 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         ? await reduceTrackCount(batchTracks, batchTrackBudget, batchTrackPaths, reporter)
         : batchTracks
 
-    reporter.step('Final mixdown + whole-mix processing…')
-    await renderFinalMixdown({
-      loopShots,
-      batchTracks: finalBatchTracks,
-      durationSeconds,
-      wholeMixFilters,
-      fadeInSeconds,
-      fadeOutSeconds,
-      outputPath,
-      format,
-      reporter
-    })
+    if (parallelMixdown && loopShots.length > 0) {
+      // Tile every loop sound to its own full-duration track, several at
+      // once - the actual Part B win, see tileLoopShotFull's doc comment.
+      reporter.step(
+        `Parallel mixdown on — tiling ${loopShots.length} loop sound${loopShots.length === 1 ? '' : 's'} at once…`
+      )
+      const tiledLoopTracks = []
+      await mapPool(loopShots, mixdownConcurrency, async (shot) => {
+        const track = await tileLoopShotFull({ shot, durationSeconds, reporter })
+        tiledLoopTrackPaths.push(track.path)
+        tiledLoopTracks.push(track)
+      })
+
+      const combinedTracks = [...tiledLoopTracks, ...finalBatchTracks]
+      const mergedTracks =
+        combinedTracks.length > MAX_INPUTS_PER_PASS
+          ? await reduceTrackCount(combinedTracks, MAX_INPUTS_PER_PASS, batchTrackPaths, reporter)
+          : combinedTracks
+
+      reporter.step('Final mixdown + whole-mix processing…')
+      await renderFinalMixFromTracks({
+        tracks: mergedTracks,
+        durationSeconds,
+        wholeMixFilters,
+        fadeInSeconds,
+        fadeOutSeconds,
+        outputPath,
+        format,
+        reporter
+      })
+    } else {
+      reporter.step('Final mixdown + whole-mix processing…')
+      await renderFinalMixdown({
+        loopShots,
+        batchTracks: finalBatchTracks,
+        durationSeconds,
+        wholeMixFilters,
+        fadeInSeconds,
+        fadeOutSeconds,
+        outputPath,
+        format,
+        reporter
+      })
+    }
     reporter.step(`Encoding to ${String(format || 'wav').toUpperCase()} — done.`)
     return { ok: true }
   } catch (err) {
     console.error('exportMix failed', err)
     return { ok: false, error: err.message }
   } finally {
-    await cleanupFiles([...ownedShotPaths, ...batchTrackPaths])
+    await cleanupFiles([...ownedShotPaths, ...batchTrackPaths, ...tiledLoopTrackPaths])
   }
 }
