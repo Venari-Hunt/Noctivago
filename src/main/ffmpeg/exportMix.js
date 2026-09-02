@@ -476,7 +476,7 @@ async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilte
         '-filter_complex_script', scriptPath,
         '-map', '[out]',
         '-t', durationSeconds.toFixed(6),
-        ...codecArgs, '-ar', '44100', '-ac', '2',
+        ...codecArgs, '-ar', String(outputSampleRate(format)), '-ac', '2',
         outputPath
       ],
       { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
@@ -493,6 +493,20 @@ const FORMAT_CODECS = {
   opus: ['-c:a', 'libopus', '-b:a', '128k'],
   flac: ['-c:a', 'flac'],
   ogg: ['-c:a', 'libvorbis', '-b:a', '192k']
+}
+
+// BUG FIX (reported directly, 2026-09-02): every export to Opus format
+// failed outright ("Specified sample rate 44100 is not supported by the
+// libopus encoder") - the final encode step hardcoded -ar 44100 for every
+// format, but libopus only accepts 8000/12000/16000/24000/48000 Hz, never
+// 44100. Every other format here is fine at 44100; only libopus needs a
+// different output rate. ffmpeg resamples automatically to whatever -ar the
+// output side asks for, regardless of the mix's own internal 44100 rate, so
+// this is a safe, isolated fix - nothing upstream of the final encode needs
+// to change.
+const OUTPUT_SAMPLE_RATES = { opus: 48000 }
+function outputSampleRate(format) {
+  return OUTPUT_SAMPLE_RATES[format] ?? 44100
 }
 
 // The one heavy pass: every loop shot tiled via -stream_loop through its own
@@ -556,7 +570,7 @@ async function renderFinalMixdown({
         '-filter_complex_script', scriptPath,
         '-map', '[out]',
         '-t', durationSeconds.toFixed(6),
-        ...codecArgs, '-ar', '44100', '-ac', '2',
+        ...codecArgs, '-ar', String(outputSampleRate(format)), '-ac', '2',
         outputPath
       ],
       { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
