@@ -140,22 +140,18 @@ export default class ExportPlugin {
           <span>Faster export — uses more CPU and memory. Renders several parts of the export at once; noticeably quicker on long presets with lots of Random Interval or Scheduled sounds. Leave off if you want to keep working on the PC while it runs.</span>
         </label>
 
-        <h3>Whole-mix processing <span class="export-hint-inline">(applied last, after everything is combined)</span></h3>
-        <label>
-          <span>Highpass</span>
-          <input id="export-highpass" type="range" min="0" max="2000" value="0" step="10" />
-          <span id="export-highpass-value" class="export-value">Off</span>
-        </label>
-        <label>
-          <span>Lowpass</span>
-          <input id="export-lowpass" type="range" min="150" max="20000" value="20000" step="50" />
-          <span id="export-lowpass-value" class="export-value">Off</span>
-        </label>
-        <label>
-          <span>Gain</span>
-          <input id="export-gain" type="range" min="-24" max="24" value="0" step="1" />
-          <span id="export-gain-value" class="export-value">0 dB</span>
-        </label>
+        <!-- Highpass/Lowpass/Gain used to live here too ("whole-mix
+             processing"), but the owner asked directly for them to be
+             removed and for whole-mix processing to live only on the
+             Preset Remix tab: "Get rid of the whole mix processing section
+             on the export tab. Keep only the Fade in and fade out options
+             because this is still relevant. But the whole mix thing should
+             be kept on the preset remix tab." An export no longer applies
+             any highpass/lowpass/gain/EQ of its own - exportMix.js's
+             wholeMixFilters param is always passed neutral now. A preset's
+             Preset Remix settings are a *live Mixer* effect only; they are
+             not (yet) baked into what Export renders - flagged to the owner
+             in the inbox as a real trade-off worth a follow-up call. -->
         <label>
           <span>Fade in</span>
           <input id="export-fade-in" type="number" min="0" max="60" step="0.5" value="2" />
@@ -182,12 +178,6 @@ export default class ExportPlugin {
       length: container.querySelector('#export-length'),
       format: container.querySelector('#export-format'),
       faster: container.querySelector('#export-faster'),
-      highpass: container.querySelector('#export-highpass'),
-      highpassValue: container.querySelector('#export-highpass-value'),
-      lowpass: container.querySelector('#export-lowpass'),
-      lowpassValue: container.querySelector('#export-lowpass-value'),
-      gain: container.querySelector('#export-gain'),
-      gainValue: container.querySelector('#export-gain-value'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
@@ -205,9 +195,6 @@ export default class ExportPlugin {
     this.els.length.addEventListener('keydown', (evt) => {
       if (evt.key === 'Enter') this.els.length.blur()
     })
-    this.els.highpass.addEventListener('input', () => this.updateWholeMixLabels())
-    this.els.lowpass.addEventListener('input', () => this.updateWholeMixLabels())
-    this.els.gain.addEventListener('input', () => this.updateWholeMixLabels())
     this.els.run.addEventListener('click', () => this.runExport())
 
     // "Faster export" is a per-machine resource choice made right before an
@@ -224,7 +211,6 @@ export default class ExportPlugin {
       })
       .catch((err) => console.error('Export: failed to read settings', err))
 
-    this.updateWholeMixLabels()
     this.refresh().catch((err) => console.error('Export: failed to load presets/library', err))
   }
 
@@ -237,15 +223,6 @@ export default class ExportPlugin {
     this.els.length.value = formatDuration(seconds)
   }
 
-  updateWholeMixLabels() {
-    const hp = Number(this.els.highpass.value)
-    const lp = Number(this.els.lowpass.value)
-    const gain = Number(this.els.gain.value)
-    this.els.highpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
-    this.els.lowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
-    this.els.gainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
-  }
-
   async refresh() {
     const [presets, library] = await Promise.all([this.api.presets.list(), this.api.library.list()])
     this.presets = presets
@@ -255,12 +232,10 @@ export default class ExportPlugin {
     if (presets.some((p) => p.id === previouslySelected)) this.els.preset.value = previouslySelected
   }
 
+  // No Export-tab UI for these anymore (see the mount() comment above) -
+  // always neutral, so exportMix.js's post-processing step is a no-op.
   currentWholeMixFilters() {
-    return {
-      highpassHz: Number(this.els.highpass.value),
-      lowpassHz: Number(this.els.lowpass.value),
-      gainDb: Number(this.els.gain.value)
-    }
+    return { highpassHz: 0, lowpassHz: 20000, gainDb: 0 }
   }
 
   async runExport() {
@@ -306,12 +281,19 @@ export default class ExportPlugin {
 
     this.exporting = true
     this.els.run.disabled = true
+    this.els.status.className = 'export-status'
     this.els.status.textContent = `Exporting "${preset.name}" (${sounds.length} sound${sounds.length === 1 ? '' : 's'}, ${formatDuration(durationSeconds)})…`
     this.els.log.innerHTML = ''
     this.els.log.classList.remove('hidden')
     this.els.progressWrap.classList.remove('hidden')
     this.els.progressBar.style.width = '0%'
     this.els.progressPct.textContent = '0%'
+    // How long the render itself actually took, wall-clock - reported
+    // directly ("let the user know how much time it took to fully render the
+    // exported audio file... make the UI feel more explicit about it having
+    // finished exporting"), since a multi-hour export gives no sense of its
+    // own pace otherwise.
+    const renderStartedAt = Date.now()
 
     try {
       const result = await this.api.export.run({
@@ -323,18 +305,28 @@ export default class ExportPlugin {
         fadeOutSeconds: Number(this.els.fadeOut.value) || 0,
         outputPath
       })
+      const elapsed = formatDuration((Date.now() - renderStartedAt) / 1000)
+      // "Clear the progress bar when it finishes" - a static bar frozen at
+      // 100% forever looked ambiguous (still running? actually done?) next to
+      // a status line that already says so in words; hiding it here makes
+      // "finished" the obvious, unambiguous state rather than something you
+      // have to read the fine print to confirm.
+      this.els.progressWrap.classList.add('hidden')
       if (result.ok) {
-        this.els.progressBar.style.width = '100%'
-        this.els.progressPct.textContent = '100%'
-        this.els.status.textContent = `Exported to ${outputPath}`
+        this.els.status.className = 'export-status export-status-success'
+        this.els.status.textContent = `✓ Exported to ${outputPath} — took ${elapsed}`
         playCompletionChime(true)
       } else {
-        this.els.status.textContent = `Export failed: ${result.error}`
+        this.els.status.className = 'export-status export-status-error'
+        this.els.status.textContent = `✗ Export failed after ${elapsed}: ${result.error}`
         playCompletionChime(false)
       }
     } catch (err) {
       console.error('Export failed', err)
-      this.els.status.textContent = `Export failed: ${err.message}`
+      const elapsed = formatDuration((Date.now() - renderStartedAt) / 1000)
+      this.els.progressWrap.classList.add('hidden')
+      this.els.status.className = 'export-status export-status-error'
+      this.els.status.textContent = `✗ Export failed after ${elapsed}: ${err.message}`
       playCompletionChime(false)
     } finally {
       this.exporting = false

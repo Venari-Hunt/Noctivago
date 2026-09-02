@@ -8,21 +8,10 @@
   font-size: 15px;
 }
 
-.export-tab h3 {
-  margin: 20px 0 4px;
-  font-size: 13px;
-  color: var(--text-dim);
-}
-
 .export-hint {
   margin: 0 0 16px;
   font-size: 12px;
   color: var(--text-dim);
-}
-
-.export-hint-inline {
-  font-weight: normal;
-  font-size: 11px;
 }
 
 .export-tab label {
@@ -85,6 +74,20 @@
   font-size: 12px;
   color: var(--text-dim);
   word-break: break-all;
+}
+
+/* Distinct completion coloring so "finished" reads at a glance instead of
+   needing to parse the status text - success reuses the same Tokyo Night
+   "positive" green already used for the Remix fade visual, failure the
+   app's existing --danger red. */
+.export-status-success {
+  color: #9ece6a;
+  font-weight: 600;
+}
+
+.export-status-error {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .export-progress-wrap {
