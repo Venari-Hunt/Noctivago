@@ -627,6 +627,21 @@
   border-color: var(--accent);
 }
 
+/* "Live edit" (the editable Web Audio preview) vs "Saved audio" (the actual
+   baked clip file) - see EditorPlugin.togglePreviewMode()'s own doc comment.
+   Active (auditioning the real saved file) reuses the same "positive" green
+   the Remix fade visual and Export's success state already use, so it reads
+   as "this is the truth," distinct from the app's usual accent blue. */
+.editor-preview-mode-toggle {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.editor-preview-mode-toggle-active {
+  color: #9ece6a;
+  border-color: #9ece6a;
+}
+
 .editor-eq-hint {
   margin: 0;
   font-size: 11px;

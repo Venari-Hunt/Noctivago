@@ -1,5 +1,6 @@
 import { AudioEngine } from './audio/AudioEngine.js'
 import { PreviewSource } from './audio/PreviewSource.js'
+import { BakedClipPreview } from './audio/BakedClipPreview.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
 import { createEqEditorController, Q_MIN, Q_MAX, SLOPE_CAPABLE_EQ_TYPES } from './ui/EqEditor.js'
 import { createWaveformScrollbar } from './ui/WaveformScrollbar.js'
@@ -113,6 +114,15 @@ export default class EditorPlugin {
     this.pickerQuery = ''
     this.pickerHighlightIndex = -1
     this.previewSource = null
+    // The "hear the real baked file" half of the preview toggle - see
+    // BakedClipPreview.js's own doc comment for why this exists (Doppler and
+    // Reverse have no live preview at all; Pitch is only a rough
+    // approximation). 'live' (the editable Web Audio chain, previewSource)
+    // or 'saved' (the actual baked clip file, bakedPreview) - always reset
+    // to 'live' on a fresh load() since a new sound's own bake (if any) is
+    // unrelated to whatever was being auditioned before.
+    this.previewMode = 'live'
+    this.bakedPreview = null
     this.previewRafId = null
     this.loopEditorController = null
     this.waveformPeaksCache = new Map()
@@ -210,7 +220,7 @@ export default class EditorPlugin {
       onBeforeHide: () => this.confirmLeaveIfDirty(),
       onHide: () => {
         this._tabActive = false
-        this.previewSource?.pause()
+        this.activePreview()?.pause()
         this.stopPreviewTicking()
         this.setPlayPauseIcon(false)
         this.setSolo(false)
@@ -675,7 +685,14 @@ export default class EditorPlugin {
       this.updateSaveButtonState()
     })
     this.loopEditorController.onScrub((t) => {
-      this.previewSource?.scrubTo(t)
+      if (this.previewMode === 'saved' && this.bakedPreview) {
+        const { loopStart } = this.loopEditorController.getLoopPoints()
+        const clipTime = t - loopStart
+        this.bakedPreview.scrubTo(clipTime)
+        this.updateStickyProgress(clipTime)
+      } else {
+        this.previewSource?.scrubTo(t)
+      }
     })
     // Dragging (or double-click-resetting) the Doppler "closest point"
     // marker - no live preview to update (Doppler is bake-only, see
@@ -954,6 +971,7 @@ export default class EditorPlugin {
           <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
         </svg>
       </button>
+      <button id="editor-preview-mode-toggle" class="btn btn-small editor-preview-mode-toggle" type="button" disabled>Live edit</button>
       <div id="editor-sticky-progress" class="editor-sticky-progress" title="Drag to seek">
         <div class="editor-sticky-progress-track">
           <div id="editor-sticky-progress-fill" class="editor-sticky-progress-fill"></div>
@@ -986,6 +1004,8 @@ export default class EditorPlugin {
 
     this.els.playPause = container.querySelector('#editor-play-pause')
     this.els.loopToggle = container.querySelector('#editor-loop-toggle')
+    this.els.previewModeToggle = container.querySelector('#editor-preview-mode-toggle')
+    this.els.previewModeToggle.addEventListener('click', () => this.togglePreviewMode())
     this.els.stickyProgress = container.querySelector('#editor-sticky-progress')
     this.els.stickyProgressFill = container.querySelector('#editor-sticky-progress-fill')
     this.els.stickyProgressThumb = container.querySelector('#editor-sticky-progress-thumb')
@@ -1007,16 +1027,17 @@ export default class EditorPlugin {
     this.els.saveAsCopy.addEventListener('click', () => this.saveAsCopy().catch((err) => console.error('Editor: save as copy failed', err)))
 
     this.els.playPause.addEventListener('click', async () => {
-      if (!this.previewSource) return
-      if (this.previewSource.playing) {
-        this.previewSource.pause()
+      const active = this.activePreview()
+      if (!active) return
+      if (active.playing) {
+        active.pause()
         this.stopPreviewTicking()
         this.setPlayPauseIcon(false)
         this.eqEditorController.clearSpectrum()
       } else {
         try {
           await this.engine.resume()
-          await this.previewSource.play()
+          await active.play()
           this.setPlayPauseIcon(true)
           this.tickPreviewPlayhead()
         } catch (err) {
@@ -1042,13 +1063,13 @@ export default class EditorPlugin {
         this.previewMuted = false
         this.updatePreviewMuteIcon()
       }
-      this.previewSource?.setVolume(this.effectivePreviewVolume())
+      this.activePreview()?.setVolume(this.effectivePreviewVolume())
     })
 
     this.els.stickyMute.addEventListener('click', () => {
       this.previewMuted = !this.previewMuted
       this.updatePreviewMuteIcon()
-      this.previewSource?.setVolume(this.effectivePreviewVolume())
+      this.activePreview()?.setVolume(this.effectivePreviewVolume())
     })
 
     this.els.stickySolo.addEventListener('click', () => this.toggleSolo())
@@ -1057,6 +1078,80 @@ export default class EditorPlugin {
 
   effectivePreviewVolume() {
     return this.previewMuted ? 0 : this.previewVolume
+  }
+
+  // Whichever engine Play/Pause, volume/mute, and the sticky progress bar
+  // are actually driving right now - see this.previewMode's own doc
+  // comment. Every sticky-bar control reads through this rather than
+  // hardcoding previewSource, so switching modes doesn't need special-casing
+  // at each call site.
+  activePreview() {
+    return this.previewMode === 'saved' && this.bakedPreview ? this.bakedPreview : this.previewSource
+  }
+
+  // A bake is trustworthy to audition only when it both exists and still
+  // matches every current setting - the exact same condition the Mixer's
+  // own buffer-mode eligibility check already uses (loop points + filters +
+  // everything else hasUnsavedChanges() already tracks), reused here rather
+  // than re-deriving a second staleness rule.
+  savedPreviewEligible() {
+    return Boolean(this.currentEntry?.loopClipReady) && !this.hasUnsavedChanges()
+  }
+
+  togglePreviewMode() {
+    if (!this.savedPreviewEligible()) return
+    // Switching stops playback rather than trying to hand off mid-stream
+    // between two structurally different engines (one crossfading pair of
+    // <audio> elements through a live filter chain vs. one plain looping
+    // <audio> element) - simpler and more predictable than attempting a
+    // seamless handoff for what's fundamentally an A/B comparison tool, not
+    // a continuous listening experience.
+    const wasPlaying = this.activePreview()?.playing
+    this.activePreview()?.pause()
+    this.stopPreviewTicking()
+    this.setPlayPauseIcon(false)
+    this.eqEditorController.clearSpectrum()
+    this.previewMode = this.previewMode === 'saved' ? 'live' : 'saved'
+    this.updatePreviewModeToggle()
+    this.updateStickyProgress(0)
+    if (wasPlaying) {
+      this.engine
+        .resume()
+        .then(() => this.activePreview()?.play())
+        .then(() => {
+          this.setPlayPauseIcon(true)
+          this.tickPreviewPlayhead()
+        })
+        .catch((err) => console.error('Failed to switch preview mode', err))
+    }
+  }
+
+  // Called after every edit (same updateSaveButtonState() hook every field
+  // change already funnels through) and on load/dispose - keeps the toggle
+  // enabled/labeled correctly, and auto-reverts out of 'saved' the instant
+  // an edit makes the bake stale, since continuing to audition a bake that
+  // no longer matches what's on screen would be actively misleading.
+  updatePreviewModeToggle() {
+    if (!this.els.previewModeToggle) return
+    const eligible = this.savedPreviewEligible()
+    if (!eligible && this.previewMode === 'saved') {
+      // Pause whichever engine (bakedPreview) is actually live *before*
+      // flipping the mode - activePreview() reads this.previewMode, so
+      // pausing after the flip would silently target the wrong (idle)
+      // engine and leave the real one playing in the background.
+      this.activePreview()?.pause()
+      this.stopPreviewTicking()
+      this.setPlayPauseIcon(false)
+      this.previewMode = 'live'
+    }
+    this.els.previewModeToggle.disabled = !eligible
+    this.els.previewModeToggle.textContent = this.previewMode === 'saved' ? 'Saved audio' : 'Live edit'
+    this.els.previewModeToggle.classList.toggle('editor-preview-mode-toggle-active', this.previewMode === 'saved')
+    this.els.previewModeToggle.title = eligible
+      ? this.previewMode === 'saved'
+        ? 'Hearing the actual saved/baked audio - click to switch back to the live editable preview'
+        : 'Hearing the live editable preview (Doppler and Reverse have no live preview, and Pitch is only approximate) - click to hear the actual saved audio instead'
+      : 'Save first to unlock hearing the actual baked audio'
   }
 
   updatePreviewMuteIcon() {
@@ -1843,6 +1938,7 @@ export default class EditorPlugin {
       this.els.save.disabled = true
       this.els.saveLabel.textContent = 'Viewing saved mix'
       if (this.els.saveAsCopy) this.els.saveAsCopy.disabled = true
+      this.updatePreviewModeToggle()
       return
     }
     const dirty = this.hasUnsavedChanges()
@@ -1852,6 +1948,7 @@ export default class EditorPlugin {
     // saving a copy of the *current* (even unchanged) trim under a new name
     // is still a meaningful action, not just a no-op.
     if (this.els.saveAsCopy) this.els.saveAsCopy.disabled = false
+    this.updatePreviewModeToggle()
     // Every field-change handler in this file ends by calling this method
     // (see applyFilterControls/applyEqControls/applyCrossfadeControl/
     // applySpeedPitchControls/applyPlayModeControl/applyScatterControls/
@@ -2010,11 +2107,23 @@ export default class EditorPlugin {
   }
 
   tickPreviewPlayhead() {
-    if (!this.previewSource || !this.loopEditorController) return
-    const currentTime = this.previewSource.audioEl.currentTime
-    this.loopEditorController.setPlayhead(currentTime)
-    this.updateStickyProgress(currentTime)
-    this.eqEditorController.tickSpectrum(this.previewSource.analyserNode)
+    const active = this.activePreview()
+    if (!active || !this.loopEditorController) return
+    if (this.previewMode === 'saved') {
+      // The baked clip has its own 0-based timeline (it *is* the trimmed
+      // region), unlike previewSource which plays the original file - offset
+      // back into the original file's absolute time for the waveform's
+      // playhead, but keep the sticky progress bar in the clip's own
+      // 0..duration terms (see updateStickyProgress's mode branch).
+      const { loopStart } = this.loopEditorController.getLoopPoints()
+      this.loopEditorController.setPlayhead(loopStart + active.audioEl.currentTime)
+      this.updateStickyProgress(active.audioEl.currentTime)
+    } else {
+      const currentTime = active.audioEl.currentTime
+      this.loopEditorController.setPlayhead(currentTime)
+      this.updateStickyProgress(currentTime)
+      this.eqEditorController.tickSpectrum(active.analyserNode)
+    }
     this.previewRafId = requestAnimationFrame(() => this.tickPreviewPlayhead())
   }
 
@@ -2030,18 +2139,31 @@ export default class EditorPlugin {
     let dragging = false
 
     const seekFromClientX = (clientX) => {
-      if (!this.previewSource || !this.loopEditorController) return
+      const active = this.activePreview()
+      if (!active) return
       const rect = this.els.stickyProgress.getBoundingClientRect()
       const fraction = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1)
-      const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
-      const t = loopStart + fraction * Math.max(0, loopEnd - loopStart)
-      this.previewSource.scrubTo(t)
-      this.loopEditorController.setPlayhead(t)
-      this.updateStickyProgress(t)
+      if (this.previewMode === 'saved') {
+        const span = active.audioEl.duration || 0
+        const t = fraction * span
+        active.scrubTo(t)
+        this.updateStickyProgress(t)
+        if (this.loopEditorController) {
+          const { loopStart } = this.loopEditorController.getLoopPoints()
+          this.loopEditorController.setPlayhead(loopStart + t)
+        }
+      } else {
+        if (!this.loopEditorController) return
+        const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+        const t = loopStart + fraction * Math.max(0, loopEnd - loopStart)
+        active.scrubTo(t)
+        this.loopEditorController.setPlayhead(t)
+        this.updateStickyProgress(t)
+      }
     }
 
     this.els.stickyProgress.addEventListener('mousedown', (evt) => {
-      if (!this.previewSource) return
+      if (!this.activePreview()) return
       dragging = true
       seekFromClientX(evt.clientX)
     })
@@ -2060,10 +2182,20 @@ export default class EditorPlugin {
   // represents visually. Guarded on stickyProgressFill existing since this
   // can theoretically be called before mountSticky() has run.
   updateStickyProgress(currentTime) {
-    if (!this.els.stickyProgressFill || !this.loopEditorController) return
-    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
-    const span = Math.max(0, loopEnd - loopStart)
-    const elapsed = Math.min(Math.max(currentTime - loopStart, 0), span)
+    if (!this.els.stickyProgressFill) return
+    let elapsed, span
+    if (this.previewMode === 'saved' && this.bakedPreview) {
+      // currentTime is already clip-relative here (0..clip duration) - see
+      // tickPreviewPlayhead's mode branch and wireStickyProgressDrag's own
+      // seek math, both of which pass clip-relative time in this mode.
+      span = Math.max(0, this.bakedPreview.audioEl.duration || 0)
+      elapsed = Math.min(Math.max(currentTime, 0), span)
+    } else {
+      if (!this.loopEditorController) return
+      const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+      span = Math.max(0, loopEnd - loopStart)
+      elapsed = Math.min(Math.max(currentTime - loopStart, 0), span)
+    }
     const pct = span > 0 ? (elapsed / span) * 100 : 0
     this.els.stickyProgressFill.style.width = `${pct}%`
     this.els.stickyProgressThumb.style.left = `${pct}%`
@@ -2073,6 +2205,12 @@ export default class EditorPlugin {
   disposePreview() {
     this.stopPreviewTicking()
     this.eqEditorController?.clearSpectrum()
+    this.previewMode = 'live'
+    if (this.bakedPreview) {
+      this.bakedPreview.dispose()
+      this.bakedPreview = null
+    }
+    if (this.els.previewModeToggle) this.updatePreviewModeToggle()
     if (!this.previewSource) return
     this.previewSource.dispose()
     this.previewSource = null
@@ -2227,6 +2365,12 @@ export default class EditorPlugin {
       crossfadeSeconds: crossfadeMs / 1000,
       speedPitch
     })
+    this.previewMode = 'live'
+    // Constructed unconditionally (cheap - a plain <audio> pointed at the
+    // clip URL) even if no bake exists yet; savedPreviewEligible() is what
+    // actually gates whether the toggle can be used, checked fresh on every
+    // edit via updateSaveButtonState() -> updatePreviewModeToggle() below.
+    this.bakedPreview = new BakedClipPreview(this.engine, entry.id, this.effectivePreviewVolume())
     // Only fires when Loop preview is off and playback runs off the end on
     // its own - the button/playhead-tracking RAF otherwise only stop via
     // the explicit Play/Pause click handler below.
@@ -2381,6 +2525,18 @@ export default class EditorPlugin {
               ? 'Saved — original file untouched. Clip render failed, so this will stream directly for scheduled playback.'
               : 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
       }
+      // The bake just rewrote the file at this same sound://<id>?variant=clip
+      // URL - recreate bakedPreview so its <audio> element actually re-fetches
+      // instead of risking a browser-cached copy of the *previous* bake (the
+      // response carries Accept-Ranges but no explicit no-cache header, and
+      // this is otherwise the one place in this file the same clip URL is
+      // ever asked to serve genuinely different bytes over its own lifetime).
+      // Safe to swap out here: savedPreviewEligible() requires !dirty, and
+      // Save is only reachable while dirty, so previewMode is already 'live'
+      // (see updatePreviewModeToggle's own auto-revert) - nothing is
+      // currently using the old bakedPreview for playback.
+      this.bakedPreview?.dispose()
+      this.bakedPreview = new BakedClipPreview(this.engine, id, this.effectivePreviewVolume())
       this.updateSaveButtonState()
     } else {
       this.els.saveStatus.textContent =
