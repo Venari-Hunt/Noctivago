@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.132 — Add from link now works with YouTube and other video sites
+
+- "Add from link" now handles YouTube (and hundreds of other video/audio sites, via yt-dlp) in addition to plain direct audio URLs — paste any of them and it downloads the audio.
+- YouTube currently blocks anonymous downloads. A new Settings option ("YouTube/video downloads — sign in as") lets it read a browser you're already signed into YouTube in, to get past that. Off by default; reads cookies only, never a password.
+
 ## v0.1.131 — Presets: save changes without creating a new one
 
 - A "Save changes to..." button now appears in the Presets modal whenever a preset is loaded — it updates that same preset's sound list/volumes in place, no need to type a new name and create a duplicate.
