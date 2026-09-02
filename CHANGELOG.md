@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.131 — Presets: save changes without creating a new one
+
+- A "Save changes to..." button now appears in the Presets modal whenever a preset is loaded — it updates that same preset's sound list/volumes in place, no need to type a new name and create a duplicate.
+- "Save as new preset" (the old behavior) is still there, unchanged, for when you actually want a copy.
+
 ## v0.1.130 — BUG FIX: Export tab missing
 
 - v0.1.129 accidentally broke the Export tab entirely — a stray character in a comment made the whole plugin fail to load silently. Fixed; the Export tab is back.
