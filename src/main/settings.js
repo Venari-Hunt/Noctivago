@@ -33,6 +33,17 @@ const store = new Store({
     // (extra temp disk I/O for the per-sound tiles, same CPU/RAM profile as
     // fasterExport) the owner explicitly accepted as opt-in only.
     parallelMixdown: false,
+    // "Add from link" (v0.1.121) already handles a plain direct audio URL
+    // via ffmpeg's own http client; when that fails (e.g. a YouTube watch
+    // page, not a raw media file), library.js falls back to yt-dlp - see
+    // addSoundFromUrl. YouTube's current bot-detection ("Sign in to confirm
+    // you're not a bot") blocks yt-dlp's anonymous extraction outright, so
+    // this setting picks which browser's cookies yt-dlp should read
+    // (--cookies-from-browser) to authenticate as a real signed-in session.
+    // 'none' = no cookies passed (works for sites without bot-detection,
+    // fails on YouTube specifically). Off/none by default - reading another
+    // app's cookie store is a real capability, opt-in only.
+    ytDlpCookiesBrowser: 'none',
     // Remembered so a nightly-use sleep timer doesn't need re-picking every
     // time - just the last chosen values, not an active timer (that's
     // session-only, main-process state in sleepTimer.js).
@@ -57,6 +68,7 @@ export function getSettings() {
     skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
     fasterExport: store.get('fasterExport'),
     parallelMixdown: store.get('parallelMixdown'),
+    ytDlpCookiesBrowser: store.get('ytDlpCookiesBrowser'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
     lastRunVersion: store.get('lastRunVersion')
@@ -130,6 +142,12 @@ export function setFasterExportEnabled(enabled) {
 
 export function setParallelMixdownEnabled(enabled) {
   store.set('parallelMixdown', Boolean(enabled))
+  return getSettings()
+}
+
+const YT_DLP_COOKIE_BROWSERS = ['none', 'chrome', 'edge', 'firefox', 'brave']
+export function setYtDlpCookiesBrowser(browser) {
+  store.set('ytDlpCookiesBrowser', YT_DLP_COOKIE_BROWSERS.includes(browser) ? browser : 'none')
   return getSettings()
 }
 

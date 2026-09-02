@@ -1,10 +1,13 @@
 // Owns the "add from link" dialog - hands a plain http(s) URL to
-// library:addSoundFromUrl over IPC, which downloads it via the bundled
-// ffmpeg (its own http/https client) and transcodes straight to .wav, then
-// imports it through the exact same addSound() path any other file goes
-// through (see library.js). Same install-once / open-on-demand shape as
-// RecordDialog.js/WatchFolderDialog.js, and only one entry point (the
-// toolbar "+" menu) so no reshow-behind logic is needed.
+// library:addSoundFromUrl over IPC. Main-process side (library.js) tries the
+// bundled ffmpeg's own http/https client first (fast, works for a direct
+// audio file URL); if that fails, it falls back to yt-dlp for a video-site
+// page URL (YouTube, etc. - v0.1.132, owner's own "do it" answer to the
+// earlier parked idea) - either way this dialog doesn't need to know which
+// path was used, it just shows "Downloading..." and reports success/failure.
+// Same install-once / open-on-demand shape as RecordDialog.js/
+// WatchFolderDialog.js, and only one entry point (the toolbar "+" menu) so
+// no reshow-behind logic is needed.
 let els = null
 
 function resetState() {

@@ -5,6 +5,9 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { getLoopClipPath, deleteLoopClip, renderLoopClip, probeDurationSeconds } from './ffmpeg/loopClip.js'
 import { runFfmpegToFile } from './ffmpeg/runFfmpeg.js'
+import { resolveFfmpegPath } from './ffmpeg/ffmpegPath.js'
+import { runYtDlp } from './ytdlp/runYtDlp.js'
+import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
 import { getSettings } from './settings.js'
 import { MAX_BUFFER_CLIP_SECONDS, DEFAULT_SOUND_VOLUME } from '../shared/constants.js'
 
@@ -478,11 +481,62 @@ export async function addRecordedSound({ name, buffer }) {
 // keeping just the audio - same reasoning as the recording path not needing
 // one (its own input is always audio-only).
 //
-// Deliberately distinct from the parked YouTube/yt-dlp idea: this only ever
-// touches a plain HTTP(S) URL the user supplies directly, not a scraper for
-// a specific platform's content - no comparable ToS question, since fetching
-// a URL you were given is not different from what any browser does.
+// Originally distinct from the parked YouTube/yt-dlp idea: this only ever
+// touched a plain HTTP(S) URL pointing straight at a raw media file, not a
+// scraper for a specific platform's page. The owner later asked directly for
+// the video-site case too ("the audio downloads should work for youtube and
+// for whatever this can be done to... do it") - rather than a second,
+// separate UI entry, this same function now falls back to yt-dlp
+// (downloadViaYtDlp below) whenever the direct ffmpeg attempt fails, since a
+// YouTube/Vimeo/etc. watch-page URL isn't itself a media file and ffmpeg's
+// own -i on it fails immediately. A plain direct-audio-link URL never
+// reaches the fallback at all - zero added latency/risk to the already-
+// shipped v0.1.121 behavior.
 const DOWNLOAD_RW_TIMEOUT_MICROSECONDS = 30_000_000 // 30s
+
+async function downloadDirectAudio(parsed) {
+  const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const wavPath = path.join(tmpDir, `${crypto.randomUUID()}.wav`)
+  await runFfmpegToFile([
+    '-y',
+    '-rw_timeout',
+    String(DOWNLOAD_RW_TIMEOUT_MICROSECONDS),
+    '-i',
+    parsed.toString(),
+    '-vn',
+    wavPath
+  ])
+  return wavPath
+}
+
+// yt-dlp downloads + extracts to a %(ext)s-templated name (its own
+// post-processing decides the real final extension after -x --audio-format
+// wav runs, so a literal fixed "<id>.wav" -o target isn't reliable) - the
+// resulting file is found afterward by its own id prefix rather than
+// assumed. --ffmpeg-location points yt-dlp at this app's own bundled ffmpeg
+// binary instead of requiring a second copy. --cookies-from-browser is only
+// passed when the owner has opted into a specific browser in Settings -
+// YouTube's current bot-detection otherwise rejects anonymous extraction
+// outright ("Sign in to confirm you're not a bot"), confirmed directly
+// against the real yt-dlp binary before writing this.
+async function downloadViaYtDlp(url) {
+  const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const id = crypto.randomUUID()
+  const outputTemplate = path.join(tmpDir, `${id}.%(ext)s`)
+  const cookiesBrowser = getSettings().ytDlpCookiesBrowser
+
+  const args = ['--no-playlist', '-x', '--audio-format', 'wav', '--ffmpeg-location', resolveFfmpegPath(), '-o', outputTemplate, '--newline']
+  if (cookiesBrowser && cookiesBrowser !== 'none') args.push('--cookies-from-browser', cookiesBrowser)
+  args.push(url)
+
+  await runYtDlp(args)
+
+  const match = fs.readdirSync(tmpDir).find((f) => f.startsWith(id))
+  if (!match) throw new Error('yt-dlp reported success but produced no output file.')
+  return path.join(tmpDir, match)
+}
 
 export async function addSoundFromUrl({ name, url }) {
   let parsed
@@ -495,21 +549,23 @@ export async function addSoundFromUrl({ name, url }) {
     throw new Error('Only http:// and https:// links are supported.')
   }
 
-  const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
-  fs.mkdirSync(tmpDir, { recursive: true })
-  const id = crypto.randomUUID()
-  const wavPath = path.join(tmpDir, `${id}.wav`)
+  let wavPath
+  let usedYtDlp = false
   try {
-    await runFfmpegToFile([
-      '-y',
-      '-rw_timeout',
-      String(DOWNLOAD_RW_TIMEOUT_MICROSECONDS),
-      '-i',
-      parsed.toString(),
-      '-vn',
-      wavPath
-    ])
-    const fallbackName = decodeURIComponent(path.basename(parsed.pathname)).replace(/\.[^.]+$/, '') || 'Downloaded audio'
+    wavPath = await downloadDirectAudio(parsed)
+  } catch (directErr) {
+    if (!isYtDlpAvailable()) throw directErr
+    try {
+      wavPath = await downloadViaYtDlp(parsed.toString())
+      usedYtDlp = true
+    } catch (ytDlpErr) {
+      throw new Error(`Couldn't download that link directly (${directErr.message}), and yt-dlp also failed: ${ytDlpErr.message}`)
+    }
+  }
+
+  try {
+    const fallbackName =
+      (usedYtDlp ? null : decodeURIComponent(path.basename(parsed.pathname)).replace(/\.[^.]+$/, '')) || 'Downloaded audio'
     return addSound({ path: wavPath, name: name || fallbackName, keepCopy: true })
   } finally {
     try {

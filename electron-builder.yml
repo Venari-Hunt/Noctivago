@@ -10,6 +10,12 @@ asarUnpack:
 extraResources:
   - from: plugins
     to: plugins
+  # yt-dlp.exe (scripts/download-ytdlp.mjs's postinstall download) - a plain
+  # standalone .exe, never inside node_modules/asar to begin with, so
+  # extraResources (not asarUnpack) is the right mechanism, same as the
+  # plugins/ folder above.
+  - from: resources/bin/yt-dlp.exe
+    to: bin/yt-dlp.exe
   # directories.buildResources (above) only feeds build-time assets like the
   # installer icon - it isn't copied into the shipped app for runtime use on
   # its own, so the system tray icon needs its own explicit entry here (see

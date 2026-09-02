@@ -29,6 +29,7 @@ export function installSettingsMenu() {
   const autoInstallUpdatesCheckbox = document.getElementById('settings-auto-install-updates')
   const minimizeToTrayCheckbox = document.getElementById('settings-minimize-to-tray-enabled')
   const eagerlyBakeOnImportCheckbox = document.getElementById('settings-eagerly-bake-on-import')
+  const ytDlpCookiesBrowserSelect = document.getElementById('settings-ytdlp-cookies-browser')
 
   const watchedFolderList = document.getElementById('watched-folder-list')
   const addWatchedFolderBtn = document.getElementById('add-watched-folder')
@@ -50,6 +51,7 @@ export function installSettingsMenu() {
     autoInstallUpdatesCheckbox.checked = settings.autoInstallUpdates
     minimizeToTrayCheckbox.checked = settings.minimizeToTrayEnabled
     eagerlyBakeOnImportCheckbox.checked = settings.eagerlyBakeOnImport
+    ytDlpCookiesBrowserSelect.value = settings.ytDlpCookiesBrowser ?? 'none'
     checkStatus.textContent = ''
     refreshWatchedFolders()
     modal.classList.remove('hidden')
@@ -105,6 +107,10 @@ export function installSettingsMenu() {
 
   eagerlyBakeOnImportCheckbox.addEventListener('change', () => {
     window.noctivago.settings.setEagerlyBakeOnImportEnabled(eagerlyBakeOnImportCheckbox.checked)
+  })
+
+  ytDlpCookiesBrowserSelect.addEventListener('change', () => {
+    window.noctivago.settings.setYtDlpCookiesBrowser(ytDlpCookiesBrowserSelect.value)
   })
 
   checkNowBtn.addEventListener('click', () => {
