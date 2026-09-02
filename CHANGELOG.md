@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.123 — Fix: fade handles moving with the trim handle in Remix
+
+- Dragging a trim (cut) handle on a Random Interval / Scheduled sound's waveform used to also drag the fade-in/out balls along with it. They now stay put in their own position on the waveform while you drag the trim handle, independent of it.
+
 ## v0.1.122 — Reverb is now a real reverb
 
 - "Reverb" in Remix used to just be a short delay dressed up to sound roomy — it's now a real convolution reverb (Reverb size + Reverb mix sliders), independent of Echo so you can use either or both together.
