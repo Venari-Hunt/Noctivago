@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.130 — BUG FIX: Export tab missing
+
+- v0.1.129 accidentally broke the Export tab entirely — a stray character in a comment made the whole plugin fail to load silently. Fixed; the Export tab is back.
+
 ## v0.1.129 — Export now carries a preset's Preset Remix sound
 
 - An exported file now applies the preset's own Preset Remix whole-mix settings (highpass/lowpass/gain/EQ), the same as what you hear live in the Mixer — applied last, over the whole mixed-down export.
