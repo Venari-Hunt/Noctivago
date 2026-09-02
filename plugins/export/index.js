@@ -176,7 +176,7 @@ export default class ExportPlugin {
              trade-off worth a follow-up call. Answered directly (2026-09-02):
              "Yeah it should [inherit them]. Should be the last thing applied
              tho." So there's still no UI here - currentWholeMixFilters()
-             instead reads the selected preset's own saved `wholeMix`
+             instead reads the selected preset's own saved wholeMix
              (highpass/lowpass/gain/EQ) straight from presets.list() and
              exportMix.js applies it last, over the whole mixed-down export,
              matching WholeMixChain.js's own live node order. -->
