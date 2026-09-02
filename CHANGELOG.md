@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.127 — Remix: hear the actual saved audio, not just the preview
+
+- New "Live edit" / "Saved audio" toggle next to Play in Remix's sticky bar. The live preview can't be 100% accurate for everything (Doppler and Reverse have no live preview at all, and Pitch is only approximate) — switch to "Saved audio" to hear the real baked file instead, once you've saved.
+- Only enabled once a save exists and still matches your current settings — it automatically switches back to "Live edit" the moment you make a new change.
+
 ## v0.1.126 — Remix: drag the sticky bar to seek
 
 - The Remix preview's progress bar now has a little draggable circle — click or drag anywhere on it to jump to that point in the trimmed sound, whether it's playing or paused.
