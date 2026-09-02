@@ -427,6 +427,13 @@ function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSecond
     }
   }
   if (wholeMixFilters?.gainDb) post.push(`volume=${wholeMixFilters.gainDb}dB`)
+  // Brick-wall safety limiter whenever whole-mix processing is doing anything -
+  // its gain and EQ bands have no other ceiling (same exposure Composite's bake
+  // had before v0.1.113). Matches the live WholeMixChain limiter so an export
+  // sounds like the Mixer. Only reached when whole-mix settings exist; a plain
+  // export leaves `post` empty and is untouched (keeps the blessed export
+  // loudness, see the noctivago_feel_verdicts note).
+  if (post.length > 0) post.push('alimiter=limit=0.95:level=disabled')
   if (fadeInSeconds > 0) post.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
   if (fadeOutSeconds > 0) {
     post.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)

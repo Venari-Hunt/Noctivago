@@ -10,7 +10,12 @@ const FILTER_SMOOTHING_SECONDS = 0.02
 // everything playing.
 //
 // Signal path: input -> highpass -> lowpass -> [eq bands...] -> gain -> fadeGain
-// -> destination. The EQ chain is built exactly like a sound's own (same
+// -> limiter -> destination. The `limiter` is a brick-wall safety net: the
+// user's gain (up to +24 dB) and each EQ band (up to +30 dB) have no other
+// ceiling, so an aggressive preset could otherwise clip/distort the whole
+// live mix - the same exposure Composite's bake had before v0.1.113. Export's
+// whole-mix post-chain gets the matching ffmpeg `alimiter=limit=0.95` so the
+// two stay in agreement. The EQ chain is built exactly like a sound's own (same
 // eqNodeType / eqBandStageCount helpers, imported from SoundSource so there's
 // no drift) - one BiquadFilterNode group per band, rebuilt only when the band
 // topology changes. Neutral by default: HP at 0, LP at 20000, gain 1, no EQ
@@ -37,6 +42,16 @@ export class WholeMixChain {
     this.fadeGain = context.createGain()
     this.fadeGain.gain.value = 1
 
+    // Brick-wall safety limiter on the summed whole-mix output. Ceiling ~0.95
+    // (-0.45 dBFS) to match Export's `alimiter=limit=0.95`; transparent well
+    // below that, so a neutral / cut-only whole mix is unaffected.
+    this.limiter = context.createDynamicsCompressor()
+    this.limiter.threshold.value = -1
+    this.limiter.knee.value = 0
+    this.limiter.ratio.value = 20
+    this.limiter.attack.value = 0.003
+    this.limiter.release.value = 0.05
+
     this.eqNodes = []
     this.eqNodeGroups = []
     this.eqTopology = ''
@@ -45,7 +60,8 @@ export class WholeMixChain {
     this.highpass.connect(this.lowpass)
     this._rebuildEqChain([])
     this.gain.connect(this.fadeGain)
-    this.fadeGain.connect(destination)
+    this.fadeGain.connect(this.limiter)
+    this.limiter.connect(destination)
 
     this.config = null
   }
