@@ -165,6 +165,11 @@ export default class ExportPlugin {
           <span>Parallel mixdown (experimental) — uses more CPU, memory, and disk space. Renders every Loop-mode sound's own track at once instead of one after another, on a long export with several of them playing the whole time. Test-scale benchmarks didn't show a clear speedup, so try it on your real slow export and see — the log below now shows how long each step actually took either way. Independent of "Faster export" above — turn on either, both, or neither.</span>
         </label>
 
+        <label class="export-check">
+          <input id="export-black-video" type="checkbox" />
+          <span>Also save a black-screen video for YouTube — writes a .mkv next to the audio file, with your exported audio over a flat black 1080p screen. YouTube needs a video track; this adds one without a separate step. Near-instant, no re-encoding of the audio.</span>
+        </label>
+
         <!-- Highpass/Lowpass/Gain used to live here too ("whole-mix
              processing"), but the owner asked directly for them to be
              removed and for whole-mix processing to live only on the
@@ -207,6 +212,7 @@ export default class ExportPlugin {
       format: container.querySelector('#export-format'),
       faster: container.querySelector('#export-faster'),
       parallelMixdown: container.querySelector('#export-parallel-mixdown'),
+      blackVideo: container.querySelector('#export-black-video'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
@@ -236,11 +242,15 @@ export default class ExportPlugin {
     this.els.parallelMixdown.addEventListener('change', () => {
       this.api.settings.setParallelMixdownEnabled(this.els.parallelMixdown.checked)
     })
+    this.els.blackVideo.addEventListener('change', () => {
+      this.api.settings.setBlackVideoExportEnabled(this.els.blackVideo.checked)
+    })
     this.api.settings
       .get()
       .then((settings) => {
         this.els.faster.checked = Boolean(settings.fasterExport)
         this.els.parallelMixdown.checked = Boolean(settings.parallelMixdown)
+        this.els.blackVideo.checked = Boolean(settings.blackVideoExport)
       })
       .catch((err) => console.error('Export: failed to read settings', err))
 
@@ -361,7 +371,10 @@ export default class ExportPlugin {
       this.els.progressWrap.classList.add('hidden')
       if (result.ok) {
         this.els.status.className = 'export-status export-status-success'
-        this.els.status.textContent = `✓ Exported to ${outputPath} — took ${elapsed}`
+        let msg = `✓ Exported to ${outputPath} — took ${elapsed}`
+        if (result.videoPath) msg += `\n✓ Black-screen video: ${result.videoPath}`
+        else if (result.videoError) msg += `\n✗ Black-screen video failed: ${result.videoError}`
+        this.els.status.textContent = msg
         playCompletionChime(true)
       } else {
         this.els.status.className = 'export-status export-status-error'

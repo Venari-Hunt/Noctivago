@@ -74,6 +74,7 @@
   font-size: 12px;
   color: var(--text-dim);
   word-break: break-all;
+  white-space: pre-line;
 }
 
 /* Distinct completion coloring so "finished" reads at a glance instead of

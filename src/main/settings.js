@@ -33,6 +33,12 @@ const store = new Store({
     // (extra temp disk I/O for the per-sound tiles, same CPU/RAM profile as
     // fasterExport) the owner explicitly accepted as opt-in only.
     parallelMixdown: false,
+    // Export tab (v0.1.136): also write a companion .mkv next to the exported
+    // audio - the same audio stream-copied under a looped flat-black 1080p
+    // video - so an ambient mix can be uploaded to YouTube (which needs a
+    // video track) without a separate ffmpeg step. Near-instant (no
+    // full-length video encode). Off by default: most exports are audio-only.
+    blackVideoExport: false,
     // "Add from link" (v0.1.121) already handles a plain direct audio URL
     // via ffmpeg's own http client; when that fails (e.g. a YouTube watch
     // page, not a raw media file), library.js falls back to yt-dlp - see
@@ -68,6 +74,7 @@ export function getSettings() {
     skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
     fasterExport: store.get('fasterExport'),
     parallelMixdown: store.get('parallelMixdown'),
+    blackVideoExport: store.get('blackVideoExport'),
     ytDlpCookiesBrowser: store.get('ytDlpCookiesBrowser'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
@@ -142,6 +149,11 @@ export function setFasterExportEnabled(enabled) {
 
 export function setParallelMixdownEnabled(enabled) {
   store.set('parallelMixdown', Boolean(enabled))
+  return getSettings()
+}
+
+export function setBlackVideoExportEnabled(enabled) {
+  store.set('blackVideoExport', Boolean(enabled))
   return getSettings()
 }
 

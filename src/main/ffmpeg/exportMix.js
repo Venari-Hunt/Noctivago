@@ -64,10 +64,22 @@ import { renderClipToPath, buildEqBandFilter, eqBandStageCount } from './loopCli
 // its own span, not the whole export length, so peak memory per batch is
 // meaningfully lower than even that measurement.
 const EVENT_BATCH_SIZE = 20
+// When a sound's shots need NO rubberband at all - no per-shot pitch AND no
+// per-shot speed variation (see eventsNeedRubberband) - each event branch is
+// just volume + fade + adelay, which is cheap enough to pack far more of
+// into one graph. A dense Random Interval sound with plain shots then
+// produces ~15x fewer batch tracks, which is what actually collapses the
+// "Merging N track groups" phase on a long export (measured: a batch of 300
+// plain branches over a 20-min span peaks ~270 MB, one ffmpeg pass ~90s).
+const EVENT_BATCH_SIZE_LIGHT = 300
 // Below this a pitch shift is inaudible - skip the (expensive) rubberband
 // node entirely, matching how eqNodeType elsewhere treats a true no-op as
 // "skip the node," not "run it at neutral settings."
 const IDENTITY_PITCH_EPSILON_SEMITONES = 0.02
+// Below this a per-shot speed factor is inaudible (mirrors
+// pitchStretch.js's IDENTITY_SPEED_EPSILON) - a batch of shots all within
+// this of 1.0x, with no pitch variation either, needs no rubberband.
+const IDENTITY_SPEED_EPSILON = 0.005
 // A little slack past the last event's own end so a batch's final shot
 // (plus any fade-out tail) isn't clipped by the batch track's own length.
 const BATCH_TAIL_MARGIN_SECONDS = 0.25
@@ -81,11 +93,14 @@ const INTERMEDIATE_CODEC = ['-c:a', 'flac', '-ar', '44100', '-ac', '2']
 // duration, or a Random Interval / Scheduled sound firing very often) can
 // produce enough sliced-batch tracks to blow that limit outright (reported:
 // "Export failed: spawn ENAMETOOLONG"). Keep every pass's input count under
-// this by pre-combining batch tracks in rounds before the final mixdown. 32
-// inputs is ~3 KB of command line, comfortably clear; a combine pass is just
-// adelay + amix (no rubberband), so even a wide one stays cheap and can't
-// hit the v0.1.85 memory blowup.
-const MAX_INPUTS_PER_PASS = 32
+// this by pre-combining batch tracks in rounds before the final mixdown.
+// 128 * ~100 chars = ~13 KB of command line, still a comfortable margin
+// under the ~32,767 limit even with a long user profile path; a combine
+// pass is just adelay + amix (no rubberband), so a wide one stays cheap and
+// can't hit the v0.1.85 memory blowup. Raised from 32 (v0.1.136) so a dense
+// export whose batch tracks were already thinned by EVENT_BATCH_SIZE_LIGHT
+// usually skips the pre-combine ("Merging N track groups") round entirely.
+const MAX_INPUTS_PER_PASS = 128
 
 // "Faster export" (settings.fasterExport, OFF by default, passed in by the
 // export:run handler). When on, the independent short passes - every shot
@@ -194,10 +209,23 @@ function makeReporter(onProgress, totalWorkSeconds) {
 // pitch-adjusted shot length + a little tail slack). Computed up front from
 // the event list alone (no rendering needed) so the progress reporter can be
 // weighted before any ffmpeg runs.
-function planBatches(events, shotDurationSeconds) {
+// True if any event in the list needs a rubberband pass (per-shot pitch or
+// per-shot speed differs from neutral) - the same test eventBranchChain
+// applies per event. A sound where this is false gets the big
+// EVENT_BATCH_SIZE_LIGHT batches, since its branches are only volume/fade/
+// adelay.
+function eventsNeedRubberband(events) {
+  return events.some(
+    (e) =>
+      Math.abs(e.pitchSemitones ?? 0) >= IDENTITY_PITCH_EPSILON_SEMITONES ||
+      Math.abs((e.speedFactor ?? 1) - 1) >= IDENTITY_SPEED_EPSILON
+  )
+}
+
+function planBatches(events, shotDurationSeconds, batchSize = EVENT_BATCH_SIZE) {
   const batches = []
-  for (let i = 0; i < events.length; i += EVENT_BATCH_SIZE) {
-    const slice = events.slice(i, i + EVENT_BATCH_SIZE)
+  for (let i = 0; i < events.length; i += batchSize) {
+    const slice = events.slice(i, i + batchSize)
     const start = slice[0].offsetSeconds
     let end = start
     for (const evt of slice) {
@@ -351,21 +379,32 @@ async function combineTracks(tracks) {
 // fixed-size chunks, repeatedly, until few enough remain to hand the final
 // mixdown without overflowing the command line. Every intermediate created
 // is pushed onto `ownPaths` for end-of-export cleanup.
-async function reduceTrackCount(tracks, target, ownPaths, reporter) {
+//
+// The chunk combines within one round are fully independent (each reads a
+// disjoint slice, writes its own temp file), so they run `concurrency` at a
+// time via mapPool - on a long dense export this "Merging N track groups"
+// phase was measured as the single biggest chunk of wall-clock time
+// (v0.1.136), and it was the one place still walking its passes one by one
+// while every other phase already parallelized under Faster export /
+// Parallel mixdown. concurrency 1 keeps the old exact sequential behavior.
+async function reduceTrackCount(tracks, target, ownPaths, reporter, concurrency = 1) {
   let current = tracks
   while (current.length > target) {
     reporter?.step(`Merging ${current.length} track groups…`)
-    const nextRound = []
+    const chunks = []
     for (let i = 0; i < current.length; i += MAX_INPUTS_PER_PASS) {
-      const chunk = current.slice(i, i + MAX_INPUTS_PER_PASS)
+      chunks.push(current.slice(i, i + MAX_INPUTS_PER_PASS))
+    }
+    const nextRound = new Array(chunks.length)
+    await mapPool(chunks, concurrency, async (chunk, idx) => {
       if (chunk.length === 1) {
-        nextRound.push(chunk[0])
-        continue
+        nextRound[idx] = chunk[0]
+        return
       }
       const combined = await combineTracks(chunk)
       ownPaths.push(combined.path)
-      nextRound.push(combined)
-    }
+      nextRound[idx] = combined
+    })
     current = nextRound
   }
   return current
@@ -597,6 +636,47 @@ async function renderFinalMixdown({
   }
 }
 
+// Optional companion output for the Export tab's "black-screen video for
+// YouTube" checkbox. Ambient mixes get uploaded to YouTube, which needs a
+// video track - a flat black frame is all that's wanted. Encoding a
+// full-length black video would be per-frame work over hours; instead encode
+// a 4-frame black clip once (instant) and -stream_loop it under the just-
+// exported audio with -c copy - the mux is near-instant and the audio stays
+// bit-identical. Container is .mkv: YouTube accepts it and, unlike .mp4, it
+// carries any audio codec, so a copied Opus/Vorbis/FLAC/AAC stream just
+// works. Video is 1 fps (fine for a static image, keeps the file near the
+// size of the audio alone). `-t durationSeconds` caps the mux exactly:
+// without it, `-stream_loop -1` + `-c copy` overshoots by whole loop
+// iterations of the video read-ahead (measured ~10 s on a 20-min export);
+// `-shortest` stays as a backstop. Returns the .mkv path.
+async function renderBlackScreenVideo(audioPath, durationSeconds, reporter) {
+  reporter?.step('Creating black-screen video for YouTube…')
+  const clipPath = tempPath('mp4')
+  const videoPath = audioPath.replace(/\.[^./\\]+$/, '') + '.mkv'
+  try {
+    await runFfmpegToFile([
+      '-y',
+      '-f', 'lavfi', '-i', 'color=c=black:s=1920x1080:r=1',
+      '-t', '4',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+      '-g', '1', '-keyint_min', '1', '-sc_threshold', '0',
+      clipPath
+    ])
+    await runFfmpegToFile([
+      '-y',
+      '-stream_loop', '-1', '-i', clipPath,
+      '-i', audioPath,
+      '-map', '0:v:0', '-map', '1:a:0',
+      '-c', 'copy', '-shortest',
+      '-t', durationSeconds.toFixed(3),
+      videoPath
+    ])
+    return videoPath
+  } finally {
+    await cleanupFiles([clipPath])
+  }
+}
+
 // sounds: [{ soundId, inputPath, cachedClipPath, name, playMode, loopStart,
 //   loopEnd, filters, speedPitch, crossfadeSeconds, volume, events }] -
 //   already fully resolved by the renderer + IPC handler (library lookup,
@@ -604,7 +684,7 @@ async function renderFinalMixdown({
 //   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
 //   speedFactor, fadeInMs, fadeOutMs, shotDurationSeconds } for
 //   'scatter'/'scheduled' (shotDurationSeconds already reflects speedFactor).
-export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false }) {
+export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, blackVideo = false }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
@@ -619,7 +699,8 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       const events = sound.events ?? []
       if (events.length === 0) continue // never fires in this window - skip entirely
       const shotDur = Math.max(0.05, (sound.loopEnd ?? 0) - (sound.loopStart ?? 0))
-      eventSounds.push({ sound, batches: planBatches(events, shotDur) })
+      const batchSize = eventsNeedRubberband(events) ? EVENT_BATCH_SIZE : EVENT_BATCH_SIZE_LIGHT
+      eventSounds.push({ sound, batches: planBatches(events, shotDur, batchSize) })
     }
   }
 
@@ -651,6 +732,11 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   const mixdownConcurrency = parallelMixdown
     ? Math.max(1, Math.min((os.cpus()?.length ?? 2) - 1, FASTER_EXPORT_CONCURRENCY_CAP))
     : 1
+  // The pre-combine ("Merging N track groups") rounds parallelize if *either*
+  // opt-in toggle is on - each combine pass is a cheap adelay+amix, and this
+  // phase was the biggest single time sink on the export that prompted
+  // v0.1.136. Neither toggle => 1 => the old sequential walk, unchanged.
+  const mergeConcurrency = Math.max(concurrency, mixdownConcurrency)
 
   const ownedShotPaths = [] // every owned shot clip - kept alive through the batch phase, cleaned at the very end
   const batchTrackPaths = []
@@ -719,7 +805,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     const batchTrackBudget = Math.max(4, MAX_INPUTS_PER_PASS - loopShots.length)
     const finalBatchTracks =
       batchTracks.length > batchTrackBudget
-        ? await reduceTrackCount(batchTracks, batchTrackBudget, batchTrackPaths, reporter)
+        ? await reduceTrackCount(batchTracks, batchTrackBudget, batchTrackPaths, reporter, mergeConcurrency)
         : batchTracks
 
     if (parallelMixdown && loopShots.length > 0) {
@@ -738,7 +824,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       const combinedTracks = [...tiledLoopTracks, ...finalBatchTracks]
       const mergedTracks =
         combinedTracks.length > MAX_INPUTS_PER_PASS
-          ? await reduceTrackCount(combinedTracks, MAX_INPUTS_PER_PASS, batchTrackPaths, reporter)
+          ? await reduceTrackCount(combinedTracks, MAX_INPUTS_PER_PASS, batchTrackPaths, reporter, mergeConcurrency)
           : combinedTracks
 
       reporter.step('Final mixdown + whole-mix processing…')
@@ -767,6 +853,19 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       })
     }
     reporter.step(`Encoding to ${String(format || 'wav').toUpperCase()} — done.`)
+
+    // The audio file is complete and safe at this point. The optional black-
+    // screen video is a companion output, so a failure there doesn't undo a
+    // good export - report it alongside ok:true rather than throwing.
+    if (blackVideo) {
+      try {
+        const videoPath = await renderBlackScreenVideo(outputPath, durationSeconds, reporter)
+        return { ok: true, videoPath }
+      } catch (err) {
+        console.error('black-screen video failed', err)
+        return { ok: true, videoError: err.message }
+      }
+    }
     return { ok: true }
   } catch (err) {
     console.error('exportMix failed', err)
