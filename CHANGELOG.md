@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.136 — Faster big exports + black-screen video for YouTube
+
+- Faster exports of long presets with lots of Random Interval / Scheduled sounds: the "Merging track groups" step (the biggest time sink on a big export) now runs several parts at once when "Faster export" or "Parallel mixdown" is on, and a sound with no per-shot pitch or speed variation is packed into far fewer, larger batches — so most big exports skip that merge step entirely now.
+- New Export option: "Also save a black-screen video for YouTube" — writes a .mkv next to the audio file (your audio over a flat black 1080p screen) so an ambient mix can be uploaded straight to YouTube. Near-instant, no audio re-encoding.
+
 ## v0.1.135 — Speed range for Random Interval / Scheduled sounds
 
 - Random Interval and Scheduled sounds now have a Speed (min/max) range in the Remix tab, alongside the pitch and volume ranges — each replay/trigger picks a random speed within it.
