@@ -642,6 +642,15 @@
   border-color: #9ece6a;
 }
 
+/* v0.1.142: Saved mode is sticky now - an edit no longer force-switches back
+   to Live, it just makes the currently-playing bake stale until autosave
+   catches up. Dashed border on the same green flags "still the truth, but
+   about to be refreshed" rather than a color change that would suggest an
+   error state. */
+.editor-preview-mode-toggle-active.editor-preview-mode-toggle-stale {
+  border-style: dashed;
+}
+
 .editor-eq-hint {
   margin: 0;
   font-size: 11px;

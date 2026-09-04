@@ -28,6 +28,17 @@ const DEFAULT_CROSSFADE_MS = 200
 const HISTORY_COMMIT_DEBOUNCE_MS = 500
 const HISTORY_LIMIT = 100
 
+// Autosave (v0.1.142): how long to sit idle after the last edit before
+// auto-saving/re-baking. Debounced-idle, not a fixed interval - the owner's
+// own inbox note offered both shapes ("interval-based, user-set, or
+// debounced... wait a few idle moments"); debounce was picked because a
+// fixed interval would either bake mid-drag (wasted renders, audible preview
+// hiccups if that render's output is ever touched) or leave a long dead gap
+// right after the user stops editing - exactly the moment Saved-audio
+// preview should become available again. Longer than HISTORY_COMMIT_DEBOUNCE_MS
+// since this triggers a real ffmpeg render, not a cheap in-memory snapshot.
+const AUTOSAVE_IDLE_MS = 3000
+
 // Play (triangle) / Pause (two bars) - mirrors the Mixer's own identical
 // icon pair (src/renderer/tabs/mixer/index.js), duplicated here for the same
 // cross-directory-import reason as MAX_BUFFER_CLIP_SECONDS above.
@@ -120,7 +131,9 @@ export default class EditorPlugin {
     // approximation). 'live' (the editable Web Audio chain, previewSource)
     // or 'saved' (the actual baked clip file, bakedPreview) - always reset
     // to 'live' on a fresh load() since a new sound's own bake (if any) is
-    // unrelated to whatever was being auditioned before.
+    // unrelated to whatever was being auditioned before. Otherwise sticky
+    // (v0.1.142) - no longer force-reverted to 'live' just because an edit
+    // made the bake stale, see savedPreviewEligible()/updatePreviewModeToggle().
     this.previewMode = 'live'
     this.bakedPreview = null
     this.previewRafId = null
@@ -172,6 +185,12 @@ export default class EditorPlugin {
     // history entry (which would corrupt the stack - undoing would then
     // just push right back onto what it undid).
     this._restoringHistory = false
+    // Autosave (v0.1.142) - debounced idle timer + a re-entrancy guard so a
+    // manual Save click and a timer firing at the same moment never start
+    // two overlapping bakes of the same sound. See scheduleAutosave()'s own
+    // comment for the debounce-vs-fixed-interval choice.
+    this._autosaveTimer = null
+    this._saveInProgress = false
     // Cached from Settings once on load - the leave-confirmation prompt's
     // own "Don't ask again" button, not a general Settings toggle (per the
     // original request: the prompt itself carries the opt-out).
@@ -1121,13 +1140,15 @@ export default class EditorPlugin {
     return this.previewMode === 'saved' && this.bakedPreview ? this.bakedPreview : this.previewSource
   }
 
-  // A bake is trustworthy to audition only when it both exists and still
-  // matches every current setting - the exact same condition the Mixer's
-  // own buffer-mode eligibility check already uses (loop points + filters +
-  // everything else hasUnsavedChanges() already tracks), reused here rather
-  // than re-deriving a second staleness rule.
+  // Whether there's a real baked clip to switch into Saved mode for at all.
+  // v0.1.142: no longer requires the bake to still be *fresh* - staleness
+  // (edits made since that bake) doesn't disqualify it, since the toggle is
+  // now sticky (see previewMode's own doc comment) rather than auto-
+  // reverting the instant an edit makes the bake stale. This only gates
+  // whether Saved mode is reachable at all - a sound that's never been
+  // saved has nothing to compare against.
   savedPreviewEligible() {
-    return Boolean(this.currentEntry?.loopClipReady) && !this.hasUnsavedChanges()
+    return Boolean(this.currentEntry?.loopClipReady) && Boolean(this.bakedPreview)
   }
 
   togglePreviewMode() {
@@ -1160,9 +1181,12 @@ export default class EditorPlugin {
 
   // Called after every edit (same updateSaveButtonState() hook every field
   // change already funnels through) and on load/dispose - keeps the toggle
-  // enabled/labeled correctly, and auto-reverts out of 'saved' the instant
-  // an edit makes the bake stale, since continuing to audition a bake that
-  // no longer matches what's on screen would be actively misleading.
+  // enabled/labeled correctly. v0.1.142: no longer auto-reverts out of
+  // 'saved' just because an edit made the bake stale (see previewMode's own
+  // doc comment + the Board's own inbox note this answers) - the one
+  // remaining force-switch is when the bake becomes genuinely unavailable
+  // (savedPreviewEligible() false: never saved, or a save's render failed),
+  // since there's nothing left to actually play in Saved mode at that point.
   updatePreviewModeToggle() {
     if (!this.els.previewModeToggle) return
     const eligible = this.savedPreviewEligible()
@@ -1179,9 +1203,13 @@ export default class EditorPlugin {
     this.els.previewModeToggle.disabled = !eligible
     this.els.previewModeToggle.textContent = this.previewMode === 'saved' ? 'Saved audio' : 'Live edit'
     this.els.previewModeToggle.classList.toggle('editor-preview-mode-toggle-active', this.previewMode === 'saved')
+    const stale = this.previewMode === 'saved' && this.hasUnsavedChanges()
+    this.els.previewModeToggle.classList.toggle('editor-preview-mode-toggle-stale', stale)
     this.els.previewModeToggle.title = eligible
       ? this.previewMode === 'saved'
-        ? 'Hearing the actual saved/baked audio - click to switch back to the live editable preview'
+        ? stale
+          ? 'Hearing the last saved/baked audio - edited since then, autosave will refresh it shortly. Click to switch to the live editable preview'
+          : 'Hearing the actual saved/baked audio - click to switch back to the live editable preview'
         : 'Hearing the live editable preview (Doppler and Reverse have no live preview, and Pitch is only approximate) - click to hear the actual saved audio instead'
       : 'Save first to unlock hearing the actual baked audio'
   }
@@ -2006,11 +2034,42 @@ export default class EditorPlugin {
     // applySpeedPitchControls/applyPlayModeControl/applyScatterControls/
     // applyScheduleControls, plus the loop-point onLoopChange listener) -
     // the single place every kind of edit already funnels through, so it's
-    // also the one hook point undo/redo history needs, without touching
-    // each of those call sites individually. Only reached while viewing A
-    // (the early-return above skips this while viewing B, since B's data
-    // isn't the user's own editable state and shouldn't be recorded as one).
+    // also the one hook point undo/redo history and autosave both need,
+    // without touching each of those call sites individually. Only reached
+    // while viewing A (the early-return above skips this while viewing B,
+    // since B's data isn't the user's own editable state and shouldn't be
+    // recorded as one, or autosaved as one).
+    this.scheduleAutosave()
     this.scheduleHistoryCommit()
+  }
+
+  // Autosave (v0.1.142) - see AUTOSAVE_IDLE_MS's own comment for why this is
+  // idle-debounced rather than a fixed interval. _restoringHistory guards
+  // an Undo/Redo replaying a whole past state back onto the controls (which
+  // itself calls updateSaveButtonState() per field, same as a real edit) -
+  // that's a jump to an already-known state, not a fresh edit worth
+  // autosaving on its own; if it leaves things genuinely dirty relative to
+  // what's on disk, the very next real edit reschedules this anyway.
+  scheduleAutosave() {
+    if (this._restoringHistory || !this.currentEntry) return
+    clearTimeout(this._autosaveTimer)
+    this._autosaveTimer = setTimeout(() => this.runAutosave(), AUTOSAVE_IDLE_MS)
+  }
+
+  async runAutosave() {
+    if (!this.currentEntry || this.eqCompareViewing === 'B' || !this.hasUnsavedChanges()) return
+    if (this._saveInProgress) {
+      // A manual Save (or a previous autosave) is still mid-render - try
+      // again shortly rather than starting a second overlapping bake of the
+      // same sound.
+      this._autosaveTimer = setTimeout(() => this.runAutosave(), AUTOSAVE_IDLE_MS)
+      return
+    }
+    try {
+      await this.save({ trigger: 'auto' })
+    } catch (err) {
+      console.error('Editor: autosave failed', err)
+    }
   }
 
   // The exact same normalized shape snapshotOf() already builds for the
@@ -2256,6 +2315,7 @@ export default class EditorPlugin {
 
   disposePreview() {
     this.stopPreviewTicking()
+    clearTimeout(this._autosaveTimer)
     this.eqEditorController?.clearSpectrum()
     this.previewMode = 'live'
     if (this.bakedPreview) {
@@ -2491,12 +2551,29 @@ export default class EditorPlugin {
     this.els.waveformStatus.textContent = peaks ? '' : 'Waveform preview unavailable for this file.'
   }
 
-  async save() {
+  // trigger: 'manual' (the Save button) or 'auto' (runAutosave) - only
+  // changes the status-line wording below, everything else about the save
+  // is identical either way. _saveInProgress guards against a manual click
+  // and a debounced autosave firing at the same moment starting two
+  // overlapping bakes of the same sound.
+  async save(options = {}) {
+    const { trigger = 'manual' } = options
     // Defense in depth - the Save button is already disabled while viewing
     // B (see updateSaveButtonState), but currentFilters() would silently
     // read B's read-only data instead of A's real live edits if this ever
     // ran anyway.
     if (!this.currentEntry || !this.loopEditorController || this.eqCompareViewing === 'B') return
+    if (this._saveInProgress) return
+    this._saveInProgress = true
+    try {
+      await this.performSave(trigger)
+    } finally {
+      this._saveInProgress = false
+    }
+  }
+
+  async performSave(trigger) {
+    const savedWord = trigger === 'auto' ? 'Auto-saved' : 'Saved'
     const id = this.currentEntry.id
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     const filters = this.currentFilters()
@@ -2546,7 +2623,7 @@ export default class EditorPlugin {
     // the real ffmpeg render to take effect at all.
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
       this.els.save.disabled = true
-      this.els.saveLabel.textContent = 'Saving…'
+      this.els.saveLabel.textContent = trigger === 'auto' ? 'Auto-saving…' : 'Saving…'
       const result = await this.api.audio.renderLoopClip(id, {
         loopStart,
         loopEnd,
@@ -2563,10 +2640,10 @@ export default class EditorPlugin {
         this.currentEntry.loopClipSpeedPitch = speedPitch
         this.els.saveStatus.textContent =
           playMode === 'scatter'
-            ? 'Saved — original file untouched. Rendered a clip for random-interval playback.'
+            ? `${savedWord} — original file untouched. Rendered a clip for random-interval playback.`
             : playMode === 'scheduled'
-              ? 'Saved — original file untouched. Rendered a clip for scheduled playback.'
-              : 'Saved — original file untouched. Rendered a gapless clip for seamless looping.'
+              ? `${savedWord} — original file untouched. Rendered a clip for scheduled playback.`
+              : `${savedWord} — original file untouched. Rendered a gapless clip for seamless looping.`
       } else {
         this.currentEntry.loopClipReady = false
         this.currentEntry.loopClipStart = null
@@ -2576,10 +2653,10 @@ export default class EditorPlugin {
         this.currentEntry.loopClipSpeedPitch = null
         this.els.saveStatus.textContent =
           playMode === 'scatter'
-            ? 'Saved — original file untouched. Clip render failed, so this will stream directly for random-interval playback.'
+            ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for random-interval playback.`
             : playMode === 'scheduled'
-              ? 'Saved — original file untouched. Clip render failed, so this will stream directly for scheduled playback.'
-              : 'Saved — original file untouched. Gapless clip render failed, so this will loop with a small seam.'
+              ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for scheduled playback.`
+              : `${savedWord} — original file untouched. Gapless clip render failed, so this will loop with a small seam.`
       }
       // The bake just rewrote the file at this same sound://<id>?variant=clip
       // URL - recreate bakedPreview so its <audio> element actually re-fetches
@@ -2587,20 +2664,34 @@ export default class EditorPlugin {
       // response carries Accept-Ranges but no explicit no-cache header, and
       // this is otherwise the one place in this file the same clip URL is
       // ever asked to serve genuinely different bytes over its own lifetime).
-      // Safe to swap out here: savedPreviewEligible() requires !dirty, and
-      // Save is only reachable while dirty, so previewMode is already 'live'
-      // (see updatePreviewModeToggle's own auto-revert) - nothing is
-      // currently using the old bakedPreview for playback.
+      // v0.1.142: previewMode is now sticky rather than force-reverting to
+      // 'live' on dirty (see previewMode's own doc comment), so - unlike the
+      // old assumption here - autosave can now genuinely re-bake while
+      // Saved mode is the one actually driving playback. Carry position/
+      // play-state across the swap so a re-bake mid-audition doesn't
+      // silently drop the audio out from under the listener.
+      const resumingSaved = this.previewMode === 'saved'
+      const resumeTime = resumingSaved ? this.bakedPreview?.audioEl.currentTime ?? 0 : 0
+      const resumePlaying = resumingSaved && Boolean(this.bakedPreview?.playing)
       this.bakedPreview?.dispose()
       this.bakedPreview = new BakedClipPreview(this.engine, id, this.effectivePreviewVolume())
+      if (resumingSaved) {
+        this.bakedPreview.scrubTo(resumeTime)
+        if (resumePlaying) {
+          this.engine
+            .resume()
+            .then(() => this.bakedPreview?.play())
+            .catch((err) => console.error('Editor: failed to resume saved-audio preview after re-bake', err))
+        }
+      }
       this.updateSaveButtonState()
     } else {
       this.els.saveStatus.textContent =
         playMode === 'scatter'
-          ? 'Saved — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.'
+          ? `${savedWord} — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.`
           : playMode === 'scheduled'
-            ? 'Saved — original file untouched. This trim is over 10 minutes, so scheduled playback will stream directly.'
-            : 'Saved — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.'
+            ? `${savedWord} — original file untouched. This trim is over 10 minutes, so scheduled playback will stream directly.`
+            : `${savedWord} — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.`
       this.updateSaveButtonState()
     }
   }

@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.142 — Remix: autosave, and the Saved-audio preview stays picked
+
+- Remix now autosaves a few seconds after you stop editing, so the "Saved audio" preview toggle stays available without you needing to remember to hit Save.
+- Switching to "Saved audio" now stays picked even if you keep editing afterward — it no longer silently jumps back to "Live edit" the instant something changes. It shows a dashed outline while what you're hearing is a bit behind your latest edit, until autosave catches up.
+- Manual Save still works exactly as before, right next to the new autosave.
+
 ## v0.1.141 — Export: loop your own video instead of the black screen
 
 - New "Choose video to loop…" option next to the Output setting (once you pick Video only or Both) — loops a video file of your own under the exported audio instead of the flat black screen.
