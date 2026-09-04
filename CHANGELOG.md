@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.137 — Active tag filter now lights up
+
+- The Mixer's tag filter chip now clearly shows which tag is active — a solid highlighted pill instead of a subtle color tint that was easy to miss.
+
 ## v0.1.136 — Faster big exports + black-screen video for YouTube
 
 - Faster exports of long presets with lots of Random Interval / Scheduled sounds: the "Merging track groups" step (the biggest time sink on a big export) now runs several parts at once when "Faster export" or "Parallel mixdown" is on, and a sound with no per-shot pitch or speed variation is packed into far fewer, larger batches — so most big exports skip that merge step entirely now.
