@@ -16,7 +16,7 @@ const api = {
     setSkipRemixLeaveConfirmEnabled: (enabled) => ipcRenderer.invoke('settings:setSkipRemixLeaveConfirmEnabled', enabled),
     setFasterExportEnabled: (enabled) => ipcRenderer.invoke('settings:setFasterExportEnabled', enabled),
     setParallelMixdownEnabled: (enabled) => ipcRenderer.invoke('settings:setParallelMixdownEnabled', enabled),
-    setBlackVideoExportEnabled: (enabled) => ipcRenderer.invoke('settings:setBlackVideoExportEnabled', enabled),
+    setExportVideoMode: (mode) => ipcRenderer.invoke('settings:setExportVideoMode', mode),
     setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser)
   },
   autoUpdate: {

@@ -165,10 +165,15 @@ export default class ExportPlugin {
           <span>Parallel mixdown (experimental) — uses more CPU, memory, and disk space. Renders every Loop-mode sound's own track at once instead of one after another, on a long export with several of them playing the whole time. Test-scale benchmarks didn't show a clear speedup, so try it on your real slow export and see — the log below now shows how long each step actually took either way. Independent of "Faster export" above — turn on either, both, or neither.</span>
         </label>
 
-        <label class="export-check">
-          <input id="export-black-video" type="checkbox" />
-          <span>Also save a black-screen video for YouTube — writes a .mkv next to the audio file, with your exported audio over a flat black 1080p screen. YouTube needs a video track; this adds one without a separate step. Near-instant, no re-encoding of the audio.</span>
+        <label>
+          <span>Output</span>
+          <select id="export-video-mode">
+            <option value="audio-only">Audio only</option>
+            <option value="video-only">Video only (for YouTube)</option>
+            <option value="both">Both audio and video</option>
+          </select>
         </label>
+        <p class="export-hint">"Video" writes a .mkv next to (or instead of) the audio file, with your exported audio over a flat black 1080p screen — YouTube needs a video track, this adds one without a separate step. Near-instant, no audio re-encoding.</p>
 
         <!-- Highpass/Lowpass/Gain used to live here too ("whole-mix
              processing"), but the owner asked directly for them to be
@@ -212,7 +217,7 @@ export default class ExportPlugin {
       format: container.querySelector('#export-format'),
       faster: container.querySelector('#export-faster'),
       parallelMixdown: container.querySelector('#export-parallel-mixdown'),
-      blackVideo: container.querySelector('#export-black-video'),
+      videoMode: container.querySelector('#export-video-mode'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
@@ -242,15 +247,15 @@ export default class ExportPlugin {
     this.els.parallelMixdown.addEventListener('change', () => {
       this.api.settings.setParallelMixdownEnabled(this.els.parallelMixdown.checked)
     })
-    this.els.blackVideo.addEventListener('change', () => {
-      this.api.settings.setBlackVideoExportEnabled(this.els.blackVideo.checked)
+    this.els.videoMode.addEventListener('change', () => {
+      this.api.settings.setExportVideoMode(this.els.videoMode.value)
     })
     this.api.settings
       .get()
       .then((settings) => {
         this.els.faster.checked = Boolean(settings.fasterExport)
         this.els.parallelMixdown.checked = Boolean(settings.parallelMixdown)
-        this.els.blackVideo.checked = Boolean(settings.blackVideoExport)
+        this.els.videoMode.value = settings.exportVideoMode ?? 'audio-only'
       })
       .catch((err) => console.error('Export: failed to read settings', err))
 
@@ -371,8 +376,17 @@ export default class ExportPlugin {
       this.els.progressWrap.classList.add('hidden')
       if (result.ok) {
         this.els.status.className = 'export-status export-status-success'
-        let msg = `✓ Exported to ${outputPath} — took ${elapsed}`
-        if (result.videoPath) msg += `\n✓ Black-screen video: ${result.videoPath}`
+        // 'video-only' deletes the standalone audio file once the video
+        // exists (see exportMix.js), so outputPath no longer points at
+        // anything real in that case - lead with the video instead.
+        let msg = result.audioRemoved
+          ? `✓ Exported video to ${result.videoPath} — took ${elapsed}`
+          : `✓ Exported to ${outputPath} — took ${elapsed}`
+        if (result.videoPath && !result.audioRemoved) msg += `\n✓ Black-screen video: ${result.videoPath}`
+        // A failed video in 'video-only' mode leaves the audio file in place
+        // rather than deleting the only output that actually succeeded (see
+        // exportMix.js) - the message above already names that audio path,
+        // so this just explains why it's there instead of a video.
         else if (result.videoError) msg += `\n✗ Black-screen video failed: ${result.videoError}`
         this.els.status.textContent = msg
         playCompletionChime(true)

@@ -33,12 +33,19 @@ const store = new Store({
     // (extra temp disk I/O for the per-sound tiles, same CPU/RAM profile as
     // fasterExport) the owner explicitly accepted as opt-in only.
     parallelMixdown: false,
-    // Export tab (v0.1.136): also write a companion .mkv next to the exported
-    // audio - the same audio stream-copied under a looped flat-black 1080p
-    // video - so an ambient mix can be uploaded to YouTube (which needs a
-    // video track) without a separate ffmpeg step. Near-instant (no
-    // full-length video encode). Off by default: most exports are audio-only.
+    // Legacy v0.1.136 boolean, superseded by exportVideoMode below (v0.1.139)
+    // - kept only so resolveExportVideoMode() has something to migrate an
+    // existing "on" choice from on first read after the upgrade. Never read
+    // directly anywhere else; don't reintroduce a live use of this key.
     blackVideoExport: false,
+    // Export tab: whether a run writes the standalone audio file, the
+    // black-screen .mkv video (audio muxed under a looped flat 1080p frame,
+    // for YouTube), or both. 'video-only' still renders the audio internally
+    // (ffmpeg needs it to mux) but deletes the standalone file once the video
+    // exists - see exportMix.js's own handling. null is the "never chosen
+    // yet" sentinel resolveExportVideoMode() migrates away from; getSettings()
+    // never returns null for this field.
+    exportVideoMode: null,
     // "Add from link" (v0.1.121) already handles a plain direct audio URL
     // via ffmpeg's own http client; when that fails (e.g. a YouTube watch
     // page, not a raw media file), library.js falls back to yt-dlp - see
@@ -70,6 +77,21 @@ const store = new Store({
   }
 })
 
+const EXPORT_VIDEO_MODES = ['audio-only', 'video-only', 'both']
+
+// One-time migration off the old blackVideoExport boolean (v0.1.136) the
+// first time settings are read after upgrading to v0.1.139 - "on" becomes
+// 'both' (closest match to the old behavior: audio + video), "off"/never-set
+// becomes the new default 'audio-only'. Persists the result so this only
+// ever runs once per install.
+function resolveExportVideoMode() {
+  const current = store.get('exportVideoMode')
+  if (EXPORT_VIDEO_MODES.includes(current)) return current
+  const migrated = store.get('blackVideoExport') ? 'both' : 'audio-only'
+  store.set('exportVideoMode', migrated)
+  return migrated
+}
+
 export function getSettings() {
   return {
     autoUpdateEnabled: store.get('autoUpdateEnabled'),
@@ -81,7 +103,7 @@ export function getSettings() {
     skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
     fasterExport: store.get('fasterExport'),
     parallelMixdown: store.get('parallelMixdown'),
-    blackVideoExport: store.get('blackVideoExport'),
+    exportVideoMode: resolveExportVideoMode(),
     ytDlpCookiesBrowser: store.get('ytDlpCookiesBrowser'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
@@ -165,8 +187,8 @@ export function setParallelMixdownEnabled(enabled) {
   return getSettings()
 }
 
-export function setBlackVideoExportEnabled(enabled) {
-  store.set('blackVideoExport', Boolean(enabled))
+export function setExportVideoMode(mode) {
+  store.set('exportVideoMode', EXPORT_VIDEO_MODES.includes(mode) ? mode : 'audio-only')
   return getSettings()
 }
 

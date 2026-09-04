@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.139 — Export: choose audio-only, video-only, or both
+
+- The Export tab's black-screen-video checkbox is now a 3-way choice: "Audio only" (the old default), "Video only (for YouTube)", or "Both audio and video".
+- "Video only" skips writing the separate audio file entirely — your export is just the .mkv, audio already muxed inside, ready to upload straight to YouTube with nothing extra lying around next to it.
+- If you had the old checkbox turned on, your first export after updating keeps that behavior (now "Both").
+
 ## v0.1.138 — Export now organizes each run into its own folder
 
 - Exporting a preset now asks you to pick a destination folder instead of a filename, and automatically creates a subfolder named after the preset inside it — so the audio file (and the black-screen video, if you turned that on) land together instead of loose files piling up wherever you last saved.

@@ -636,9 +636,10 @@ async function renderFinalMixdown({
   }
 }
 
-// Optional companion output for the Export tab's "black-screen video for
-// YouTube" checkbox. Ambient mixes get uploaded to YouTube, which needs a
-// video track - a flat black frame is all that's wanted. Encoding a
+// Optional companion output for the Export tab's video-mode choice
+// ('video-only'/'both', see exportMix's own videoMode handling below).
+// Ambient mixes get uploaded to YouTube, which needs a video track - a flat
+// black frame is all that's wanted. Encoding a
 // full-length black video would be per-frame work over hours; instead encode
 // a 4-frame black clip once (instant) and -stream_loop it under the just-
 // exported audio with -c copy - the mux is near-instant and the audio stays
@@ -684,7 +685,7 @@ async function renderBlackScreenVideo(audioPath, durationSeconds, reporter) {
 //   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
 //   speedFactor, fadeInMs, fadeOutMs, shotDurationSeconds } for
 //   'scatter'/'scheduled' (shotDurationSeconds already reflects speedFactor).
-export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, blackVideo = false }) {
+export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, videoMode = 'audio-only' }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
@@ -854,12 +855,21 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     }
     reporter.step(`Encoding to ${String(format || 'wav').toUpperCase()} — done.`)
 
-    // The audio file is complete and safe at this point. The optional black-
-    // screen video is a companion output, so a failure there doesn't undo a
-    // good export - report it alongside ok:true rather than throwing.
-    if (blackVideo) {
+    // The audio file is complete and safe at this point. Both 'video-only'
+    // and 'both' need it muxed into the black-screen video (ffmpeg has to
+    // read a real audio file, there's no in-memory shortcut) - the only
+    // difference is 'video-only' then deletes the now-redundant standalone
+    // audio file once the video safely exists. A video failure is never
+    // fatal to an already-good audio export: 'both' just reports the error
+    // alongside ok:true, and 'video-only' quietly falls back to keeping the
+    // audio file rather than deleting the only output that succeeded.
+    if (videoMode === 'video-only' || videoMode === 'both') {
       try {
         const videoPath = await renderBlackScreenVideo(outputPath, durationSeconds, reporter)
+        if (videoMode === 'video-only') {
+          await cleanupFiles([outputPath])
+          return { ok: true, videoPath, audioRemoved: true }
+        }
         return { ok: true, videoPath }
       } catch (err) {
         console.error('black-screen video failed', err)

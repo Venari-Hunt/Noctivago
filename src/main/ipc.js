@@ -23,7 +23,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setBlackVideoExportEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -82,7 +82,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setSkipRemixLeaveConfirmEnabled', (_event, enabled) => setSkipRemixLeaveConfirmEnabled(enabled))
   ipcMain.handle('settings:setFasterExportEnabled', (_event, enabled) => setFasterExportEnabled(enabled))
   ipcMain.handle('settings:setParallelMixdownEnabled', (_event, enabled) => setParallelMixdownEnabled(enabled))
-  ipcMain.handle('settings:setBlackVideoExportEnabled', (_event, enabled) => setBlackVideoExportEnabled(enabled))
+  ipcMain.handle('settings:setExportVideoMode', (_event, mode) => setExportVideoMode(mode))
   ipcMain.handle('settings:setYtDlpCookiesBrowser', (_event, browser) => setYtDlpCookiesBrowser(browser))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
@@ -338,7 +338,7 @@ export function registerIpcHandlers() {
     beginExport()
     try {
       const settings = getSettings()
-      return await exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: settings.fasterExport, parallelMixdown: settings.parallelMixdown, blackVideo: settings.blackVideoExport })
+      return await exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: settings.fasterExport, parallelMixdown: settings.parallelMixdown, videoMode: settings.exportVideoMode })
     } finally {
       endExport()
     }
