@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.140 — Export: optional info file for writing a description
+
+- New Export checkbox: "Also write an info file" — writes a plain-text info.txt next to your export with the preset name, length, format, output type, and every included sound's name and tags.
+- Meant as raw material for writing a YouTube/social media description by hand or with an AI's help — off by default.
+
 ## v0.1.139 — Export: choose audio-only, video-only, or both
 
 - The Export tab's black-screen-video checkbox is now a 3-way choice: "Audio only" (the old default), "Video only (for YouTube)", or "Both audio and video".

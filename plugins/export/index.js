@@ -62,6 +62,32 @@ function formatDuration(totalSeconds) {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+const VIDEO_MODE_LABELS = {
+  'audio-only': 'Audio only',
+  'video-only': 'Video only (for YouTube) - a .mkv with the audio muxed inside',
+  both: 'Audio + video (a standalone audio file and a .mkv, both with the same audio)'
+}
+
+// Raw material for a YouTube/social description, not a finished one - plain
+// facts about what was exported (inbox: "export an info file... to help
+// populate an AI-written YouTube/social description"). Built in the renderer
+// (has the preset/library data already in memory) and handed to
+// export:writeInfoFile as a plain string, since the renderer has no direct
+// fs access - see ipc.js's own comment on that handler.
+function buildInfoFileText({ presetName, durationSeconds, format, videoMode, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
+  const lines = [presetName, '']
+  lines.push(`Length: ${formatDuration(durationSeconds)}`)
+  lines.push(`Format: ${String(format).toUpperCase()}`)
+  lines.push(`Output: ${VIDEO_MODE_LABELS[videoMode] ?? videoMode}`)
+  lines.push(`Fade in / out: ${fadeInSeconds}s / ${fadeOutSeconds}s`)
+  lines.push('')
+  lines.push(`Sounds included (${soundInfoList.length}):`)
+  for (const s of soundInfoList) {
+    lines.push(`- ${s.name}${s.tags.length ? ` — tags: ${s.tags.join(', ')}` : ''}`)
+  }
+  return lines.join('\n')
+}
+
 // Bakes a whole preset down to one audio file of a chosen length/format -
 // its own tab (not just a Presets-modal button, per the owner's own explicit
 // direction: "I think this should be a new plugin as in you go to the tab
@@ -175,6 +201,11 @@ export default class ExportPlugin {
         </label>
         <p class="export-hint">"Video" writes a .mkv next to (or instead of) the audio file, with your exported audio over a flat black 1080p screen — YouTube needs a video track, this adds one without a separate step. Near-instant, no audio re-encoding.</p>
 
+        <label class="export-check">
+          <input id="export-info-file" type="checkbox" />
+          <span>Also write an info file (preset name, length, format, sounds + tags) next to the export — raw material for writing a YouTube/social description by hand or with an AI's help.</span>
+        </label>
+
         <!-- Highpass/Lowpass/Gain used to live here too ("whole-mix
              processing"), but the owner asked directly for them to be
              removed and for whole-mix processing to live only on the
@@ -218,6 +249,7 @@ export default class ExportPlugin {
       faster: container.querySelector('#export-faster'),
       parallelMixdown: container.querySelector('#export-parallel-mixdown'),
       videoMode: container.querySelector('#export-video-mode'),
+      infoFile: container.querySelector('#export-info-file'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
@@ -250,12 +282,16 @@ export default class ExportPlugin {
     this.els.videoMode.addEventListener('change', () => {
       this.api.settings.setExportVideoMode(this.els.videoMode.value)
     })
+    this.els.infoFile.addEventListener('change', () => {
+      this.api.settings.setExportInfoFileEnabled(this.els.infoFile.checked)
+    })
     this.api.settings
       .get()
       .then((settings) => {
         this.els.faster.checked = Boolean(settings.fasterExport)
         this.els.parallelMixdown.checked = Boolean(settings.parallelMixdown)
         this.els.videoMode.value = settings.exportVideoMode ?? 'audio-only'
+        this.els.infoFile.checked = Boolean(settings.exportInfoFile)
       })
       .catch((err) => console.error('Export: failed to read settings', err))
 
@@ -312,6 +348,11 @@ export default class ExportPlugin {
     }
 
     const sounds = []
+    // Parallel to `sounds` (same filter, same order) but scoped to just what
+    // the optional info.txt describes - kept separate rather than bolted
+    // onto the `sounds` payload itself, since that array is forwarded
+    // straight to exportMix.js and tags mean nothing to the render pipeline.
+    const soundInfoList = []
     for (const presetSound of preset.sounds) {
       const entry = this.library.find((e) => e.id === presetSound.soundId)
       if (!entry || entry.status !== 'ok') continue
@@ -328,6 +369,7 @@ export default class ExportPlugin {
         volume: presetSound.volume ?? entry.volume ?? 0.7,
         events: simulateEvents({ entry, durationSeconds })
       })
+      soundInfoList.push({ name: entry.name, tags: entry.tags ?? [] })
     }
 
     if (sounds.length === 0) {
@@ -355,6 +397,8 @@ export default class ExportPlugin {
     // own pace otherwise.
     const renderStartedAt = Date.now()
     this.lastStepAt = renderStartedAt
+    const fadeInSeconds = Number(this.els.fadeIn.value) || 0
+    const fadeOutSeconds = Number(this.els.fadeOut.value) || 0
 
     try {
       const result = await this.api.export.run({
@@ -362,8 +406,8 @@ export default class ExportPlugin {
         durationSeconds,
         format,
         wholeMixFilters: this.currentWholeMixFilters(preset),
-        fadeInSeconds: Number(this.els.fadeIn.value) || 0,
-        fadeOutSeconds: Number(this.els.fadeOut.value) || 0,
+        fadeInSeconds,
+        fadeOutSeconds,
         outputPath
       })
       this.closeLastLogLineTiming()
@@ -388,6 +432,19 @@ export default class ExportPlugin {
         // exportMix.js) - the message above already names that audio path,
         // so this just explains why it's there instead of a video.
         else if (result.videoError) msg += `\n✗ Black-screen video failed: ${result.videoError}`
+        if (this.els.infoFile.checked) {
+          const infoContent = buildInfoFileText({
+            presetName: preset.name,
+            durationSeconds,
+            format,
+            videoMode: this.els.videoMode.value,
+            soundInfoList,
+            fadeInSeconds,
+            fadeOutSeconds
+          })
+          const infoResult = await this.api.export.writeInfoFile({ outputPath, content: infoContent })
+          msg += infoResult.ok ? `\n✓ Info file: ${infoResult.infoPath}` : `\n✗ Info file failed: ${infoResult.error}`
+        }
         this.els.status.textContent = msg
         playCompletionChime(true)
       } else {

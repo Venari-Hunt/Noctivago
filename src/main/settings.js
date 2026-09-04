@@ -46,6 +46,14 @@ const store = new Store({
     // yet" sentinel resolveExportVideoMode() migrates away from; getSettings()
     // never returns null for this field.
     exportVideoMode: null,
+    // Export tab (v0.1.140): also write a plain-text info.txt next to the
+    // export - preset name, length, format, output type, and each included
+    // sound's name + tags - meant as raw material for writing a YouTube/
+    // social description by hand or with an AI's help. Off by default like
+    // every other opt-in Export addition in this app's history (fasterExport,
+    // parallelMixdown, the old blackVideoExport) - a small file, but still an
+    // extra artifact the owner didn't ask to always get.
+    exportInfoFile: false,
     // "Add from link" (v0.1.121) already handles a plain direct audio URL
     // via ffmpeg's own http client; when that fails (e.g. a YouTube watch
     // page, not a raw media file), library.js falls back to yt-dlp - see
@@ -104,6 +112,7 @@ export function getSettings() {
     fasterExport: store.get('fasterExport'),
     parallelMixdown: store.get('parallelMixdown'),
     exportVideoMode: resolveExportVideoMode(),
+    exportInfoFile: store.get('exportInfoFile'),
     ytDlpCookiesBrowser: store.get('ytDlpCookiesBrowser'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
@@ -189,6 +198,11 @@ export function setParallelMixdownEnabled(enabled) {
 
 export function setExportVideoMode(mode) {
   store.set('exportVideoMode', EXPORT_VIDEO_MODES.includes(mode) ? mode : 'audio-only')
+  return getSettings()
+}
+
+export function setExportInfoFileEnabled(enabled) {
+  store.set('exportInfoFile', Boolean(enabled))
   return getSettings()
 }
 

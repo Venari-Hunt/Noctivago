@@ -17,6 +17,7 @@ const api = {
     setFasterExportEnabled: (enabled) => ipcRenderer.invoke('settings:setFasterExportEnabled', enabled),
     setParallelMixdownEnabled: (enabled) => ipcRenderer.invoke('settings:setParallelMixdownEnabled', enabled),
     setExportVideoMode: (mode) => ipcRenderer.invoke('settings:setExportVideoMode', mode),
+    setExportInfoFileEnabled: (enabled) => ipcRenderer.invoke('settings:setExportInfoFileEnabled', enabled),
     setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser)
   },
   autoUpdate: {
@@ -138,6 +139,7 @@ const api = {
   export: {
     pickDestination: (options) => ipcRenderer.invoke('export:pickDestination', options),
     run: (payload) => ipcRenderer.invoke('export:run', payload),
+    writeInfoFile: (payload) => ipcRenderer.invoke('export:writeInfoFile', payload),
     // Progress updates while an export renders: { type:'step', label, fraction }
     // or { type:'tick', fraction } (fraction 0..1). Returns an unsubscribe fn.
     onProgress: (callback) => {
