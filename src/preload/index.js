@@ -18,6 +18,7 @@ const api = {
     setParallelMixdownEnabled: (enabled) => ipcRenderer.invoke('settings:setParallelMixdownEnabled', enabled),
     setExportVideoMode: (mode) => ipcRenderer.invoke('settings:setExportVideoMode', mode),
     setExportInfoFileEnabled: (enabled) => ipcRenderer.invoke('settings:setExportInfoFileEnabled', enabled),
+    setExportLoopVideoPath: (filePath) => ipcRenderer.invoke('settings:setExportLoopVideoPath', filePath),
     setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser)
   },
   autoUpdate: {
@@ -138,6 +139,7 @@ const api = {
   },
   export: {
     pickDestination: (options) => ipcRenderer.invoke('export:pickDestination', options),
+    pickVideoFile: () => ipcRenderer.invoke('export:pickVideoFile'),
     run: (payload) => ipcRenderer.invoke('export:run', payload),
     writeInfoFile: (payload) => ipcRenderer.invoke('export:writeInfoFile', payload),
     // Progress updates while an export renders: { type:'step', label, fraction }

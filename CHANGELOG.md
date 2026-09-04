@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.141 — Export: loop your own video instead of the black screen
+
+- New "Choose video to loop…" option next to the Output setting (once you pick Video only or Both) — loops a video file of your own under the exported audio instead of the flat black screen.
+- If your video is shorter than the export, it repeats from the start; if it's longer, it's trimmed to match. There's no crossfade at the loop point, so a video that already loops cleanly on its own works best.
+- Your choice is remembered between exports. Click "Use black screen instead" to go back to the plain version.
+
 ## v0.1.140 — Export: optional info file for writing a description
 
 - New Export checkbox: "Also write an info file" — writes a plain-text info.txt next to your export with the preset name, length, format, output type, and every included sound's name and tags.

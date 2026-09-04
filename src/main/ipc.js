@@ -23,7 +23,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -84,6 +84,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setParallelMixdownEnabled', (_event, enabled) => setParallelMixdownEnabled(enabled))
   ipcMain.handle('settings:setExportVideoMode', (_event, mode) => setExportVideoMode(mode))
   ipcMain.handle('settings:setExportInfoFileEnabled', (_event, enabled) => setExportInfoFileEnabled(enabled))
+  ipcMain.handle('settings:setExportLoopVideoPath', (_event, filePath) => setExportLoopVideoPath(filePath))
   ipcMain.handle('settings:setYtDlpCookiesBrowser', (_event, browser) => setYtDlpCookiesBrowser(browser))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
@@ -324,6 +325,33 @@ export function registerIpcHandlers() {
     }
   })
 
+  // Export tab (v0.1.141, Board #next item #4): "associate a chosen video
+  // file to loop under the audio instead of/alongside the flat black
+  // screen." Persisted immediately on pick (exportLoopVideoPath) rather than
+  // threaded through export:run's own payload, mirroring how exportVideoMode
+  // itself is already read server-side from settings rather than passed by
+  // the renderer - one less thing for the Export tab to round-trip on every
+  // run. defaultPath opens at the folder of whatever's already chosen, if
+  // anything, for a quick re-pick of a different file in the same place.
+  ipcMain.handle('export:pickVideoFile', async () => {
+    const settings = getSettings()
+    const defaultPath = settings.exportLoopVideoPath && fs.existsSync(settings.exportLoopVideoPath)
+      ? path.dirname(settings.exportLoopVideoPath)
+      : undefined
+    const result = await dialog.showOpenDialog({
+      title: 'Choose a video to loop under the export',
+      defaultPath,
+      properties: ['openFile'],
+      filters: [
+        { name: 'Video files', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'm4v', 'wmv'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    setExportLoopVideoPath(result.filePaths[0])
+    return result.filePaths[0]
+  })
+
   // sounds: [{ soundId, playMode, loopStart, loopEnd, filters, speedPitch,
   // crossfadeSeconds, volume, events }] - the renderer's Export plugin
   // already resolved playMode/filters/etc from the library and ran the
@@ -360,7 +388,7 @@ export function registerIpcHandlers() {
     beginExport()
     try {
       const settings = getSettings()
-      return await exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: settings.fasterExport, parallelMixdown: settings.parallelMixdown, videoMode: settings.exportVideoMode })
+      return await exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: settings.fasterExport, parallelMixdown: settings.parallelMixdown, videoMode: settings.exportVideoMode, loopVideoPath: settings.exportLoopVideoPath })
     } finally {
       endExport()
     }

@@ -65,6 +65,20 @@
   text-align: right;
 }
 
+.export-loop-video-row {
+  margin: 4px 0 16px;
+}
+
+.export-loop-video-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.export-video-path {
+  margin: 8px 0 4px;
+  color: var(--text);
+}
+
 #export-run {
   margin-top: 20px;
 }

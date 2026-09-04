@@ -81,7 +81,14 @@ const store = new Store({
     // after the preset, see ipc.js's export:pickDestination), and unlike a
     // save dialog the OS doesn't remember that folder on its own, so this
     // mirrors library.js's lastAddFolder pattern instead.
-    lastExportFolder: null
+    lastExportFolder: null,
+    // Export tab (v0.1.141, Board #next item #4): an optional video file to
+    // loop under the audio instead of the flat black screen (see
+    // exportMix.js's renderLoopedVideoFromFile). null = the existing
+    // black-screen fallback. Persisted like every other Export tab choice so
+    // it doesn't need re-picking every export - most owners exporting to the
+    // same channel would reuse the same background video repeatedly.
+    exportLoopVideoPath: null
   }
 })
 
@@ -117,7 +124,8 @@ export function getSettings() {
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
     lastRunVersion: store.get('lastRunVersion'),
-    lastExportFolder: store.get('lastExportFolder')
+    lastExportFolder: store.get('lastExportFolder'),
+    exportLoopVideoPath: store.get('exportLoopVideoPath')
   }
 }
 
@@ -203,6 +211,16 @@ export function setExportVideoMode(mode) {
 
 export function setExportInfoFileEnabled(enabled) {
   store.set('exportInfoFile', Boolean(enabled))
+  return getSettings()
+}
+
+// null clears the choice back to the black-screen fallback (see
+// exportMix.js). Not validated against fs.existsSync here - a file moved or
+// deleted after being chosen surfaces as a normal, non-fatal video-render
+// error at export time instead (same "video is a non-fatal companion output"
+// philosophy every other Export video failure already follows).
+export function setExportLoopVideoPath(filePath) {
+  store.set('exportLoopVideoPath', filePath || null)
   return getSettings()
 }
 

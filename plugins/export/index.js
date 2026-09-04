@@ -74,11 +74,14 @@ const VIDEO_MODE_LABELS = {
 // (has the preset/library data already in memory) and handed to
 // export:writeInfoFile as a plain string, since the renderer has no direct
 // fs access - see ipc.js's own comment on that handler.
-function buildInfoFileText({ presetName, durationSeconds, format, videoMode, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
+function buildInfoFileText({ presetName, durationSeconds, format, videoMode, loopVideoName, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
   const lines = [presetName, '']
   lines.push(`Length: ${formatDuration(durationSeconds)}`)
   lines.push(`Format: ${String(format).toUpperCase()}`)
   lines.push(`Output: ${VIDEO_MODE_LABELS[videoMode] ?? videoMode}`)
+  if (videoMode !== 'audio-only') {
+    lines.push(`Video: ${loopVideoName ? `looping "${loopVideoName}"` : 'flat black screen'}`)
+  }
   lines.push(`Fade in / out: ${fadeInSeconds}s / ${fadeOutSeconds}s`)
   lines.push('')
   lines.push(`Sounds included (${soundInfoList.length}):`)
@@ -201,6 +204,15 @@ export default class ExportPlugin {
         </label>
         <p class="export-hint">"Video" writes a .mkv next to (or instead of) the audio file, with your exported audio over a flat black 1080p screen — YouTube needs a video track, this adds one without a separate step. Near-instant, no audio re-encoding.</p>
 
+        <div id="export-loop-video-row" class="export-loop-video-row hidden">
+          <div class="export-loop-video-buttons">
+            <button id="export-choose-video" class="btn" type="button">Choose video to loop…</button>
+            <button id="export-clear-video" class="btn" type="button">Use black screen instead</button>
+          </div>
+          <p id="export-video-path" class="export-hint export-video-path"></p>
+          <p class="export-hint">Optional — loop a video of your own under the audio instead of the flat black screen. If it's shorter than the export it repeats from the start with a hard cut at the seam (no crossfade), so a video that already loops cleanly on its own works best.</p>
+        </div>
+
         <label class="export-check">
           <input id="export-info-file" type="checkbox" />
           <span>Also write an info file (preset name, length, format, sounds + tags) next to the export — raw material for writing a YouTube/social description by hand or with an AI's help.</span>
@@ -249,6 +261,10 @@ export default class ExportPlugin {
       faster: container.querySelector('#export-faster'),
       parallelMixdown: container.querySelector('#export-parallel-mixdown'),
       videoMode: container.querySelector('#export-video-mode'),
+      loopVideoRow: container.querySelector('#export-loop-video-row'),
+      chooseVideo: container.querySelector('#export-choose-video'),
+      clearVideo: container.querySelector('#export-clear-video'),
+      videoPath: container.querySelector('#export-video-path'),
       infoFile: container.querySelector('#export-info-file'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
@@ -281,9 +297,23 @@ export default class ExportPlugin {
     })
     this.els.videoMode.addEventListener('change', () => {
       this.api.settings.setExportVideoMode(this.els.videoMode.value)
+      this.updateLoopVideoRowVisibility()
     })
     this.els.infoFile.addEventListener('change', () => {
       this.api.settings.setExportInfoFileEnabled(this.els.infoFile.checked)
+    })
+    // "Choose video to loop…" opens a native file dialog (main-process only,
+    // no direct fs access here); the picked path is persisted immediately by
+    // the IPC handler itself (mirrors exportVideoMode's own "settings are the
+    // source of truth, not the run payload" shape), so this side only needs
+    // to update the display.
+    this.els.chooseVideo.addEventListener('click', async () => {
+      const filePath = await this.api.export.pickVideoFile()
+      if (filePath) this.setLoopVideoPath(filePath)
+    })
+    this.els.clearVideo.addEventListener('click', async () => {
+      await this.api.settings.setExportLoopVideoPath(null)
+      this.setLoopVideoPath(null)
     })
     this.api.settings
       .get()
@@ -292,6 +322,8 @@ export default class ExportPlugin {
         this.els.parallelMixdown.checked = Boolean(settings.parallelMixdown)
         this.els.videoMode.value = settings.exportVideoMode ?? 'audio-only'
         this.els.infoFile.checked = Boolean(settings.exportInfoFile)
+        this.setLoopVideoPath(settings.exportLoopVideoPath ?? null)
+        this.updateLoopVideoRowVisibility()
       })
       .catch((err) => console.error('Export: failed to read settings', err))
 
@@ -305,6 +337,25 @@ export default class ExportPlugin {
       return
     }
     this.els.length.value = formatDuration(seconds)
+  }
+
+  // Renderer has no Node `path` module (sandboxed, per this app's plugin
+  // security model) - a plain basename split covers both Windows and POSIX
+  // separators, which is all this display needs.
+  setLoopVideoPath(filePath) {
+    this.loopVideoPath = filePath || null
+    this.els.videoPath.textContent = filePath
+      ? `Looping: ${filePath.split(/[\\/]/).pop()}`
+      : 'No video chosen — using the flat black screen.'
+    this.els.clearVideo.disabled = !filePath
+  }
+
+  // The loop-video picker only makes sense once a video track is actually
+  // being produced - hidden entirely under 'audio-only' rather than shown
+  // disabled, matching this app's other mode-gated-field convention (e.g.
+  // Remix's scatter/schedule sections).
+  updateLoopVideoRowVisibility() {
+    this.els.loopVideoRow.classList.toggle('hidden', this.els.videoMode.value === 'audio-only')
   }
 
   async refresh() {
@@ -426,18 +477,19 @@ export default class ExportPlugin {
         let msg = result.audioRemoved
           ? `✓ Exported video to ${result.videoPath} — took ${elapsed}`
           : `✓ Exported to ${outputPath} — took ${elapsed}`
-        if (result.videoPath && !result.audioRemoved) msg += `\n✓ Black-screen video: ${result.videoPath}`
+        if (result.videoPath && !result.audioRemoved) msg += `\n✓ Video: ${result.videoPath}`
         // A failed video in 'video-only' mode leaves the audio file in place
         // rather than deleting the only output that actually succeeded (see
         // exportMix.js) - the message above already names that audio path,
         // so this just explains why it's there instead of a video.
-        else if (result.videoError) msg += `\n✗ Black-screen video failed: ${result.videoError}`
+        else if (result.videoError) msg += `\n✗ Video render failed: ${result.videoError}`
         if (this.els.infoFile.checked) {
           const infoContent = buildInfoFileText({
             presetName: preset.name,
             durationSeconds,
             format,
             videoMode: this.els.videoMode.value,
+            loopVideoName: this.loopVideoPath ? this.loopVideoPath.split(/[\\/]/).pop() : null,
             soundInfoList,
             fadeInSeconds,
             fadeOutSeconds
