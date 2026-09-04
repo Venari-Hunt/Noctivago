@@ -320,10 +320,10 @@ main {
   cursor: pointer;
 }
 
-.tag-filter-chip-active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--surface-alt);
+.tag-filter-chip.tag-filter-chip-active {
+  border-color: var(--accent-strong);
+  color: #fff;
+  background: var(--accent-strong);
 }
 
 .sound-list,
