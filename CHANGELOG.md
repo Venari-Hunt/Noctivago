@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.138 — Export now organizes each run into its own folder
+
+- Exporting a preset now asks you to pick a destination folder instead of a filename, and automatically creates a subfolder named after the preset inside it — so the audio file (and the black-screen video, if you turned that on) land together instead of loose files piling up wherever you last saved.
+- Exporting the same preset again reuses that same subfolder, so your exports for one preset always stay in one place.
+
 ## v0.1.137 — Active tag filter now lights up
 
 - The Mixer's tag filter chip now clearly shows which tag is active — a solid highlighted pill instead of a subtle color tint that was easy to miss.

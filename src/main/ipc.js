@@ -23,7 +23,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setBlackVideoExportEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setBlackVideoExportEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -38,6 +38,20 @@ import {
 import { setTrayEnabled } from './tray.js'
 import { setThumbarPlaying } from './thumbar.js'
 import { watchNewFolder, unwatchFolder } from './watchFolders.js'
+
+// Turns a preset name into a valid Windows folder/file name for
+// export:pickDestination's auto-created per-run subfolder - strips
+// characters NTFS/Explorer reject, collapses whitespace, and trims trailing
+// dots/spaces (Windows silently drops those, which can otherwise produce a
+// folder name that doesn't match what mkdirSync/path.join were given).
+function sanitizeExportName(name) {
+  const cleaned = String(name ?? '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')
+  return cleaned || 'Export'
+}
 
 export function registerIpcHandlers() {
   ipcMain.handle('app:isPackaged', () => app.isPackaged)
@@ -262,14 +276,30 @@ export function registerIpcHandlers() {
     }
   })
 
+  // Picks a parent folder rather than a filename directly (was a
+  // showSaveDialog) so every export can auto-create its own subfolder named
+  // after the preset - "everything exported for that run" (the audio file,
+  // the optional black-screen video, a future info file) lands together
+  // instead of loose files piling up at the destination root, and a second
+  // export of the same preset naturally lands back in the same place rather
+  // than needing the exact filename re-typed. exportMix.js already
+  // mkdirSync(..., {recursive:true}) on the returned path's directory, so
+  // the subfolder needs no separate creation step here.
   ipcMain.handle('export:pickDestination', async (_event, { defaultName, format }) => {
-    const result = await dialog.showSaveDialog({
-      title: 'Export mix',
-      defaultPath: `${defaultName}.${format}`,
-      filters: [{ name: format.toUpperCase(), extensions: [format] }]
+    const settings = getSettings()
+    const defaultFolder = settings.lastExportFolder && fs.existsSync(settings.lastExportFolder)
+      ? settings.lastExportFolder
+      : undefined
+    const result = await dialog.showOpenDialog({
+      title: 'Choose export destination',
+      defaultPath: defaultFolder,
+      properties: ['openDirectory', 'createDirectory']
     })
-    if (result.canceled || !result.filePath) return null
-    return result.filePath
+    if (result.canceled || !result.filePaths[0]) return null
+    const destDir = result.filePaths[0]
+    setLastExportFolder(destDir)
+    const folderName = sanitizeExportName(defaultName)
+    return path.join(destDir, folderName, `${folderName}.${format}`)
   })
 
   // sounds: [{ soundId, playMode, loopStart, loopEnd, filters, speedPitch,

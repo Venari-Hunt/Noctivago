@@ -59,7 +59,14 @@ const store = new Store({
     // version on startup to detect "we just updated" and show the What's-new
     // screen (see autoUpdate.js). null on a first-ever launch, which
     // correctly shows nothing.
-    lastRunVersion: null
+    lastRunVersion: null,
+    // Remembered parent folder for the Export tab's destination picker
+    // (v0.1.138) - the picker moved from a single-file save dialog to a
+    // pick-a-folder dialog (each export now gets its own subfolder named
+    // after the preset, see ipc.js's export:pickDestination), and unlike a
+    // save dialog the OS doesn't remember that folder on its own, so this
+    // mirrors library.js's lastAddFolder pattern instead.
+    lastExportFolder: null
   }
 })
 
@@ -78,12 +85,18 @@ export function getSettings() {
     ytDlpCookiesBrowser: store.get('ytDlpCookiesBrowser'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
-    lastRunVersion: store.get('lastRunVersion')
+    lastRunVersion: store.get('lastRunVersion'),
+    lastExportFolder: store.get('lastExportFolder')
   }
 }
 
 export function setLastRunVersion(version) {
   store.set('lastRunVersion', version)
+  return getSettings()
+}
+
+export function setLastExportFolder(folderPath) {
+  store.set('lastExportFolder', folderPath)
   return getSettings()
 }
 
