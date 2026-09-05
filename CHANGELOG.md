@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.146 — Mixer: sound group membership is now visible at a glance
+
+- Every sound row in the Mixer now shows a small badge naming its Sound Group, if it's in one — no more right-clicking just to check.
+- Click the badge to open the same right-click menu for changing or leaving the group.
+
 ## v0.1.145 — Self-review pass: bug fixes
 
 - Fixed: extending a Remix trim past the 10-minute buffer cap and saving could leave the "Saved audio" preview looking fully up to date while actually still playing an old, unrelated clip.

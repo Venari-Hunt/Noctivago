@@ -228,7 +228,7 @@ function buildTagsRow(entry, callbacks, allTags) {
   return tagsRow
 }
 
-export function createSoundRow(entry, { included, loading, error, volume, muted, soloed }, callbacks, allTags = []) {
+export function createSoundRow(entry, { included, loading, error, volume, muted, soloed, groupName = null }, callbacks, allTags = []) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
@@ -303,6 +303,24 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     badge.textContent = 'Composite'
     badge.title = `Baked from ${entry.compositeSource.members.length} sounds - open the Composite tab to edit`
     nameRow.appendChild(badge)
+  }
+
+  // Sound Groups (see AudioEngine.js's SoundGroupChain) - membership used to
+  // be invisible unless you right-clicked the sound and checked the menu for
+  // a checkmark (reported directly as "actual garbage" UX). This badge makes
+  // it visible at a glance; clicking it opens the same right-click menu so
+  // changing groups doesn't require finding the exact spot to right-click.
+  if (groupName && callbacks.onContextMenu) {
+    const groupBadge = document.createElement('button')
+    groupBadge.type = 'button'
+    groupBadge.className = 'sound-row-group-badge'
+    groupBadge.textContent = groupName
+    groupBadge.title = `In the "${groupName}" sound group - click to change`
+    groupBadge.addEventListener('click', (evt) => {
+      evt.stopPropagation()
+      callbacks.onContextMenu(entry.id, evt)
+    })
+    nameRow.appendChild(groupBadge)
   }
 
   li.appendChild(nameRow)

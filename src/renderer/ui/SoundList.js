@@ -195,7 +195,13 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     const volume = playbackState.volumes.get(entry.id) ?? 0.7
     const muted = playbackState.mutedSounds.has(entry.id)
     const soloed = playbackState.soloedSoundId === entry.id
-    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed }, draggable, callbacks, allTags))
+    // Which Sound Group (if any) this sound belongs to, so SoundRow.js can
+    // show it as a visible badge - previously the only way to see this was
+    // to right-click the sound and check which group had a checkmark
+    // (reported directly: "you don't have any way to know if an audio is in
+    // a group unless you go ahead and right click it").
+    const groupName = playbackState.groups?.find((g) => g.soundIds.includes(entry.id))?.name ?? null
+    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName }, draggable, callbacks, allTags))
   }
 
   function appendHeader(label) {
