@@ -88,11 +88,45 @@ const store = new Store({
     // black-screen fallback. Persisted like every other Export tab choice so
     // it doesn't need re-picking every export - most owners exporting to the
     // same channel would reuse the same background video repeatedly.
-    exportLoopVideoPath: null
+    exportLoopVideoPath: null,
+    // Export tab (v0.1.144, the Board's last open Export wishlist item):
+    // which of the three video backgrounds drives the video track when
+    // exportVideoMode isn't 'audio-only'. null is the "never chosen yet"
+    // migration sentinel resolveExportVideoBackground() upgrades once -
+    // anyone who'd already picked a loop video via exportLoopVideoPath above
+    // keeps using it rather than silently reverting to black.
+    exportVideoBackground: null,
+    // Visualization sub-options - see src/main/ffmpeg/visualizationVideo.js
+    // for how each maps to an ffmpeg filter, and its own doc comment for the
+    // real-ffmpeg speed research behind why black is the default bgColor
+    // specifically (skips compositing entirely - the owner's own note
+    // flagged speed as a hard requirement for this feature).
+    exportVisualizationType: 'waveform',
+    exportVisualizationColor: '#9ece6a',
+    exportVisualizationBgColor: '#000000',
+    exportVisualizationPalette: 'intensity',
+    exportVisualizationSize: 'medium'
   }
 })
 
 const EXPORT_VIDEO_MODES = ['audio-only', 'video-only', 'both']
+const EXPORT_VIDEO_BACKGROUNDS = ['black', 'file', 'visualization']
+const VISUALIZATION_TYPES = ['waveform', 'spectrum', 'vectorscope']
+const VISUALIZATION_PALETTES = ['intensity', 'rainbow', 'fire', 'magma', 'cool', 'moreland']
+const VISUALIZATION_SIZES = ['small', 'medium', 'large']
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+
+// One-time migration mirroring resolveExportVideoMode() just above -
+// exportVideoBackground didn't exist before this feature, so an owner who'd
+// already picked a loop-video file (exportLoopVideoPath) becomes 'file'
+// rather than silently losing that choice to the new 'black' default.
+function resolveExportVideoBackground() {
+  const current = store.get('exportVideoBackground')
+  if (EXPORT_VIDEO_BACKGROUNDS.includes(current)) return current
+  const migrated = store.get('exportLoopVideoPath') ? 'file' : 'black'
+  store.set('exportVideoBackground', migrated)
+  return migrated
+}
 
 // One-time migration off the old blackVideoExport boolean (v0.1.136) the
 // first time settings are read after upgrading to v0.1.139 - "on" becomes
@@ -125,7 +159,13 @@ export function getSettings() {
     sleepTimerAction: store.get('sleepTimerAction'),
     lastRunVersion: store.get('lastRunVersion'),
     lastExportFolder: store.get('lastExportFolder'),
-    exportLoopVideoPath: store.get('exportLoopVideoPath')
+    exportLoopVideoPath: store.get('exportLoopVideoPath'),
+    exportVideoBackground: resolveExportVideoBackground(),
+    exportVisualizationType: store.get('exportVisualizationType'),
+    exportVisualizationColor: store.get('exportVisualizationColor'),
+    exportVisualizationBgColor: store.get('exportVisualizationBgColor'),
+    exportVisualizationPalette: store.get('exportVisualizationPalette'),
+    exportVisualizationSize: store.get('exportVisualizationSize')
   }
 }
 
@@ -221,6 +261,24 @@ export function setExportInfoFileEnabled(enabled) {
 // philosophy every other Export video failure already follows).
 export function setExportLoopVideoPath(filePath) {
   store.set('exportLoopVideoPath', filePath || null)
+  return getSettings()
+}
+
+export function setExportVideoBackground(mode) {
+  store.set('exportVideoBackground', EXPORT_VIDEO_BACKGROUNDS.includes(mode) ? mode : 'black')
+  return getSettings()
+}
+
+// Merges whichever visualization fields the caller passed (the Export tab
+// sends one field at a time, one per control) - unrecognized/invalid values
+// are silently ignored rather than falling back to a default, so one bad
+// field in a batch can't stomp the others.
+export function setExportVisualizationOptions(options) {
+  if (VISUALIZATION_TYPES.includes(options?.type)) store.set('exportVisualizationType', options.type)
+  if (HEX_COLOR_RE.test(options?.color)) store.set('exportVisualizationColor', options.color)
+  if (HEX_COLOR_RE.test(options?.bgColor)) store.set('exportVisualizationBgColor', options.bgColor)
+  if (VISUALIZATION_PALETTES.includes(options?.palette)) store.set('exportVisualizationPalette', options.palette)
+  if (VISUALIZATION_SIZES.includes(options?.size)) store.set('exportVisualizationSize', options.size)
   return getSettings()
 }
 

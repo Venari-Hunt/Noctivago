@@ -79,6 +79,25 @@
   color: var(--text);
 }
 
+.export-video-subsection {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+}
+
+.export-tab input[type='color'] {
+  padding: 0;
+  width: 44px;
+  height: 28px;
+  flex: none;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+}
+
 #export-run {
   margin-top: 20px;
 }

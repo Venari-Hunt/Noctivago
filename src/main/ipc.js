@@ -23,7 +23,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -85,6 +85,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setExportVideoMode', (_event, mode) => setExportVideoMode(mode))
   ipcMain.handle('settings:setExportInfoFileEnabled', (_event, enabled) => setExportInfoFileEnabled(enabled))
   ipcMain.handle('settings:setExportLoopVideoPath', (_event, filePath) => setExportLoopVideoPath(filePath))
+  ipcMain.handle('settings:setExportVideoBackground', (_event, mode) => setExportVideoBackground(mode))
+  ipcMain.handle('settings:setExportVisualizationOptions', (_event, options) => setExportVisualizationOptions(options))
   ipcMain.handle('settings:setYtDlpCookiesBrowser', (_event, browser) => setYtDlpCookiesBrowser(browser))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
@@ -389,7 +391,28 @@ export function registerIpcHandlers() {
     beginExport()
     try {
       const settings = getSettings()
-      return await exportMix({ sounds: resolvedSounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport: settings.fasterExport, parallelMixdown: settings.parallelMixdown, videoMode: settings.exportVideoMode, loopVideoPath: settings.exportLoopVideoPath })
+      return await exportMix({
+        sounds: resolvedSounds,
+        durationSeconds,
+        format,
+        wholeMixFilters,
+        fadeInSeconds,
+        fadeOutSeconds,
+        outputPath,
+        onProgress,
+        fasterExport: settings.fasterExport,
+        parallelMixdown: settings.parallelMixdown,
+        videoMode: settings.exportVideoMode,
+        videoBackground: settings.exportVideoBackground,
+        loopVideoPath: settings.exportLoopVideoPath,
+        visualization: {
+          type: settings.exportVisualizationType,
+          color: settings.exportVisualizationColor,
+          bgColor: settings.exportVisualizationBgColor,
+          palette: settings.exportVisualizationPalette,
+          size: settings.exportVisualizationSize
+        }
+      })
     } finally {
       endExport()
     }

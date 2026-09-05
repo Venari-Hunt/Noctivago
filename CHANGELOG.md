@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.144 — Export: audio-reactive visualization video
+
+- New "Audio-reactive visualization" option for the Export tab's video background (alongside the flat black screen and looping your own video) — a moving waveform, spectrum, or vectorscope generated from the actual exported audio.
+- Pick the style, a color (or a palette for spectrum), a background color, and a size (small/medium/large).
+- Stays fast on a plain black background — a custom background color renders noticeably slower, and the tab says so.
+
 ## v0.1.143 — Sound Groups: EQ several sounds together, non-destructively
 
 - New "Sound Groups" section on the Preset Remix tab — group some of a preset's sounds into one shared submix and EQ them together (e.g. crickets + toads to sound like they're outside a house), without touching each sound's own filters.

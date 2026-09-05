@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import { runFfmpegToFile } from './runFfmpeg.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount } from './loopClip.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
+import { renderVisualizationVideo } from './visualizationVideo.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -748,17 +749,24 @@ async function renderLoopedVideoFromFile(audioPath, durationSeconds, videoSource
   return videoPath
 }
 
-// Dispatches between the two companion-video shapes exportMix's own
-// videoMode handling can produce: a user-supplied video to loop (see
-// renderLoopedVideoFromFile) when the Export tab has one chosen, otherwise
-// the pre-existing flat black screen (renderBlackScreenVideo). Kept as a
-// separate dispatcher rather than folding the branch into either function
-// so both callers (video-only/both, see exportMix below) stay a single call
-// site regardless of which shape actually runs.
-function renderVideoOutput(audioPath, durationSeconds, loopVideoPath, reporter) {
-  return loopVideoPath
-    ? renderLoopedVideoFromFile(audioPath, durationSeconds, loopVideoPath, reporter)
-    : renderBlackScreenVideo(audioPath, durationSeconds, reporter)
+// Dispatches between the three companion-video shapes exportMix's own
+// videoMode handling can produce: a real-time audio-reactive visualization
+// (renderVisualizationVideo, see that module's own doc comment for the
+// speed research behind it), a user-supplied video to loop
+// (renderLoopedVideoFromFile), or the original flat black screen
+// (renderBlackScreenVideo) - the fallback whenever videoBackground is
+// 'black', or 'file' was chosen but no file has actually been picked yet.
+// Kept as a separate dispatcher rather than folding the branch into any one
+// of the three so every caller (video-only/both, see exportMix below) stays
+// a single call site regardless of which shape actually runs.
+function renderVideoOutput(audioPath, durationSeconds, videoBackground, loopVideoPath, visualization, reporter) {
+  if (videoBackground === 'visualization') {
+    return renderVisualizationVideo(audioPath, durationSeconds, visualization, reporter)
+  }
+  if (videoBackground === 'file' && loopVideoPath) {
+    return renderLoopedVideoFromFile(audioPath, durationSeconds, loopVideoPath, reporter)
+  }
+  return renderBlackScreenVideo(audioPath, durationSeconds, reporter)
 }
 
 // sounds: [{ soundId, inputPath, cachedClipPath, name, playMode, loopStart,
@@ -768,7 +776,7 @@ function renderVideoOutput(audioPath, durationSeconds, loopVideoPath, reporter) 
 //   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
 //   speedFactor, fadeInMs, fadeOutMs, shotDurationSeconds } for
 //   'scatter'/'scheduled' (shotDurationSeconds already reflects speedFactor).
-export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, videoMode = 'audio-only', loopVideoPath = null }) {
+export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, videoMode = 'audio-only', videoBackground = 'black', loopVideoPath = null, visualization = null }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
@@ -948,7 +956,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     // audio file rather than deleting the only output that succeeded.
     if (videoMode === 'video-only' || videoMode === 'both') {
       try {
-        const videoPath = await renderVideoOutput(outputPath, durationSeconds, loopVideoPath, reporter)
+        const videoPath = await renderVideoOutput(outputPath, durationSeconds, videoBackground, loopVideoPath, visualization, reporter)
         if (videoMode === 'video-only') {
           await cleanupFiles([outputPath])
           return { ok: true, videoPath, audioRemoved: true }

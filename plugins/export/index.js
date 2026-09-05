@@ -74,13 +74,19 @@ const VIDEO_MODE_LABELS = {
 // (has the preset/library data already in memory) and handed to
 // export:writeInfoFile as a plain string, since the renderer has no direct
 // fs access - see ipc.js's own comment on that handler.
-function buildInfoFileText({ presetName, durationSeconds, format, videoMode, loopVideoName, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
+function buildInfoFileText({ presetName, durationSeconds, format, videoMode, videoBackground, loopVideoName, visualizationSummary, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
   const lines = [presetName, '']
   lines.push(`Length: ${formatDuration(durationSeconds)}`)
   lines.push(`Format: ${String(format).toUpperCase()}`)
   lines.push(`Output: ${VIDEO_MODE_LABELS[videoMode] ?? videoMode}`)
   if (videoMode !== 'audio-only') {
-    lines.push(`Video: ${loopVideoName ? `looping "${loopVideoName}"` : 'flat black screen'}`)
+    const videoDesc =
+      videoBackground === 'file' && loopVideoName
+        ? `looping "${loopVideoName}"`
+        : videoBackground === 'visualization'
+          ? visualizationSummary
+          : 'flat black screen'
+    lines.push(`Video: ${videoDesc}`)
   }
   lines.push(`Fade in / out: ${fadeInSeconds}s / ${fadeOutSeconds}s`)
   lines.push('')
@@ -202,15 +208,65 @@ export default class ExportPlugin {
             <option value="both">Both audio and video</option>
           </select>
         </label>
-        <p class="export-hint">"Video" writes a .mkv next to (or instead of) the audio file, with your exported audio over a flat black 1080p screen — YouTube needs a video track, this adds one without a separate step. Near-instant, no audio re-encoding.</p>
+        <p class="export-hint">"Video" writes a .mkv next to (or instead of) the audio file — YouTube needs a video track, this adds one without a separate step. Choose what plays below.</p>
 
-        <div id="export-loop-video-row" class="export-loop-video-row hidden">
-          <div class="export-loop-video-buttons">
-            <button id="export-choose-video" class="btn" type="button">Choose video to loop…</button>
-            <button id="export-clear-video" class="btn" type="button">Use black screen instead</button>
+        <div id="export-video-background-row" class="export-loop-video-row hidden">
+          <label>
+            <span>Video</span>
+            <select id="export-video-background">
+              <option value="black">Flat black screen (fastest, near-instant)</option>
+              <option value="file">Loop a video file</option>
+              <option value="visualization">Audio-reactive visualization</option>
+            </select>
+          </label>
+
+          <div id="export-video-file-section" class="export-video-subsection hidden">
+            <div class="export-loop-video-buttons">
+              <button id="export-choose-video" class="btn" type="button">Choose video to loop…</button>
+              <button id="export-clear-video" class="btn" type="button">Clear</button>
+            </div>
+            <p id="export-video-path" class="export-hint export-video-path"></p>
+            <p class="export-hint">If it's shorter than the export it repeats from the start with a hard cut at the seam (no crossfade), so a video that already loops cleanly on its own works best.</p>
           </div>
-          <p id="export-video-path" class="export-hint export-video-path"></p>
-          <p class="export-hint">Optional — loop a video of your own under the audio instead of the flat black screen. If it's shorter than the export it repeats from the start with a hard cut at the seam (no crossfade), so a video that already loops cleanly on its own works best.</p>
+
+          <div id="export-viz-section" class="export-video-subsection hidden">
+            <label>
+              <span>Style</span>
+              <select id="export-viz-type">
+                <option value="waveform">Waveform</option>
+                <option value="spectrum">Spectrum</option>
+                <option value="vectorscope">Vectorscope</option>
+              </select>
+            </label>
+            <label id="export-viz-color-row">
+              <span>Color</span>
+              <input id="export-viz-color" type="color" value="#9ece6a" />
+            </label>
+            <label id="export-viz-palette-row" class="hidden">
+              <span>Palette</span>
+              <select id="export-viz-palette">
+                <option value="intensity">Intensity</option>
+                <option value="rainbow">Rainbow</option>
+                <option value="fire">Fire</option>
+                <option value="magma">Magma</option>
+                <option value="cool">Cool</option>
+                <option value="moreland">Moreland</option>
+              </select>
+            </label>
+            <label>
+              <span>Background</span>
+              <input id="export-viz-bg-color" type="color" value="#000000" />
+            </label>
+            <label>
+              <span>Size</span>
+              <select id="export-viz-size">
+                <option value="small">Small (854×480)</option>
+                <option value="medium">Medium (1280×720)</option>
+                <option value="large">Large (1920×1080)</option>
+              </select>
+            </label>
+            <p class="export-hint">Draws a moving waveform/spectrum/vectorscope from the actual exported audio. Stays fastest on a plain black background — a custom background color renders noticeably slower (it has to blend two images per frame instead of one).</p>
+          </div>
         </div>
 
         <label class="export-check">
@@ -261,10 +317,20 @@ export default class ExportPlugin {
       faster: container.querySelector('#export-faster'),
       parallelMixdown: container.querySelector('#export-parallel-mixdown'),
       videoMode: container.querySelector('#export-video-mode'),
-      loopVideoRow: container.querySelector('#export-loop-video-row'),
+      videoBackgroundRow: container.querySelector('#export-video-background-row'),
+      videoBackground: container.querySelector('#export-video-background'),
+      videoFileSection: container.querySelector('#export-video-file-section'),
       chooseVideo: container.querySelector('#export-choose-video'),
       clearVideo: container.querySelector('#export-clear-video'),
       videoPath: container.querySelector('#export-video-path'),
+      vizSection: container.querySelector('#export-viz-section'),
+      vizType: container.querySelector('#export-viz-type'),
+      vizColorRow: container.querySelector('#export-viz-color-row'),
+      vizColor: container.querySelector('#export-viz-color'),
+      vizPaletteRow: container.querySelector('#export-viz-palette-row'),
+      vizPalette: container.querySelector('#export-viz-palette'),
+      vizBgColor: container.querySelector('#export-viz-bg-color'),
+      vizSize: container.querySelector('#export-viz-size'),
       infoFile: container.querySelector('#export-info-file'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
@@ -297,10 +363,14 @@ export default class ExportPlugin {
     })
     this.els.videoMode.addEventListener('change', () => {
       this.api.settings.setExportVideoMode(this.els.videoMode.value)
-      this.updateLoopVideoRowVisibility()
+      this.updateVideoBackgroundRowVisibility()
     })
     this.els.infoFile.addEventListener('change', () => {
       this.api.settings.setExportInfoFileEnabled(this.els.infoFile.checked)
+    })
+    this.els.videoBackground.addEventListener('change', () => {
+      this.api.settings.setExportVideoBackground(this.els.videoBackground.value)
+      this.updateVideoBackgroundSubsectionVisibility()
     })
     // "Choose video to loop…" opens a native file dialog (main-process only,
     // no direct fs access here); the picked path is persisted immediately by
@@ -315,6 +385,22 @@ export default class ExportPlugin {
       await this.api.settings.setExportLoopVideoPath(null)
       this.setLoopVideoPath(null)
     })
+    this.els.vizType.addEventListener('change', () => {
+      this.api.settings.setExportVisualizationOptions({ type: this.els.vizType.value })
+      this.updateVizFieldVisibility()
+    })
+    this.els.vizColor.addEventListener('input', () => {
+      this.api.settings.setExportVisualizationOptions({ color: this.els.vizColor.value })
+    })
+    this.els.vizPalette.addEventListener('change', () => {
+      this.api.settings.setExportVisualizationOptions({ palette: this.els.vizPalette.value })
+    })
+    this.els.vizBgColor.addEventListener('input', () => {
+      this.api.settings.setExportVisualizationOptions({ bgColor: this.els.vizBgColor.value })
+    })
+    this.els.vizSize.addEventListener('change', () => {
+      this.api.settings.setExportVisualizationOptions({ size: this.els.vizSize.value })
+    })
     this.api.settings
       .get()
       .then((settings) => {
@@ -323,7 +409,15 @@ export default class ExportPlugin {
         this.els.videoMode.value = settings.exportVideoMode ?? 'audio-only'
         this.els.infoFile.checked = Boolean(settings.exportInfoFile)
         this.setLoopVideoPath(settings.exportLoopVideoPath ?? null)
-        this.updateLoopVideoRowVisibility()
+        this.els.videoBackground.value = settings.exportVideoBackground ?? 'black'
+        this.els.vizType.value = settings.exportVisualizationType ?? 'waveform'
+        this.els.vizColor.value = settings.exportVisualizationColor ?? '#9ece6a'
+        this.els.vizPalette.value = settings.exportVisualizationPalette ?? 'intensity'
+        this.els.vizBgColor.value = settings.exportVisualizationBgColor ?? '#000000'
+        this.els.vizSize.value = settings.exportVisualizationSize ?? 'medium'
+        this.updateVideoBackgroundRowVisibility()
+        this.updateVideoBackgroundSubsectionVisibility()
+        this.updateVizFieldVisibility()
       })
       .catch((err) => console.error('Export: failed to read settings', err))
 
@@ -350,12 +444,31 @@ export default class ExportPlugin {
     this.els.clearVideo.disabled = !filePath
   }
 
-  // The loop-video picker only makes sense once a video track is actually
-  // being produced - hidden entirely under 'audio-only' rather than shown
-  // disabled, matching this app's other mode-gated-field convention (e.g.
-  // Remix's scatter/schedule sections).
-  updateLoopVideoRowVisibility() {
-    this.els.loopVideoRow.classList.toggle('hidden', this.els.videoMode.value === 'audio-only')
+  // The video-background choice only makes sense once a video track is
+  // actually being produced - hidden entirely under 'audio-only' rather than
+  // shown disabled, matching this app's other mode-gated-field convention
+  // (e.g. Remix's scatter/schedule sections).
+  updateVideoBackgroundRowVisibility() {
+    this.els.videoBackgroundRow.classList.toggle('hidden', this.els.videoMode.value === 'audio-only')
+  }
+
+  // Only one of the two sub-sections (file picker / visualization controls)
+  // is relevant at a time, matching which of the three renderVideoOutput
+  // branches (exportMix.js) would actually run.
+  updateVideoBackgroundSubsectionVisibility() {
+    const mode = this.els.videoBackground.value
+    this.els.videoFileSection.classList.toggle('hidden', mode !== 'file')
+    this.els.vizSection.classList.toggle('hidden', mode !== 'visualization')
+  }
+
+  // Spectrum picks its color from a fixed palette (showspectrum's own
+  // `color` option is a named scheme, not an arbitrary hex - see
+  // visualizationVideo.js), so the raw color picker only applies to
+  // Waveform/Vectorscope.
+  updateVizFieldVisibility() {
+    const isSpectrum = this.els.vizType.value === 'spectrum'
+    this.els.vizColorRow.classList.toggle('hidden', isSpectrum)
+    this.els.vizPaletteRow.classList.toggle('hidden', !isSpectrum)
   }
 
   async refresh() {
@@ -489,7 +602,9 @@ export default class ExportPlugin {
             durationSeconds,
             format,
             videoMode: this.els.videoMode.value,
+            videoBackground: this.els.videoBackground.value,
             loopVideoName: this.loopVideoPath ? this.loopVideoPath.split(/[\\/]/).pop() : null,
+            visualizationSummary: `${this.els.vizType.value} visualization (${this.els.vizSize.value})`,
             soundInfoList,
             fadeInSeconds,
             fadeOutSeconds

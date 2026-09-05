@@ -19,6 +19,8 @@ const api = {
     setExportVideoMode: (mode) => ipcRenderer.invoke('settings:setExportVideoMode', mode),
     setExportInfoFileEnabled: (enabled) => ipcRenderer.invoke('settings:setExportInfoFileEnabled', enabled),
     setExportLoopVideoPath: (filePath) => ipcRenderer.invoke('settings:setExportLoopVideoPath', filePath),
+    setExportVideoBackground: (mode) => ipcRenderer.invoke('settings:setExportVideoBackground', mode),
+    setExportVisualizationOptions: (options) => ipcRenderer.invoke('settings:setExportVisualizationOptions', options),
     setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser)
   },
   autoUpdate: {
