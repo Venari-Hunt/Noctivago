@@ -2686,6 +2686,19 @@ export default class EditorPlugin {
       }
       this.updateSaveButtonState()
     } else {
+      // A previous save may have left a valid bake (loopClipReady/bakedPreview)
+      // from when the trim was still within the cap - since this save's own
+      // trim no longer qualifies, that old bake no longer matches anything
+      // this.currentEntry now describes and must be invalidated the same way
+      // a failed render already is above, or "Saved audio" would keep looking
+      // fully valid (savedSnapshot was just updated to match, so no staleness
+      // indicator would show) while actually playing the stale, unrelated clip.
+      this.currentEntry.loopClipReady = false
+      this.currentEntry.loopClipStart = null
+      this.currentEntry.loopClipEnd = null
+      this.currentEntry.loopClipFilters = null
+      this.currentEntry.loopClipCrossfadeSeconds = null
+      this.currentEntry.loopClipSpeedPitch = null
       this.els.saveStatus.textContent =
         playMode === 'scatter'
           ? `${savedWord} — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.`

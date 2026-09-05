@@ -281,7 +281,7 @@ function eventBranchChain(evt, volume, batchStart, speedMode) {
   const gain = (evt.volumeScale ?? 1) * volume
   const parts = []
   const pitchActive = Math.abs(semitones) >= IDENTITY_PITCH_EPSILON_SEMITONES
-  const speedActive = Math.abs(speedFactor - 1) >= 0.005
+  const speedActive = Math.abs(speedFactor - 1) >= IDENTITY_SPEED_EPSILON
   if (pitchActive || speedActive) {
     // One rubberband pass handles both: `pitch` shifts pitch without
     // touching length (per-shot Pitch range, v0.1.111), `tempo` changes

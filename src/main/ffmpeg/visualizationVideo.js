@@ -79,7 +79,7 @@ export async function renderVisualizationVideo(audioPath, durationSeconds, optio
   const vizFilter = buildVizFilter(type, size, color, palette)
   const filterComplex = isBlack(bgColor)
     ? `[0:a]${vizFilter}[v]`
-    : `color=c=${hexToFfmpegColor(bgColor)}:s=${size}:d=${durationSeconds.toFixed(3)}[bg];` +
+    : `color=c=${hexToFfmpegColor(bgColor)}:s=${size}:r=${VIZ_FPS}:d=${durationSeconds.toFixed(3)}[bg];` +
       `[0:a]${vizFilter}[wave];[bg][wave]blend=all_mode=screen[v]`
   await runFfmpegToFile([
     '-y',

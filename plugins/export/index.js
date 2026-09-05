@@ -384,6 +384,14 @@ export default class ExportPlugin {
     this.els.clearVideo.addEventListener('click', async () => {
       await this.api.settings.setExportLoopVideoPath(null)
       this.setLoopVideoPath(null)
+      // Clearing the file with nothing else chosen falls back to black at
+      // render time regardless (see exportMix.js's renderVideoOutput), but
+      // left the background <select> itself still reading "Loop a video
+      // file" (and its subsection visible) until a reload re-read settings -
+      // make the visible choice match what will actually render right away.
+      this.els.videoBackground.value = 'black'
+      await this.api.settings.setExportVideoBackground('black')
+      this.updateVideoBackgroundSubsectionVisibility()
     })
     this.els.vizType.addEventListener('change', () => {
       this.api.settings.setExportVisualizationOptions({ type: this.els.vizType.value })

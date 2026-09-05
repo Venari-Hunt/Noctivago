@@ -6,6 +6,14 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.145 — Self-review pass: bug fixes
+
+- Fixed: extending a Remix trim past the 10-minute buffer cap and saving could leave the "Saved audio" preview looking fully up to date while actually still playing an old, unrelated clip.
+- Fixed: exporting an audio-reactive visualization video with a custom background color could show slight frame-timing judder between the moving waveform/spectrum and its background.
+- Fixed: the Export tab's "Clear" button (for a looping video file) left the Output setting showing "Loop a video file" even after it had reverted to the flat black screen.
+- Fixed: deleting the preset currently loaded in the Mixer could leave its Sound Groups still routed even though the preset — and its groups — no longer exist.
+- Right-clicking a sound to manage Sound Groups is snappier now (it was doing an unnecessary background check on every open).
+
 ## v0.1.144 — Export: audio-reactive visualization video
 
 - New "Audio-reactive visualization" option for the Export tab's video background (alongside the flat black screen and looping your own video) — a moving waveform, spectrum, or vectorscope generated from the actual exported audio.

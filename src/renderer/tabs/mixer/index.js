@@ -258,28 +258,23 @@ async function renameSound(id, name) {
 // the Preset Remix plugin's "Sound Groups" section) and broadcast
 // noctivago:sound-groups-changed so any other live view (Preset Remix, this
 // same Mixer if the edited preset is the active one) picks up the change.
-async function openSoundContextMenu(id, evt) {
+function openSoundContextMenu(id, evt) {
   if (!state.activePresetId) {
     openContextMenu(evt.clientX, evt.clientY, [{ label: 'Load a preset to use Sound Groups', disabled: true }])
     return
   }
-  const presets = await api.presets.list()
-  const preset = presets.find((p) => p.id === state.activePresetId)
-  if (!preset) {
-    openContextMenu(evt.clientX, evt.clientY, [{ label: 'Load a preset to use Sound Groups', disabled: true }])
-    return
-  }
-  const groups = preset.groups ?? []
+  const presetId = state.activePresetId
+  const groups = state.groups
   const currentGroupId = groups.find((g) => g.soundIds.includes(id))?.id ?? null
 
   const items = groups.map((g) => ({
     label: (g.id === currentGroupId ? '✓ ' : '') + g.name,
-    onClick: () => toggleGroupMembership(preset, groups, g.id, id)
+    onClick: () => toggleGroupMembership(presetId, groups, g.id, id)
   }))
   if (items.length > 0) items.push({ separator: true })
-  items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(preset, groups, id) })
+  items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(presetId, groups, id) })
   if (currentGroupId) {
-    items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(preset, groups, currentGroupId, id) })
+    items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(presetId, groups, currentGroupId, id) })
   }
   openContextMenu(evt.clientX, evt.clientY, items)
 }
@@ -288,7 +283,7 @@ async function openSoundContextMenu(id, evt) {
 // whatever group it was already in (a simple, single-bus routing model;
 // see AudioEngine.destinationForSound). Clicking the already-checked group
 // again removes it instead (the toggle half of "toggle").
-async function toggleGroupMembership(preset, groups, groupId, soundId) {
+async function toggleGroupMembership(presetId, groups, groupId, soundId) {
   const updated = groups.map((g) => {
     if (g.id === groupId) {
       const has = g.soundIds.includes(soundId)
@@ -296,14 +291,14 @@ async function toggleGroupMembership(preset, groups, groupId, soundId) {
     }
     return { ...g, soundIds: g.soundIds.filter((s) => s !== soundId) }
   })
-  await api.presets.updateGroups(preset.id, updated)
-  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: preset.id } }))
+  await api.presets.updateGroups(presetId, updated)
+  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId } }))
 }
 
-let pendingGroupCreate = null // { preset, groups, soundId }
+let pendingGroupCreate = null // { presetId, groups, soundId }
 
-function openCreateGroupDialog(preset, groups, soundId) {
-  pendingGroupCreate = { preset, groups, soundId }
+function openCreateGroupDialog(presetId, groups, soundId) {
+  pendingGroupCreate = { presetId, groups, soundId }
   els.groupCreateName.value = ''
   showModal(els.groupCreateDialog)
   els.groupCreateName.focus()
@@ -317,10 +312,10 @@ els.groupCreateCancel.addEventListener('click', () => {
 els.groupCreateConfirm.addEventListener('click', async () => {
   if (!pendingGroupCreate) return
   const name = els.groupCreateName.value.trim() || 'Group'
-  const { preset, groups, soundId } = pendingGroupCreate
+  const { presetId, groups, soundId } = pendingGroupCreate
   const newGroup = { name, soundIds: [soundId], filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, eq: [] } }
-  await api.presets.updateGroups(preset.id, [...groups, newGroup])
-  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: preset.id } }))
+  await api.presets.updateGroups(presetId, [...groups, newGroup])
+  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId } }))
   pendingGroupCreate = null
   hideModal(els.groupCreateDialog)
 })
@@ -560,7 +555,16 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
 
 async function getOrCreateSource(entry) {
   let source = state.sources.get(entry.id)
-  if (source) return source
+  // routeSound is idempotent (a no-op once already routed correctly, see its
+  // own comment in AudioEngine.js) - calling it here too, not just right
+  // after a fresh source is constructed below, means a cached source's Sound
+  // Groups routing self-heals on every access instead of depending on every
+  // future group-membership change remembering to loop over state.sources
+  // and re-route each one by hand.
+  if (source) {
+    engine.routeSound(entry.id, source)
+    return source
+  }
 
   if (loopClipEligible(entry)) {
     source = await tryCreateBufferSource(entry)
@@ -1235,6 +1239,19 @@ async function loadPreset(preset) {
 
 async function deletePreset(id) {
   await api.presets.delete(id)
+  // If the deleted preset was the active one, its groups no longer exist
+  // anywhere - clear the cache the context menu reads (state.groups) and
+  // re-route every live source back to masterGain, the same reset loadPreset
+  // already does when switching to a preset with no groups. activePresetId
+  // itself is deliberately still cleared here too (unlike a plain mix edit,
+  // which never clears it) since the preset it names is genuinely gone, not
+  // just deviated-from.
+  if (id === state.activePresetId) {
+    state.activePresetId = null
+    state.groups = []
+    engine.setSoundGroups([])
+    for (const [sourceId, source] of state.sources) engine.routeSound(sourceId, source)
+  }
   await refreshPresetList()
 }
 
