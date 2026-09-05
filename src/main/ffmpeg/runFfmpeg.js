@@ -12,6 +12,30 @@ function captureStderrTail(stream) {
   return () => tail
 }
 
+// Reported directly: a real multi-hour export died with "ffmpeg exited with
+// code 4294967268: <a wall of raw ffmpeg progress/stderr text>" - technically
+// complete (the actual cause, "No space left on device", was right there in
+// the stderr tail) but unreadable to a non-developer at a glance, and the
+// exit code itself is a Windows unsigned-wraparound rendering of ffmpeg's own
+// signed code (4294967268 = 2^32 - 28) that means nothing to anyone. Rather
+// than reformat every ffmpeg error message, recognize the handful of known,
+// actionable failure signatures ffmpeg itself already prints to stderr and
+// lead the message with a plain sentence - the full technical detail stays
+// appended afterward, never hidden, just no longer the first (and only)
+// thing a non-technical reader sees. Centralized here rather than in
+// exportMix.js alone since any ffmpeg call in the app (loop-clip bakes,
+// waveform analysis, reverb, composite bakes) can hit the same disk-full
+// condition, not just a long export's own final mixdown.
+const FRIENDLY_FFMPEG_ERRORS = [
+  { pattern: /no space left on device/i, message: 'Not enough free disk space to finish writing the file.' }
+]
+
+function ffmpegError(code, stderrTail) {
+  const detail = `ffmpeg exited with code ${code}: ${stderrTail}`
+  const known = FRIENDLY_FFMPEG_ERRORS.find(({ pattern }) => pattern.test(stderrTail))
+  return new Error(known ? `${known.message} (${detail})` : detail)
+}
+
 // ffmpeg writes progress to stderr as `... time=HH:MM:SS.ms ...` lines
 // (carriage-return separated). Pull the most recent one out of a chunk so a
 // long render can report how far through the output it is.
@@ -50,7 +74,7 @@ export function runFfmpegToFile(args, { onProgress } = {}) {
     child.on('error', (err) => reject(err))
     child.on('close', (code) => {
       if (code === 0) resolve()
-      else reject(new Error(`ffmpeg exited with code ${code}: ${getStderrTail()}`))
+      else reject(ffmpegError(code, getStderrTail()))
     })
   })
 }
@@ -83,7 +107,7 @@ export function runFfmpegPipe(args, onChunk) {
     child.on('error', (err) => reject(err))
     child.on('close', (code) => {
       if (code === 0) resolve()
-      else reject(new Error(`ffmpeg exited with code ${code}: ${getStderrTail()}`))
+      else reject(ffmpegError(code, getStderrTail()))
     })
   })
 }

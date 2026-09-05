@@ -1023,6 +1023,20 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     return { ok: true }
   } catch (err) {
     console.error('exportMix failed', err)
+    // Reported directly: a real multi-hour export died with ENOSPC partway
+    // through the final mixdown's own ffmpeg encode - renderFinalMixdown/
+    // renderFinalMixFromTracks write straight to outputPath (no tmp-then-
+    // rename the way loopClip.js's own renders do), so a mid-write failure
+    // left a large, corrupt, half-written file sitting right at the
+    // destination the user picked - confusing on its own (looks like a real,
+    // if oddly short, result) and actively working against recovery from the
+    // very failure that caused it (a disk that's already full stays full).
+    // Best-effort: never let a cleanup problem mask the real error above.
+    try {
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath)
+    } catch (cleanupErr) {
+      console.error('exportMix: failed to remove partial output after failure', cleanupErr)
+    }
     return { ok: false, error: err.message }
   } finally {
     await cleanupFiles([...ownedShotPaths, ...batchTrackPaths, ...tiledLoopTrackPaths])

@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.156 — Export: clearer message when the disk runs out of space
+
+- A failed export now leads with a plain-language reason when it's a known, common cause (currently: running out of disk space) instead of just a raw ffmpeg error code and technical dump — the full detail is still there below it.
+- Fixed: a failed export could leave a large, corrupted, partially-written file sitting at the destination you picked. It's now cleaned up automatically.
+
 ## v0.1.155 — BUG FIX: exporting with a video/image background but no file chosen
 
 - Fixed: picking "Loop a video file" or "Loop an image" as the export's video background without actually choosing a file ran anyway and silently produced a plain black-screen video with no warning. Export now tells you to choose a file first (or switch the background) instead.
