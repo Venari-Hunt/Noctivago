@@ -637,6 +637,54 @@ main {
   font-size: 16px;
 }
 
+/* Generic right-click menu (core/ContextMenu.js) - first used by a sound
+   row's "Add to group…" menu (Sound Groups). Positioned inline via
+   style.left/top at open time. */
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 180px;
+  max-width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 2px;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: var(--surface-alt);
+}
+
+.context-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
 .modal-hint {
   margin: -8px 0 16px;
   font-size: 12px;

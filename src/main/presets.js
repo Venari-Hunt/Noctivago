@@ -52,17 +52,57 @@ export function normalizeWholeMix(input) {
   return neutral ? null : normalized
 }
 
+// "Sound Groups" - a named, non-destructive submix bus scoped to one preset
+// (see plugins/preset-remix's "Sound Groups" section + the Mixer's
+// right-click "Add to group…" menu). A subset of the preset's sounds route
+// through one shared highpass/lowpass/EQ/gain chain instead of straight to
+// masterGain, so they can be shaped together ("make these sound like
+// they're outside a house") without touching any sound's own filters. Same
+// filter shape as wholeMix minus fadeInSeconds (a group has no "on load"
+// moment of its own to fade in on) - always stored as a real object, never
+// collapsed to null on neutral, since a group's *existence* (its name +
+// membership) is the meaningful part even when its filters are untouched.
+export function normalizeGroupFilters(input) {
+  const src = input && typeof input === 'object' ? input : {}
+  return {
+    highpassHz: clamp(src.highpassHz, 0, 2000, 0),
+    lowpassHz: clamp(src.lowpassHz, 150, 20000, 20000),
+    gainDb: clamp(src.gainDb, -24, 24, 0),
+    eq: Array.isArray(src.eq) ? src.eq.map(normalizeEqBand).filter(Boolean) : []
+  }
+}
+
+function normalizeGroup(input) {
+  if (!input || typeof input !== 'object') return null
+  const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim() : 'Group'
+  return {
+    id: typeof input.id === 'string' && input.id ? input.id : crypto.randomUUID(),
+    name,
+    // A sound belongs to at most one group per preset (see the Mixer's
+    // toggleGroupMembership, which enforces this on write) - soundIds is
+    // just deduped here, not cross-checked against other groups, since this
+    // function only ever sees one group at a time.
+    soundIds: Array.isArray(input.soundIds) ? [...new Set(input.soundIds.filter((s) => typeof s === 'string'))] : [],
+    filters: normalizeGroupFilters(input.filters)
+  }
+}
+
+export function normalizeGroups(input) {
+  return Array.isArray(input) ? input.map(normalizeGroup).filter(Boolean) : []
+}
+
 export function listPresets() {
   return store.get('presets')
 }
 
-export function savePreset({ name, sounds, wholeMix }) {
+export function savePreset({ name, sounds, wholeMix, groups }) {
   const preset = {
     schemaVersion: 1,
     id: crypto.randomUUID(),
     name,
     createdAt: new Date().toISOString(),
     wholeMix: normalizeWholeMix(wholeMix),
+    groups: normalizeGroups(groups),
     sounds: sounds.map((s) => ({
       soundId: s.soundId,
       type: 'local',
@@ -74,6 +114,20 @@ export function savePreset({ name, sounds, wholeMix }) {
   presets.push(preset)
   store.set('presets', presets)
   return preset
+}
+
+// Edits an existing preset's Sound Groups in place (create/rename/delete/
+// change membership/change filters all go through this - the renderer
+// always sends the full desired array, same "replace the whole field"
+// pattern updatePresetWholeMix/updatePresetSounds already use). Returns the
+// updated preset, or null if the id is unknown.
+export function updatePresetGroups(id, groups) {
+  const presets = store.get('presets')
+  const idx = presets.findIndex((p) => p.id === id)
+  if (idx === -1) return null
+  presets[idx] = { ...presets[idx], groups: normalizeGroups(groups) }
+  store.set('presets', presets)
+  return presets[idx]
 }
 
 // Edits an existing preset's whole-mix processing in place (the Preset Remix

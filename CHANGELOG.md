@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.143 — Sound Groups: EQ several sounds together, non-destructively
+
+- New "Sound Groups" section on the Preset Remix tab — group some of a preset's sounds into one shared submix and EQ them together (e.g. crickets + toads to sound like they're outside a house), without touching each sound's own filters.
+- Right-click any sound in the Mixer to add it to a group or create a new one on the spot — the same groups the Preset Remix tab manages.
+- Each group has its own highpass/lowpass/gain and a full parametric EQ, previews live while you drag, and can start from a copy of another group's settings (from any preset).
+- Groups only exist on the preset they were created for — a sound belongs to at most one group at a time.
+
 ## v0.1.142 — Remix: autosave, and the Saved-audio preview stays picked
 
 - Remix now autosaves a few seconds after you stop editing, so the "Saved audio" preview toggle stays available without you needing to remember to hit Save.

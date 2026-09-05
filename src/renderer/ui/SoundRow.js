@@ -233,6 +233,16 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
 
+  // Right-click menu - currently just Sound Groups ("Add to group…", see
+  // AudioEngine.js's SoundGroupChain), left generic (evt handed through
+  // whole) so a future menu item doesn't need a second wiring point here.
+  if (callbacks.onContextMenu) {
+    li.addEventListener('contextmenu', (evt) => {
+      evt.preventDefault()
+      callbacks.onContextMenu(entry.id, evt)
+    })
+  }
+
   // The name gets its own full-width top section so it doesn't compete with
   // the button row for space - requested directly ("the name should
   // populate a top section of the box so it can always or most of the time

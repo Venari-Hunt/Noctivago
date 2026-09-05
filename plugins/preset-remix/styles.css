@@ -128,3 +128,134 @@
   color: var(--text-dim);
   min-height: 1em;
 }
+
+/* Sound Groups - a named submix bus scoped to the selected preset (see
+   AudioEngine.js's SoundGroupChain). Shares the .premix-* look but is its
+   own section below the whole-mix controls, since a group is a second,
+   independent thing to edit, not part of the whole-mix dirty/save state. */
+.premix-groups {
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.premix-groups.premix-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.premix-group-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.premix-group-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.premix-group-item-active {
+  border-color: var(--accent);
+}
+
+.premix-group-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.premix-group-item-count {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.premix-group-item-delete {
+  flex-shrink: 0;
+}
+
+.premix-group-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+}
+
+.premix-group-create {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.premix-group-create input[type='text'] {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.premix-group-create select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  max-width: 160px;
+}
+
+.premix-group-editor {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.premix-group-editor.hidden {
+  display: none;
+}
+
+.premix-group-editor h4 {
+  margin: 16px 0 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.premix-group-editor .premix-row input[type='text'] {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.premix-group-members {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.premix-group-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 4px;
+}

@@ -8,6 +8,7 @@ import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
 import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
+import { openContextMenu } from '../../core/ContextMenu.js'
 import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
 import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
 
@@ -44,7 +45,13 @@ const state = {
   // Remix plugin's live-preview events (only the active preset's edits are
   // heard). Not cleared when the user then deviates from the preset by hand -
   // it just tracks "what did we last load."
-  activePresetId: null
+  activePresetId: null,
+  // Sound Groups (see AudioEngine.js's SoundGroupChain) belonging to
+  // whichever preset is active - kept here purely so the right-click
+  // context menu can list them without an extra IPC round-trip on every
+  // open; the source of truth is always presets.list(), re-fetched whenever
+  // this could be stale (loadPreset, the sound-groups-changed bridge below).
+  groups: []
 }
 
 const els = {
@@ -100,7 +107,12 @@ const els = {
   presetImportList: document.getElementById('preset-import-list'),
   presetImportStatus: document.getElementById('preset-import-status'),
   presetImportCancel: document.getElementById('preset-import-cancel'),
-  presetImportConfirm: document.getElementById('preset-import-confirm')
+  presetImportConfirm: document.getElementById('preset-import-confirm'),
+
+  groupCreateDialog: document.getElementById('group-create-dialog'),
+  groupCreateName: document.getElementById('group-create-name'),
+  groupCreateCancel: document.getElementById('group-create-cancel'),
+  groupCreateConfirm: document.getElementById('group-create-confirm')
 }
 
 let pickedFile = null
@@ -204,7 +216,8 @@ function render() {
       onRelink: relinkSound,
       onRename: renameSound,
       onTagsChange: changeTags,
-      onReorderDrop: reorderByDrop
+      onReorderDrop: reorderByDrop,
+      onContextMenu: openSoundContextMenu
     },
     allTags
   )
@@ -236,6 +249,86 @@ async function renameSound(id, name) {
   await api.library.rename(id, name)
   await refreshList()
 }
+
+// Sound Groups (see AudioEngine.js's SoundGroupChain) - a right-click menu
+// on a sound row, requested directly ("accessible on a right click context
+// menu, on the mixer tab"). Groups are scoped to a preset, so this only
+// works once one is loaded; membership toggles write straight through
+// (no draft/Save step, unlike a group's own filters/EQ, which are edited in
+// the Preset Remix plugin's "Sound Groups" section) and broadcast
+// noctivago:sound-groups-changed so any other live view (Preset Remix, this
+// same Mixer if the edited preset is the active one) picks up the change.
+async function openSoundContextMenu(id, evt) {
+  if (!state.activePresetId) {
+    openContextMenu(evt.clientX, evt.clientY, [{ label: 'Load a preset to use Sound Groups', disabled: true }])
+    return
+  }
+  const presets = await api.presets.list()
+  const preset = presets.find((p) => p.id === state.activePresetId)
+  if (!preset) {
+    openContextMenu(evt.clientX, evt.clientY, [{ label: 'Load a preset to use Sound Groups', disabled: true }])
+    return
+  }
+  const groups = preset.groups ?? []
+  const currentGroupId = groups.find((g) => g.soundIds.includes(id))?.id ?? null
+
+  const items = groups.map((g) => ({
+    label: (g.id === currentGroupId ? '✓ ' : '') + g.name,
+    onClick: () => toggleGroupMembership(preset, groups, g.id, id)
+  }))
+  if (items.length > 0) items.push({ separator: true })
+  items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(preset, groups, id) })
+  if (currentGroupId) {
+    items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(preset, groups, currentGroupId, id) })
+  }
+  openContextMenu(evt.clientX, evt.clientY, items)
+}
+
+// A sound belongs to at most one group per preset - joining group B leaves
+// whatever group it was already in (a simple, single-bus routing model;
+// see AudioEngine.destinationForSound). Clicking the already-checked group
+// again removes it instead (the toggle half of "toggle").
+async function toggleGroupMembership(preset, groups, groupId, soundId) {
+  const updated = groups.map((g) => {
+    if (g.id === groupId) {
+      const has = g.soundIds.includes(soundId)
+      return { ...g, soundIds: has ? g.soundIds.filter((s) => s !== soundId) : [...g.soundIds, soundId] }
+    }
+    return { ...g, soundIds: g.soundIds.filter((s) => s !== soundId) }
+  })
+  await api.presets.updateGroups(preset.id, updated)
+  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: preset.id } }))
+}
+
+let pendingGroupCreate = null // { preset, groups, soundId }
+
+function openCreateGroupDialog(preset, groups, soundId) {
+  pendingGroupCreate = { preset, groups, soundId }
+  els.groupCreateName.value = ''
+  showModal(els.groupCreateDialog)
+  els.groupCreateName.focus()
+}
+
+els.groupCreateCancel.addEventListener('click', () => {
+  pendingGroupCreate = null
+  hideModal(els.groupCreateDialog)
+})
+
+els.groupCreateConfirm.addEventListener('click', async () => {
+  if (!pendingGroupCreate) return
+  const name = els.groupCreateName.value.trim() || 'Group'
+  const { preset, groups, soundId } = pendingGroupCreate
+  const newGroup = { name, soundIds: [soundId], filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, eq: [] } }
+  await api.presets.updateGroups(preset.id, [...groups, newGroup])
+  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: preset.id } }))
+  pendingGroupCreate = null
+  hideModal(els.groupCreateDialog)
+})
+
+els.groupCreateName.addEventListener('keydown', (evt) => {
+  if (evt.key === 'Enter') els.groupCreateConfirm.click()
+  else if (evt.key === 'Escape') els.groupCreateCancel.click()
+})
 
 // Snapshot of the exact loop points + filters a BufferSoundSource's decoded
 // AudioBuffer was baked from - stashed on the source at creation time (see
@@ -526,6 +619,7 @@ async function getOrCreateSource(entry) {
   }
 
   state.sources.set(entry.id, source)
+  engine.routeSound(entry.id, source)
   return source
 }
 
@@ -1127,6 +1221,14 @@ async function loadPreset(preset) {
   state.activePresetId = preset.id
   engine.wholeMix.set(preset.wholeMix ?? null, { fadeInSeconds: preset.wholeMix?.fadeInSeconds ?? 0 })
 
+  // Sound Groups (see AudioEngine.js's SoundGroupChain) - install this
+  // preset's groups and re-route every already-live source to match, since
+  // switching presets can change (or clear) which group a given sound
+  // belongs to.
+  state.groups = preset.groups ?? []
+  engine.setSoundGroups(state.groups)
+  for (const [id, source] of state.sources) engine.routeSound(id, source)
+
   hideModal(els.presetsModal)
   render()
 }
@@ -1313,5 +1415,24 @@ document.addEventListener('library:linked', refreshList)
   window.addEventListener('noctivago:whole-mix-preview', (e) => {
     if (!e.detail || e.detail.presetId !== state.activePresetId) return
     engine.wholeMix.set(e.detail.wholeMix ?? null)
+  })
+  // Sound Groups (see AudioEngine.js's SoundGroupChain) - same two-event
+  // shape as whole-mix-preview above, split for the same reason: a live
+  // filter/EQ drag needs no re-fetch (just forwarded straight to the
+  // already-installed chain), while a structural change (create/delete/
+  // membership, from either this Mixer's own context menu or the Preset
+  // Remix plugin) needs a fresh copy of the preset's groups and every live
+  // source re-routed to match.
+  window.addEventListener('noctivago:sound-group-preview', (e) => {
+    if (!e.detail || e.detail.presetId !== state.activePresetId) return
+    engine.previewGroup(e.detail.groupId, e.detail.filters)
+  })
+  window.addEventListener('noctivago:sound-groups-changed', async (e) => {
+    if (!e.detail || e.detail.presetId !== state.activePresetId) return
+    const presets = await api.presets.list()
+    const preset = presets.find((p) => p.id === state.activePresetId)
+    state.groups = preset?.groups ?? []
+    engine.setSoundGroups(state.groups)
+    for (const [id, source] of state.sources) engine.routeSound(id, source)
   })
 }
