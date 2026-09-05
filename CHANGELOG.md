@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.149 — Self-review pass: Sound Groups solo fix + cleanup
+
+- Fixed: soloing a Sound Group, then soloing a single sound instead, could leave both active at once with some sounds stuck muted — soloing one now always releases the other.
+- Fixed: deleting a Sound Group while it was soloed could leave its sounds muted with no way to un-mute them.
+- Fixed: rapidly toggling group membership from the Mixer's own right-click menu could lose one of the changes (the same race already fixed once for the Remix tab's own group editor).
+- Fixed: the Remix tab's Preset/Group live-loudness view was quietly redoing real audio-analysis work 60 times a second even when nothing changed — no audible effect, just wasted CPU.
+
 ## v0.1.148 — Preset/Group mode: a real Play button and a live loudness view
 
 - Preset and Group mode in the Remix tab now have their own Play/Pause button — no more needing to go load the preset in the Mixer first just to hear what you're editing.

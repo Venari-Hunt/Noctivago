@@ -822,28 +822,6 @@
   min-width: 200px;
 }
 
-/* Purple group badge - same color as the Mixer's own SoundRow.js badge
-   (src/renderer/styles/main.css's .sound-row-group-badge), duplicated here
-   for the same cross-directory reason every other small UI constant in this
-   plugin is duplicated rather than imported. */
-.editor-group-badge {
-  display: inline-flex;
-  align-items: center;
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: rgba(187, 154, 247, 0.18);
-  color: #bb9af7;
-  border: 1px solid rgba(187, 154, 247, 0.4);
-  margin-left: 8px;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.editor-group-badge:hover {
-  background: rgba(187, 154, 247, 0.3);
-}
-
 .editor-mix-controls.editor-mix-disabled {
   opacity: 0.4;
   pointer-events: none;
@@ -882,84 +860,6 @@
 .editor-mix-eq-fields input:disabled,
 .editor-mix-eq-fields select:disabled {
   opacity: 0.45;
-}
-
-.editor-mix-groups {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.editor-mix-groups.editor-mix-disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-.editor-mix-group-list {
-  list-style: none;
-  margin: 0 0 10px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.editor-mix-group-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface-alt);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.editor-mix-group-item-active {
-  border-color: var(--accent);
-}
-
-.editor-mix-group-item-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.editor-mix-group-item-count {
-  color: var(--text-dim);
-  flex-shrink: 0;
-}
-
-.editor-mix-group-empty {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin: 0 0 10px;
-}
-
-.editor-mix-group-create {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.editor-mix-group-create input[type='text'] {
-  flex: 1;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface-alt);
-  color: var(--text);
-}
-
-.editor-mix-group-create select {
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface-alt);
-  color: var(--text);
-  max-width: 160px;
 }
 
 .editor-mix-group-editor {

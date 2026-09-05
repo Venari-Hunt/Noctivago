@@ -277,12 +277,12 @@ function openSoundContextMenu(id, evt) {
 
   const items = groups.map((g) => ({
     label: (g.id === currentGroupId ? '✓ ' : '') + g.name,
-    onClick: () => toggleGroupMembership(presetId, groups, g.id, id)
+    onClick: () => toggleGroupMembership(presetId, g.id, id)
   }))
   if (items.length > 0) items.push({ separator: true })
-  items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(presetId, groups, id) })
+  items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(presetId, id) })
   if (currentGroupId) {
-    items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(presetId, groups, currentGroupId, id) })
+    items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(presetId, currentGroupId, id) })
   }
   openContextMenu(evt.clientX, evt.clientY, items)
 }
@@ -291,22 +291,47 @@ function openSoundContextMenu(id, evt) {
 // whatever group it was already in (a simple, single-bus routing model;
 // see AudioEngine.destinationForSound). Clicking the already-checked group
 // again removes it instead (the toggle half of "toggle").
-async function toggleGroupMembership(presetId, groups, groupId, soundId) {
-  const updated = groups.map((g) => {
+//
+// Queued onto _groupMembershipQueue rather than fired directly (self-review,
+// v0.1.149): right-clicking two different sounds' context menus in quick
+// succession used to read-then-write groups independently, so the second
+// write could silently clobber the first (the exact race already caught and
+// fixed once for the Remix tab's own group editor - this sibling
+// implementation had the identical shape and was missed). Reads state.groups
+// fresh when the queued call actually executes (not a menu-open-time
+// snapshot, which could be stale by the time the user clicks an item) and
+// writes the real IPC response straight back to state.groups before the
+// next queued call can run, rather than depending on the redundant
+// sound-groups-changed round-trip's own timing.
+let _groupMembershipQueue = Promise.resolve()
+function toggleGroupMembership(presetId, groupId, soundId) {
+  _groupMembershipQueue = _groupMembershipQueue.then(() => toggleGroupMembershipNow(presetId, groupId, soundId))
+  return _groupMembershipQueue
+}
+
+async function toggleGroupMembershipNow(presetId, groupId, soundId) {
+  const current = presetId === state.activePresetId ? state.groups : (await api.presets.list()).find((p) => p.id === presetId)?.groups ?? []
+  const updated = current.map((g) => {
     if (g.id === groupId) {
       const has = g.soundIds.includes(soundId)
       return { ...g, soundIds: has ? g.soundIds.filter((s) => s !== soundId) : [...g.soundIds, soundId] }
     }
     return { ...g, soundIds: g.soundIds.filter((s) => s !== soundId) }
   })
-  await api.presets.updateGroups(presetId, updated)
+  const saved = await api.presets.updateGroups(presetId, updated)
+  if (presetId === state.activePresetId) {
+    state.groups = saved?.groups ?? updated
+    engine.setSoundGroups(state.groups)
+    for (const [id, source] of state.sources) engine.routeSound(id, source)
+    render()
+  }
   window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId } }))
 }
 
-let pendingGroupCreate = null // { presetId, groups, soundId }
+let pendingGroupCreate = null // { presetId, soundId }
 
-function openCreateGroupDialog(presetId, groups, soundId) {
-  pendingGroupCreate = { presetId, groups, soundId }
+function openCreateGroupDialog(presetId, soundId) {
+  pendingGroupCreate = { presetId, soundId }
   els.groupCreateName.value = ''
   showModal(els.groupCreateDialog)
   els.groupCreateName.focus()
@@ -320,9 +345,20 @@ els.groupCreateCancel.addEventListener('click', () => {
 els.groupCreateConfirm.addEventListener('click', async () => {
   if (!pendingGroupCreate) return
   const name = els.groupCreateName.value.trim() || 'Group'
-  const { presetId, groups, soundId } = pendingGroupCreate
+  const { presetId, soundId } = pendingGroupCreate
+  // Fetched fresh here rather than trusting whatever was captured when the
+  // context menu was opened - this dialog can sit open for a while (the
+  // user typing a name), long enough for a real staleness gap against
+  // groups changed elsewhere in the meantime.
+  const current = presetId === state.activePresetId ? state.groups : (await api.presets.list()).find((p) => p.id === presetId)?.groups ?? []
   const newGroup = { name, soundIds: [soundId], filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, eq: [] } }
-  await api.presets.updateGroups(presetId, [...groups, newGroup])
+  const saved = await api.presets.updateGroups(presetId, [...current, newGroup])
+  if (presetId === state.activePresetId) {
+    state.groups = saved?.groups ?? [...current, newGroup]
+    engine.setSoundGroups(state.groups)
+    for (const [id, source] of state.sources) engine.routeSound(id, source)
+    render()
+  }
   window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId } }))
   pendingGroupCreate = null
   hideModal(els.groupCreateDialog)
@@ -770,29 +806,56 @@ function toggleMute(id) {
 // true) safe to call from either entry point at any time, even mid-solo
 // from the *other* one, without ever leaving the new target itself stuck
 // muted from the previous solo's own mute pass.
-function releaseSolo() {
-  for (const id of state.soloMutedIds) {
+// Shared mechanics for both solo flavors below (single-sound and group) -
+// only mutes sounds actually in state.included (muting an excluded sound
+// would do nothing audible and could confuse the un-solo step), and only
+// ones not already muted, so a sound the user muted by hand stays muted
+// after either kind of solo releases. The two *states* (soloedSoundId vs.
+// soloedGroupId) stay genuinely separate, not generalized into one - several
+// places (SoundRow highlighting) read soloedSoundId as a scalar "is this the
+// one" - but there's no reason the mute/unmute loop itself needs two copies.
+function muteAllExcept(keepIds, mutedSet) {
+  for (const id of state.included) {
+    if (keepIds.has(id) || state.mutedSounds.has(id)) continue
+    state.mutedSounds.add(id)
+    mutedSet.add(id)
+    state.sources.get(id)?.setVolume(effectiveVolume(id))
+  }
+}
+
+function releaseMuted(mutedSet) {
+  for (const id of mutedSet) {
     state.mutedSounds.delete(id)
     state.sources.get(id)?.setVolume(effectiveVolume(id))
   }
-  state.soloMutedIds.clear()
+  mutedSet.clear()
+}
+
+// Single-target solo (like a DAW's own solo buttons, not a solo *group*):
+// soloing a second sound while one's already soloed switches the target
+// rather than stacking. releaseSolo() is the one path that ever un-mutes
+// what solo itself muted, called both by a plain toggle-off and by
+// applySolo() itself when the target changes - this makes applySolo(id,
+// true) safe to call from either entry point at any time, even mid-solo
+// from the *other* one, without ever leaving the new target itself stuck
+// muted from the previous solo's own mute pass.
+function releaseSolo() {
+  releaseMuted(state.soloMutedIds)
   state.soloedSoundId = null
 }
 
-// Only mutes sounds actually in state.included (muting an excluded sound
-// would do nothing audible and could confuse the un-solo step), and only
-// ones not already muted - so a sound the user muted by hand stays muted
-// after solo releases, and this stays safe to call repeatedly.
 function applySolo(soloId, active) {
   if (active) {
+    // BUG FIX (self-review, v0.1.149): a caught-live-in-review asymmetry -
+    // releaseGroupSolo() already released the single-sound solo before
+    // taking over, but this direction never released a group solo, so
+    // soloing a group then soloing one sound left both active at once
+    // (contradicting the "mutually exclusive" doc comment on
+    // applyGroupSolo below), with groupSoloMutedIds stuck stale.
+    if (state.soloedGroupId) releaseGroupSolo()
     if (state.soloedSoundId && state.soloedSoundId !== soloId) releaseSolo()
     state.soloedSoundId = soloId
-    for (const id of state.included) {
-      if (id === soloId || state.mutedSounds.has(id)) continue
-      state.mutedSounds.add(id)
-      state.soloMutedIds.add(id)
-      state.sources.get(id)?.setVolume(effectiveVolume(id))
-    }
+    muteAllExcept(new Set([soloId]), state.soloMutedIds)
   } else if (state.soloedSoundId === soloId) {
     releaseSolo()
   }
@@ -804,17 +867,13 @@ function toggleSolo(id) {
 }
 
 // Group solo (v0.1.148) - the merged Remix tab's Group-mode "hear just this
-// group" Play/Solo button, same shape as applySolo/releaseSolo above but for
-// a set of ids at once. Mutually exclusive with the single-sound solo (each
-// releases the other) rather than stacking, since "solo this group" and
-// "solo this one sound" are two different answers to the same question
-// ("what do I want to hear right now").
+// group" Play/Solo button, same shared mechanics as applySolo/releaseSolo
+// above but for a set of ids at once. Mutually exclusive with the
+// single-sound solo (each releases the other) rather than stacking, since
+// "solo this group" and "solo this one sound" are two different answers to
+// the same question ("what do I want to hear right now").
 function releaseGroupSolo() {
-  for (const id of state.groupSoloMutedIds) {
-    state.mutedSounds.delete(id)
-    state.sources.get(id)?.setVolume(effectiveVolume(id))
-  }
-  state.groupSoloMutedIds.clear()
+  releaseMuted(state.groupSoloMutedIds)
   state.soloedGroupId = null
   render()
 }
@@ -823,12 +882,7 @@ function applyGroupSolo(groupId, memberIds) {
   if (state.soloedSoundId) releaseSolo()
   if (state.soloedGroupId && state.soloedGroupId !== groupId) releaseGroupSolo()
   state.soloedGroupId = groupId
-  for (const id of state.included) {
-    if (memberIds.includes(id) || state.mutedSounds.has(id)) continue
-    state.mutedSounds.add(id)
-    state.groupSoloMutedIds.add(id)
-    state.sources.get(id)?.setVolume(effectiveVolume(id))
-  }
+  muteAllExcept(new Set(memberIds), state.groupSoloMutedIds)
   render()
 }
 
@@ -1465,9 +1519,9 @@ document.addEventListener('library:linked', refreshList)
     for (const id of [...state.playing]) stopPlayback(id)
     render()
   })
-  // The Preset Remix plugin (plugins/preset-remix/) dispatches this on every
-  // control change while editing a preset, and once more with the saved
-  // values when its tab is left (so an unsaved preview reverts). Same
+  // The Remix plugin's Preset mode (plugins/editor/) dispatches this on
+  // every control change while editing a preset, and once more with the
+  // saved values when leaving that mode (so an unsaved preview reverts). Same
   // window-CustomEvent bridge as the Solo button - the plugin only has the
   // curated window.noctivago IPC surface, no line to this module's engine.
   // Only the currently-loaded preset's edits are applied, so editing preset A
@@ -1494,6 +1548,19 @@ document.addEventListener('library:linked', refreshList)
     state.groups = preset?.groups ?? []
     engine.setSoundGroups(state.groups)
     for (const [id, source] of state.sources) engine.routeSound(id, source)
+    // BUG FIX (self-review, v0.1.149): a group solo's own member snapshot
+    // (applyGroupSolo's memberIds) is only ever captured at the moment
+    // solo started - deleting the soloed group here (or editing its
+    // membership) previously left state.soloedGroupId pointing at a group
+    // that either no longer exists (its own sounds stay muted forever, with
+    // no UI left to un-stick them since the group itself is gone) or has
+    // stale members (added sounds stay muted, removed ones stay silenced).
+    // Re-derive it from the freshly-fetched groups every time this fires.
+    if (state.soloedGroupId) {
+      const stillActive = state.groups.find((g) => g.id === state.soloedGroupId)
+      if (stillActive) applyGroupSolo(stillActive.id, stillActive.soundIds)
+      else releaseGroupSolo()
+    }
     // v0.1.147: each Mixer row now shows a group-membership badge
     // (SoundRow.js's groupName), so a membership change needs to actually
     // re-render the list - previously this listener only ever fed the

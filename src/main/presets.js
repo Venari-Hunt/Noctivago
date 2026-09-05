@@ -10,8 +10,8 @@ const store = new Store({
 // whenever that preset is loaded in the Mixer (the live counterpart of the
 // Export tab's "Whole-mix processing" section). `null` / absent = neutral.
 // EQ (`eq`) is a variable-length band array in the same shape as a sound's
-// own filters.eq (see library.js) - kept here so the Preset Remix plugin and
-// the renderer's WholeMixChain agree without a shared import.
+// own filters.eq (see library.js) - kept here so the Remix plugin's Preset
+// mode and the renderer's WholeMixChain agree without a shared import.
 const EQ_BAND_TYPES = ['off', 'lowpass', 'highpass', 'bandpass', 'notch', 'lowshelf', 'highshelf', 'peaking']
 
 function clamp(value, lo, hi, fallback) {
@@ -53,8 +53,8 @@ export function normalizeWholeMix(input) {
 }
 
 // "Sound Groups" - a named, non-destructive submix bus scoped to one preset
-// (see plugins/preset-remix's "Sound Groups" section + the Mixer's
-// right-click "Add to group…" menu). A subset of the preset's sounds route
+// (see the Remix plugin's Group mode + the Mixer's right-click "Add to
+// group…" menu). A subset of the preset's sounds route
 // through one shared highpass/lowpass/EQ/gain chain instead of straight to
 // masterGain, so they can be shaped together ("make these sound like
 // they're outside a house") without touching any sound's own filters. Same
@@ -130,8 +130,8 @@ export function updatePresetGroups(id, groups) {
   return presets[idx]
 }
 
-// Edits an existing preset's whole-mix processing in place (the Preset Remix
-// plugin's Save). Returns the updated preset, or null if the id is unknown.
+// Edits an existing preset's whole-mix processing in place (the Remix
+// plugin's Preset-mode Save). Returns the updated preset, or null if the id is unknown.
 export function updatePresetWholeMix(id, wholeMix) {
   const presets = store.get('presets')
   const idx = presets.findIndex((p) => p.id === id)

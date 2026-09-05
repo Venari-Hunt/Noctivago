@@ -137,6 +137,16 @@ export class WholeMixEqEditor {
     this._dragIndex = -1
     this._liveSpectrum = null
     this._freqDataBuffer = null
+    // Response-curve cache (self-review v0.1.149) - this file was copied
+    // from the Sound-mode EqEditor.js but left this out; tickSpectrum() gets
+    // called every rAF frame for as long as Preset/Group mode is open, and
+    // without this, computeResponseCurve()'s OfflineAudioContext/
+    // BiquadFilterNode DSP work (real cost, scaled by band count × canvas
+    // width) re-ran 60x/sec for output that's identical on all but the one
+    // frame something actually changed. See EqEditor.js's own getResponseCurve
+    // for the original of this exact fix.
+    this._cachedCurveKey = null
+    this._cachedCurve = null
 
     canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e))
     window.addEventListener('pointermove', (e) => this._onPointerMove(e))
@@ -299,6 +309,15 @@ export class WholeMixEqEditor {
     this.onChange?.(this.bands.map((b) => ({ ...b })), { selectionOnly: true })
   }
 
+  _getResponseCurve(width) {
+    const key = JSON.stringify(this.bands) + '|' + Math.round(width)
+    if (key !== this._cachedCurveKey) {
+      this._cachedCurveKey = key
+      this._cachedCurve = computeResponseCurve(this.bands, width)
+    }
+    return this._cachedCurve
+  }
+
   draw() {
     const { width, height, dpr } = resizeCanvasForDisplay(this.canvas)
     const ctx = this.canvas.getContext('2d')
@@ -331,7 +350,7 @@ export class WholeMixEqEditor {
       ctx.fillText(f >= 1000 ? `${f / 1000}k` : String(f), xx + 3, height - 9)
     }
 
-    const curve = computeResponseCurve(this.bands, width)
+    const curve = this._getResponseCurve(width)
     if (curve) {
       ctx.strokeStyle = '#7aa2f7'
       ctx.lineWidth = 2
