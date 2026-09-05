@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.150 — BUG FIX: export progress bar stuck at 100%, video export slow
+
+- Fixed: exporting with "Loop a video file" or "Audio-reactive visualization" as the video background could sit at 100% with no visible progress for a long time — that phase genuinely wasn't finished, but wasn't counted in the progress bar's own math. It now shows real progress through the video render too, and the bar only reaches 100% when everything is actually done.
+- The export log now stamps each step with the real clock time it started, not just how long it took once it's over.
+
 ## v0.1.149 — Self-review pass: Sound Groups solo fix + cleanup
 
 - Fixed: soloing a Sound Group, then soloing a single sound instead, could leave both active at once with some sounds stuck muted — soloing one now always releases the other.

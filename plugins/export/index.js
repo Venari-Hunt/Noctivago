@@ -159,7 +159,13 @@ export default class ExportPlugin {
       this.lastStepAt = Date.now()
       const line = document.createElement('div')
       line.className = 'export-log-line'
-      line.textContent = payload.label
+      // Real wall-clock timestamp alongside the existing step-duration stamp
+      // (which only appears once the step is *over*) - reported directly
+      // ("the logging on the export tab should be timestamped with real
+      // time and the time it took to complete that step") so a step that's
+      // still running shows *when* it started, not just silence until it
+      // eventually finishes.
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${payload.label}`
       this.els.log.appendChild(line)
       this.els.log.scrollTop = this.els.log.scrollHeight
     }

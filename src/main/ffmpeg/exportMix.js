@@ -734,18 +734,31 @@ async function renderLoopedVideoFromFile(audioPath, durationSeconds, videoSource
     throw new Error(`Could not read the chosen video file (${path.basename(videoSourcePath)}).`)
   }
   const needsLoop = videoDuration < durationSeconds
-  await runFfmpegToFile([
-    '-y',
-    ...(needsLoop ? ['-stream_loop', '-1'] : []),
-    '-i', videoSourcePath,
-    '-i', audioPath,
-    '-map', '0:v:0', '-map', '1:a:0',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
-    '-c:a', 'copy',
-    '-shortest',
-    '-t', durationSeconds.toFixed(3),
-    videoPath
-  ])
+  await runFfmpegToFile(
+    [
+      '-y',
+      ...(needsLoop ? ['-stream_loop', '-1'] : []),
+      '-i', videoSourcePath,
+      '-i', audioPath,
+      '-map', '0:v:0', '-map', '1:a:0',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+      '-c:a', 'copy',
+      '-shortest',
+      '-t', durationSeconds.toFixed(3),
+      videoPath
+    ],
+    // BUG FIX (reported directly: "Percentage is stuck on 100%... if it's
+    // 100% it means it's done"): this is a real -c:v libx264 re-encode
+    // (unlike the near-instant -c copy black-screen mux), genuinely slow for
+    // a long export duration - but totalWorkSeconds (below, in exportMix's
+    // own reporter setup) never budgeted this phase at all, so the reporter
+    // was already at fraction 1.0 by the time this ever started, and this
+    // call reported zero progress during it (a plain fire-and-forget spawn).
+    // Wired the same real-time ffmpeg-stderr-parsed progress the main
+    // mixdown already gets.
+    { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+  )
+  reporter?.completePhase(durationSeconds)
   return videoPath
 }
 
@@ -802,8 +815,21 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   // (now cheap) final combine, rather than just the one duration the
   // default single-pass mixdown costs.
   const mixdownWorkSeconds = parallelMixdown ? loopSounds.length * durationSeconds + durationSeconds : durationSeconds
+  // BUG FIX (reported directly: "Percentage is stuck on 100%... this is
+  // taking SUUUUUUUPER LONG"): a 'file' (loop your own video) or
+  // 'visualization' background is a real -c:v libx264 re-encode across the
+  // whole export duration - genuinely slow, but never budgeted into the
+  // progress total, so the bar hit 100% the instant the *audio* finished
+  // and then sat there with zero visible movement for the entire video
+  // encode. 'black' stays unbudgeted - its own mux is a near-instant -c
+  // copy, not a real encode (see renderBlackScreenVideo's own comment).
+  const needsVideo = videoMode === 'video-only' || videoMode === 'both'
+  const videoNeedsRealEncode = needsVideo && (videoBackground === 'file' || videoBackground === 'visualization')
+  const videoWorkSeconds = videoNeedsRealEncode ? durationSeconds : 0
   const totalWorkSeconds =
-    mixdownWorkSeconds + eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0)
+    mixdownWorkSeconds +
+    eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0) +
+    videoWorkSeconds
   const reporter = makeReporter(onProgress, totalWorkSeconds)
 
   if (sounds.length === 0) return { ok: false, error: 'No sounds to export' }

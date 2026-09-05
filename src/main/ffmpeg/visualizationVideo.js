@@ -81,17 +81,21 @@ export async function renderVisualizationVideo(audioPath, durationSeconds, optio
     ? `[0:a]${vizFilter}[v]`
     : `color=c=${hexToFfmpegColor(bgColor)}:s=${size}:r=${VIZ_FPS}:d=${durationSeconds.toFixed(3)}[bg];` +
       `[0:a]${vizFilter}[wave];[bg][wave]blend=all_mode=screen[v]`
-  await runFfmpegToFile([
-    '-y',
-    '-i', audioPath,
-    '-filter_complex', filterComplex,
-    '-map', '[v]', '-map', '0:a',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
-    '-c:a', 'copy',
-    '-shortest',
-    '-t', durationSeconds.toFixed(3),
-    videoPath
-  ])
+  await runFfmpegToFile(
+    [
+      '-y',
+      '-i', audioPath,
+      '-filter_complex', filterComplex,
+      '-map', '[v]', '-map', '0:a',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      '-c:a', 'copy',
+      '-shortest',
+      '-t', durationSeconds.toFixed(3),
+      videoPath
+    ],
+    { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+  )
+  reporter?.completePhase(durationSeconds)
   return videoPath
 }
 
