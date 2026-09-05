@@ -46,6 +46,24 @@ export class BakedClipPreview {
     this.outputGainNode.gain.value = 0
     this.sourceNode.connect(this.outputGainNode)
     this.outputGainNode.connect(engine.masterGain)
+
+    // Live spectrum analyzer tap for the EQ graph's backdrop - reported
+    // directly ("the spectogram isn't visible either with the saved audio,
+    // it is imperative that it works"). Sound mode's PreviewSource has one of
+    // these already; this class never got one, so index.js's
+    // tickPreviewPlayhead() had nothing to feed tickSpectrum() while in
+    // 'saved' mode. Tapped straight off sourceNode (the raw decoded clip) via
+    // a fixed-gain feed node, same "decoupled from anything downstream"
+    // pattern PreviewSource/WholeMixChain/SoundGroupChain all use - here
+    // there's no separate pre-EQ/post-EQ distinction to preserve (the clip
+    // already has every filter baked in), so unlike PreviewSource's own tap
+    // point this is simply the actual final signal.
+    this.analyserFeedNode = engine.context.createGain()
+    this.analyserFeedNode.gain.value = 1
+    this.sourceNode.connect(this.analyserFeedNode)
+    this.analyserNode = engine.context.createAnalyser()
+    this.analyserNode.fftSize = 2048
+    this.analyserFeedNode.connect(this.analyserNode)
   }
 
   waitForMetadata() {
@@ -104,5 +122,7 @@ export class BakedClipPreview {
     this.audioEl.load()
     this.sourceNode.disconnect()
     this.outputGainNode.disconnect()
+    this.analyserFeedNode.disconnect()
+    this.analyserNode.disconnect()
   }
 }

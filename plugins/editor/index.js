@@ -2632,8 +2632,12 @@ export default class EditorPlugin {
       const currentTime = active.audioEl.currentTime
       this.loopEditorController.setPlayhead(currentTime)
       this.updateStickyProgress(currentTime)
-      this.eqEditorController.tickSpectrum(active.analyserNode)
     }
+    // BakedClipPreview (the 'saved' engine) gained its own analyserNode
+    // specifically so this can stay a single unconditional call rather than
+    // one more mode branch - the spectrogram should track whichever engine
+    // is actually audible either way.
+    this.eqEditorController.tickSpectrum(active.analyserNode)
     this.previewRafId = requestAnimationFrame(() => this.tickPreviewPlayhead())
   }
 

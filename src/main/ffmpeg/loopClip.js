@@ -6,6 +6,36 @@ import { getOrCreateReverbIR } from './reverbIR.js'
 
 const pending = new Map()
 
+// BUG FIX (reported directly: "the saved audio preview... once you save new
+// changes on top of it while it plays it locks out the saved audio option").
+// Root-caused via a standalone repro script, not guessed at: a plain
+// fs.renameSync onto a file that this same process's own sound:// protocol
+// handler still has open for reading (Remix's "Saved audio" toggle streams
+// the clip file live via fs.createReadStream) deterministically throws
+// EPERM on Windows - confirmed both for a single in-flight read and for
+// continuous back-to-back range reads (the latter needed up to ~20 retries/
+// 1.8s to clear in the adversarial case, since Windows only allows the
+// rename once every open handle without FILE_SHARE_DELETE has actually
+// closed). The lock is transient either way - a Range read finishes and
+// closes on its own - so a plain caught exception here was surfacing a real,
+// successfully-decoded render as a hard "render failed" (which forces the
+// preview back to Live and disables the toggle, see index.js's
+// updatePreviewModeToggle) purely because the exact file being edited
+// happened to be mid-stream at the wrong instant. Retrying with a short
+// backoff instead costs nothing in the common (not-currently-playing) case
+// and reliably clears the lock in the one that matters.
+async function renameWithRetry(tmpPath, outputPath, maxAttempts = 30, delayMs = 100) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      fs.renameSync(tmpPath, outputPath)
+      return
+    } catch (err) {
+      if (attempt === maxAttempts || (err.code !== 'EPERM' && err.code !== 'EBUSY')) throw err
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
 // BUG FIX (2026-08-16): discovered while verifying the rotation fix below
 // against a real (not synthetic) file - ffmpeg's acrossfade silently
 // produces a *completely empty* output, with no error and exit code 0, if
@@ -541,7 +571,7 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
   }
 
   await runFfmpegToFile(args)
-  fs.renameSync(tmpPath, outputPath)
+  await renameWithRetry(tmpPath, outputPath)
 }
 
 // Convolves a rendered .wav (already filters/speedPitch-baked, pre-crossfade)

@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.153 — BUG FIX: "Saved audio" preview could lock itself out mid-playback
+
+- Fixed: saving new changes while Remix's "Saved audio" preview was actively playing could fail the render and silently kick you back to "Live edit" with the toggle greyed out — reproduced directly from the report ("it happens when the saved audio preview is playing"). Root cause: Windows briefly locks the clip file while it's being streamed for playback, and Save was treating that brief, harmless lock as a real render failure. Save now waits it out instead.
+- Fixed: the live spectrogram never showed anything while previewing "Saved audio" — it only ever worked in "Live edit" mode. It now works in both.
+
 ## v0.1.152 — Export: loop an image as the video background
 
 - New "Loop an image" video background option, alongside the black screen, a looped video file, and the visualization — pick a still image and it loops under the export for the whole video's length.
