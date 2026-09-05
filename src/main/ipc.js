@@ -23,7 +23,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -87,6 +87,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setExportLoopVideoPath', (_event, filePath) => setExportLoopVideoPath(filePath))
   ipcMain.handle('settings:setExportVideoBackground', (_event, mode) => setExportVideoBackground(mode))
   ipcMain.handle('settings:setExportVisualizationOptions', (_event, options) => setExportVisualizationOptions(options))
+  ipcMain.handle('settings:setExportImagePath', (_event, filePath) => setExportImagePath(filePath))
+  ipcMain.handle('settings:setExportImageMotion', (_event, motion) => setExportImageMotion(motion))
   ipcMain.handle('settings:setYtDlpCookiesBrowser', (_event, browser) => setYtDlpCookiesBrowser(browser))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
@@ -355,6 +357,28 @@ export function registerIpcHandlers() {
     return result.filePaths[0]
   })
 
+  // Same shape as export:pickVideoFile just above, for the "loop an image"
+  // video background (v0.1.152) - a still image with an optional spin/DVD-
+  // bounce motion instead of a moving video file.
+  ipcMain.handle('export:pickImageFile', async () => {
+    const settings = getSettings()
+    const defaultPath = settings.exportImagePath && fs.existsSync(settings.exportImagePath)
+      ? path.dirname(settings.exportImagePath)
+      : undefined
+    const result = await dialog.showOpenDialog({
+      title: 'Choose an image to loop under the export',
+      defaultPath,
+      properties: ['openFile'],
+      filters: [
+        { name: 'Image files', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    setExportImagePath(result.filePaths[0])
+    return result.filePaths[0]
+  })
+
   // sounds: [{ soundId, playMode, loopStart, loopEnd, filters, speedPitch,
   // crossfadeSeconds, volume, events }] - the renderer's Export plugin
   // already resolved playMode/filters/etc from the library and ran the
@@ -405,6 +429,8 @@ export function registerIpcHandlers() {
         videoMode: settings.exportVideoMode,
         videoBackground: settings.exportVideoBackground,
         loopVideoPath: settings.exportLoopVideoPath,
+        imagePath: settings.exportImagePath,
+        imageMotion: settings.exportImageMotion,
         visualization: {
           type: settings.exportVisualizationType,
           color: settings.exportVisualizationColor,

@@ -8,6 +8,7 @@ import { runFfmpegToFile } from './runFfmpeg.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount } from './loopClip.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
+import { renderImageLoopVideo } from './imageLoopVideo.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -762,22 +763,26 @@ async function renderLoopedVideoFromFile(audioPath, durationSeconds, videoSource
   return videoPath
 }
 
-// Dispatches between the three companion-video shapes exportMix's own
+// Dispatches between the four companion-video shapes exportMix's own
 // videoMode handling can produce: a real-time audio-reactive visualization
 // (renderVisualizationVideo, see that module's own doc comment for the
 // speed research behind it), a user-supplied video to loop
-// (renderLoopedVideoFromFile), or the original flat black screen
-// (renderBlackScreenVideo) - the fallback whenever videoBackground is
-// 'black', or 'file' was chosen but no file has actually been picked yet.
-// Kept as a separate dispatcher rather than folding the branch into any one
-// of the three so every caller (video-only/both, see exportMix below) stays
-// a single call site regardless of which shape actually runs.
-function renderVideoOutput(audioPath, durationSeconds, videoBackground, loopVideoPath, visualization, reporter) {
+// (renderLoopedVideoFromFile), a looping still image with an optional
+// spin/bounce animation (renderImageLoopVideo), or the original flat black
+// screen (renderBlackScreenVideo) - the fallback whenever videoBackground is
+// 'black', or 'file'/'image' was chosen but nothing has actually been picked
+// yet. Kept as a separate dispatcher rather than folding the branch into any
+// one of the four so every caller (video-only/both, see exportMix below)
+// stays a single call site regardless of which shape actually runs.
+function renderVideoOutput(audioPath, durationSeconds, videoBackground, loopVideoPath, visualization, imagePath, imageOptions, reporter) {
   if (videoBackground === 'visualization') {
     return renderVisualizationVideo(audioPath, durationSeconds, visualization, reporter)
   }
   if (videoBackground === 'file' && loopVideoPath) {
     return renderLoopedVideoFromFile(audioPath, durationSeconds, loopVideoPath, reporter)
+  }
+  if (videoBackground === 'image' && imagePath) {
+    return renderImageLoopVideo(audioPath, durationSeconds, imagePath, imageOptions, reporter)
   }
   return renderBlackScreenVideo(audioPath, durationSeconds, reporter)
 }
@@ -789,7 +794,7 @@ function renderVideoOutput(audioPath, durationSeconds, videoBackground, loopVide
 //   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
 //   speedFactor, fadeInMs, fadeOutMs, shotDurationSeconds } for
 //   'scatter'/'scheduled' (shotDurationSeconds already reflects speedFactor).
-export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, videoMode = 'audio-only', videoBackground = 'black', loopVideoPath = null, visualization = null }) {
+export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, videoMode = 'audio-only', videoBackground = 'black', loopVideoPath = null, visualization = null, imagePath = null, imageMotion = 'none' }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
@@ -824,7 +829,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   // encode. 'black' stays unbudgeted - its own mux is a near-instant -c
   // copy, not a real encode (see renderBlackScreenVideo's own comment).
   const needsVideo = videoMode === 'video-only' || videoMode === 'both'
-  const videoNeedsRealEncode = needsVideo && (videoBackground === 'file' || videoBackground === 'visualization')
+  const videoNeedsRealEncode = needsVideo && (videoBackground === 'file' || videoBackground === 'visualization' || videoBackground === 'image')
   const videoWorkSeconds = videoNeedsRealEncode ? durationSeconds : 0
   const totalWorkSeconds =
     mixdownWorkSeconds +
@@ -982,7 +987,16 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     // audio file rather than deleting the only output that succeeded.
     if (videoMode === 'video-only' || videoMode === 'both') {
       try {
-        const videoPath = await renderVideoOutput(outputPath, durationSeconds, videoBackground, loopVideoPath, visualization, reporter)
+        const videoPath = await renderVideoOutput(
+          outputPath,
+          durationSeconds,
+          videoBackground,
+          loopVideoPath,
+          visualization,
+          imagePath,
+          { motion: imageMotion, fadeInSeconds, fadeOutSeconds },
+          reporter
+        )
         if (videoMode === 'video-only') {
           await cleanupFiles([outputPath])
           return { ok: true, videoPath, audioRemoved: true }

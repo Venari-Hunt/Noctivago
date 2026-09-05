@@ -21,6 +21,8 @@ const api = {
     setExportLoopVideoPath: (filePath) => ipcRenderer.invoke('settings:setExportLoopVideoPath', filePath),
     setExportVideoBackground: (mode) => ipcRenderer.invoke('settings:setExportVideoBackground', mode),
     setExportVisualizationOptions: (options) => ipcRenderer.invoke('settings:setExportVisualizationOptions', options),
+    setExportImagePath: (filePath) => ipcRenderer.invoke('settings:setExportImagePath', filePath),
+    setExportImageMotion: (motion) => ipcRenderer.invoke('settings:setExportImageMotion', motion),
     setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser)
   },
   autoUpdate: {
@@ -143,6 +145,7 @@ const api = {
   export: {
     pickDestination: (options) => ipcRenderer.invoke('export:pickDestination', options),
     pickVideoFile: () => ipcRenderer.invoke('export:pickVideoFile'),
+    pickImageFile: () => ipcRenderer.invoke('export:pickImageFile'),
     run: (payload) => ipcRenderer.invoke('export:run', payload),
     writeInfoFile: (payload) => ipcRenderer.invoke('export:writeInfoFile', payload),
     // Progress updates while an export renders: { type:'step', label, fraction }

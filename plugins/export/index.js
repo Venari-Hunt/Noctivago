@@ -74,7 +74,7 @@ const VIDEO_MODE_LABELS = {
 // (has the preset/library data already in memory) and handed to
 // export:writeInfoFile as a plain string, since the renderer has no direct
 // fs access - see ipc.js's own comment on that handler.
-function buildInfoFileText({ presetName, durationSeconds, format, videoMode, videoBackground, loopVideoName, visualizationSummary, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
+function buildInfoFileText({ presetName, durationSeconds, format, videoMode, videoBackground, loopVideoName, imageName, imageMotion, visualizationSummary, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
   const lines = [presetName, '']
   lines.push(`Length: ${formatDuration(durationSeconds)}`)
   lines.push(`Format: ${String(format).toUpperCase()}`)
@@ -83,9 +83,11 @@ function buildInfoFileText({ presetName, durationSeconds, format, videoMode, vid
     const videoDesc =
       videoBackground === 'file' && loopVideoName
         ? `looping "${loopVideoName}"`
-        : videoBackground === 'visualization'
-          ? visualizationSummary
-          : 'flat black screen'
+        : videoBackground === 'image' && imageName
+          ? `looping "${imageName}"${imageMotion && imageMotion !== 'none' ? ` (${imageMotion})` : ''}`
+          : videoBackground === 'visualization'
+            ? visualizationSummary
+            : 'flat black screen'
     lines.push(`Video: ${videoDesc}`)
   }
   lines.push(`Fade in / out: ${fadeInSeconds}s / ${fadeOutSeconds}s`)
@@ -239,6 +241,7 @@ export default class ExportPlugin {
             <select id="export-video-background">
               <option value="black">Flat black screen (fastest, near-instant)</option>
               <option value="file">Loop a video file</option>
+              <option value="image">Loop an image</option>
               <option value="visualization">Audio-reactive visualization</option>
             </select>
           </label>
@@ -250,6 +253,23 @@ export default class ExportPlugin {
             </div>
             <p id="export-video-path" class="export-hint export-video-path"></p>
             <p class="export-hint">If it's shorter than the export it repeats from the start with a hard cut at the seam (no crossfade), so a video that already loops cleanly on its own works best.</p>
+          </div>
+
+          <div id="export-image-section" class="export-video-subsection hidden">
+            <div class="export-loop-video-buttons">
+              <button id="export-choose-image" class="btn" type="button">Choose image…</button>
+              <button id="export-clear-image" class="btn" type="button">Clear</button>
+            </div>
+            <p id="export-image-path" class="export-hint export-video-path"></p>
+            <label>
+              <span>Motion</span>
+              <select id="export-image-motion">
+                <option value="none">None (static)</option>
+                <option value="spin">Spin</option>
+                <option value="bounce">DVD bounce</option>
+              </select>
+            </label>
+            <p class="export-hint">Uses the Fade in/out seconds below to fade the image in and out too, instead of a separate setting.</p>
           </div>
 
           <div id="export-viz-section" class="export-video-subsection hidden">
@@ -354,6 +374,11 @@ export default class ExportPlugin {
       chooseVideo: container.querySelector('#export-choose-video'),
       clearVideo: container.querySelector('#export-clear-video'),
       videoPath: container.querySelector('#export-video-path'),
+      imageSection: container.querySelector('#export-image-section'),
+      chooseImage: container.querySelector('#export-choose-image'),
+      clearImage: container.querySelector('#export-clear-image'),
+      imagePath: container.querySelector('#export-image-path'),
+      imageMotion: container.querySelector('#export-image-motion'),
       vizSection: container.querySelector('#export-viz-section'),
       vizType: container.querySelector('#export-viz-type'),
       vizColorRow: container.querySelector('#export-viz-color-row'),
@@ -425,6 +450,20 @@ export default class ExportPlugin {
       await this.api.settings.setExportVideoBackground('black')
       this.updateVideoBackgroundSubsectionVisibility()
     })
+    this.els.chooseImage.addEventListener('click', async () => {
+      const filePath = await this.api.export.pickImageFile()
+      if (filePath) this.setImagePath(filePath)
+    })
+    this.els.clearImage.addEventListener('click', async () => {
+      await this.api.settings.setExportImagePath(null)
+      this.setImagePath(null)
+      this.els.videoBackground.value = 'black'
+      await this.api.settings.setExportVideoBackground('black')
+      this.updateVideoBackgroundSubsectionVisibility()
+    })
+    this.els.imageMotion.addEventListener('change', () => {
+      this.api.settings.setExportImageMotion(this.els.imageMotion.value)
+    })
     this.els.vizType.addEventListener('change', () => {
       this.api.settings.setExportVisualizationOptions({ type: this.els.vizType.value })
       this.updateVizFieldVisibility()
@@ -452,6 +491,8 @@ export default class ExportPlugin {
         this.els.videoMode.value = settings.exportVideoMode ?? 'audio-only'
         this.els.infoFile.checked = Boolean(settings.exportInfoFile)
         this.setLoopVideoPath(settings.exportLoopVideoPath ?? null)
+        this.setImagePath(settings.exportImagePath ?? null)
+        this.els.imageMotion.value = settings.exportImageMotion ?? 'none'
         this.els.videoBackground.value = settings.exportVideoBackground ?? 'black'
         this.els.vizType.value = settings.exportVisualizationType ?? 'waveform'
         this.els.vizColor.value = settings.exportVisualizationColor ?? '#9ece6a'
@@ -488,6 +529,14 @@ export default class ExportPlugin {
     this.els.clearVideo.disabled = !filePath
   }
 
+  setImagePath(filePath) {
+    this.imagePath = filePath || null
+    this.els.imagePath.textContent = filePath
+      ? `Looping: ${filePath.split(/[\\/]/).pop()}`
+      : 'No image chosen — using the flat black screen.'
+    this.els.clearImage.disabled = !filePath
+  }
+
   // The video-background choice only makes sense once a video track is
   // actually being produced - hidden entirely under 'audio-only' rather than
   // shown disabled, matching this app's other mode-gated-field convention
@@ -496,12 +545,13 @@ export default class ExportPlugin {
     this.els.videoBackgroundRow.classList.toggle('hidden', this.els.videoMode.value === 'audio-only')
   }
 
-  // Only one of the two sub-sections (file picker / visualization controls)
-  // is relevant at a time, matching which of the three renderVideoOutput
-  // branches (exportMix.js) would actually run.
+  // Only one of the three sub-sections (file picker / image picker /
+  // visualization controls) is relevant at a time, matching which of the
+  // four renderVideoOutput branches (exportMix.js) would actually run.
   updateVideoBackgroundSubsectionVisibility() {
     const mode = this.els.videoBackground.value
     this.els.videoFileSection.classList.toggle('hidden', mode !== 'file')
+    this.els.imageSection.classList.toggle('hidden', mode !== 'image')
     this.els.vizSection.classList.toggle('hidden', mode !== 'visualization')
   }
 
@@ -648,6 +698,8 @@ export default class ExportPlugin {
             videoMode: this.els.videoMode.value,
             videoBackground: this.els.videoBackground.value,
             loopVideoName: this.loopVideoPath ? this.loopVideoPath.split(/[\\/]/).pop() : null,
+            imageName: this.imagePath ? this.imagePath.split(/[\\/]/).pop() : null,
+            imageMotion: this.els.imageMotion.value,
             visualizationSummary: `${this.els.vizType.value} visualization (${this.els.vizSize.value}, ${this.els.vizFps.value}fps)`,
             soundInfoList,
             fadeInSeconds,

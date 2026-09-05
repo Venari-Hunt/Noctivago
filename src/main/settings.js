@@ -113,12 +113,21 @@ const store = new Store({
     // visualizationVideo.js's own doc comment for what was actually tried to
     // speed up the encode itself (a libx264 preset change, rejected: real but
     // meaningfully worse file-size trade-off).
-    exportVisualizationFps: DEFAULT_VIZ_FPS
+    exportVisualizationFps: DEFAULT_VIZ_FPS,
+    // Export tab (v0.1.152 inbox item, flagged "veeeery optional... not very
+    // crucial"): loop a still image under the export instead of a video/
+    // visualization, with an optional spin or "DVD bounce" motion - see
+    // src/main/ffmpeg/imageLoopVideo.js. Fade in/out reuses the export's own
+    // existing fadeInSeconds/fadeOutSeconds fields rather than a duplicate
+    // pair, so no separate fade setting is needed here.
+    exportImagePath: null,
+    exportImageMotion: 'none'
   }
 })
 
 const EXPORT_VIDEO_MODES = ['audio-only', 'video-only', 'both']
-const EXPORT_VIDEO_BACKGROUNDS = ['black', 'file', 'visualization']
+const EXPORT_VIDEO_BACKGROUNDS = ['black', 'file', 'visualization', 'image']
+const EXPORT_IMAGE_MOTIONS = ['none', 'spin', 'bounce']
 const VISUALIZATION_TYPES = ['waveform', 'spectrum', 'vectorscope']
 const VISUALIZATION_PALETTES = ['intensity', 'rainbow', 'fire', 'magma', 'cool', 'moreland']
 const VISUALIZATION_SIZES = ['small', 'medium', 'large']
@@ -174,7 +183,9 @@ export function getSettings() {
     exportVisualizationBgColor: store.get('exportVisualizationBgColor'),
     exportVisualizationPalette: store.get('exportVisualizationPalette'),
     exportVisualizationSize: store.get('exportVisualizationSize'),
-    exportVisualizationFps: store.get('exportVisualizationFps')
+    exportVisualizationFps: store.get('exportVisualizationFps'),
+    exportImagePath: store.get('exportImagePath'),
+    exportImageMotion: store.get('exportImageMotion')
   }
 }
 
@@ -275,6 +286,20 @@ export function setExportLoopVideoPath(filePath) {
 
 export function setExportVideoBackground(mode) {
   store.set('exportVideoBackground', EXPORT_VIDEO_BACKGROUNDS.includes(mode) ? mode : 'black')
+  return getSettings()
+}
+
+// null clears the choice back to the black-screen fallback, mirroring
+// setExportLoopVideoPath's own "no existence check here" reasoning - a moved
+// or deleted image surfaces as a normal, non-fatal video-render error at
+// export time instead.
+export function setExportImagePath(filePath) {
+  store.set('exportImagePath', filePath || null)
+  return getSettings()
+}
+
+export function setExportImageMotion(motion) {
+  store.set('exportImageMotion', EXPORT_IMAGE_MOTIONS.includes(motion) ? motion : 'none')
   return getSettings()
 }
 

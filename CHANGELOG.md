@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.152 — Export: loop an image as the video background
+
+- New "Loop an image" video background option, alongside the black screen, a looped video file, and the visualization — pick a still image and it loops under the export for the whole video's length.
+- Optional motion: None (static), Spin, or DVD bounce (the classic bouncing-logo animation).
+- Uses the export's existing Fade in/out seconds to fade the image in and out too.
+
 ## v0.1.151 — Export: choose the visualization video's frame rate, better info.txt
 
 - The audio-reactive visualization video now lets you pick 15/30/60 fps instead of always rendering at 15 — higher looks smoother but takes proportionally longer, lower stays the fastest option.
