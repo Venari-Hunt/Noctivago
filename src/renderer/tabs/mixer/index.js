@@ -40,6 +40,14 @@ const state = {
   // itself. Session-only, like mute itself.
   soloedSoundId: null,
   soloMutedIds: new Set(),
+  // Group solo (v0.1.148) - the merged Remix tab's Group-mode "hear just
+  // this group" button. Independent of soloedSoundId/soloMutedIds above
+  // (a single-sound solo and a group solo are mutually exclusive, never
+  // stacked - see applyGroupSolo) rather than generalizing the existing
+  // single-id solo to accept a set, since state.soloedSoundId is read in
+  // several places (SoundRow highlighting) as a scalar "is this the one".
+  soloedGroupId: null,
+  groupSoloMutedIds: new Set(),
   // The preset most recently loaded via loadPreset(). Drives which preset's
   // whole-mix processing is live on engine.wholeMix, and gates the Preset
   // Remix plugin's live-preview events (only the active preset's edits are
@@ -795,6 +803,35 @@ function toggleSolo(id) {
   applySolo(id, state.soloedSoundId !== id)
 }
 
+// Group solo (v0.1.148) - the merged Remix tab's Group-mode "hear just this
+// group" Play/Solo button, same shape as applySolo/releaseSolo above but for
+// a set of ids at once. Mutually exclusive with the single-sound solo (each
+// releases the other) rather than stacking, since "solo this group" and
+// "solo this one sound" are two different answers to the same question
+// ("what do I want to hear right now").
+function releaseGroupSolo() {
+  for (const id of state.groupSoloMutedIds) {
+    state.mutedSounds.delete(id)
+    state.sources.get(id)?.setVolume(effectiveVolume(id))
+  }
+  state.groupSoloMutedIds.clear()
+  state.soloedGroupId = null
+  render()
+}
+
+function applyGroupSolo(groupId, memberIds) {
+  if (state.soloedSoundId) releaseSolo()
+  if (state.soloedGroupId && state.soloedGroupId !== groupId) releaseGroupSolo()
+  state.soloedGroupId = groupId
+  for (const id of state.included) {
+    if (memberIds.includes(id) || state.mutedSounds.has(id)) continue
+    state.mutedSounds.add(id)
+    state.groupSoloMutedIds.add(id)
+    state.sources.get(id)?.setVolume(effectiveVolume(id))
+  }
+  render()
+}
+
 // "Test fire" button, scatter and scheduled sounds (SoundRow.js gates it on
 // entry.playMode being one of those two) - requested directly for scatter
 // ("an override play button on the mixer tab for audios that are played at
@@ -1196,6 +1233,11 @@ els.savePresetBtn.addEventListener('click', async () => {
 // preset being loaded, so sounds common to both keep playing uninterrupted
 // (just a volume update) instead of being stopped and immediately restarted.
 async function loadPreset(preset) {
+  // A group solo from the *previous* preset means nothing once its sounds
+  // are gone from the mix - releasing it here avoids leaving unrelated
+  // sounds from the newly-loaded preset stuck muted by a stale solo.
+  if (state.soloedGroupId) releaseGroupSolo()
+
   const newIds = new Set(preset.sounds.map((s) => s.soundId))
 
   for (const id of [...state.included]) {
@@ -1247,6 +1289,7 @@ async function deletePreset(id) {
   // which never clears it) since the preset it names is genuinely gone, not
   // just deviated-from.
   if (id === state.activePresetId) {
+    if (state.soloedGroupId) releaseGroupSolo()
     state.activePresetId = null
     state.groups = []
     engine.setSoundGroups([])
@@ -1479,5 +1522,55 @@ document.addEventListener('library:linked', refreshList)
     if (!d || d.presetId !== state.activePresetId) return
     if (d.kind === 'whole-mix') d.node = engine.wholeMix.analyser
     else if (d.kind === 'group') d.node = engine.groupChains.get(d.groupId)?.analyser ?? null
+  })
+
+  // The merged Remix tab's Preset/Group-mode Play button (v0.1.148) -
+  // reported directly ("where's the play button for the preset and group?")
+  // since Preset/Group mode previously only ever previewed live if that
+  // preset already happened to be playing in the Mixer, with no way to
+  // actually start it from Remix itself. Fire-and-forget, same window-
+  // CustomEvent bridge as every other plugin/core crossing in this app -
+  // loadPreset() is async (awaits engine.resume() + a startPlayback per
+  // sound), so this can't be the same synchronous request/response shape
+  // request-analyser uses; the plugin instead polls noctivago:request-
+  // mixer-status (below) on its own tick loop to learn when the load lands.
+  window.addEventListener('noctivago:remix-load-preset', async (e) => {
+    const { presetId, soloGroupId } = e.detail ?? {}
+    if (!presetId) return
+    const presets = await api.presets.list()
+    const preset = presets.find((p) => p.id === presetId)
+    if (preset) await loadPreset(preset)
+    // Optional: the Group-mode Solo button firing this when its preset
+    // wasn't loaded yet - loadPreset() is async, so soloing has to wait
+    // for it to actually land rather than firing as a separate, immediately
+    // -dispatched event that would race ahead of the load and silently
+    // no-op against a still-stale state.activePresetId.
+    if (soloGroupId && state.activePresetId === presetId) {
+      const group = state.groups.find((g) => g.id === soloGroupId)
+      if (group) applyGroupSolo(soloGroupId, group.soundIds)
+    }
+  })
+  window.addEventListener('noctivago:remix-toggle-playback', () => {
+    toggleGlobalPlayback()
+  })
+  window.addEventListener('noctivago:remix-solo-group', (e) => {
+    const { presetId, groupId } = e.detail ?? {}
+    if (!presetId || presetId !== state.activePresetId) return
+    const group = state.groups.find((g) => g.id === groupId)
+    if (!group) return
+    applyGroupSolo(groupId, group.soundIds)
+  })
+  window.addEventListener('noctivago:remix-unsolo-group', () => releaseGroupSolo())
+  // Synchronous request/response, same shape as request-analyser - the
+  // Remix tab's Play/Pause icon and Group-mode Solo button need to reflect
+  // real Mixer state (is anything playing, is this preset the active one,
+  // is a group currently soloed) without holding a direct reference into
+  // this module.
+  window.addEventListener('noctivago:request-mixer-status', (e) => {
+    const d = e.detail
+    if (!d) return
+    d.activePresetId = state.activePresetId
+    d.isPlaying = state.playing.size > 0
+    d.soloedGroupId = state.soloedGroupId
   })
 }

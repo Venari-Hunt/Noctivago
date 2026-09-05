@@ -203,6 +203,79 @@ function requestAnalyser(kind, presetId, groupId) {
   return detail.node
 }
 
+// Same synchronous request/response shape as requestAnalyser - lets
+// Preset/Group mode's Play/Pause icon and Group mode's Solo button reflect
+// real Mixer state (is this preset actually the one loaded, is anything
+// playing, is a group currently soloed) without a direct reference into
+// tabs/mixer/index.js.
+function requestMixerStatus() {
+  const detail = { activePresetId: null, isPlaying: false, soloedGroupId: null }
+  window.dispatchEvent(new CustomEvent('noctivago:request-mixer-status', { detail }))
+  return detail
+}
+
+// Live loudness-over-time strip for Preset/Group mode ("where's the
+// waveform so I can see where the audio is louder") - a rolling peak-level
+// history, most recent sample at the right edge, scrolling left as older
+// samples age out. Deliberately not a per-file trim waveform like Sound
+// mode's - there's no single file here, and the mix keeps playing
+// indefinitely, so a live scrolling strip (closer to a DAW meter bridge)
+// is the shape that actually answers "where is it louder" for a live mix.
+const LEVEL_HISTORY_LENGTH = 600
+
+function pushLevel(history, level) {
+  history.push(level)
+  if (history.length > LEVEL_HISTORY_LENGTH) history.shift()
+}
+
+function peakFromTimeDomain(buffer) {
+  let peak = 0
+  for (let i = 0; i < buffer.length; i++) {
+    const v = Math.abs(buffer[i] - 128) / 128
+    if (v > peak) peak = v
+  }
+  return peak
+}
+
+function drawLevelHistory(canvas, history) {
+  const rect = canvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  const w = Math.max(1, Math.round(rect.width * dpr))
+  const h = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w
+    canvas.height = h
+  }
+  const ctx = canvas.getContext('2d')
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  const width = rect.width
+  const height = rect.height
+  ctx.clearRect(0, 0, width, height)
+  if (history.length < 2) return
+
+  const stepX = width / (LEVEL_HISTORY_LENGTH - 1)
+  const startIndex = LEVEL_HISTORY_LENGTH - history.length
+  const xAt = (i) => (startIndex + i) * stepX
+  const yAt = (i) => height - history[i] * height * 0.95
+
+  ctx.beginPath()
+  ctx.moveTo(xAt(0), height)
+  for (let i = 0; i < history.length; i++) ctx.lineTo(xAt(i), yAt(i))
+  ctx.lineTo(xAt(history.length - 1), height)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(122, 162, 247, 0.35)'
+  ctx.fill()
+
+  ctx.strokeStyle = '#7aa2f7'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  for (let i = 0; i < history.length; i++) {
+    if (i === 0) ctx.moveTo(xAt(i), yAt(i))
+    else ctx.lineTo(xAt(i), yAt(i))
+  }
+  ctx.stroke()
+}
+
 export default class EditorPlugin {
   constructor(app) {
     this.app = app
@@ -303,6 +376,12 @@ export default class EditorPlugin {
     // tickPreviewPlayhead, which only ever drives Sound mode) - see
     // tickWholeMixSpectrum()/stopWholeMixSpectrumTicking().
     this._wholeMixSpectrumRafId = null
+    // Live loudness-over-time history (v0.1.148, "where's the waveform so I
+    // can see where the audio is louder") - a rolling peak-level buffer per
+    // mode, pushed once per tick and drawn as a scrolling strip; see
+    // tickWholeMixSpectrum()/drawLevelHistory().
+    this.presetLevelHistory = []
+    this.groupLevelHistory = []
   }
 
   async onload() {
@@ -403,6 +482,8 @@ export default class EditorPlugin {
 
         <div id="editor-mode-panel-preset" class="editor-mode-panel hidden">
           <div id="editor-mix-preset-controls" class="editor-mix-controls editor-mix-disabled">
+            <p class="editor-mix-status">Live loudness (last ~10s) - hit Play above to hear and see this preset.</p>
+            <canvas id="editor-mix-preset-waveform" class="editor-mix-waveform-canvas"></canvas>
             <div class="editor-filters">
               <label>
                 <span>High-pass</span>
@@ -449,6 +530,8 @@ export default class EditorPlugin {
               <span>Name</span>
               <input id="editor-mix-group-name" type="text" />
             </div>
+            <p class="editor-mix-status">Live loudness (last ~10s) - hit Play above to hear and see just this group.</p>
+            <canvas id="editor-mix-group-waveform" class="editor-mix-waveform-canvas"></canvas>
             <p class="editor-mix-status">Sounds in this preset's mix:</p>
             <ul id="editor-mix-group-members" class="editor-mix-group-members"></ul>
             <div class="editor-filters">
@@ -974,6 +1057,7 @@ export default class EditorPlugin {
       mixPresetGain: container.querySelector('#editor-mix-preset-gain'),
       mixPresetGainValue: container.querySelector('#editor-mix-preset-gain-value'),
       mixPresetFadeIn: container.querySelector('#editor-mix-preset-fadein'),
+      mixPresetWaveform: container.querySelector('#editor-mix-preset-waveform'),
       mixPresetEqCanvas: container.querySelector('#editor-mix-preset-eq-canvas'),
       mixPresetEqFreq: container.querySelector('#editor-mix-preset-eq-freq'),
       mixPresetEqGain: container.querySelector('#editor-mix-preset-eq-gain'),
@@ -987,6 +1071,7 @@ export default class EditorPlugin {
       mixGroupEmpty: container.querySelector('#editor-mix-group-empty'),
       mixGroupName: container.querySelector('#editor-mix-group-name'),
       mixGroupMembers: container.querySelector('#editor-mix-group-members'),
+      mixGroupWaveform: container.querySelector('#editor-mix-group-waveform'),
       mixGroupHighpass: container.querySelector('#editor-mix-group-highpass'),
       mixGroupHighpassValue: container.querySelector('#editor-mix-group-highpass-value'),
       mixGroupLowpass: container.querySelector('#editor-mix-group-lowpass'),
@@ -1336,6 +1421,8 @@ export default class EditorPlugin {
       </button>
       </div>
       <div id="editor-sticky-mix-controls" class="editor-sticky-mode-group hidden">
+        <button id="editor-mix-play-pause" class="btn btn-svg-icon" type="button" title="Play">${PLAY_ICON_SVG}</button>
+        <button id="editor-mix-solo-group" class="editor-sticky-solo hidden" type="button">Solo group</button>
         <span id="editor-mix-status" class="editor-sticky-time"></span>
         <button id="editor-mix-delete-group" class="btn btn-danger btn-icon-text hidden" type="button">Delete group</button>
         <button id="editor-mix-save" class="btn btn-primary btn-icon-text editor-sticky-save" type="button">Save</button>
@@ -1417,9 +1504,13 @@ export default class EditorPlugin {
 
     this.els.stickySoundControls = container.querySelector('#editor-sticky-sound-controls')
     this.els.stickyMixControls = container.querySelector('#editor-sticky-mix-controls')
+    this.els.mixPlayPause = container.querySelector('#editor-mix-play-pause')
+    this.els.mixSoloGroup = container.querySelector('#editor-mix-solo-group')
     this.els.mixStatus = container.querySelector('#editor-mix-status')
     this.els.mixSave = container.querySelector('#editor-mix-save')
     this.els.mixDeleteGroup = container.querySelector('#editor-mix-delete-group')
+    this.els.mixPlayPause.addEventListener('click', () => this.onMixPlayPauseClick())
+    this.els.mixSoloGroup.addEventListener('click', () => this.onMixSoloGroupClick())
     this.els.mixSave.addEventListener('click', () => {
       if (this.mode === 'preset') this.saveWholeMix().catch((err) => console.error('Editor: preset save failed', err))
       else if (this.mode === 'group') this.saveGroup().catch((err) => console.error('Editor: group save failed', err))
@@ -3206,15 +3297,100 @@ export default class EditorPlugin {
     this.groupEq?.clearSpectrum()
   }
 
+  // Cleared whenever the thing being looked at changes (a different preset
+  // or group selected) so the scrolling loudness strip doesn't show a few
+  // stale seconds from whatever was open before.
+  resetLevelHistory(which) {
+    if (which === 'preset') this.presetLevelHistory.length = 0
+    else if (which === 'group') this.groupLevelHistory.length = 0
+  }
+
   tickWholeMixSpectrum() {
+    this.updateMixPlayPauseUI(requestMixerStatus())
+
     if (this.mode === 'preset' && this.selectedPresetId) {
       const node = requestAnalyser('whole-mix', this.selectedPresetId, null)
-      if (node) this.presetEq.tickSpectrum(node)
-      else this.presetEq.clearSpectrum()
+      if (node) {
+        this.presetEq.tickSpectrum(node)
+        if (!this._presetTimeBuf || this._presetTimeBuf.length !== node.fftSize) this._presetTimeBuf = new Uint8Array(node.fftSize)
+        node.getByteTimeDomainData(this._presetTimeBuf)
+        pushLevel(this.presetLevelHistory, peakFromTimeDomain(this._presetTimeBuf))
+      } else {
+        this.presetEq.clearSpectrum()
+        pushLevel(this.presetLevelHistory, 0)
+      }
+      drawLevelHistory(this.els.mixPresetWaveform, this.presetLevelHistory)
     } else if (this.mode === 'group' && this.selectedPresetId && this.selectedGroupId) {
       const node = requestAnalyser('group', this.selectedPresetId, this.selectedGroupId)
-      if (node) this.groupEq.tickSpectrum(node)
-      else this.groupEq.clearSpectrum()
+      if (node) {
+        this.groupEq.tickSpectrum(node)
+        if (!this._groupTimeBuf || this._groupTimeBuf.length !== node.fftSize) this._groupTimeBuf = new Uint8Array(node.fftSize)
+        node.getByteTimeDomainData(this._groupTimeBuf)
+        pushLevel(this.groupLevelHistory, peakFromTimeDomain(this._groupTimeBuf))
+      } else {
+        this.groupEq.clearSpectrum()
+        pushLevel(this.groupLevelHistory, 0)
+      }
+      drawLevelHistory(this.els.mixGroupWaveform, this.groupLevelHistory)
+    }
+  }
+
+  // Reflects real Mixer state on the shared Play/Pause icon + Group mode's
+  // Solo button - polled once per tick (see tickWholeMixSpectrum) rather
+  // than pushed, since this plugin has no direct reference into the
+  // Mixer's own state to subscribe to.
+  updateMixPlayPauseUI(status) {
+    const isActivePreset = Boolean(this.selectedPresetId) && status.activePresetId === this.selectedPresetId
+    const playing = isActivePreset && status.isPlaying
+    this.els.mixPlayPause.innerHTML = playing ? PAUSE_ICON_SVG : PLAY_ICON_SVG
+    this.els.mixPlayPause.title = playing ? 'Pause' : isActivePreset ? 'Play' : 'Load this preset and play it in the Mixer'
+    this.els.mixPlayPause.disabled = !this.selectedPresetId
+
+    if (this.mode === 'group') {
+      this.els.mixSoloGroup.classList.remove('hidden')
+      this.els.mixSoloGroup.disabled = !this.selectedGroupId
+      const soloed = isActivePreset && status.soloedGroupId === this.selectedGroupId
+      this.els.mixSoloGroup.classList.toggle('editor-sticky-solo-active', soloed)
+      this.els.mixSoloGroup.textContent = soloed ? 'Unsolo group' : 'Solo group'
+    } else {
+      this.els.mixSoloGroup.classList.add('hidden')
+    }
+  }
+
+  // Play button (v0.1.148) - reported directly ("where's the play button
+  // for the preset and group?"): Preset/Group mode previously only ever
+  // previewed live if that preset already happened to be playing in the
+  // Mixer, with no way to actually start it from Remix itself. Loading a
+  // preset (tabs/mixer/index.js's loadPreset) already unconditionally plays
+  // every sound in it, so "not yet the active preset" and "toggle the
+  // shared mix's play/pause" are the only two cases this needs.
+  onMixPlayPauseClick() {
+    if (!this.selectedPresetId) return
+    const status = requestMixerStatus()
+    if (status.activePresetId !== this.selectedPresetId) {
+      window.dispatchEvent(new CustomEvent('noctivago:remix-load-preset', { detail: { presetId: this.selectedPresetId } }))
+    } else {
+      window.dispatchEvent(new CustomEvent('noctivago:remix-toggle-playback', {}))
+    }
+  }
+
+  // Group mode's own "hear just this group" button - mutes every other
+  // currently-playing sound in the Mixer, same idea as Sound mode's Solo
+  // button (src/renderer/tabs/mixer/index.js's applyGroupSolo). Loads the
+  // preset first if it isn't already playing, same as plain Play, since
+  // soloing implies wanting to actually hear it.
+  onMixSoloGroupClick() {
+    if (!this.selectedPresetId || !this.selectedGroupId) return
+    const status = requestMixerStatus()
+    const alreadySoloed = status.activePresetId === this.selectedPresetId && status.soloedGroupId === this.selectedGroupId
+    if (alreadySoloed) {
+      window.dispatchEvent(new CustomEvent('noctivago:remix-unsolo-group', {}))
+      return
+    }
+    if (status.activePresetId !== this.selectedPresetId) {
+      window.dispatchEvent(new CustomEvent('noctivago:remix-load-preset', { detail: { presetId: this.selectedPresetId, soloGroupId: this.selectedGroupId } }))
+    } else {
+      window.dispatchEvent(new CustomEvent('noctivago:remix-solo-group', { detail: { presetId: this.selectedPresetId, groupId: this.selectedGroupId } }))
     }
   }
 
@@ -3245,6 +3421,7 @@ export default class EditorPlugin {
   // which strips a sound out of every group instead of the intended one).
   selectMixPreset(id, { silent = false } = {}) {
     const presetChanged = id !== this.selectedPresetId
+    if (presetChanged) this.resetLevelHistory('preset')
     if (presetChanged && this.selectedGroupId) this.dispatchGroupPreview(this.groupSaved)
 
     this.selectedPresetId = id || null
@@ -3390,6 +3567,7 @@ export default class EditorPlugin {
 
   selectGroup(id) {
     if (this.selectedGroupId) this.dispatchGroupPreview(this.groupSaved)
+    if (id !== this.selectedGroupId) this.resetLevelHistory('group')
 
     const group = this.groups.find((g) => g.id === id)
     this.selectedGroupId = group ? id : null

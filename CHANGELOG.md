@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.148 — Preset/Group mode: a real Play button and a live loudness view
+
+- Preset and Group mode in the Remix tab now have their own Play/Pause button — no more needing to go load the preset in the Mixer first just to hear what you're editing.
+- Group mode also gets a "Solo group" button — mutes every other sound so you hear just that group.
+- Both modes now show a live scrolling loudness view (the last ~10 seconds), alongside the frequency spectrogram, so you can see where the mix or group is actually louder.
+
 ## v0.1.147 — Remix, Preset Remix, and Sound Groups are now one tab
 
 - The "Preset Remix" tab is gone — Remix now has a Sound / Preset / Group switch at the top, so editing a single sound, a whole preset's mix, or a Sound Group all happen in one place with a consistent look.
