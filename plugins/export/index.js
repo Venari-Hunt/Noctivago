@@ -724,6 +724,26 @@ export default class ExportPlugin {
       this.els.status.textContent = `✗ Export failed after ${elapsed}: ${err.message}`
       playCompletionChime(false)
     } finally {
+      // Reported directly after a real overnight export ("i dozed off and
+      // didn't get the log. Make the text on the log box be exported to the
+      // final folder and i'll test it later for you") - the on-screen log
+      // (with its real timestamps/per-phase timings) only exists in the DOM,
+      // so it's gone the moment the tab or app closes. Written unconditionally
+      // on both success and failure - exportMix() already created the
+      // destination subfolder as the very first thing it does, before any
+      // real render work, so it's always there to write into by this point.
+      // Silent/best-effort: this is bookkeeping alongside the real result,
+      // not something worth cluttering the status line above over.
+      if (this.els.log && this.els.log.children.length > 0) {
+        const logContent = Array.from(this.els.log.children)
+          .map((line) => line.textContent)
+          .join('\n')
+        try {
+          await this.api.export.writeLogFile({ outputPath, content: logContent })
+        } catch (err) {
+          console.error('Export: failed to write log file', err)
+        }
+      }
       this.exporting = false
       this.els.run.disabled = false
     }

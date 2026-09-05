@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.154 — Export: the on-screen log now saves to a file too
+
+- Every export now writes its full log (with real timestamps and per-step timing) as `export-log.txt` next to the exported audio/video, so an overnight or unattended export's log survives even if you weren't there to see it.
+
 ## v0.1.153 — BUG FIX: "Saved audio" preview could lock itself out mid-playback
 
 - Fixed: saving new changes while Remix's "Saved audio" preview was actively playing could fail the render and silently kick you back to "Live edit" with the toggle greyed out — reproduced directly from the report ("it happens when the saved audio preview is playing"). Root cause: Windows briefly locks the clip file while it's being streamed for playback, and Save was treating that brief, harmless lock as a real render failure. Save now waits it out instead.

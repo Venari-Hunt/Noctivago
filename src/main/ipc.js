@@ -330,6 +330,28 @@ export function registerIpcHandlers() {
     }
   })
 
+  // Reported directly after a real overnight export ("i dozed off and didn't
+  // get the log. Make the text on the log box be exported to the final
+  // folder"): the on-screen per-step log (with its real wall-clock
+  // timestamps and per-phase timings, see closeLastLogLineTiming/v0.1.150)
+  // is only ever visible while someone is actually watching the tab - a long
+  // unattended export loses it the moment the app closes or the tab
+  // navigates away. Same shape as writeInfoFile just above (renderer already
+  // has the exact text on screen, this is only the write-to-disk step it
+  // can't do itself) - written unconditionally (success or failure) since
+  // exportMix() creates the destination subfolder as the very first thing it
+  // does, before any real render work that could fail.
+  ipcMain.handle('export:writeLogFile', async (_event, { outputPath, content }) => {
+    try {
+      const logPath = path.join(path.dirname(outputPath), 'export-log.txt')
+      fs.writeFileSync(logPath, content, 'utf8')
+      return { ok: true, logPath }
+    } catch (err) {
+      console.error('export:writeLogFile failed', err)
+      return { ok: false, error: err.message }
+    }
+  })
+
   // Export tab (v0.1.141, Board #next item #4): "associate a chosen video
   // file to loop under the audio instead of/alongside the flat black
   // screen." Persisted immediately on pick (exportLoopVideoPath) rather than

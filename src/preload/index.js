@@ -148,6 +148,7 @@ const api = {
     pickImageFile: () => ipcRenderer.invoke('export:pickImageFile'),
     run: (payload) => ipcRenderer.invoke('export:run', payload),
     writeInfoFile: (payload) => ipcRenderer.invoke('export:writeInfoFile', payload),
+    writeLogFile: (payload) => ipcRenderer.invoke('export:writeLogFile', payload),
     // Progress updates while an export renders: { type:'step', label, fraction }
     // or { type:'tick', fraction } (fraction 0..1). Returns an unsubscribe fn.
     onProgress: (callback) => {
