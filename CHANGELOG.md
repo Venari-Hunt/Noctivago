@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.151 — Export: choose the visualization video's frame rate, better info.txt
+
+- The audio-reactive visualization video now lets you pick 15/30/60 fps instead of always rendering at 15 — higher looks smoother but takes proportionally longer, lower stays the fastest option.
+- The optional info.txt now ends with a ready-to-paste prompt for an AI assistant to turn the exported facts into an actual YouTube title, description, tags, and hashtags.
+
 ## v0.1.150 — BUG FIX: export progress bar stuck at 100%, video export slow
 
 - Fixed: exporting with "Loop a video file" or "Audio-reactive visualization" as the video background could sit at 100% with no visible progress for a long time — that phase genuinely wasn't finished, but wasn't counted in the progress bar's own math. It now shows real progress through the video render too, and the bar only reaches 100% when everything is actually done.

@@ -1,4 +1,5 @@
 import Store from 'electron-store'
+import { VIZ_FPS_OPTIONS, DEFAULT_VIZ_FPS } from './ffmpeg/visualizationVideo.js'
 
 // Matches autoUpdate.js's original hardcoded RECHECK_INTERVAL_MS (4 hours) -
 // now the default rather than the only option, per a direct request for a
@@ -105,7 +106,14 @@ const store = new Store({
     exportVisualizationColor: '#9ece6a',
     exportVisualizationBgColor: '#000000',
     exportVisualizationPalette: 'intensity',
-    exportVisualizationSize: 'medium'
+    exportVisualizationSize: 'medium',
+    // Frame rate for the visualization video (v0.1.151 owner follow-up:
+    // "leave the option to choose between 15, 30 and 60 fps"). Higher fps
+    // looks smoother but costs proportionally more encode time - see
+    // visualizationVideo.js's own doc comment for what was actually tried to
+    // speed up the encode itself (a libx264 preset change, rejected: real but
+    // meaningfully worse file-size trade-off).
+    exportVisualizationFps: DEFAULT_VIZ_FPS
   }
 })
 
@@ -165,7 +173,8 @@ export function getSettings() {
     exportVisualizationColor: store.get('exportVisualizationColor'),
     exportVisualizationBgColor: store.get('exportVisualizationBgColor'),
     exportVisualizationPalette: store.get('exportVisualizationPalette'),
-    exportVisualizationSize: store.get('exportVisualizationSize')
+    exportVisualizationSize: store.get('exportVisualizationSize'),
+    exportVisualizationFps: store.get('exportVisualizationFps')
   }
 }
 
@@ -279,6 +288,7 @@ export function setExportVisualizationOptions(options) {
   if (HEX_COLOR_RE.test(options?.bgColor)) store.set('exportVisualizationBgColor', options.bgColor)
   if (VISUALIZATION_PALETTES.includes(options?.palette)) store.set('exportVisualizationPalette', options.palette)
   if (VISUALIZATION_SIZES.includes(options?.size)) store.set('exportVisualizationSize', options.size)
+  if (VIZ_FPS_OPTIONS.includes(options?.fps)) store.set('exportVisualizationFps', options.fps)
   return getSettings()
 }
 

@@ -410,7 +410,8 @@ export function registerIpcHandlers() {
           color: settings.exportVisualizationColor,
           bgColor: settings.exportVisualizationBgColor,
           palette: settings.exportVisualizationPalette,
-          size: settings.exportVisualizationSize
+          size: settings.exportVisualizationSize,
+          fps: settings.exportVisualizationFps
         }
       })
     } finally {

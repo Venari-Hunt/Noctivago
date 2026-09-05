@@ -94,6 +94,23 @@ function buildInfoFileText({ presetName, durationSeconds, format, videoMode, vid
   for (const s of soundInfoList) {
     lines.push(`- ${s.name}${s.tags.length ? ` — tags: ${s.tags.join(', ')}` : ''}`)
   }
+  // Direct follow-up (2026-09-05 inbox, after trying the plain file): "maybe
+  // already put a prompt inside it that will return the text needed for
+  // every field of a youtube video." The facts above are the raw material;
+  // this is a ready-to-paste prompt that turns them into an actual
+  // title/description/tags, so there's no separate step of figuring out what
+  // to ask an AI for.
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+  lines.push('Paste this whole file into an AI assistant to get a ready-to-use YouTube upload:')
+  lines.push('')
+  lines.push(
+    'Using the ambient mix details above, write everything needed to upload this as a YouTube video: ' +
+      '(1) a title under 100 characters, (2) a 2-3 paragraph description mentioning the mood/setting and the ' +
+      'included sounds, written for people searching for ambient/relaxing/sleep/focus audio, ' +
+      '(3) a list of 10-15 relevant YouTube tags (comma-separated), and (4) 3-5 hashtags to close the description with.'
+  )
   return lines.join('\n')
 }
 
@@ -271,7 +288,15 @@ export default class ExportPlugin {
                 <option value="large">Large (1920×1080)</option>
               </select>
             </label>
-            <p class="export-hint">Draws a moving waveform/spectrum/vectorscope from the actual exported audio. Stays fastest on a plain black background — a custom background color renders noticeably slower (it has to blend two images per frame instead of one).</p>
+            <label>
+              <span>Frame rate</span>
+              <select id="export-viz-fps">
+                <option value="15">15 fps (fastest)</option>
+                <option value="30">30 fps</option>
+                <option value="60">60 fps (smoothest, slowest)</option>
+              </select>
+            </label>
+            <p class="export-hint">Draws a moving waveform/spectrum/vectorscope from the actual exported audio. Stays fastest on a plain black background — a custom background color renders noticeably slower (it has to blend two images per frame instead of one). Higher frame rates look smoother but take proportionally longer to render.</p>
           </div>
         </div>
 
@@ -337,6 +362,7 @@ export default class ExportPlugin {
       vizPalette: container.querySelector('#export-viz-palette'),
       vizBgColor: container.querySelector('#export-viz-bg-color'),
       vizSize: container.querySelector('#export-viz-size'),
+      vizFps: container.querySelector('#export-viz-fps'),
       infoFile: container.querySelector('#export-info-file'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
@@ -415,6 +441,9 @@ export default class ExportPlugin {
     this.els.vizSize.addEventListener('change', () => {
       this.api.settings.setExportVisualizationOptions({ size: this.els.vizSize.value })
     })
+    this.els.vizFps.addEventListener('change', () => {
+      this.api.settings.setExportVisualizationOptions({ fps: Number(this.els.vizFps.value) })
+    })
     this.api.settings
       .get()
       .then((settings) => {
@@ -429,6 +458,7 @@ export default class ExportPlugin {
         this.els.vizPalette.value = settings.exportVisualizationPalette ?? 'intensity'
         this.els.vizBgColor.value = settings.exportVisualizationBgColor ?? '#000000'
         this.els.vizSize.value = settings.exportVisualizationSize ?? 'medium'
+        this.els.vizFps.value = String(settings.exportVisualizationFps ?? 15)
         this.updateVideoBackgroundRowVisibility()
         this.updateVideoBackgroundSubsectionVisibility()
         this.updateVizFieldVisibility()
@@ -618,7 +648,7 @@ export default class ExportPlugin {
             videoMode: this.els.videoMode.value,
             videoBackground: this.els.videoBackground.value,
             loopVideoName: this.loopVideoPath ? this.loopVideoPath.split(/[\\/]/).pop() : null,
-            visualizationSummary: `${this.els.vizType.value} visualization (${this.els.vizSize.value})`,
+            visualizationSummary: `${this.els.vizType.value} visualization (${this.els.vizSize.value}, ${this.els.vizFps.value}fps)`,
             soundInfoList,
             fadeInSeconds,
             fadeOutSeconds

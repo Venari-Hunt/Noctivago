@@ -27,12 +27,29 @@ import { runFfmpegToFile } from './runFfmpeg.js'
 //   entirely) and a custom background is opt-in, with the Export tab UI
 //   saying plainly that it renders slower.
 //
-// fps is fixed at 15, not exposed as a UI knob - smooth enough for an
-// ambient background visual (not a beat-synced music video) while keeping
-// every size/type combination comfortably fast; this app already has a
-// precedent for a fixed, un-exposed fps choice (the black-screen video's own
-// fixed 1fps).
-const VIZ_FPS = 15
+// fps was originally fixed at 15 (not exposed as a UI knob) on the theory
+// that it's smooth enough for an ambient background visual. Owner feedback
+// after actually trying all three styles on a real export (2026-09-05
+// inbox): "works fine but i think you should leave the option to choose
+// between 15, 30 and 60 fps... if you can find a way to speed up the
+// process... that would be nice." 15 stays the default (fastest, matches the
+// original benchmarks in the comment below), 30/60 are opt-in and cost
+// proportionally more encode time - the Export tab UI says so directly
+// rather than silently making it slower.
+const DEFAULT_VIZ_FPS = 15
+const VIZ_FPS_OPTIONS = [15, 30, 60]
+
+function resolveFps(fps) {
+  return VIZ_FPS_OPTIONS.includes(fps) ? fps : DEFAULT_VIZ_FPS
+}
+
+// Also investigated for "speed this up further": bumping libx264's own
+// -preset from veryfast to ultrafast. Benchmarked directly against the real
+// bundled ffmpeg (a 30s 1080p showwaves render) - real, but only ~40% faster
+// while the output file ballooned ~2.6x (26MB -> 69MB at 15fps for just 30s;
+// at real export scale that's a multi-GB difference). Not worth it for a
+// background visual - rejected, veryfast stays. The fps selector above is
+// the real speed/quality trade-off knob this feature needed.
 
 const SIZE_PRESETS = {
   small: '854x480',
@@ -51,15 +68,15 @@ function isBlack(hex) {
   return hexToFfmpegColor(hex) === '0x000000'
 }
 
-function buildVizFilter(type, size, colorHex, palette) {
+function buildVizFilter(type, size, colorHex, palette, fps) {
   if (type === 'spectrum') {
     const pal = SPECTRUM_PALETTES.includes(palette) ? palette : 'intensity'
-    return `showspectrum=s=${size}:slide=scroll:mode=combined:color=${pal},fps=${VIZ_FPS}`
+    return `showspectrum=s=${size}:slide=scroll:mode=combined:color=${pal},fps=${fps}`
   }
   if (type === 'vectorscope') {
-    return `avectorscope=s=${size}:rate=${VIZ_FPS}:draw=aaline:zoom=1.5`
+    return `avectorscope=s=${size}:rate=${fps}:draw=aaline:zoom=1.5`
   }
-  return `showwaves=s=${size}:mode=cline:colors=${hexToFfmpegColor(colorHex)}:rate=${VIZ_FPS}`
+  return `showwaves=s=${size}:mode=cline:colors=${hexToFfmpegColor(colorHex)}:rate=${fps}`
 }
 
 // Same mux shape as loopClip.js/exportMix.js's other video renderers
@@ -71,15 +88,22 @@ function buildVizFilter(type, size, colorHex, palette) {
 // everything (decode audio -> generate video frames from it -> encode ->
 // mux back with the same audio, copied not re-decoded).
 export async function renderVisualizationVideo(audioPath, durationSeconds, options, reporter) {
-  const { type = 'waveform', color = '#9ece6a', bgColor = '#000000', palette = 'intensity', size: sizeKey = 'medium' } =
-    options || {}
+  const {
+    type = 'waveform',
+    color = '#9ece6a',
+    bgColor = '#000000',
+    palette = 'intensity',
+    size: sizeKey = 'medium',
+    fps: fpsOption
+  } = options || {}
   const size = SIZE_PRESETS[sizeKey] || SIZE_PRESETS.medium
-  reporter?.step(`Rendering ${type} visualization video…`)
+  const fps = resolveFps(fpsOption)
+  reporter?.step(`Rendering ${type} visualization video (${fps}fps)…`)
   const videoPath = audioPath.replace(/\.[^./\\]+$/, '') + '.mkv'
-  const vizFilter = buildVizFilter(type, size, color, palette)
+  const vizFilter = buildVizFilter(type, size, color, palette, fps)
   const filterComplex = isBlack(bgColor)
     ? `[0:a]${vizFilter}[v]`
-    : `color=c=${hexToFfmpegColor(bgColor)}:s=${size}:r=${VIZ_FPS}:d=${durationSeconds.toFixed(3)}[bg];` +
+    : `color=c=${hexToFfmpegColor(bgColor)}:s=${size}:r=${fps}:d=${durationSeconds.toFixed(3)}[bg];` +
       `[0:a]${vizFilter}[wave];[bg][wave]blend=all_mode=screen[v]`
   await runFfmpegToFile(
     [
@@ -99,4 +123,4 @@ export async function renderVisualizationVideo(audioPath, durationSeconds, optio
   return videoPath
 }
 
-export { SIZE_PRESETS, SPECTRUM_PALETTES }
+export { SIZE_PRESETS, SPECTRUM_PALETTES, VIZ_FPS_OPTIONS, DEFAULT_VIZ_FPS }
