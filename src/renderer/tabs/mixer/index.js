@@ -1451,5 +1451,33 @@ document.addEventListener('library:linked', refreshList)
     state.groups = preset?.groups ?? []
     engine.setSoundGroups(state.groups)
     for (const [id, source] of state.sources) engine.routeSound(id, source)
+    // v0.1.147: each Mixer row now shows a group-membership badge
+    // (SoundRow.js's groupName), so a membership change needs to actually
+    // re-render the list - previously this listener only ever fed the
+    // right-click context menu (computed fresh on each open), so a missing
+    // render() here was invisible.
+    render()
+  })
+  // The merged Remix tab's live spectrogram, for Preset/Group mode: unlike
+  // every other bridge above (one-way, core reacts to a plugin's edit), this
+  // one is a synchronous request/response over the same window-CustomEvent
+  // mechanism - the plugin dispatches with a mutable `detail` object and
+  // reads `detail.node` right after dispatchEvent() returns, since listeners
+  // run synchronously in the same tick. A real AnalyserNode reference (not
+  // serialized data) is safe to hand across here because plugin code and
+  // this module run in the same JS realm (both are plain renderer-process
+  // code loaded into the same window - only the main-process/Node boundary
+  // is actually sandboxed, see CLAUDE.md's Plugins section) - polling the
+  // node every animation frame this way costs nothing extra per frame, no
+  // recurring event traffic. Only ever resolves a node for whichever
+  // preset/group is *actually the live one* (state.activePresetId /
+  // engine.groupChains), same scoping every other whole-mix/group bridge
+  // above already enforces - editing a preset/group that isn't loaded
+  // correctly gets `null` back (nothing playing to visualize).
+  window.addEventListener('noctivago:request-analyser', (e) => {
+    const d = e.detail
+    if (!d || d.presetId !== state.activePresetId) return
+    if (d.kind === 'whole-mix') d.node = engine.wholeMix.analyser
+    else if (d.kind === 'group') d.node = engine.groupChains.get(d.groupId)?.analyser ?? null
   })
 }

@@ -2,9 +2,9 @@ import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 
-// A submix bus for a named "Sound Group" (see plugins/preset-remix's "Sound
-// Groups" section + the Mixer's right-click "Add to group…" menu on a sound
-// row) - several sounds route their gainNode through one shared
+// A submix bus for a named "Sound Group" (see the Remix plugin's Group mode
+// + the Mixer's right-click "Add to group…" menu on a sound row) - several
+// sounds route their gainNode through one shared
 // highpass/lowpass/EQ/gain chain instead of straight to masterGain, so they
 // can be shaped together ("make these sound like they're outside a house")
 // without touching any sound's own per-sound filters. Structurally identical
@@ -48,6 +48,16 @@ export class SoundGroupChain {
     this._rebuildEqChain([])
     this.gain.connect(this.limiter)
     this.limiter.connect(destination)
+
+    // Read-only tap for the merged Remix tab's live spectrogram (Group
+    // mode) - see WholeMixChain's identical tap for why a dedicated
+    // fixed-gain feed node instead of tapping `limiter` directly.
+    this.analyserFeed = context.createGain()
+    this.analyserFeed.gain.value = 1
+    this.limiter.connect(this.analyserFeed)
+    this.analyser = context.createAnalyser()
+    this.analyser.fftSize = 2048
+    this.analyserFeed.connect(this.analyser)
 
     this.config = null
   }
@@ -114,5 +124,7 @@ export class SoundGroupChain {
     for (const node of this.eqNodes) node.disconnect()
     this.gain.disconnect()
     this.limiter.disconnect()
+    this.analyserFeed.disconnect()
+    this.analyser.disconnect()
   }
 }

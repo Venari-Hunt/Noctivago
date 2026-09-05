@@ -63,6 +63,17 @@ export class WholeMixChain {
     this.fadeGain.connect(this.limiter)
     this.limiter.connect(destination)
 
+    // Read-only tap for the merged Remix tab's live spectrogram (Preset
+    // mode) - a dedicated fixed-gain feed node, never connected onward,
+    // mirroring PreviewSource.js's own analyser tap so the graph reads
+    // (fixed gain, decoupled from anything downstream) match exactly.
+    this.analyserFeed = context.createGain()
+    this.analyserFeed.gain.value = 1
+    this.limiter.connect(this.analyserFeed)
+    this.analyser = context.createAnalyser()
+    this.analyser.fftSize = 2048
+    this.analyserFeed.connect(this.analyser)
+
     this.config = null
   }
 

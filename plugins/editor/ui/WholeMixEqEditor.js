@@ -1,10 +1,18 @@
-// A compact draggable-node parametric EQ for the Preset Remix whole-mix
-// chain. Deliberately scoped down from the core Remix plugin's EqEditor
-// (plugins/editor/ui/EqEditor.js) - no live spectrum analyzer, no band
-// energy backdrop, no A/B, no mute/solo (there's no single preview source
-// for the whole mix, and those extras aren't the point here). Kept: the
-// draggable nodes, the real composite response curve, per-band type, add on
-// empty-click, wheel for Q, right-click to remove, double-click to flatten.
+// A compact draggable-node parametric EQ for the merged Remix tab's Preset
+// and Group modes (see index.js's mode switch). Deliberately scoped down
+// from the same file's own EqEditor.js (the Sound-mode editor) - no A/B
+// compare, no per-band mute/solo, no cut-overlay: those extras assume one
+// single sound's own saved-vs-live state, which a whole preset or group
+// (several sounds at once) doesn't have. Kept, and the one thing added on
+// top of the plain preset-remix version this was lifted from: the same
+// live-reacting spectrum analyzer Sound mode's EqEditor has - the owner
+// asked for parity there specifically ("Live preview of the spectogram
+// should work even if it's a group or a preset"), and it's a pure display
+// feature (tap a real AnalyserNode, draw a filled area) with nothing about
+// it that assumes a single preview source - see index.js's
+// tickWholeMixSpectrum() for where the node itself comes from (the real
+// WholeMixChain/SoundGroupChain output, via a cross-plugin/core bridge,
+// since there's no per-mode PreviewSource the way Sound mode has one).
 //
 // Bands are plain objects { freqHz, gainDb, q, type, slope, muted } matching
 // a sound's own filters.eq shape, so the same WholeMixChain / presets.js
@@ -58,6 +66,32 @@ function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v))
 }
 
+// Same technique + same reasoning as the Sound-mode EqEditor.js's own
+// drawLiveSpectrum: freqData is a Uint8Array from AnalyserNode.
+// getByteFrequencyData(), already dB-scaled 0-255 by the Web Audio API
+// itself, bins linearly spaced in frequency drawn against this graph's own
+// log-frequency X axis via freqToX. Pink to match every other live-spectrum
+// display in this app.
+function drawLiveSpectrum(ctx, width, height, freqData, sampleRate) {
+  if (!freqData) return
+  const binHz = sampleRate / 2 / freqData.length
+  ctx.beginPath()
+  ctx.moveTo(0, height)
+  for (let i = 0; i < freqData.length; i++) {
+    const freqHz = (i + 0.5) * binHz
+    if (freqHz < FREQ_MIN) continue
+    if (freqHz > FREQ_MAX) break
+    const x = freqToX(freqHz, width)
+    const magnitude = freqData[i] / 255
+    const y = height - magnitude * height * 0.92
+    ctx.lineTo(x, y)
+  }
+  ctx.lineTo(width, height)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(247, 118, 142, 0.4)'
+  ctx.fill()
+}
+
 let responseContext = null
 function computeResponseCurve(bands, width) {
   const active = bands.filter((b) => !b.muted && b.type !== 'off')
@@ -101,6 +135,8 @@ export class WholeMixEqEditor {
     this.bands = []
     this.selectedIndex = -1
     this._dragIndex = -1
+    this._liveSpectrum = null
+    this._freqDataBuffer = null
 
     canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e))
     window.addEventListener('pointermove', (e) => this._onPointerMove(e))
@@ -144,6 +180,30 @@ export class WholeMixEqEditor {
     this.bands = []
     this.selectedIndex = -1
     this._emit()
+  }
+
+  // Called once per frame from index.js's tickWholeMixSpectrum() rAF loop
+  // while Preset/Group mode is active - mirrors the Sound-mode EqEditor's
+  // own tickSpectrum() exactly, just reused here for a node that comes from
+  // the real Mixer engine instead of a plugin-owned PreviewSource.
+  tickSpectrum(analyserNode) {
+    if (!analyserNode) return
+    if (!this._freqDataBuffer || this._freqDataBuffer.length !== analyserNode.frequencyBinCount) {
+      this._freqDataBuffer = new Uint8Array(analyserNode.frequencyBinCount)
+    }
+    analyserNode.getByteFrequencyData(this._freqDataBuffer)
+    this._liveSpectrum = { freqData: this._freqDataBuffer, sampleRate: analyserNode.context.sampleRate }
+    this.draw()
+  }
+
+  // Falls back to a flat graph (no static band-energy backdrop exists for a
+  // whole preset/group the way a single sound has one) - called whenever
+  // there's no analyser to read (the preset/group isn't the one actually
+  // loaded/playing right now) so the graph doesn't freeze on the last frame.
+  clearSpectrum() {
+    if (!this._liveSpectrum) return
+    this._liveSpectrum = null
+    this.draw()
   }
 
   _rect() {
@@ -246,6 +306,8 @@ export class WholeMixEqEditor {
     ctx.clearRect(0, 0, width, height)
     ctx.font = '10px sans-serif'
     ctx.textBaseline = 'middle'
+
+    if (this._liveSpectrum) drawLiveSpectrum(ctx, width, height, this._liveSpectrum.freqData, this._liveSpectrum.sampleRate)
 
     for (const g of [-12, -6, 0, 6, 12]) {
       const yy = gainToY(g, height)

@@ -3,6 +3,7 @@ import { PreviewSource } from './audio/PreviewSource.js'
 import { BakedClipPreview } from './audio/BakedClipPreview.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
 import { createEqEditorController, Q_MIN, Q_MAX, SLOPE_CAPABLE_EQ_TYPES } from './ui/EqEditor.js'
+import { WholeMixEqEditor, EQ_TYPES as WHOLE_MIX_EQ_TYPES } from './ui/WholeMixEqEditor.js'
 import { createWaveformScrollbar } from './ui/WaveformScrollbar.js'
 import { formatDuration, parseDuration } from './util/time.js'
 
@@ -114,6 +115,94 @@ const FILTER_PRESETS = {
   reverb: { label: 'Reverb', highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 1500, reverbMix: 0.35 }
 }
 
+// --- Preset mode / Group mode (v0.1.147) ---
+// Bundled into this same plugin/tab per direct feedback ("I want preset
+// remix to work exactly as a copy of the remix tab" / "streamline the remix
+// experience to the remix tab... a way to change modes... between sounds,
+// presets and groups") - previously two separate plugins (this one, and
+// `plugins/preset-remix/`, now deleted). The three modes share this file's
+// sticky bar / autosave-adjacent Save pattern and this EQ canvas look, but
+// deliberately don't share Sound mode's waveform/trim/live-preview machinery
+// - a preset or group is several sounds playing at once, with no single
+// file to scrub, so "exact" parity stops at the parts that structurally
+// apply to more than one sound (filters + EQ), matching the owner's own
+// follow-up scoping ("waveform and single audio file controls should only
+// show up on the single sound mode... if you're not on sound mode only the
+// eq modules should show up").
+const NEUTRAL_WHOLE_MIX = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, fadeInSeconds: 0, eq: [] }
+// A group's own filters (see AudioEngine.js's SoundGroupChain) are the same
+// shape as the whole-mix's, minus fadeInSeconds - a group has no "on load"
+// moment of its own to fade in on.
+const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, eq: [] }
+
+function cloneWholeMix(mix) {
+  return { ...NEUTRAL_WHOLE_MIX, ...(mix ?? {}), eq: (mix?.eq ?? []).map((b) => ({ ...b })) }
+}
+
+function cloneGroupFilters(filters) {
+  return { ...NEUTRAL_GROUP_FILTERS, ...(filters ?? {}), eq: (filters?.eq ?? []).map((b) => ({ ...b })) }
+}
+
+// Order-insensitive value compare - the EQ editor and the persisted store
+// build band objects with different key orders, so a plain JSON.stringify
+// would report a false "dirty" after an edit that lands back on the saved
+// values.
+function canonicalWholeMix(mix) {
+  const m = mix ?? {}
+  return JSON.stringify({
+    highpassHz: Number(m.highpassHz) || 0,
+    lowpassHz: Number(m.lowpassHz ?? 20000),
+    gainDb: Number(m.gainDb) || 0,
+    fadeInSeconds: Number(m.fadeInSeconds) || 0,
+    eq: (m.eq ?? []).map((b) => ({
+      freqHz: Math.round(Number(b.freqHz) || 0),
+      gainDb: Number(b.gainDb) || 0,
+      q: Number(b.q) || 1,
+      type: b.type ?? 'peaking',
+      slope: b.slope === 'steep' ? 'steep' : 'gentle',
+      muted: Boolean(b.muted)
+    }))
+  })
+}
+
+function wholeMixEqual(a, b) {
+  return canonicalWholeMix(a) === canonicalWholeMix(b)
+}
+
+function canonicalGroupFilters(filters) {
+  const f = filters ?? {}
+  return JSON.stringify({
+    highpassHz: Number(f.highpassHz) || 0,
+    lowpassHz: Number(f.lowpassHz ?? 20000),
+    gainDb: Number(f.gainDb) || 0,
+    eq: (f.eq ?? []).map((b) => ({
+      freqHz: Math.round(Number(b.freqHz) || 0),
+      gainDb: Number(b.gainDb) || 0,
+      q: Number(b.q) || 1,
+      type: b.type ?? 'peaking',
+      slope: b.slope === 'steep' ? 'steep' : 'gentle',
+      muted: Boolean(b.muted)
+    }))
+  })
+}
+
+function groupFiltersEqual(a, b) {
+  return canonicalGroupFilters(a) === canonicalGroupFilters(b)
+}
+
+// Cross-plugin/core bridge for the live spectrogram in Preset/Group mode -
+// see tabs/mixer/index.js's matching `noctivago:request-analyser` listener
+// for why this is a synchronous request/response over a window CustomEvent
+// rather than an IPC call: a real AnalyserNode reference is safe to hand
+// back here since plugin code and that module run in the same JS realm.
+// Returns null when the preset/group being edited isn't the one actually
+// loaded/playing in the Mixer right now (nothing to visualize).
+function requestAnalyser(kind, presetId, groupId) {
+  const detail = { kind, presetId, groupId, node: null }
+  window.dispatchEvent(new CustomEvent('noctivago:request-analyser', { detail }))
+  return detail.node
+}
+
 export default class EditorPlugin {
   constructor(app) {
     this.app = app
@@ -195,6 +284,25 @@ export default class EditorPlugin {
     // own "Don't ask again" button, not a general Settings toggle (per the
     // original request: the prompt itself carries the opt-out).
     this.skipLeaveConfirm = false
+
+    // --- Preset mode / Group mode (v0.1.147) ---
+    this.mode = 'sound'
+    this.presets = []
+    this.selectedPresetId = null
+    this.wholeMixCurrent = cloneWholeMix(null)
+    this.wholeMixSaved = cloneWholeMix(null)
+    this._wholeMixSaveInProgress = false
+    // Groups belonging to the selected preset, and whichever one is
+    // currently open for editing.
+    this.groups = []
+    this.selectedGroupId = null
+    this.groupCurrent = cloneGroupFilters(null)
+    this.groupSaved = cloneGroupFilters(null)
+    this._groupSaveInProgress = false
+    // The Preset/Group spectrogram's own rAF loop (separate from
+    // tickPreviewPlayhead, which only ever drives Sound mode) - see
+    // tickWholeMixSpectrum()/stopWholeMixSpectrumTicking().
+    this._wholeMixSpectrumRafId = null
   }
 
   async onload() {
@@ -234,6 +342,12 @@ export default class EditorPlugin {
         // this tab last mounted — mount() only runs once per tab lifetime,
         // so without this the picker would silently go stale.
         if (this.els.soundSearch) this.refreshLibrary().catch((err) => console.error('Editor: failed to refresh library', err))
+        if (this.els.mixPresetSelect) this.refreshMixPanel().catch((err) => console.error('Editor: failed to refresh preset/group panel', err))
+        // Re-assert whatever mode-appropriate live preview was active - the
+        // Mixer may have loaded a different preset while this tab was away.
+        if (this.mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
+        else if (this.mode === 'group' && this.selectedGroupId) this.dispatchGroupPreview(this.groupCurrent)
+        if (this.mode !== 'sound') this.startWholeMixSpectrumTicking()
         this._syncScrollTopVisibility?.()
       },
       onBeforeHide: () => this.confirmLeaveIfDirty(),
@@ -243,6 +357,13 @@ export default class EditorPlugin {
         this.stopPreviewTicking()
         this.setPlayPauseIcon(false)
         this.setSolo(false)
+        // Drop any unsaved Preset/Group preview - the Mixer should reflect
+        // the persisted state once this tab isn't actively being edited,
+        // same convention the old separate Preset Remix plugin's own onHide
+        // already established.
+        this.dispatchWholeMixPreview(this.wholeMixSaved)
+        if (this.selectedGroupId) this.dispatchGroupPreview(this.groupSaved)
+        this.stopWholeMixSpectrumTicking()
       },
       onDestroy: () => this.disposePreview()
     })
@@ -251,6 +372,9 @@ export default class EditorPlugin {
   async onunload() {
     if (this._onKeyDown) document.removeEventListener('keydown', this._onKeyDown)
     this.disposePreview()
+    this.stopWholeMixSpectrumTicking()
+    this.presetEq?.destroy()
+    this.groupEq?.destroy()
     this.unregister?.()
   }
 
@@ -260,6 +384,109 @@ export default class EditorPlugin {
   mount(container) {
     container.innerHTML = `
       <div class="editor-tab">
+        <div class="editor-mode-switch-row">
+          <div class="editor-mode-switch">
+            <button id="editor-mode-sound" class="editor-mode-pill editor-mode-pill-active" type="button">Sound</button>
+            <button id="editor-mode-preset" class="editor-mode-pill" type="button">Preset</button>
+            <button id="editor-mode-group" class="editor-mode-pill" type="button">Group</button>
+          </div>
+          <span id="editor-mode-hint" class="editor-mode-hint">Trim, filters, EQ and live preview for one sound at a time.</span>
+        </div>
+
+        <div id="editor-mix-picker-row" class="editor-mix-picker-row hidden">
+          <span>Preset</span>
+          <select id="editor-mix-preset-select"></select>
+          <span id="editor-mix-group-select-label" class="hidden">Group</span>
+          <select id="editor-mix-group-select" class="hidden"></select>
+          <button id="editor-mix-group-new" class="btn btn-small hidden" type="button">+ New group</button>
+        </div>
+
+        <div id="editor-mode-panel-preset" class="editor-mode-panel hidden">
+          <div id="editor-mix-preset-controls" class="editor-mix-controls editor-mix-disabled">
+            <div class="editor-filters">
+              <label>
+                <span>High-pass</span>
+                <input id="editor-mix-preset-highpass" type="range" min="0" max="2000" value="0" step="10" />
+                <span id="editor-mix-preset-highpass-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Low-pass</span>
+                <input id="editor-mix-preset-lowpass" type="range" min="150" max="20000" value="20000" step="50" />
+                <span id="editor-mix-preset-lowpass-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Gain</span>
+                <input id="editor-mix-preset-gain" type="range" min="-24" max="24" value="0" step="1" />
+                <span id="editor-mix-preset-gain-value" class="editor-filter-value">0 dB</span>
+              </label>
+              <label>
+                <span>Fade in</span>
+                <input id="editor-mix-preset-fadein" type="number" min="0" max="60" step="0.5" value="0" />
+                <span class="editor-filter-value">s — eases the whole mix up when the preset loads</span>
+              </label>
+            </div>
+            <div class="editor-eq">
+              <div class="editor-eq-header">
+                <span class="editor-eq-label">Parametric EQ</span>
+              </div>
+              <canvas id="editor-mix-preset-eq-canvas" class="editor-mix-eq-canvas" title="Click the graph to add a band, drag to move, scroll for width (Q), right-click to remove."></canvas>
+              <div class="editor-mix-eq-fields">
+                <label><span>Freq</span><input id="editor-mix-preset-eq-freq" type="number" min="20" max="20000" step="1" /></label>
+                <label><span>Gain</span><input id="editor-mix-preset-eq-gain" type="number" min="-18" max="18" step="0.5" /></label>
+                <label><span>Q</span><input id="editor-mix-preset-eq-q" type="number" min="0.1" max="20" step="0.1" /></label>
+                <label><span>Type</span><select id="editor-mix-preset-eq-type">${WHOLE_MIX_EQ_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}</select></label>
+                <button id="editor-mix-preset-eq-remove" class="btn btn-small" type="button">Remove band</button>
+                <button id="editor-mix-preset-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
+              </div>
+            </div>
+            <p id="editor-mix-preset-hint" class="editor-mix-status">Pick a preset above. These settings are saved on it and heard live on the whole mix whenever it's loaded in the Mixer.</p>
+          </div>
+        </div>
+
+        <div id="editor-mode-panel-group" class="editor-mode-panel hidden">
+          <div id="editor-mix-group-editor" class="editor-mix-group-editor hidden">
+            <div class="editor-mix-row">
+              <span>Name</span>
+              <input id="editor-mix-group-name" type="text" />
+            </div>
+            <p class="editor-mix-status">Sounds in this preset's mix:</p>
+            <ul id="editor-mix-group-members" class="editor-mix-group-members"></ul>
+            <div class="editor-filters">
+              <label>
+                <span>High-pass</span>
+                <input id="editor-mix-group-highpass" type="range" min="0" max="2000" value="0" step="10" />
+                <span id="editor-mix-group-highpass-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Low-pass</span>
+                <input id="editor-mix-group-lowpass" type="range" min="150" max="20000" value="20000" step="50" />
+                <span id="editor-mix-group-lowpass-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Gain</span>
+                <input id="editor-mix-group-gain" type="range" min="-24" max="24" value="0" step="1" />
+                <span id="editor-mix-group-gain-value" class="editor-filter-value">0 dB</span>
+              </label>
+            </div>
+            <div class="editor-eq">
+              <div class="editor-eq-header">
+                <span class="editor-eq-label">Parametric EQ</span>
+              </div>
+              <canvas id="editor-mix-group-eq-canvas" class="editor-mix-eq-canvas" title="Click the graph to add a band, drag to move, scroll for width (Q), right-click to remove."></canvas>
+              <div class="editor-mix-eq-fields">
+                <label><span>Freq</span><input id="editor-mix-group-eq-freq" type="number" min="20" max="20000" step="1" /></label>
+                <label><span>Gain</span><input id="editor-mix-group-eq-gain" type="number" min="-18" max="18" step="0.5" /></label>
+                <label><span>Q</span><input id="editor-mix-group-eq-q" type="number" min="0.1" max="20" step="0.1" /></label>
+                <label><span>Type</span><select id="editor-mix-group-eq-type">${WHOLE_MIX_EQ_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}</select></label>
+                <button id="editor-mix-group-eq-remove" class="btn btn-small" type="button">Remove band</button>
+                <button id="editor-mix-group-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
+              </div>
+            </div>
+          </div>
+          <p id="editor-mix-group-empty" class="editor-mix-status">Pick a preset above, then create or pick a group to EQ some of its sounds together (e.g. crickets + toads to sound like they're outside).</p>
+        </div>
+
+        <div id="editor-mode-panel-sound">
         <div class="editor-picker">
           <input id="editor-sound-search" type="text" class="editor-sound-search" placeholder="Select a sound to edit…" autocomplete="off" />
           <ul id="editor-sound-options" class="editor-sound-options hidden"></ul>
@@ -590,6 +817,7 @@ export default class EditorPlugin {
           <p id="editor-save-status" class="editor-save-status"></p>
         </div>
         <p id="editor-empty" class="editor-empty">Select a sound above to trim and apply filters.</p>
+        </div>
       </div>
       <button id="editor-scroll-top" class="editor-scroll-top-btn hidden" type="button" title="Scroll to top">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -722,7 +950,56 @@ export default class EditorPlugin {
       leaveConfirmDialog: container.querySelector('#editor-leave-confirm'),
       leaveConfirmYes: container.querySelector('#editor-leave-confirm-yes'),
       leaveConfirmNo: container.querySelector('#editor-leave-confirm-no'),
-      leaveConfirmDontAsk: container.querySelector('#editor-leave-confirm-dont-ask')
+      leaveConfirmDontAsk: container.querySelector('#editor-leave-confirm-dont-ask'),
+
+      // --- Preset mode / Group mode (v0.1.147) ---
+      modeSound: container.querySelector('#editor-mode-sound'),
+      modePreset: container.querySelector('#editor-mode-preset'),
+      modeGroup: container.querySelector('#editor-mode-group'),
+      modeHint: container.querySelector('#editor-mode-hint'),
+      modePanelSound: container.querySelector('#editor-mode-panel-sound'),
+      modePanelPreset: container.querySelector('#editor-mode-panel-preset'),
+      modePanelGroup: container.querySelector('#editor-mode-panel-group'),
+      mixPickerRow: container.querySelector('#editor-mix-picker-row'),
+      mixPresetSelect: container.querySelector('#editor-mix-preset-select'),
+      mixGroupSelectLabel: container.querySelector('#editor-mix-group-select-label'),
+      mixGroupSelect: container.querySelector('#editor-mix-group-select'),
+      mixGroupNew: container.querySelector('#editor-mix-group-new'),
+
+      mixPresetControls: container.querySelector('#editor-mix-preset-controls'),
+      mixPresetHighpass: container.querySelector('#editor-mix-preset-highpass'),
+      mixPresetHighpassValue: container.querySelector('#editor-mix-preset-highpass-value'),
+      mixPresetLowpass: container.querySelector('#editor-mix-preset-lowpass'),
+      mixPresetLowpassValue: container.querySelector('#editor-mix-preset-lowpass-value'),
+      mixPresetGain: container.querySelector('#editor-mix-preset-gain'),
+      mixPresetGainValue: container.querySelector('#editor-mix-preset-gain-value'),
+      mixPresetFadeIn: container.querySelector('#editor-mix-preset-fadein'),
+      mixPresetEqCanvas: container.querySelector('#editor-mix-preset-eq-canvas'),
+      mixPresetEqFreq: container.querySelector('#editor-mix-preset-eq-freq'),
+      mixPresetEqGain: container.querySelector('#editor-mix-preset-eq-gain'),
+      mixPresetEqQ: container.querySelector('#editor-mix-preset-eq-q'),
+      mixPresetEqType: container.querySelector('#editor-mix-preset-eq-type'),
+      mixPresetEqRemove: container.querySelector('#editor-mix-preset-eq-remove'),
+      mixPresetEqReset: container.querySelector('#editor-mix-preset-eq-reset'),
+      mixPresetHint: container.querySelector('#editor-mix-preset-hint'),
+
+      mixGroupEditor: container.querySelector('#editor-mix-group-editor'),
+      mixGroupEmpty: container.querySelector('#editor-mix-group-empty'),
+      mixGroupName: container.querySelector('#editor-mix-group-name'),
+      mixGroupMembers: container.querySelector('#editor-mix-group-members'),
+      mixGroupHighpass: container.querySelector('#editor-mix-group-highpass'),
+      mixGroupHighpassValue: container.querySelector('#editor-mix-group-highpass-value'),
+      mixGroupLowpass: container.querySelector('#editor-mix-group-lowpass'),
+      mixGroupLowpassValue: container.querySelector('#editor-mix-group-lowpass-value'),
+      mixGroupGain: container.querySelector('#editor-mix-group-gain'),
+      mixGroupGainValue: container.querySelector('#editor-mix-group-gain-value'),
+      mixGroupEqCanvas: container.querySelector('#editor-mix-group-eq-canvas'),
+      mixGroupEqFreq: container.querySelector('#editor-mix-group-eq-freq'),
+      mixGroupEqGain: container.querySelector('#editor-mix-group-eq-gain'),
+      mixGroupEqQ: container.querySelector('#editor-mix-group-eq-q'),
+      mixGroupEqType: container.querySelector('#editor-mix-group-eq-type'),
+      mixGroupEqRemove: container.querySelector('#editor-mix-group-eq-remove'),
+      mixGroupEqReset: container.querySelector('#editor-mix-group-eq-reset')
     }
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
@@ -802,6 +1079,11 @@ export default class EditorPlugin {
     this.wireScrollTop()
     this.wireLeaveConfirmDialog()
     this.refreshLibrary().catch((err) => console.error('Editor: failed to load library', err))
+
+    this.presetEq = new WholeMixEqEditor(this.els.mixPresetEqCanvas, (bands, opts) => this.onPresetEqChange(bands, opts))
+    this.groupEq = new WholeMixEqEditor(this.els.mixGroupEqCanvas, (bands, opts) => this.onGroupEqChange(bands, opts))
+    this.wireMixControls()
+    this.refreshMixPanel().catch((err) => console.error('Editor: failed to load presets', err))
   }
 
   // Floating "scroll to top" button, requested directly since this panel has
@@ -1013,6 +1295,7 @@ export default class EditorPlugin {
   // lifecycle mount() itself already has.
   mountSticky(container) {
     container.innerHTML = `
+      <div id="editor-sticky-sound-controls" class="editor-sticky-mode-group">
       <button id="editor-play-pause" class="btn btn-svg-icon" type="button" title="Play">${PLAY_ICON_SVG}</button>
       <button id="editor-loop-toggle" class="editor-loop-icon-btn editor-loop-icon-btn-active" type="button" title="Loop preview" aria-pressed="true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -1051,6 +1334,12 @@ export default class EditorPlugin {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Save as copy
       </button>
+      </div>
+      <div id="editor-sticky-mix-controls" class="editor-sticky-mode-group hidden">
+        <span id="editor-mix-status" class="editor-sticky-time"></span>
+        <button id="editor-mix-delete-group" class="btn btn-danger btn-icon-text hidden" type="button">Delete group</button>
+        <button id="editor-mix-save" class="btn btn-primary btn-icon-text editor-sticky-save" type="button">Save</button>
+      </div>
     `
 
     this.els.playPause = container.querySelector('#editor-play-pause')
@@ -1125,6 +1414,17 @@ export default class EditorPlugin {
 
     this.els.stickySolo.addEventListener('click', () => this.toggleSolo())
     this.updatePreviewMuteIcon()
+
+    this.els.stickySoundControls = container.querySelector('#editor-sticky-sound-controls')
+    this.els.stickyMixControls = container.querySelector('#editor-sticky-mix-controls')
+    this.els.mixStatus = container.querySelector('#editor-mix-status')
+    this.els.mixSave = container.querySelector('#editor-mix-save')
+    this.els.mixDeleteGroup = container.querySelector('#editor-mix-delete-group')
+    this.els.mixSave.addEventListener('click', () => {
+      if (this.mode === 'preset') this.saveWholeMix().catch((err) => console.error('Editor: preset save failed', err))
+      else if (this.mode === 'group') this.saveGroup().catch((err) => console.error('Editor: group save failed', err))
+    })
+    this.els.mixDeleteGroup.addEventListener('click', () => this.deleteGroup().catch((err) => console.error('Editor: group delete failed', err)))
   }
 
   effectivePreviewVolume() {
@@ -2783,4 +3083,525 @@ export default class EditorPlugin {
       : `Saved a copy: "${name}" (streams directly - trim over 10 minutes, or the clip render failed).`
     await this.refreshLibrary()
   }
+
+  // ============================================================
+  // Preset mode / Group mode (v0.1.147) - see the top-of-file comment next
+  // to NEUTRAL_WHOLE_MIX for why these live in this same file/class instead
+  // of a separate plugin.
+  // ============================================================
+
+  wireMixControls() {
+    this.els.modeSound.addEventListener('click', () => this.setMode('sound'))
+    this.els.modePreset.addEventListener('click', () => this.setMode('preset'))
+    this.els.modeGroup.addEventListener('click', () => this.setMode('group'))
+
+    this.els.mixPresetSelect.addEventListener('change', () => this.selectMixPreset(this.els.mixPresetSelect.value))
+    this.els.mixGroupSelect.addEventListener('change', () => this.selectGroup(this.els.mixGroupSelect.value))
+    this.els.mixGroupNew.addEventListener('click', () => this.createGroup())
+
+    for (const el of [this.els.mixPresetHighpass, this.els.mixPresetLowpass, this.els.mixPresetGain]) {
+      el.addEventListener('input', () => this.readPresetMixControlsAndPreview())
+    }
+    this.els.mixPresetFadeIn.addEventListener('input', () => this.readPresetMixControlsAndPreview())
+    this.els.mixPresetEqFreq.addEventListener('input', () => this.presetEq.updateSelectedBand({ freqHz: Number(this.els.mixPresetEqFreq.value) }))
+    this.els.mixPresetEqGain.addEventListener('input', () => this.presetEq.updateSelectedBand({ gainDb: Number(this.els.mixPresetEqGain.value) }))
+    this.els.mixPresetEqQ.addEventListener('input', () => this.presetEq.updateSelectedBand({ q: Number(this.els.mixPresetEqQ.value) }))
+    this.els.mixPresetEqType.addEventListener('change', () => this.presetEq.updateSelectedBand({ type: this.els.mixPresetEqType.value }))
+    this.els.mixPresetEqRemove.addEventListener('click', () => this.presetEq.removeSelectedBand())
+    this.els.mixPresetEqReset.addEventListener('click', () => this.presetEq.clear())
+
+    this.els.mixGroupName.addEventListener('input', () => this.updateGroupDirty())
+    for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain]) {
+      el.addEventListener('input', () => this.readGroupControlsAndPreview())
+    }
+    this.els.mixGroupEqFreq.addEventListener('input', () => this.groupEq.updateSelectedBand({ freqHz: Number(this.els.mixGroupEqFreq.value) }))
+    this.els.mixGroupEqGain.addEventListener('input', () => this.groupEq.updateSelectedBand({ gainDb: Number(this.els.mixGroupEqGain.value) }))
+    this.els.mixGroupEqQ.addEventListener('input', () => this.groupEq.updateSelectedBand({ q: Number(this.els.mixGroupEqQ.value) }))
+    this.els.mixGroupEqType.addEventListener('change', () => this.groupEq.updateSelectedBand({ type: this.els.mixGroupEqType.value }))
+    this.els.mixGroupEqRemove.addEventListener('click', () => this.groupEq.removeSelectedBand())
+    this.els.mixGroupEqReset.addEventListener('click', () => this.groupEq.clear())
+  }
+
+  // Switches which of the three modes is showing. Leaving Sound pauses
+  // whatever's previewing there (its sticky controls are about to
+  // disappear, so nothing should keep playing un-controllably behind a
+  // hidden panel); leaving Preset/Group reverts that mode's live preview to
+  // its last-saved value, same convention the old standalone Preset Remix
+  // plugin's own onHide already established, just now triggered by a mode
+  // switch instead of a tab switch.
+  setMode(mode) {
+    if (this.mode === mode) return
+    const leaving = this.mode
+    this.mode = mode
+
+    if (leaving === 'sound') {
+      this.activePreview()?.pause()
+      this.stopPreviewTicking()
+      this.setPlayPauseIcon(false)
+      this.eqEditorController?.clearSpectrum()
+    }
+    if (leaving === 'preset') this.dispatchWholeMixPreview(this.wholeMixSaved)
+    if (leaving === 'group' && this.selectedGroupId) this.dispatchGroupPreview(this.groupSaved)
+
+    if (mode === 'sound') {
+      this.stopWholeMixSpectrumTicking()
+    } else {
+      if (mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
+      else if (this.selectedGroupId) this.dispatchGroupPreview(this.groupCurrent)
+      this.startWholeMixSpectrumTicking()
+    }
+
+    this.updateModeUI()
+  }
+
+  updateModeUI() {
+    const mode = this.mode
+    this.els.modeSound.classList.toggle('editor-mode-pill-active', mode === 'sound')
+    this.els.modePreset.classList.toggle('editor-mode-pill-active', mode === 'preset')
+    this.els.modeGroup.classList.toggle('editor-mode-pill-active', mode === 'group')
+    const hints = {
+      sound: 'Trim, filters, EQ and live preview for one sound at a time.',
+      preset: 'Highpass/lowpass/gain, fade-in and EQ for a whole loaded preset.',
+      group: "A shared bus for a few of a preset's sounds - EQ them together non-destructively."
+    }
+    this.els.modeHint.textContent = hints[mode]
+    this.els.modePanelSound.classList.toggle('hidden', mode !== 'sound')
+    this.els.modePanelPreset.classList.toggle('hidden', mode !== 'preset')
+    this.els.modePanelGroup.classList.toggle('hidden', mode !== 'group')
+    this.els.mixPickerRow.classList.toggle('hidden', mode === 'sound')
+    this.els.mixGroupSelectLabel.classList.toggle('hidden', mode !== 'group')
+    this.els.mixGroupSelect.classList.toggle('hidden', mode !== 'group')
+    this.els.mixGroupNew.classList.toggle('hidden', mode !== 'group')
+    this.els.stickySoundControls.classList.toggle('hidden', mode !== 'sound')
+    this.els.stickyMixControls.classList.toggle('hidden', mode === 'sound')
+    this.els.mixDeleteGroup.classList.toggle('hidden', mode !== 'group' || !this.selectedGroupId)
+    if (mode === 'preset') {
+      this.els.mixSave.disabled = !this.selectedPresetId || wholeMixEqual(this.wholeMixCurrent, this.wholeMixSaved)
+      this.els.mixStatus.textContent = this.selectedPresetId ? '' : 'Pick a preset above.'
+    } else if (mode === 'group') {
+      const dirty = this.selectedGroupId && (this.els.mixGroupName.value.trim() !== this.groups.find((g) => g.id === this.selectedGroupId)?.name || !groupFiltersEqual(this.groupCurrent, this.groupSaved))
+      this.els.mixSave.disabled = !this.selectedGroupId || !dirty
+      this.els.mixStatus.textContent = this.selectedGroupId ? '' : 'Pick or create a group above.'
+    }
+  }
+
+  // --- Live spectrogram (Preset/Group only) ---
+  // A second, separate rAF loop from tickPreviewPlayhead (which only ever
+  // drives Sound mode) - there's no playhead/progress to show here, this
+  // loop's only job is polling whichever real engine node is relevant right
+  // now and feeding it to that mode's own WholeMixEqEditor.
+  startWholeMixSpectrumTicking() {
+    if (this._wholeMixSpectrumRafId) return
+    const tick = () => {
+      this.tickWholeMixSpectrum()
+      this._wholeMixSpectrumRafId = requestAnimationFrame(tick)
+    }
+    this._wholeMixSpectrumRafId = requestAnimationFrame(tick)
+  }
+
+  stopWholeMixSpectrumTicking() {
+    if (this._wholeMixSpectrumRafId) cancelAnimationFrame(this._wholeMixSpectrumRafId)
+    this._wholeMixSpectrumRafId = null
+    this.presetEq?.clearSpectrum()
+    this.groupEq?.clearSpectrum()
+  }
+
+  tickWholeMixSpectrum() {
+    if (this.mode === 'preset' && this.selectedPresetId) {
+      const node = requestAnalyser('whole-mix', this.selectedPresetId, null)
+      if (node) this.presetEq.tickSpectrum(node)
+      else this.presetEq.clearSpectrum()
+    } else if (this.mode === 'group' && this.selectedPresetId && this.selectedGroupId) {
+      const node = requestAnalyser('group', this.selectedPresetId, this.selectedGroupId)
+      if (node) this.groupEq.tickSpectrum(node)
+      else this.groupEq.clearSpectrum()
+    }
+  }
+
+  // --- Preset mode ---
+
+  async refreshMixPanel() {
+    this.presets = await this.api.presets.list()
+    this.library = await this.api.library.list()
+    const previous = this.selectedPresetId
+    this.els.mixPresetSelect.innerHTML = this.presets.length
+      ? this.presets.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')
+      : '<option value="">No presets saved yet</option>'
+
+    const stillThere = this.presets.some((p) => p.id === previous)
+    const target = stillThere ? previous : (this.presets[0]?.id ?? null)
+    this.els.mixPresetSelect.value = target ?? ''
+    this.selectMixPreset(target, { silent: true })
+  }
+
+  // `presetChanged` gates whether the currently-open group survives - a
+  // plain data refresh (refreshMixPanel() runs on every tab onShow, same as
+  // the old standalone Preset Remix plugin's own refresh() did) re-selects
+  // the *same* preset id, and used to unconditionally reset selectedGroupId
+  // to null regardless - a real bug caught live via CDP while verifying
+  // this merge (switching to another tab and back silently kicked you out
+  // of whichever group you had open, and - worse - left stale membership
+  // checkboxes in the DOM still wired to toggle a now-null selectedGroupId,
+  // which strips a sound out of every group instead of the intended one).
+  selectMixPreset(id, { silent = false } = {}) {
+    const presetChanged = id !== this.selectedPresetId
+    if (presetChanged && this.selectedGroupId) this.dispatchGroupPreview(this.groupSaved)
+
+    this.selectedPresetId = id || null
+    const preset = this.presets.find((p) => p.id === id)
+    this.wholeMixSaved = cloneWholeMix(preset?.wholeMix ?? null)
+    this.wholeMixCurrent = cloneWholeMix(this.wholeMixSaved)
+    this.writePresetMixControls(this.wholeMixCurrent)
+    this.presetEq.setBands(this.wholeMixCurrent.eq)
+    this.syncPresetEqFields()
+    this.updatePresetMixLabels()
+    this.els.mixPresetControls.classList.toggle('editor-mix-disabled', !preset)
+    if (!silent && this.mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
+
+    this.groups = preset?.groups ?? []
+    this.renderGroupSelectOptions()
+    if (presetChanged) {
+      this.selectedGroupId = null
+      this.els.mixGroupSelect.value = ''
+      this.els.mixGroupEditor.classList.add('hidden')
+      this.els.mixGroupEmpty.classList.remove('hidden')
+    } else if (this.selectedGroupId) {
+      // Same preset, just a refresh - keep editing whichever group was
+      // open, re-synced against the freshly fetched data (its membership or
+      // filters may have changed elsewhere, e.g. the Mixer's own right-click
+      // menu, while this tab was hidden).
+      const group = this.groups.find((g) => g.id === this.selectedGroupId)
+      if (group) {
+        this.els.mixGroupSelect.value = this.selectedGroupId
+        this.renderGroupMembers()
+      } else {
+        this.selectedGroupId = null
+        this.els.mixGroupEditor.classList.add('hidden')
+        this.els.mixGroupEmpty.classList.remove('hidden')
+      }
+    }
+    this.updateModeUI()
+  }
+
+  writePresetMixControls(mix) {
+    this.els.mixPresetHighpass.value = String(mix.highpassHz)
+    this.els.mixPresetLowpass.value = String(mix.lowpassHz)
+    this.els.mixPresetGain.value = String(mix.gainDb)
+    this.els.mixPresetFadeIn.value = String(mix.fadeInSeconds)
+  }
+
+  onPresetEqChange(bands, { selectionOnly = false } = {}) {
+    this.syncPresetEqFields()
+    if (selectionOnly) return
+    this.wholeMixCurrent = { ...this.wholeMixCurrent, eq: bands }
+    this.updateModeUI()
+    this.dispatchWholeMixPreview(this.wholeMixCurrent)
+  }
+
+  syncPresetEqFields() {
+    const band = this.presetEq.getSelectedBand()
+    const disabled = !band
+    for (const el of [this.els.mixPresetEqFreq, this.els.mixPresetEqGain, this.els.mixPresetEqQ, this.els.mixPresetEqType, this.els.mixPresetEqRemove]) {
+      el.disabled = disabled
+    }
+    if (!band) {
+      this.els.mixPresetEqFreq.value = ''
+      this.els.mixPresetEqGain.value = ''
+      this.els.mixPresetEqQ.value = ''
+      return
+    }
+    if (document.activeElement !== this.els.mixPresetEqFreq) this.els.mixPresetEqFreq.value = String(Math.round(band.freqHz))
+    if (document.activeElement !== this.els.mixPresetEqGain) this.els.mixPresetEqGain.value = String(band.gainDb)
+    if (document.activeElement !== this.els.mixPresetEqQ) this.els.mixPresetEqQ.value = String(band.q)
+    this.els.mixPresetEqType.value = band.type ?? 'peaking'
+  }
+
+  readPresetMixControlsAndPreview() {
+    this.wholeMixCurrent = {
+      ...this.wholeMixCurrent,
+      highpassHz: Number(this.els.mixPresetHighpass.value),
+      lowpassHz: Number(this.els.mixPresetLowpass.value),
+      gainDb: Number(this.els.mixPresetGain.value),
+      fadeInSeconds: Math.max(0, Number(this.els.mixPresetFadeIn.value) || 0)
+    }
+    this.updatePresetMixLabels()
+    this.updateModeUI()
+    this.dispatchWholeMixPreview(this.wholeMixCurrent)
+  }
+
+  updatePresetMixLabels() {
+    const hp = Number(this.els.mixPresetHighpass.value)
+    const lp = Number(this.els.mixPresetLowpass.value)
+    const gain = Number(this.els.mixPresetGain.value)
+    this.els.mixPresetHighpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
+    this.els.mixPresetLowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
+    this.els.mixPresetGainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
+  }
+
+  async saveWholeMix() {
+    if (!this.selectedPresetId || this._wholeMixSaveInProgress) return
+    this._wholeMixSaveInProgress = true
+    this.els.mixSave.disabled = true
+    try {
+      const updated = await this.api.presets.updateWholeMix(this.selectedPresetId, this.wholeMixCurrent)
+      this.wholeMixSaved = cloneWholeMix(updated?.wholeMix ?? null)
+      this.wholeMixCurrent = cloneWholeMix(this.wholeMixSaved)
+      this.writePresetMixControls(this.wholeMixCurrent)
+      this.presetEq.setBands(this.wholeMixCurrent.eq)
+      this.syncPresetEqFields()
+      this.updatePresetMixLabels()
+      const local = this.presets.find((p) => p.id === this.selectedPresetId)
+      if (local) local.wholeMix = updated?.wholeMix ?? null
+      this.dispatchWholeMixPreview(this.wholeMixSaved)
+      this.els.mixStatus.textContent = 'Saved. Load this preset in the Mixer to hear it.'
+    } catch (err) {
+      console.error('Editor: preset save failed', err)
+      this.els.mixStatus.textContent = `Save failed: ${err.message}`
+    } finally {
+      this._wholeMixSaveInProgress = false
+      this.updateModeUI()
+    }
+  }
+
+  dispatchWholeMixPreview(wholeMix) {
+    if (!this.selectedPresetId) return
+    window.dispatchEvent(
+      new CustomEvent('noctivago:whole-mix-preview', {
+        detail: { presetId: this.selectedPresetId, wholeMix: cloneWholeMix(wholeMix) }
+      })
+    )
+  }
+
+  // --- Group mode (see AudioEngine.js's SoundGroupChain) ---
+  // A group is scoped to whichever preset is selected in the shared picker
+  // row above: a named subset of that preset's own sounds, routed through
+  // one shared highpass/lowpass/EQ/gain chain instead of straight to
+  // masterGain. Membership writes through immediately (like adding a sound
+  // to a preset); a group's own name/filters/EQ are a draft with the same
+  // sticky-bar Save the whole-mix panel uses, kept fully separate so editing
+  // a group never affects the preset's own whole-mix save state or vice
+  // versa.
+
+  renderGroupSelectOptions() {
+    this.els.mixGroupSelect.innerHTML = this.groups.length
+      ? this.groups.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)} (${g.soundIds.length})</option>`).join('')
+      : '<option value="">No groups yet</option>'
+  }
+
+  selectGroup(id) {
+    if (this.selectedGroupId) this.dispatchGroupPreview(this.groupSaved)
+
+    const group = this.groups.find((g) => g.id === id)
+    this.selectedGroupId = group ? id : null
+    this.els.mixGroupSelect.value = this.selectedGroupId ?? ''
+    if (!group) {
+      this.els.mixGroupEditor.classList.add('hidden')
+      this.els.mixGroupEmpty.classList.remove('hidden')
+      this.updateModeUI()
+      return
+    }
+
+    this.els.mixGroupEditor.classList.remove('hidden')
+    this.els.mixGroupEmpty.classList.add('hidden')
+    this.els.mixGroupName.value = group.name
+    this.groupSaved = cloneGroupFilters(group.filters)
+    this.groupCurrent = cloneGroupFilters(this.groupSaved)
+    this.writeGroupControls(this.groupCurrent)
+    this.groupEq.setBands(this.groupCurrent.eq)
+    this.syncGroupEqFields()
+    this.updateGroupLabels()
+    this.renderGroupMembers()
+    if (this.mode === 'group') this.dispatchGroupPreview(this.groupCurrent)
+    this.updateModeUI()
+  }
+
+  // The preset's own sound list, cross-referenced with the library for
+  // display names - membership only ever makes sense for sounds actually in
+  // this preset's mix.
+  renderGroupMembers() {
+    this.els.mixGroupMembers.innerHTML = ''
+    const preset = this.presets.find((p) => p.id === this.selectedPresetId)
+    const group = this.groups.find((g) => g.id === this.selectedGroupId)
+    if (!preset || !group) return
+    for (const item of preset.sounds) {
+      const sound = this.library.find((s) => s.id === item.soundId)
+      const label = document.createElement('label')
+      label.className = 'editor-mix-group-member'
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.checked = group.soundIds.includes(item.soundId)
+      checkbox.addEventListener('change', () => this.toggleGroupMember(item.soundId))
+      const name = document.createElement('span')
+      name.textContent = sound?.name ?? item.soundId
+      label.appendChild(checkbox)
+      label.appendChild(name)
+      this.els.mixGroupMembers.appendChild(label)
+    }
+  }
+
+  // A sound belongs to at most one group per preset (see
+  // AudioEngine.destinationForSound) - checking it into this group leaves
+  // whatever other group it was already in. Queued onto
+  // this._groupMemberQueue rather than fired directly: two checkboxes
+  // clicked in quick succession (a real risk toggling several sounds into a
+  // group one after another) would otherwise both read this.groups before
+  // either write resolved, so the second call's update.presets.updateGroups
+  // would silently clobber the first - caught live via CDP while verifying
+  // this exact method (two rapid toggles left a group's membership back at
+  // empty even though both clicks visually registered).
+  toggleGroupMember(soundId) {
+    this._groupMemberQueue = (this._groupMemberQueue ?? Promise.resolve()).then(() => this._toggleGroupMemberNow(soundId))
+    return this._groupMemberQueue
+  }
+
+  async _toggleGroupMemberNow(soundId) {
+    const updated = this.groups.map((g) => {
+      if (g.id === this.selectedGroupId) {
+        const has = g.soundIds.includes(soundId)
+        return { ...g, soundIds: has ? g.soundIds.filter((s) => s !== soundId) : [...g.soundIds, soundId] }
+      }
+      return { ...g, soundIds: g.soundIds.filter((s) => s !== soundId) }
+    })
+    const saved = await this.api.presets.updateGroups(this.selectedPresetId, updated)
+    this.groups = saved?.groups ?? updated
+    const local = this.presets.find((p) => p.id === this.selectedPresetId)
+    if (local) local.groups = this.groups
+    this.renderGroupSelectOptions()
+    this.els.mixGroupSelect.value = this.selectedGroupId ?? ''
+    this.renderGroupMembers()
+    window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: this.selectedPresetId } }))
+  }
+
+  writeGroupControls(filters) {
+    this.els.mixGroupHighpass.value = String(filters.highpassHz)
+    this.els.mixGroupLowpass.value = String(filters.lowpassHz)
+    this.els.mixGroupGain.value = String(filters.gainDb)
+  }
+
+  onGroupEqChange(bands, { selectionOnly = false } = {}) {
+    this.syncGroupEqFields()
+    if (selectionOnly) return
+    this.groupCurrent = { ...this.groupCurrent, eq: bands }
+    this.updateModeUI()
+    if (this.mode === 'group') this.dispatchGroupPreview(this.groupCurrent)
+  }
+
+  syncGroupEqFields() {
+    const band = this.groupEq.getSelectedBand()
+    const disabled = !band
+    for (const el of [this.els.mixGroupEqFreq, this.els.mixGroupEqGain, this.els.mixGroupEqQ, this.els.mixGroupEqType, this.els.mixGroupEqRemove]) {
+      el.disabled = disabled
+    }
+    if (!band) {
+      this.els.mixGroupEqFreq.value = ''
+      this.els.mixGroupEqGain.value = ''
+      this.els.mixGroupEqQ.value = ''
+      return
+    }
+    if (document.activeElement !== this.els.mixGroupEqFreq) this.els.mixGroupEqFreq.value = String(Math.round(band.freqHz))
+    if (document.activeElement !== this.els.mixGroupEqGain) this.els.mixGroupEqGain.value = String(band.gainDb)
+    if (document.activeElement !== this.els.mixGroupEqQ) this.els.mixGroupEqQ.value = String(band.q)
+    this.els.mixGroupEqType.value = band.type ?? 'peaking'
+  }
+
+  readGroupControlsAndPreview() {
+    this.groupCurrent = {
+      ...this.groupCurrent,
+      highpassHz: Number(this.els.mixGroupHighpass.value),
+      lowpassHz: Number(this.els.mixGroupLowpass.value),
+      gainDb: Number(this.els.mixGroupGain.value)
+    }
+    this.updateGroupLabels()
+    this.updateModeUI()
+    if (this.mode === 'group') this.dispatchGroupPreview(this.groupCurrent)
+  }
+
+  updateGroupLabels() {
+    const hp = Number(this.els.mixGroupHighpass.value)
+    const lp = Number(this.els.mixGroupLowpass.value)
+    const gain = Number(this.els.mixGroupGain.value)
+    this.els.mixGroupHighpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
+    this.els.mixGroupLowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
+    this.els.mixGroupGainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
+  }
+
+  updateGroupDirty() {
+    this.updateModeUI()
+  }
+
+  async saveGroup() {
+    if (!this.selectedGroupId || this._groupSaveInProgress) return
+    this._groupSaveInProgress = true
+    this.els.mixSave.disabled = true
+    try {
+      const name = this.els.mixGroupName.value.trim() || 'Group'
+      const updated = this.groups.map((g) => (g.id === this.selectedGroupId ? { ...g, name, filters: this.groupCurrent } : g))
+      const saved = await this.api.presets.updateGroups(this.selectedPresetId, updated)
+      this.groups = saved?.groups ?? updated
+      const local = this.presets.find((p) => p.id === this.selectedPresetId)
+      if (local) local.groups = this.groups
+      const group = this.groups.find((g) => g.id === this.selectedGroupId)
+      this.groupSaved = cloneGroupFilters(group?.filters ?? null)
+      this.groupCurrent = cloneGroupFilters(this.groupSaved)
+      this.els.mixGroupName.value = group?.name ?? name
+      this.writeGroupControls(this.groupCurrent)
+      this.groupEq.setBands(this.groupCurrent.eq)
+      this.syncGroupEqFields()
+      this.updateGroupLabels()
+      this.renderGroupSelectOptions()
+      this.els.mixGroupSelect.value = this.selectedGroupId
+      this.dispatchGroupPreview(this.groupSaved)
+      window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: this.selectedPresetId } }))
+      this.els.mixStatus.textContent = 'Saved.'
+    } catch (err) {
+      console.error('Editor: group save failed', err)
+      this.els.mixStatus.textContent = `Save failed: ${err.message}`
+    } finally {
+      this._groupSaveInProgress = false
+      this.updateModeUI()
+    }
+  }
+
+  async deleteGroup() {
+    const id = this.selectedGroupId
+    if (!id || !this.selectedPresetId) return
+    const updated = this.groups.filter((g) => g.id !== id)
+    const saved = await this.api.presets.updateGroups(this.selectedPresetId, updated)
+    this.groups = saved?.groups ?? updated
+    const local = this.presets.find((p) => p.id === this.selectedPresetId)
+    if (local) local.groups = this.groups
+    this.selectedGroupId = null
+    this.els.mixGroupEditor.classList.add('hidden')
+    this.els.mixGroupEmpty.classList.remove('hidden')
+    this.renderGroupSelectOptions()
+    this.els.mixGroupSelect.value = ''
+    window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: this.selectedPresetId } }))
+    this.updateModeUI()
+  }
+
+  async createGroup() {
+    if (!this.selectedPresetId) return
+    const updated = [...this.groups, { name: `Group ${this.groups.length + 1}`, soundIds: [], filters: cloneGroupFilters(null) }]
+    const saved = await this.api.presets.updateGroups(this.selectedPresetId, updated)
+    this.groups = saved?.groups ?? updated
+    const local = this.presets.find((p) => p.id === this.selectedPresetId)
+    if (local) local.groups = this.groups
+    this.renderGroupSelectOptions()
+    window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: this.selectedPresetId } }))
+    const created = this.groups[this.groups.length - 1]
+    if (created) this.selectGroup(created.id)
+  }
+
+  dispatchGroupPreview(filters) {
+    if (!this.selectedPresetId || !this.selectedGroupId) return
+    window.dispatchEvent(
+      new CustomEvent('noctivago:sound-group-preview', {
+        detail: { presetId: this.selectedPresetId, groupId: this.selectedGroupId, filters: cloneGroupFilters(filters) }
+      })
+    )
+  }
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 }

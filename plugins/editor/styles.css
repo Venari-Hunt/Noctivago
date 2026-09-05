@@ -133,6 +133,19 @@
   gap: 6px 8px;
 }
 
+/* Mode switch (v0.1.147): only one of these two groups is ever visible at a
+   time (Sound mode's playback cluster, or Preset/Group mode's Save/status/
+   Delete) - each is its own flex row so its children still lay out and wrap
+   the same way they did as direct children of the sticky bar before this
+   wrapper was added. */
+.editor-sticky-mode-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  flex: 1 1 auto;
+}
+
 .editor-loop-icon-btn {
   display: flex;
   align-items: center;
@@ -711,4 +724,309 @@
 
 .editor-scroll-top-btn:hover {
   background: var(--accent-strong);
+}
+
+/* Merged tab (v0.1.147): Sound / Preset / Group mode switch, folding in what
+   used to be the separate "Preset Remix" tab and its "Sound Groups" section
+   - direct feedback ("I want preset remix to work exactly as a copy of the
+   remix tab" / "streamline into the remix tab"). The mode switch sits above
+   the existing sound picker; .editor-mix-* below is the whole-mix/group
+   panel content, renamed from the old plugin's own `.premix-*` prefix now
+   that it lives in this file rather than a separate stylesheet. */
+.editor-mode-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.editor-mode-switch {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.editor-mode-pill {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.editor-mode-pill:hover {
+  color: var(--text);
+}
+
+.editor-mode-pill-active {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+.editor-mode-pill-active:hover {
+  color: #fff;
+}
+
+.editor-mode-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.editor-mix-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.editor-mode-panel {
+  margin-top: 4px;
+}
+
+.editor-mix-eq-canvas {
+  display: block;
+  width: 100%;
+  height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  touch-action: none;
+  margin: 4px 0 0;
+  cursor: pointer;
+}
+
+.editor-mix-picker-row select {
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 13px;
+  min-width: 200px;
+}
+
+/* Purple group badge - same color as the Mixer's own SoundRow.js badge
+   (src/renderer/styles/main.css's .sound-row-group-badge), duplicated here
+   for the same cross-directory reason every other small UI constant in this
+   plugin is duplicated rather than imported. */
+.editor-group-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(187, 154, 247, 0.18);
+  color: #bb9af7;
+  border: 1px solid rgba(187, 154, 247, 0.4);
+  margin-left: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.editor-group-badge:hover {
+  background: rgba(187, 154, 247, 0.3);
+}
+
+.editor-mix-controls.editor-mix-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.editor-mix-eq-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 10px;
+}
+
+.editor-mix-eq-fields label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-mix-eq-fields input,
+.editor-mix-eq-fields select {
+  width: 72px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.editor-mix-eq-fields select {
+  width: 96px;
+}
+
+.editor-mix-eq-fields input:disabled,
+.editor-mix-eq-fields select:disabled {
+  opacity: 0.45;
+}
+
+.editor-mix-groups {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.editor-mix-groups.editor-mix-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.editor-mix-group-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.editor-mix-group-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.editor-mix-group-item-active {
+  border-color: var(--accent);
+}
+
+.editor-mix-group-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-mix-group-item-count {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.editor-mix-group-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+}
+
+.editor-mix-group-create {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.editor-mix-group-create input[type='text'] {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.editor-mix-group-create select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  max-width: 160px;
+}
+
+.editor-mix-group-editor {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.editor-mix-group-editor.hidden {
+  display: none;
+}
+
+.editor-mix-group-editor h4 {
+  margin: 16px 0 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.editor-mix-group-editor .editor-mix-row input[type='text'] {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.editor-mix-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.editor-mix-row > span:first-child {
+  width: 84px;
+  flex-shrink: 0;
+}
+
+.editor-mix-row input[type='range'] {
+  flex: 1;
+}
+
+.editor-mix-row input[type='number'] {
+  max-width: 90px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.editor-mix-group-members {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.editor-mix-group-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 4px;
+}
+
+.editor-mix-status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  min-height: 1em;
 }

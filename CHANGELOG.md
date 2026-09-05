@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.147 — Remix, Preset Remix, and Sound Groups are now one tab
+
+- The "Preset Remix" tab is gone — Remix now has a Sound / Preset / Group switch at the top, so editing a single sound, a whole preset's mix, or a Sound Group all happen in one place with a consistent look.
+- The live spectrum analyzer now works in Preset and Group mode too, not just for a single sound — it shows real activity from whatever's actually playing in the Mixer.
+- Preset and Group mode only show filters + EQ (no waveform/trim/randomization controls — those only make sense for one sound at a time).
+- Fixed along the way: the Mixer's group badge could go stale after toggling membership; clicking two group-membership checkboxes quickly could lose one of the changes; switching tabs away and back while editing a group could silently kick you out of it.
+
 ## v0.1.146 — Mixer: sound group membership is now visible at a glance
 
 - Every sound row in the Mixer now shows a small badge naming its Sound Group, if it's in one — no more right-clicking just to check.
