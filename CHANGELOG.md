@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.155 — BUG FIX: exporting with a video/image background but no file chosen
+
+- Fixed: picking "Loop a video file" or "Loop an image" as the export's video background without actually choosing a file ran anyway and silently produced a plain black-screen video with no warning. Export now tells you to choose a file first (or switch the background) instead.
+- Fixed a related progress-bar inaccuracy in that same silent-fallback case.
+
 ## v0.1.154 — Export: the on-screen log now saves to a file too
 
 - Every export now writes its full log (with real timestamps and per-step timing) as `export-log.txt` next to the exported audio/video, so an overnight or unattended export's log survives even if you weren't there to see it.

@@ -635,6 +635,25 @@ export default class ExportPlugin {
       return
     }
 
+    // Self-review finding: picking "Loop a video file"/"Loop an image" from
+    // the dropdown without ever clicking Choose… used to run anyway and
+    // silently fall back to a plain black screen (renderVideoOutput's own
+    // fallback, meant as a safety net for a stale/deleted path - not meant
+    // to be the normal way to hit it from the UI). Caught here, before the
+    // destination picker even opens, same as the other pre-flight checks
+    // above - matches this app's own standing "never let a real outcome
+    // differ from what the UI implied without saying so" pattern (e.g. the
+    // Remix Save status line, the video/info-file error lines below).
+    const needsVideo = this.els.videoMode.value !== 'audio-only'
+    if (needsVideo && this.els.videoBackground.value === 'file' && !this.loopVideoPath) {
+      this.els.status.textContent = 'Choose a video file to loop, or switch the video background to something else.'
+      return
+    }
+    if (needsVideo && this.els.videoBackground.value === 'image' && !this.imagePath) {
+      this.els.status.textContent = 'Choose an image to loop, or switch the video background to something else.'
+      return
+    }
+
     const format = this.els.format.value
     const outputPath = await this.api.export.pickDestination({ defaultName: preset.name, format })
     if (!outputPath) return

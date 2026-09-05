@@ -829,7 +829,20 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   // encode. 'black' stays unbudgeted - its own mux is a near-instant -c
   // copy, not a real encode (see renderBlackScreenVideo's own comment).
   const needsVideo = videoMode === 'video-only' || videoMode === 'both'
-  const videoNeedsRealEncode = needsVideo && (videoBackground === 'file' || videoBackground === 'visualization' || videoBackground === 'image')
+  // Mirrors renderVideoOutput's own dispatch condition exactly (self-review
+  // finding: this used to check only videoBackground's *type*, not whether a
+  // path was actually chosen) - 'file'/'image' with nothing picked yet falls
+  // through to the near-instant black-screen mux there, which never calls
+  // reporter.completePhase(), so budgeting a real encode's worth of work for
+  // it left the reporter's fraction permanently capped below 1.0 for the
+  // rest of the export (invisible in the Export tab only because it hides
+  // the bar the instant the promise resolves, not because it actually
+  // reached 100%).
+  const videoNeedsRealEncode =
+    needsVideo &&
+    (videoBackground === 'visualization' ||
+      (videoBackground === 'file' && Boolean(loopVideoPath)) ||
+      (videoBackground === 'image' && Boolean(imagePath)))
   const videoWorkSeconds = videoNeedsRealEncode ? durationSeconds : 0
   const totalWorkSeconds =
     mixdownWorkSeconds +
