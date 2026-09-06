@@ -129,11 +129,11 @@ const FILTER_PRESETS = {
 // follow-up scoping ("waveform and single audio file controls should only
 // show up on the single sound mode... if you're not on sound mode only the
 // eq modules should show up").
-const NEUTRAL_WHOLE_MIX = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, fadeInSeconds: 0, eq: [] }
+const NEUTRAL_WHOLE_MIX = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, fadeInSeconds: 0, echoDelayMs: 0, echoDecay: 0, eq: [] }
 // A group's own filters (see AudioEngine.js's SoundGroupChain) are the same
 // shape as the whole-mix's, minus fadeInSeconds - a group has no "on load"
 // moment of its own to fade in on.
-const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, eq: [] }
+const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: [] }
 
 // Shared by both the whole-mix (Preset mode) and group (Group mode) filter
 // shapes below - self-review v0.1.149: these were originally two byte-for-
@@ -157,6 +157,8 @@ function canonicalMixFilters(obj, { includeFadeIn }) {
     highpassHz: Number(o.highpassHz) || 0,
     lowpassHz: Number(o.lowpassHz ?? 20000),
     gainDb: Number(o.gainDb) || 0,
+    echoDelayMs: Number(o.echoDelayMs) || 0,
+    echoDecay: Number(o.echoDecay) || 0,
     ...(includeFadeIn ? { fadeInSeconds: Number(o.fadeInSeconds) || 0 } : {}),
     eq: (o.eq ?? []).map((b) => ({
       freqHz: Math.round(Number(b.freqHz) || 0),
@@ -509,6 +511,16 @@ export default class EditorPlugin {
                 <span id="editor-mix-preset-gain-value" class="editor-filter-value">0 dB</span>
               </label>
               <label>
+                <span>Echo delay</span>
+                <input id="editor-mix-preset-echo-delay" type="range" min="0" max="1500" value="0" step="10" />
+                <span id="editor-mix-preset-echo-delay-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Echo decay</span>
+                <input id="editor-mix-preset-echo-decay" type="range" min="0" max="0.85" value="0" step="0.01" />
+                <span id="editor-mix-preset-echo-decay-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
                 <span>Fade in</span>
                 <input id="editor-mix-preset-fadein" type="number" min="0" max="60" step="0.5" value="0" />
                 <span class="editor-filter-value">s — eases the whole mix up when the preset loads</span>
@@ -557,6 +569,16 @@ export default class EditorPlugin {
                 <span>Gain</span>
                 <input id="editor-mix-group-gain" type="range" min="-24" max="24" value="0" step="1" />
                 <span id="editor-mix-group-gain-value" class="editor-filter-value">0 dB</span>
+              </label>
+              <label>
+                <span>Echo delay</span>
+                <input id="editor-mix-group-echo-delay" type="range" min="0" max="1500" value="0" step="10" />
+                <span id="editor-mix-group-echo-delay-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Echo decay</span>
+                <input id="editor-mix-group-echo-decay" type="range" min="0" max="0.85" value="0" step="0.01" />
+                <span id="editor-mix-group-echo-decay-value" class="editor-filter-value">Off</span>
               </label>
             </div>
             <div class="editor-eq">
@@ -1064,6 +1086,10 @@ export default class EditorPlugin {
       mixPresetLowpassValue: container.querySelector('#editor-mix-preset-lowpass-value'),
       mixPresetGain: container.querySelector('#editor-mix-preset-gain'),
       mixPresetGainValue: container.querySelector('#editor-mix-preset-gain-value'),
+      mixPresetEchoDelay: container.querySelector('#editor-mix-preset-echo-delay'),
+      mixPresetEchoDelayValue: container.querySelector('#editor-mix-preset-echo-delay-value'),
+      mixPresetEchoDecay: container.querySelector('#editor-mix-preset-echo-decay'),
+      mixPresetEchoDecayValue: container.querySelector('#editor-mix-preset-echo-decay-value'),
       mixPresetFadeIn: container.querySelector('#editor-mix-preset-fadein'),
       mixPresetWaveform: container.querySelector('#editor-mix-preset-waveform'),
       mixPresetEqCanvas: container.querySelector('#editor-mix-preset-eq-canvas'),
@@ -1086,6 +1112,10 @@ export default class EditorPlugin {
       mixGroupLowpassValue: container.querySelector('#editor-mix-group-lowpass-value'),
       mixGroupGain: container.querySelector('#editor-mix-group-gain'),
       mixGroupGainValue: container.querySelector('#editor-mix-group-gain-value'),
+      mixGroupEchoDelay: container.querySelector('#editor-mix-group-echo-delay'),
+      mixGroupEchoDelayValue: container.querySelector('#editor-mix-group-echo-delay-value'),
+      mixGroupEchoDecay: container.querySelector('#editor-mix-group-echo-decay'),
+      mixGroupEchoDecayValue: container.querySelector('#editor-mix-group-echo-decay-value'),
       mixGroupEqCanvas: container.querySelector('#editor-mix-group-eq-canvas'),
       mixGroupEqFreq: container.querySelector('#editor-mix-group-eq-freq'),
       mixGroupEqGain: container.querySelector('#editor-mix-group-eq-gain'),
@@ -3202,7 +3232,7 @@ export default class EditorPlugin {
     this.els.mixGroupSelect.addEventListener('change', () => this.selectGroup(this.els.mixGroupSelect.value))
     this.els.mixGroupNew.addEventListener('click', () => this.createGroup())
 
-    for (const el of [this.els.mixPresetHighpass, this.els.mixPresetLowpass, this.els.mixPresetGain]) {
+    for (const el of [this.els.mixPresetHighpass, this.els.mixPresetLowpass, this.els.mixPresetGain, this.els.mixPresetEchoDelay, this.els.mixPresetEchoDecay]) {
       el.addEventListener('input', () => this.readPresetMixControlsAndPreview())
     }
     this.els.mixPresetFadeIn.addEventListener('input', () => this.readPresetMixControlsAndPreview())
@@ -3214,7 +3244,7 @@ export default class EditorPlugin {
     this.els.mixPresetEqReset.addEventListener('click', () => this.presetEq.clear())
 
     this.els.mixGroupName.addEventListener('input', () => this.updateGroupDirty())
-    for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain]) {
+    for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay]) {
       el.addEventListener('input', () => this.readGroupControlsAndPreview())
     }
     this.els.mixGroupEqFreq.addEventListener('input', () => this.groupEq.updateSelectedBand({ freqHz: Number(this.els.mixGroupEqFreq.value) }))
@@ -3485,6 +3515,8 @@ export default class EditorPlugin {
     this.els.mixPresetHighpass.value = String(mix.highpassHz)
     this.els.mixPresetLowpass.value = String(mix.lowpassHz)
     this.els.mixPresetGain.value = String(mix.gainDb)
+    this.els.mixPresetEchoDelay.value = String(mix.echoDelayMs)
+    this.els.mixPresetEchoDecay.value = String(mix.echoDecay)
     this.els.mixPresetFadeIn.value = String(mix.fadeInSeconds)
   }
 
@@ -3526,6 +3558,8 @@ export default class EditorPlugin {
       highpassHz: Number(this.els.mixPresetHighpass.value),
       lowpassHz: Number(this.els.mixPresetLowpass.value),
       gainDb: Number(this.els.mixPresetGain.value),
+      echoDelayMs: Number(this.els.mixPresetEchoDelay.value),
+      echoDecay: Number(this.els.mixPresetEchoDecay.value),
       fadeInSeconds: Math.max(0, Number(this.els.mixPresetFadeIn.value) || 0)
     }
     this.updatePresetMixLabels()
@@ -3537,9 +3571,13 @@ export default class EditorPlugin {
     const hp = Number(this.els.mixPresetHighpass.value)
     const lp = Number(this.els.mixPresetLowpass.value)
     const gain = Number(this.els.mixPresetGain.value)
+    const echoDelay = Number(this.els.mixPresetEchoDelay.value)
+    const echoDecay = Number(this.els.mixPresetEchoDecay.value)
     this.els.mixPresetHighpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
     this.els.mixPresetLowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
     this.els.mixPresetGainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
+    this.els.mixPresetEchoDelayValue.textContent = echoDelay > 0 ? `${echoDelay} ms` : 'Off'
+    this.els.mixPresetEchoDecayValue.textContent = echoDecay > 0 ? echoDecay.toFixed(2) : 'Off'
   }
 
   async saveWholeMix() {
@@ -3702,6 +3740,8 @@ export default class EditorPlugin {
     this.els.mixGroupHighpass.value = String(filters.highpassHz)
     this.els.mixGroupLowpass.value = String(filters.lowpassHz)
     this.els.mixGroupGain.value = String(filters.gainDb)
+    this.els.mixGroupEchoDelay.value = String(filters.echoDelayMs)
+    this.els.mixGroupEchoDecay.value = String(filters.echoDecay)
   }
 
   onGroupEqChange(bands, { selectionOnly = false } = {}) {
@@ -3735,7 +3775,9 @@ export default class EditorPlugin {
       ...this.groupCurrent,
       highpassHz: Number(this.els.mixGroupHighpass.value),
       lowpassHz: Number(this.els.mixGroupLowpass.value),
-      gainDb: Number(this.els.mixGroupGain.value)
+      gainDb: Number(this.els.mixGroupGain.value),
+      echoDelayMs: Number(this.els.mixGroupEchoDelay.value),
+      echoDecay: Number(this.els.mixGroupEchoDecay.value)
     }
     this.updateGroupLabels()
     this.updateModeUI()
@@ -3746,9 +3788,13 @@ export default class EditorPlugin {
     const hp = Number(this.els.mixGroupHighpass.value)
     const lp = Number(this.els.mixGroupLowpass.value)
     const gain = Number(this.els.mixGroupGain.value)
+    const echoDelay = Number(this.els.mixGroupEchoDelay.value)
+    const echoDecay = Number(this.els.mixGroupEchoDecay.value)
     this.els.mixGroupHighpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
     this.els.mixGroupLowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
     this.els.mixGroupGainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
+    this.els.mixGroupEchoDelayValue.textContent = echoDelay > 0 ? `${echoDelay} ms` : 'Off'
+    this.els.mixGroupEchoDecayValue.textContent = echoDecay > 0 ? echoDecay.toFixed(2) : 'Off'
   }
 
   updateGroupDirty() {

@@ -1,6 +1,9 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
+// Upper bound a Web Audio DelayNode must declare at creation time - matches
+// WholeMixChain's/SoundSource.js's own per-sound echo delay's ceiling.
+const MAX_ECHO_DELAY_SECONDS = 2.0
 
 // A submix bus for a named "Sound Group" (see the Remix plugin's Group mode
 // + the Mixer's right-click "Add to group…" menu on a sound row) - several
@@ -8,10 +11,10 @@ const FILTER_SMOOTHING_SECONDS = 0.02
 // highpass/lowpass/EQ/gain chain instead of straight to masterGain, so they
 // can be shaped together ("make these sound like they're outside a house")
 // without touching any sound's own per-sound filters. Structurally identical
-// to WholeMixChain (same EQ-chain helpers, same brick-wall limiter so a
-// boosted group can't clip) minus the on-load fade-in, which only makes
-// sense for a whole preset being loaded, not a group whose membership can
-// change at any time while things are already playing.
+// to WholeMixChain (same EQ-chain helpers, same echo tap, same brick-wall
+// limiter so a boosted group can't clip) minus the on-load fade-in, which
+// only makes sense for a whole preset being loaded, not a group whose
+// membership can change at any time while things are already playing.
 export class SoundGroupChain {
   constructor(context, destination) {
     this.context = context
@@ -28,6 +31,17 @@ export class SoundGroupChain {
 
     this.gain = context.createGain()
     this.gain.gain.value = 1
+
+    // Echo: a feedback delay line tapped in parallel off the post-EQ/gain
+    // signal, mirroring WholeMixChain's/SoundSource.js's own echo exactly -
+    // the owner's own direction (2026-09-06) that Echo isn't single-sound-
+    // specific the way trim/waveform/etc. are.
+    this.echoDelay = context.createDelay(MAX_ECHO_DELAY_SECONDS)
+    this.echoDelay.delayTime.value = 0
+    this.echoSendGain = context.createGain()
+    this.echoSendGain.gain.value = 0
+    this.echoFeedbackGain = context.createGain()
+    this.echoFeedbackGain.gain.value = 0
 
     // Brick-wall safety limiter, same ceiling as WholeMixChain's - a group's
     // own gain/EQ boosts have no other ceiling, and several loud member
@@ -47,6 +61,13 @@ export class SoundGroupChain {
     this.highpass.connect(this.lowpass)
     this._rebuildEqChain([])
     this.gain.connect(this.limiter)
+
+    this.gain.connect(this.echoSendGain)
+    this.echoSendGain.connect(this.echoDelay)
+    this.echoDelay.connect(this.echoFeedbackGain)
+    this.echoFeedbackGain.connect(this.echoDelay)
+    this.echoDelay.connect(this.limiter)
+
     this.limiter.connect(destination)
 
     // Read-only tap for the merged Remix tab's live spectrogram (Group
@@ -62,8 +83,8 @@ export class SoundGroupChain {
     this.config = null
   }
 
-  // config: { highpassHz, lowpassHz, gainDb, eq: [...] } or null / undefined
-  // for neutral.
+  // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay, eq: [...] }
+  // or null / undefined for neutral.
   set(config) {
     this.config = config ?? null
     const c = config ?? {}
@@ -72,6 +93,10 @@ export class SoundGroupChain {
     this.highpass.frequency.setTargetAtTime(c.highpassHz ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.lowpass.frequency.setTargetAtTime(c.lowpassHz ?? 20000, now, FILTER_SMOOTHING_SECONDS)
     this.gain.gain.setTargetAtTime(c.gainDb ? Math.pow(10, c.gainDb / 20) : 1, now, FILTER_SMOOTHING_SECONDS)
+
+    this.echoDelay.delayTime.setTargetAtTime((c.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
+    this.echoSendGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    this.echoFeedbackGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
 
     const eq = c.eq ?? []
     const topology = eq.map(eqBandStageCount).join(',')
@@ -123,6 +148,9 @@ export class SoundGroupChain {
     this.lowpass.disconnect()
     for (const node of this.eqNodes) node.disconnect()
     this.gain.disconnect()
+    this.echoDelay.disconnect()
+    this.echoSendGain.disconnect()
+    this.echoFeedbackGain.disconnect()
     this.limiter.disconnect()
     this.analyserFeed.disconnect()
     this.analyser.disconnect()

@@ -150,7 +150,12 @@ export function getLoopClipPath(id) {
 // instead of sounding like a single, oddly bare repeat.
 const ECHO_TAPS = 6
 
-function buildEchoFilter(delayMs, decay) {
+// Exported (2026-09-06) so exportMix.js's whole-mix/group post-processing
+// chains can build the exact same echo filter for a preset's or Sound
+// Group's own echo setting, mirroring buildEqBandFilter's own already-
+// established export reasoning right below - same directory, no plugin-
+// boundary duplication needed.
+export function buildEchoFilter(delayMs, decay) {
   const delays = []
   const decays = []
   for (let i = 1; i <= ECHO_TAPS; i++) {

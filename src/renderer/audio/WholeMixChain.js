@@ -1,6 +1,10 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
+// Upper bound a Web Audio DelayNode must declare at creation time - matches
+// SoundSource.js's own per-sound echo delay's ceiling (the Remix Echo delay
+// slider tops out well under this).
+const MAX_ECHO_DELAY_SECONDS = 2.0
 
 // A master processing chain that sits between the Mixer's masterGain and the
 // audio destination. It's the live-playback counterpart of the "Whole-mix
@@ -9,8 +13,9 @@ const FILTER_SMOOTHING_SECONDS = 0.02
 // highpass / lowpass / parametric EQ / gain are installed here and heard on
 // everything playing.
 //
-// Signal path: input -> highpass -> lowpass -> [eq bands...] -> gain -> fadeGain
-// -> limiter -> destination. The `limiter` is a brick-wall safety net: the
+// Signal path: input -> highpass -> lowpass -> [eq bands...] -> gain ->
+// (dry, plus a parallel echo send/feedback tap off `gain`) -> fadeGain ->
+// limiter -> destination. The `limiter` is a brick-wall safety net: the
 // user's gain (up to +24 dB) and each EQ band (up to +30 dB) have no other
 // ceiling, so an aggressive preset could otherwise clip/distort the whole
 // live mix - the same exposure Composite's bake had before v0.1.113. Export's
@@ -42,6 +47,18 @@ export class WholeMixChain {
     this.fadeGain = context.createGain()
     this.fadeGain.gain.value = 1
 
+    // Echo: a feedback delay line tapped in parallel off the post-EQ/gain
+    // signal, mirroring SoundSource.js's own per-sound echo exactly (same
+    // node shapes, same "one send/feedback gain pair" reasoning) - the
+    // owner's own direction (2026-09-06) that Echo isn't single-sound-
+    // specific the way trim/waveform/etc. are.
+    this.echoDelay = context.createDelay(MAX_ECHO_DELAY_SECONDS)
+    this.echoDelay.delayTime.value = 0
+    this.echoSendGain = context.createGain()
+    this.echoSendGain.gain.value = 0
+    this.echoFeedbackGain = context.createGain()
+    this.echoFeedbackGain.gain.value = 0
+
     // Brick-wall safety limiter on the summed whole-mix output. Ceiling ~0.95
     // (-0.45 dBFS) to match Export's `alimiter=limit=0.95`; transparent well
     // below that, so a neutral / cut-only whole mix is unaffected.
@@ -60,6 +77,13 @@ export class WholeMixChain {
     this.highpass.connect(this.lowpass)
     this._rebuildEqChain([])
     this.gain.connect(this.fadeGain)
+
+    this.gain.connect(this.echoSendGain)
+    this.echoSendGain.connect(this.echoDelay)
+    this.echoDelay.connect(this.echoFeedbackGain)
+    this.echoFeedbackGain.connect(this.echoDelay)
+    this.echoDelay.connect(this.fadeGain)
+
     this.fadeGain.connect(this.limiter)
     this.limiter.connect(destination)
 
@@ -77,8 +101,8 @@ export class WholeMixChain {
     this.config = null
   }
 
-  // config: { highpassHz, lowpassHz, gainDb, eq: [...] } or null / undefined
-  // for neutral. fadeInSeconds > 0 ramps fadeGain 0 -> 1 over that time (used
+  // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay, eq: [...] }
+  // or null / undefined for neutral. fadeInSeconds > 0 ramps fadeGain 0 -> 1 over that time (used
   // only when a preset is actually loaded; live-preview edits pass 0 so the
   // value just eases back to 1).
   set(config, { fadeInSeconds = 0 } = {}) {
@@ -89,6 +113,10 @@ export class WholeMixChain {
     this.highpass.frequency.setTargetAtTime(c.highpassHz ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.lowpass.frequency.setTargetAtTime(c.lowpassHz ?? 20000, now, FILTER_SMOOTHING_SECONDS)
     this.gain.gain.setTargetAtTime(c.gainDb ? Math.pow(10, c.gainDb / 20) : 1, now, FILTER_SMOOTHING_SECONDS)
+
+    this.echoDelay.delayTime.setTargetAtTime((c.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
+    this.echoSendGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    this.echoFeedbackGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
 
     const eq = c.eq ?? []
     const topology = eq.map(eqBandStageCount).join(',')

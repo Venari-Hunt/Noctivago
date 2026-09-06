@@ -5,7 +5,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { runFfmpegToFile } from './runFfmpeg.js'
-import { renderClipToPath, buildEqBandFilter, eqBandStageCount } from './loopClip.js'
+import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter } from './loopClip.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
@@ -478,6 +478,11 @@ function buildGroupFilterChain(filters) {
     }
   }
   if (f.gainDb) chain.push(`volume=${f.gainDb}dB`)
+  // Echo (2026-09-06, the owner's own "Echo delay is NOT single-sound-
+  // specific" direction) - same guard as loopClip.js's own per-sound
+  // buildFilterChain, ordered last (post-EQ/gain) to match SoundGroupChain's
+  // live parallel echo tap, which reads off the already-EQ'd/gained signal.
+  if (f.echoDelayMs > 0 && f.echoDecay > 0) chain.push(buildEchoFilter(f.echoDelayMs, f.echoDecay))
   chain.push('alimiter=limit=0.95:level=disabled')
   return chain
 }
@@ -603,6 +608,12 @@ function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSecond
     }
   }
   if (wholeMixFilters?.gainDb) post.push(`volume=${wholeMixFilters.gainDb}dB`)
+  // Echo (2026-09-06, the owner's own "Echo delay is NOT single-sound-
+  // specific" direction) - same guard/ordering as buildGroupFilterChain's
+  // identical addition just above.
+  if (wholeMixFilters?.echoDelayMs > 0 && wholeMixFilters?.echoDecay > 0) {
+    post.push(buildEchoFilter(wholeMixFilters.echoDelayMs, wholeMixFilters.echoDecay))
+  }
   // Brick-wall safety limiter whenever whole-mix processing is doing anything -
   // its gain and EQ bands have no other ceiling (same exposure Composite's bake
   // had before v0.1.113). Matches the live WholeMixChain limiter so an export

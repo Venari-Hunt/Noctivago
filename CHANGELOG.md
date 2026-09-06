@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.160 — Preset/Group filters can now include Echo too
+
+- The Remix tab's Preset mode and Group mode (whole-mix and Sound Group filters) now have Echo delay/decay sliders, alongside the existing High-pass/Low-pass/Gain and EQ — the same Echo effect single sounds already had. Applies live and in exports.
+- Part of the owner's own direction that Echo isn't single-sound-specific; Reverb is a planned follow-up, not included yet (it needs a different export pipeline change).
+
 ## v0.1.159 — Two safety/correctness bug fixes: Sound Group EQ in exports, and volume/preset reset on restart
 
 - Fixed: a Sound Group's own EQ/filters (highpass/lowpass/gain/parametric EQ) sounded right live but had no effect at all on an exported file — the group's member sounds exported as if they were never grouped. They're now routed through the group's own processing during export too, exactly like they are live.

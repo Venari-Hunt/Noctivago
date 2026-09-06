@@ -39,6 +39,18 @@ export function normalizeWholeMix(input) {
     lowpassHz: clamp(input.lowpassHz, 150, 20000, 20000),
     gainDb: clamp(input.gainDb, -24, 24, 0),
     fadeInSeconds: clamp(input.fadeInSeconds, 0, 60, 0),
+    // Echo (a feedback delay line), matching a sound's own filters.echoDelayMs/
+    // echoDecay shape - the owner's own direction (2026-09-06 screenshot):
+    // "Echo delay is NOT single-sound-specific" the way the Remix tab's
+    // sound-picker/waveform/trim controls are, so it belongs in whole-mix/
+    // group filters alongside HP/LP/Gain, not just in a per-sound's own
+    // filters. Reverb (a real convolution) is deliberately NOT included yet -
+    // unlike echo, it needs a second ffmpeg input (the impulse response) and
+    // can't join the plain -af chain exportMix.js's whole-mix/group
+    // post-processing already uses; left as a flagged follow-up rather than
+    // silently dropped (see CLAUDE.md).
+    echoDelayMs: clamp(input.echoDelayMs, 0, 1500, 0),
+    echoDecay: clamp(input.echoDecay, 0, 0.85, 0),
     eq: Array.isArray(input.eq) ? input.eq.map(normalizeEqBand).filter(Boolean) : []
   }
   // A fully-neutral config is stored as null so the "does this preset have
@@ -48,6 +60,8 @@ export function normalizeWholeMix(input) {
     normalized.lowpassHz === 20000 &&
     normalized.gainDb === 0 &&
     normalized.fadeInSeconds === 0 &&
+    normalized.echoDelayMs === 0 &&
+    normalized.echoDecay === 0 &&
     normalized.eq.length === 0
   return neutral ? null : normalized
 }
@@ -68,6 +82,9 @@ export function normalizeGroupFilters(input) {
     highpassHz: clamp(src.highpassHz, 0, 2000, 0),
     lowpassHz: clamp(src.lowpassHz, 150, 20000, 20000),
     gainDb: clamp(src.gainDb, -24, 24, 0),
+    // See normalizeWholeMix's own comment - same echo addition, same reason.
+    echoDelayMs: clamp(src.echoDelayMs, 0, 1500, 0),
+    echoDecay: clamp(src.echoDecay, 0, 0.85, 0),
     eq: Array.isArray(src.eq) ? src.eq.map(normalizeEqBand).filter(Boolean) : []
   }
 }
