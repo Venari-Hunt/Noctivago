@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.159 — Two safety/correctness bug fixes: Sound Group EQ in exports, and volume/preset reset on restart
+
+- Fixed: a Sound Group's own EQ/filters (highpass/lowpass/gain/parametric EQ) sounded right live but had no effect at all on an exported file — the group's member sounds exported as if they were never grouped. They're now routed through the group's own processing during export too, exactly like they are live.
+- Fixed (reported as actively harmful — "if the app autoupdates while i'm sleeping... it goes REALLY LOUD AND SHARP"): the master volume slider, which preset was loaded, and any Sound Group EQ shaping the mix all silently reset every time the app restarted or updated. All three are now remembered and restored automatically on the next launch, before anything resumes playing.
+
 ## v0.1.158 — Export: info.txt's AI prompt asks for hashtags in one place only
 
 - Removed the duplicate "3-5 hashtags" request from the AI prompt — it's now only asked for once, as part of the description.

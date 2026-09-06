@@ -605,6 +605,20 @@ export default class ExportPlugin {
       return
     }
 
+    // BUG FIX (reported directly, "fix ASAP"): a Sound Group's own EQ/
+    // filters (Remix's Group mode, or the Mixer's right-click "Add to
+    // group…") sound exactly right live but had zero effect on an export -
+    // exportMix.js never even knew groups existed, only a preset's own
+    // whole-mix `wholeMix` (v0.1.129 taught it to inherit that, which
+    // predates Sound Groups). Each exported sound now carries which group
+    // (if any) it belongs to, and the group's own filters, so exportMix.js
+    // can route that group's members through their own filter chain before
+    // the final mix - the same bus a live SoundGroupChain already applies.
+    const groupIdBySoundId = new Map()
+    for (const group of preset.groups ?? []) {
+      for (const soundId of group.soundIds) groupIdBySoundId.set(soundId, group.id)
+    }
+
     const sounds = []
     // Parallel to `sounds` (same filter, same order) but scoped to just what
     // the optional info.txt describes - kept separate rather than bolted
@@ -625,6 +639,7 @@ export default class ExportPlugin {
         speedPitch: entry.speedPitch ?? null,
         crossfadeSeconds: entry.crossfadeSeconds ?? null,
         volume: presetSound.volume ?? entry.volume ?? 0.7,
+        groupId: groupIdBySoundId.get(entry.id) ?? null,
         events: simulateEvents({ entry, durationSeconds })
       })
       soundInfoList.push({ name: entry.name, tags: entry.tags ?? [] })
@@ -683,6 +698,7 @@ export default class ExportPlugin {
         durationSeconds,
         format,
         wholeMixFilters: this.currentWholeMixFilters(preset),
+        groups: (preset.groups ?? []).map((g) => ({ id: g.id, filters: g.filters })),
         fadeInSeconds,
         fadeOutSeconds,
         outputPath

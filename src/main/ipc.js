@@ -23,7 +23,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -90,6 +90,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setExportImagePath', (_event, filePath) => setExportImagePath(filePath))
   ipcMain.handle('settings:setExportImageMotion', (_event, motion) => setExportImageMotion(motion))
   ipcMain.handle('settings:setYtDlpCookiesBrowser', (_event, browser) => setYtDlpCookiesBrowser(browser))
+  ipcMain.handle('settings:setGlobalVolumePosition', (_event, position) => setGlobalVolumePosition(position))
+  ipcMain.handle('settings:setLastActivePresetId', (_event, id) => setLastActivePresetId(id))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
   ipcMain.handle('sleepTimer:start', (_event, { durationSeconds, action, minutes }) => {
@@ -409,7 +411,7 @@ export function registerIpcHandlers() {
   // renderer shouldn't need direct filesystem knowledge for, matching
   // audio:renderLoopClip's own id -> path boundary) before handing
   // everything to the actual ffmpeg pipeline.
-  ipcMain.handle('export:run', async (event, { sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath }) => {
+  ipcMain.handle('export:run', async (event, { sounds, durationSeconds, format, wholeMixFilters, groups, fadeInSeconds, fadeOutSeconds, outputPath }) => {
     const resolvedSounds = sounds
       .map((s) => ({
         ...s,
@@ -442,6 +444,7 @@ export function registerIpcHandlers() {
         durationSeconds,
         format,
         wholeMixFilters,
+        groups,
         fadeInSeconds,
         fadeOutSeconds,
         outputPath,

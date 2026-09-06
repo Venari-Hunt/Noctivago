@@ -23,7 +23,9 @@ const api = {
     setExportVisualizationOptions: (options) => ipcRenderer.invoke('settings:setExportVisualizationOptions', options),
     setExportImagePath: (filePath) => ipcRenderer.invoke('settings:setExportImagePath', filePath),
     setExportImageMotion: (motion) => ipcRenderer.invoke('settings:setExportImageMotion', motion),
-    setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser)
+    setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser),
+    setGlobalVolumePosition: (position) => ipcRenderer.invoke('settings:setGlobalVolumePosition', position),
+    setLastActivePresetId: (id) => ipcRenderer.invoke('settings:setLastActivePresetId', id)
   },
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow'),

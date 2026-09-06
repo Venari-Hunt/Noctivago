@@ -455,6 +455,130 @@ async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
   return { path: outPath, offset: 0 }
 }
 
+// Sound Groups (see AudioEngine.js's SoundGroupChain, and the Remix tab's
+// Group mode / the Mixer's right-click "Add to group…") - BUG FIX (reported
+// directly, "fix ASAP"): a group's own highpass/lowpass/EQ/gain sounds
+// exactly right live but had zero effect on an export, since exportMix.js
+// never knew groups existed at all (only a preset's own whole-mix filters,
+// see buildWholeMixPostChain below, which predates Sound Groups). Mirrors
+// SoundGroupChain's own node order (highpass -> lowpass -> eq bands ->
+// gain -> limiter) and, like the live chain, always ends in the same
+// brick-wall limiter regardless of whether the group boosts anything -
+// several loud member sounds honestly summed together can genuinely clip
+// with nothing else capping them.
+function buildGroupFilterChain(filters) {
+  const chain = []
+  const f = filters ?? {}
+  if ((f.highpassHz ?? 0) > 0) chain.push(`highpass=f=${f.highpassHz}`)
+  if ((f.lowpassHz ?? 20000) > 0 && (f.lowpassHz ?? 20000) < 20000) chain.push(`lowpass=f=${f.lowpassHz}`)
+  for (const band of f.eq ?? []) {
+    const bandFilter = buildEqBandFilter(band)
+    if (bandFilter) {
+      for (let stage = 0; stage < eqBandStageCount(band); stage++) chain.push(bandFilter)
+    }
+  }
+  if (f.gainDb) chain.push(`volume=${f.gainDb}dB`)
+  chain.push('alimiter=limit=0.95:level=disabled')
+  return chain
+}
+
+// Applies one group's filter chain to its already-combined (single,
+// offset-0, full-duration) submix track, producing a new track that's ready
+// to drop straight into the outer final mix like any other pre-rendered
+// track.
+async function applyGroupFilters(track, filters, durationSeconds, reporter) {
+  const outPath = tempPath(INTERMEDIATE_EXT)
+  await runFfmpegToFile(
+    [
+      '-y', '-i', track.path,
+      '-af', buildGroupFilterChain(filters).join(','),
+      '-t', durationSeconds.toFixed(6),
+      ...INTERMEDIATE_CODEC, outPath
+    ],
+    { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+  )
+  reporter?.completePhase(durationSeconds)
+  return { path: outPath, offset: 0 }
+}
+
+// Partitions every loop shot / batch track by which Sound Group (if any) its
+// own sound belongs to, renders one fully-mixed-and-filtered submix per
+// group actually in use, and hands back the remaining ungrouped tracks
+// alongside those group buses - which the caller then treats exactly like
+// any other pre-rendered track (offset 0, no further per-group processing
+// needed). A grouped loop-mode sound is tiled to its full duration first
+// (tileLoopShotFull, independent of the parallelMixdown toggle - a group
+// submix needs real audio to combine, not a `-stream_loop` shorthand only
+// the single-sound final mixdown can use). Zero groups in use (the common
+// case - most exports have none) is a fast no-op: no ffmpeg call at all,
+// and the returned arrays are byte-identical to the input, matching this
+// pipeline's own "a plain export is untouched" guarantee.
+async function renderGroupBuses({ loopShots, batchTracks, groups, durationSeconds, reporter, concurrency, ownPaths }) {
+  const groupsById = new Map((groups ?? []).map((g) => [g.id, g]))
+  const loopShotsByGroup = new Map()
+  const ungroupedLoopShots = []
+  for (const shot of loopShots) {
+    if (shot.groupId && groupsById.has(shot.groupId)) {
+      if (!loopShotsByGroup.has(shot.groupId)) loopShotsByGroup.set(shot.groupId, [])
+      loopShotsByGroup.get(shot.groupId).push(shot)
+    } else {
+      ungroupedLoopShots.push(shot)
+    }
+  }
+  const batchTracksByGroup = new Map()
+  const ungroupedBatchTracks = []
+  for (const track of batchTracks) {
+    if (track.groupId && groupsById.has(track.groupId)) {
+      if (!batchTracksByGroup.has(track.groupId)) batchTracksByGroup.set(track.groupId, [])
+      batchTracksByGroup.get(track.groupId).push(track)
+    } else {
+      ungroupedBatchTracks.push(track)
+    }
+  }
+
+  const groupIds = [...new Set([...loopShotsByGroup.keys(), ...batchTracksByGroup.keys()])]
+  const groupBusTracks = []
+  if (groupIds.length > 0) {
+    reporter?.step(`Applying Sound Group processing (${groupIds.length} group${groupIds.length === 1 ? '' : 's'})…`)
+    await mapPool(groupIds, concurrency, async (groupId) => {
+      const memberLoopShots = loopShotsByGroup.get(groupId) ?? []
+      const memberBatchTracks = batchTracksByGroup.get(groupId) ?? []
+
+      const tiledLoops = []
+      for (const shot of memberLoopShots) {
+        const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
+        ownPaths.push(tile.path)
+        tiledLoops.push(tile)
+      }
+
+      const memberTracks = [...tiledLoops, ...memberBatchTracks]
+      const bounded =
+        memberTracks.length > MAX_INPUTS_PER_PASS
+          ? await reduceTrackCount(memberTracks, MAX_INPUTS_PER_PASS, ownPaths, reporter, concurrency)
+          : memberTracks
+      // combineTracks always adelays every track to its real offset and
+      // normalizes the result to offset 0 - needed even for a single
+      // already-offset-0 track's worth of member, since a lone batch track
+      // (offset = its own batch start, not 0) would otherwise silently keep
+      // playing from the wrong position once treated as a pre-mixed,
+      // offset-0 group bus. Skipped only when there's genuinely nothing left
+      // to combine (a single track that's already offset 0).
+      const combined =
+        bounded.length === 1 && bounded[0].offset === 0 ? bounded[0] : await combineTracks(bounded)
+      if (combined !== bounded[0]) ownPaths.push(combined.path)
+
+      const filtered = await applyGroupFilters(combined, groupsById.get(groupId)?.filters, durationSeconds, reporter)
+      ownPaths.push(filtered.path)
+      groupBusTracks.push(filtered)
+    })
+  }
+
+  return {
+    ungroupedLoopShots,
+    tracksForFinalMix: [...ungroupedBatchTracks, ...groupBusTracks]
+  }
+}
+
 // Builds the whole-mix post-processing filter chain fragment, matching
 // WholeMixChain.js's own live node order (highpass -> lowpass -> eq bands ->
 // gain -> fade) so a preset's Preset Remix settings (2026-09-02: exportMix.js
@@ -788,13 +912,17 @@ function renderVideoOutput(audioPath, durationSeconds, videoBackground, loopVide
 }
 
 // sounds: [{ soundId, inputPath, cachedClipPath, name, playMode, loopStart,
-//   loopEnd, filters, speedPitch, crossfadeSeconds, volume, events }] -
-//   already fully resolved by the renderer + IPC handler (library lookup,
-//   path resolution, event simulation). events is null/empty for 'loop'
-//   mode, an array of { offsetSeconds, pitchSemitones, volumeScale,
-//   speedFactor, fadeInMs, fadeOutMs, shotDurationSeconds } for
+//   loopEnd, filters, speedPitch, crossfadeSeconds, volume, groupId,
+//   events }] - already fully resolved by the renderer + IPC handler
+//   (library lookup, path resolution, event simulation). events is
+//   null/empty for 'loop' mode, an array of { offsetSeconds, pitchSemitones,
+//   volumeScale, speedFactor, fadeInMs, fadeOutMs, shotDurationSeconds } for
 //   'scatter'/'scheduled' (shotDurationSeconds already reflects speedFactor).
-export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, videoMode = 'audio-only', videoBackground = 'black', loopVideoPath = null, visualization = null, imagePath = null, imageMotion = 'none' }) {
+//   groupId is the Sound Group (if any) this sound belongs to on this
+//   preset - null/undefined plays exactly as before. groups: [{id, filters}]
+//   - the preset's own Sound Groups, filters in the same shape as
+//   wholeMixFilters minus fadeInSeconds (see presets.js's normalizeGroups).
+export async function exportMix({ sounds, durationSeconds, format, wholeMixFilters, groups = [], fadeInSeconds, fadeOutSeconds, outputPath, onProgress, fasterExport = false, parallelMixdown = false, videoMode = 'audio-only', videoBackground = 'black', loopVideoPath = null, visualization = null, imagePath = null, imageMotion = 'none' }) {
   fs.mkdirSync(exportTempDir(), { recursive: true })
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
@@ -844,10 +972,21 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       (videoBackground === 'file' && Boolean(loopVideoPath)) ||
       (videoBackground === 'image' && Boolean(imagePath)))
   const videoWorkSeconds = videoNeedsRealEncode ? durationSeconds : 0
+  // Sound Group processing (renderGroupBuses) adds real, full-duration
+  // ffmpeg work that wasn't budgeted before groups were export-aware: one
+  // tileLoopShotFull pass per grouped loop-mode sound, plus roughly one more
+  // duration's worth per used group for the combine+filter passes. A rough
+  // estimate (not exact, unlike the audio-seconds-of-work budgeting above) -
+  // good enough to keep the bar visibly moving instead of stalling, which is
+  // the actual bug this class of fix (v0.1.150) cares about.
+  const groupedLoopSoundCount = loopSounds.filter((s) => s.groupId).length
+  const usedGroupCount = new Set(sounds.map((s) => s.groupId).filter(Boolean)).size
+  const groupWorkSeconds = (groupedLoopSoundCount + usedGroupCount * 2) * durationSeconds
   const totalWorkSeconds =
     mixdownWorkSeconds +
     eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0) +
-    videoWorkSeconds
+    videoWorkSeconds +
+    groupWorkSeconds
   const reporter = makeReporter(onProgress, totalWorkSeconds)
 
   if (sounds.length === 0) return { ok: false, error: 'No sounds to export' }
@@ -877,6 +1016,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   const ownedShotPaths = [] // every owned shot clip - kept alive through the batch phase, cleaned at the very end
   const batchTrackPaths = []
   const tiledLoopTrackPaths = [] // parallelMixdown's per-sound full-duration tiles
+  const groupBusPaths = [] // renderGroupBuses' own intermediates (tiles/combines/filtered buses)
   try {
     if (fasterExport && concurrency > 1) {
       reporter.step(`Faster export on — up to ${concurrency} passes at once.`)
@@ -888,7 +1028,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     await mapPool(loopSounds, concurrency, async (sound) => {
       const shot = await bakeShotClip(sound, { forLoop: true })
       if (shot.owned) ownedShotPaths.push(shot.path)
-      loopShots.push({ path: shot.path, volume: sound.volume ?? 0.7 })
+      loopShots.push({ path: shot.path, volume: sound.volume ?? 0.7, groupId: sound.groupId ?? null })
     })
 
     const eventShotPathBySound = new Map()
@@ -930,7 +1070,24 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         reporter
       })
       batchTrackPaths.push(track.path)
-      batchTracks.push(track)
+      batchTracks.push({ ...track, groupId: job.sound.groupId ?? null })
+    })
+
+    // Sound Groups: pull out every sound that belongs to one, render each
+    // group's own fully-mixed-and-filtered submix, and treat the result as
+    // one more pre-rendered track (offset 0) alongside the genuinely
+    // ungrouped ones - a no-op (same arrays back, untouched) when nothing in
+    // this export actually uses a group. See renderGroupBuses's own doc
+    // comment for why a grouped loop sound has to be tiled to full duration
+    // here regardless of parallelMixdown.
+    const { ungroupedLoopShots, tracksForFinalMix } = await renderGroupBuses({
+      loopShots,
+      batchTracks,
+      groups,
+      durationSeconds,
+      reporter,
+      concurrency: mergeConcurrency,
+      ownPaths: groupBusPaths
     })
 
     // Keep the final mixdown's input count under the OS command-line limit
@@ -938,20 +1095,20 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     // be pre-combined (they're -stream_loop tiled), so the batch tracks get
     // whatever's left of the budget. Cheap no-op when the export is small
     // enough that everything already fits.
-    const batchTrackBudget = Math.max(4, MAX_INPUTS_PER_PASS - loopShots.length)
+    const batchTrackBudget = Math.max(4, MAX_INPUTS_PER_PASS - ungroupedLoopShots.length)
     const finalBatchTracks =
-      batchTracks.length > batchTrackBudget
-        ? await reduceTrackCount(batchTracks, batchTrackBudget, batchTrackPaths, reporter, mergeConcurrency)
-        : batchTracks
+      tracksForFinalMix.length > batchTrackBudget
+        ? await reduceTrackCount(tracksForFinalMix, batchTrackBudget, groupBusPaths, reporter, mergeConcurrency)
+        : tracksForFinalMix
 
-    if (parallelMixdown && loopShots.length > 0) {
+    if (parallelMixdown && ungroupedLoopShots.length > 0) {
       // Tile every loop sound to its own full-duration track, several at
       // once - the actual Part B win, see tileLoopShotFull's doc comment.
       reporter.step(
-        `Parallel mixdown on — tiling ${loopShots.length} loop sound${loopShots.length === 1 ? '' : 's'} at once…`
+        `Parallel mixdown on — tiling ${ungroupedLoopShots.length} loop sound${ungroupedLoopShots.length === 1 ? '' : 's'} at once…`
       )
       const tiledLoopTracks = []
-      await mapPool(loopShots, mixdownConcurrency, async (shot) => {
+      await mapPool(ungroupedLoopShots, mixdownConcurrency, async (shot) => {
         const track = await tileLoopShotFull({ shot, durationSeconds, reporter })
         tiledLoopTrackPaths.push(track.path)
         tiledLoopTracks.push(track)
@@ -960,7 +1117,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       const combinedTracks = [...tiledLoopTracks, ...finalBatchTracks]
       const mergedTracks =
         combinedTracks.length > MAX_INPUTS_PER_PASS
-          ? await reduceTrackCount(combinedTracks, MAX_INPUTS_PER_PASS, batchTrackPaths, reporter, mergeConcurrency)
+          ? await reduceTrackCount(combinedTracks, MAX_INPUTS_PER_PASS, groupBusPaths, reporter, mergeConcurrency)
           : combinedTracks
 
       reporter.step('Final mixdown + whole-mix processing…')
@@ -977,7 +1134,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     } else {
       reporter.step('Final mixdown + whole-mix processing…')
       await renderFinalMixdown({
-        loopShots,
+        loopShots: ungroupedLoopShots,
         batchTracks: finalBatchTracks,
         durationSeconds,
         wholeMixFilters,
@@ -1039,6 +1196,6 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     }
     return { ok: false, error: err.message }
   } finally {
-    await cleanupFiles([...ownedShotPaths, ...batchTrackPaths, ...tiledLoopTrackPaths])
+    await cleanupFiles([...ownedShotPaths, ...batchTrackPaths, ...tiledLoopTrackPaths, ...groupBusPaths])
   }
 }

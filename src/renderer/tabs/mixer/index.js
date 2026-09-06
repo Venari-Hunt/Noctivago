@@ -30,8 +30,9 @@ const state = {
   // Mute is a separate on/off flag layered on top of the volume itself
   // (global or per-sound), not a destructive "set volume to 0" - unmuting
   // always restores exactly whatever the slider was already showing.
-  // Session-only, like the global volume slider's own current position -
-  // neither is persisted today, so this doesn't add a new persistence gap.
+  // Session-only, unlike the global volume slider's own position (see
+  // settings.js's globalVolumePosition) - muting on launch would be an odd
+  // surprise of its own, so only the volume level itself is remembered.
   globalMuted: false,
   mutedSounds: new Set(),
   // Single-target solo (the currently-soloed sound's id, or null) and
@@ -1013,12 +1014,25 @@ function applyGlobalVolume() {
 // convention most OS/media-player volume controls already use, so muting
 // doesn't silently "trap" a manual volume change behind an easy-to-miss
 // separate button.
+let globalVolumeSaveTimer = null
 els.globalVolume.addEventListener('input', () => {
   if (state.globalMuted) {
     state.globalMuted = false
     updateGlobalMuteIcon()
   }
   applyGlobalVolume()
+
+  // BUG FIX (reported directly, "actively harmful": a restart/autoupdate
+  // could bring a quieted-down mix back to full, sharp volume while the
+  // owner was asleep) - this slider's position was never persisted at all,
+  // so every launch silently reset it to the HTML default (unity). Debounced
+  // the same way per-sound volume already is (see VOLUME_SAVE_DEBOUNCE_MS
+  // above), so a drag doesn't flood settings.js with writes.
+  clearTimeout(globalVolumeSaveTimer)
+  globalVolumeSaveTimer = setTimeout(() => {
+    globalVolumeSaveTimer = null
+    api.settings.setGlobalVolumePosition(Number(els.globalVolume.value))
+  }, VOLUME_SAVE_DEBOUNCE_MS)
 })
 
 els.globalMute.addEventListener('click', () => {
@@ -1319,6 +1333,11 @@ async function loadPreset(preset) {
   // engine chain here, with the preset's fade-in only on an actual load;
   // swapped out / reset to neutral whenever another preset is loaded.
   state.activePresetId = preset.id
+  // BUG FIX (reported directly, "actively harmful"): which preset was
+  // loaded was never persisted, so a restart/autoupdate silently dropped
+  // whatever Sound Group EQ/whole-mix processing was shaping the mix - see
+  // restoreLastActivePreset(), called on next launch.
+  api.settings.setLastActivePresetId(preset.id)
   engine.wholeMix.set(preset.wholeMix ?? null, { fadeInSeconds: preset.wholeMix?.fadeInSeconds ?? 0 })
 
   // Sound Groups (see AudioEngine.js's SoundGroupChain) - install this
@@ -1345,6 +1364,7 @@ async function deletePreset(id) {
   if (id === state.activePresetId) {
     if (state.soloedGroupId) releaseGroupSolo()
     state.activePresetId = null
+    api.settings.setLastActivePresetId(null)
     state.groups = []
     engine.setSoundGroups([])
     for (const [sourceId, source] of state.sources) engine.routeSound(sourceId, source)
@@ -1440,9 +1460,12 @@ export function onShow() {
 // persistIncluded); only ever called once, right after mount()'s initial
 // library load, not on every later refreshList() (tab-switch refreshes
 // etc.), which would otherwise re-trigger this every time the user comes
-// back to the Mixer tab.
-async function maybeResumeOnLaunch() {
-  const settings = await api.settings.get()
+// back to the Mixer tab. `settings` is passed in (not re-fetched) so this
+// runs against the exact same read restoreLastActivePreset() already used,
+// and so restoreLastActivePreset() is guaranteed to have installed the
+// right Sound Group routing/whole-mix processing before any of these
+// sounds actually starts playing.
+async function maybeResumeOnLaunch(settings) {
   if (!settings.wasPlayingOnClose) return
 
   const toResume = state.library.filter((entry) => entry.included && entry.status !== 'missing')
@@ -1452,6 +1475,40 @@ async function maybeResumeOnLaunch() {
   for (const entry of toResume) {
     await startPlayback(entry.id, entry)
   }
+}
+
+// BUG FIX (reported directly, "actively harmful": "every app restart/update
+// resets volumes, which preset was loaded, and Sound Group EQ/filters back
+// to some earlier state... if the app autoupdates while i'm sleeping and
+// there's thunder noises it goes REALLY LOUD AND SHARP"). Whichever preset
+// was actively loaded before the app closed silently had zero effect on the
+// next launch - any Sound Group EQ/filters or whole-mix processing shaping
+// the mix (e.g. taming a loud sound) was gone the moment the app restarted,
+// with every sound reverting to its raw, unprocessed settings. Runs before
+// maybeResumeOnLaunch so a resumed sound is already correctly routed/
+// filtered from its very first frame, not just eventually reconciled.
+// Silently gives up (leaves the mix neutral) if the remembered preset was
+// deleted since - same as loadPreset()'s own "preset gone" handling.
+async function restoreLastActivePreset(settings) {
+  if (!settings.lastActivePresetId) return
+  const presets = await api.presets.list()
+  const preset = presets.find((p) => p.id === settings.lastActivePresetId)
+  if (!preset) {
+    // Deleted from another machine/session since - nothing to restore, and
+    // no point re-checking on every future launch.
+    api.settings.setLastActivePresetId(null)
+    return
+  }
+
+  state.activePresetId = preset.id
+  engine.wholeMix.set(preset.wholeMix ?? null)
+  state.groups = preset.groups ?? []
+  engine.setSoundGroups(state.groups)
+  // No live sources exist yet at this point in mount()'s startup sequence -
+  // future ones (from maybeResumeOnLaunch just after, or the user pressing
+  // play by hand) pick up the right routing automatically via
+  // getOrCreateSource's own routeSound call, same as any other source
+  // creation.
 }
 
 export function mount(container) {
@@ -1493,7 +1550,19 @@ export function mount(container) {
     state.groupMode = els.soundGroup.value
     render()
   })
-  refreshList().then(maybeResumeOnLaunch)
+  // One settings read up front, reused by all three startup steps below
+  // instead of each re-fetching its own copy: restore the master volume
+  // slider immediately (before anything can play), then restore whichever
+  // preset's Sound Group/whole-mix processing was active, then (only then)
+  // actually resume playback - see restoreLastActivePreset's own doc
+  // comment for why the ordering matters.
+  api.settings.get().then(async (settings) => {
+    els.globalVolume.value = String(settings.globalVolumePosition)
+    applyGlobalVolume()
+    await refreshList()
+    await restoreLastActivePreset(settings)
+    await maybeResumeOnLaunch(settings)
+  })
   // mount() only ever runs once (TabHost lazily mounts each tab a single
   // time), so this is a one-time listener registration, not a per-mount leak.
   window.noctivago.tray.onTogglePlayPause(toggleGlobalPlayback)

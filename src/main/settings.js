@@ -121,7 +121,23 @@ const store = new Store({
     // existing fadeInSeconds/fadeOutSeconds fields rather than a duplicate
     // pair, so no separate fade setting is needed here.
     exportImagePath: null,
-    exportImageMotion: 'none'
+    exportImageMotion: 'none',
+    // BUG FIX (reported directly, "actively harmful": a restart/autoupdate
+    // could bring a quieted-down mix back to full, sharp volume while the
+    // owner was asleep). The master (global) volume slider was never
+    // persisted at all - every launch silently reset it to the HTML
+    // default (50 = unity gain), regardless of what it had been turned down
+    // to. 0-100, matches the <input>'s own value attribute (see
+    // core/volumeScale.js for the bipolar position->gain mapping). Written
+    // debounced on every drag (mirrors per-sound volume's own
+    // VOLUME_SAVE_DEBOUNCE_MS pattern in tabs/mixer/index.js).
+    globalVolumePosition: 50,
+    // Companion fix, same report: which preset (if any) was actively loaded
+    // - restored on next launch so a Sound Group's EQ/filters and any
+    // whole-mix processing shaping the mix are back in place before
+    // playback resumes, instead of every sound silently reverting to raw,
+    // unprocessed settings the moment the app restarts.
+    lastActivePresetId: null
   }
 })
 
@@ -185,7 +201,9 @@ export function getSettings() {
     exportVisualizationSize: store.get('exportVisualizationSize'),
     exportVisualizationFps: store.get('exportVisualizationFps'),
     exportImagePath: store.get('exportImagePath'),
-    exportImageMotion: store.get('exportImageMotion')
+    exportImageMotion: store.get('exportImageMotion'),
+    globalVolumePosition: store.get('globalVolumePosition'),
+    lastActivePresetId: store.get('lastActivePresetId')
   }
 }
 
@@ -330,5 +348,16 @@ export function setYtDlpCookiesBrowser(browser) {
 // closes is already correct.
 export function setWasPlayingOnClose(wasPlaying) {
   store.set('wasPlayingOnClose', Boolean(wasPlaying))
+  return getSettings()
+}
+
+export function setGlobalVolumePosition(position) {
+  const clamped = Math.round(Math.max(0, Math.min(100, Number(position))))
+  if (Number.isFinite(clamped)) store.set('globalVolumePosition', clamped)
+  return getSettings()
+}
+
+export function setLastActivePresetId(id) {
+  store.set('lastActivePresetId', typeof id === 'string' ? id : null)
   return getSettings()
 }
