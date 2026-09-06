@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.163 — Remix EQ graph: zoom in/out and an Invert button
+
+- The Parametric EQ graph (Sound, Preset, and Group mode alike) can now be zoomed in and out on the frequency axis — two new buttons next to Reset EQ, or scroll the mouse wheel over any empty part of the graph (away from a node) to zoom centered on the cursor. Useful for placing a band precisely in a crowded frequency range.
+- A new Invert button flips every band's gain at once (boosts become cuts and vice versa) — handy for turning a curve that boosts a problem range into one that cuts it, without re-dragging every node by hand.
+
 ## v0.1.162 — Two bug fixes: leftover export temp files, and hidden Sound Group members
 
 - If an export (or Composite bake) ever got interrupted by a crash, a force-quit, or the app closing mid-render, its temporary working files could be left behind in a hidden folder with nothing to ever clean them up — reported directly ("temporary export files are taking up some space on my machine"). The app now clears that folder automatically every time it starts, since anything still there at that point is always safe to remove.

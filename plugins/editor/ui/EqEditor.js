@@ -7,7 +7,10 @@
 // earlier deliberate scope cut (originally a fixed 7-band set with no add/
 // remove UI) after direct feedback that the fixed set felt "too crowded."
 // Each band is draggable by frequency (X, log scale) and gain (Y), with Q
-// adjustable via mouse wheel while hovering a node.
+// adjustable via mouse wheel while hovering a node. The frequency axis can
+// be zoomed in/out (buttons in index.js, or mouse wheel over empty graph
+// space) for precise placement in a crowded region, and an Invert button
+// flips every band's gain - both ported from Audacity's own Filter Curve EQ.
 
 const FREQ_MIN = 20
 const FREQ_MAX = 20000
@@ -96,18 +99,53 @@ const MAX_BANDS = 20
 // so toggling Ctrl mid-drag never causes a jump.
 const FINE_TUNE_SCALE = 0.2
 
-function freqToX(freqHz, width) {
-  const logMin = Math.log10(FREQ_MIN)
-  const logMax = Math.log10(FREQ_MAX)
-  const t = (Math.log10(Math.max(FREQ_MIN, freqHz)) - logMin) / (logMax - logMin)
+// Frequency-axis zoom (ported from Audacity's Filter Curve EQ, which offers
+// the same zoom-in/zoom-out affordance on its own frequency axis) - the
+// graph's visible window is [viewMinHz, viewMaxHz], independent per
+// controller instance, defaulting to the full FREQ_MIN..FREQ_MAX span. A
+// zoom step scales the *log-frequency* span (so it feels even at any zoom
+// level, matching the axis's own log layout) rather than a linear Hz span.
+// MIN_VIEW_OCTAVES caps how far in you can go - below ~1 octave there's not
+// enough room to usefully place more than one band anyway.
+const ZOOM_IN_FACTOR = 0.6
+const ZOOM_OUT_FACTOR = 1 / ZOOM_IN_FACTOR
+const MIN_VIEW_OCTAVES = 1
+
+function freqToX(freqHz, width, viewMinHz = FREQ_MIN, viewMaxHz = FREQ_MAX) {
+  const logMin = Math.log10(viewMinHz)
+  const logMax = Math.log10(viewMaxHz)
+  const t = (Math.log10(Math.max(viewMinHz, freqHz)) - logMin) / (logMax - logMin)
   return t * width
 }
 
-function xToFreq(x, width) {
-  const logMin = Math.log10(FREQ_MIN)
-  const logMax = Math.log10(FREQ_MAX)
+function xToFreq(x, width, viewMinHz = FREQ_MIN, viewMaxHz = FREQ_MAX) {
+  const logMin = Math.log10(viewMinHz)
+  const logMax = Math.log10(viewMaxHz)
   const t = Math.min(Math.max(x / width, 0), 1)
   return Math.pow(10, logMin + t * (logMax - logMin))
+}
+
+// A handful of round-looking frequencies spread evenly across the *current*
+// zoomed window (in log space) for the vertical gridlines/labels - replaces
+// the old fixed [100, 1000, 10000] set, which would often show zero ticks
+// once zoomed into a narrow range that doesn't happen to contain any of
+// those three. Not laboratory-precise "nice numbers" (no attempt at 1-2-5
+// stepping), just rounded enough to not show ugly decimals - proportionate
+// to this being a small, secondary axis label, not the graph's main content.
+function niceFreqTicks(viewMinHz, viewMaxHz, count = 4) {
+  const logMin = Math.log10(viewMinHz)
+  const logMax = Math.log10(viewMaxHz)
+  const ticks = []
+  for (let i = 0; i <= count; i++) {
+    const raw = Math.pow(10, logMin + ((logMax - logMin) * i) / count)
+    let rounded
+    if (raw >= 1000) rounded = Math.round(raw / 100) * 100
+    else if (raw >= 100) rounded = Math.round(raw / 10) * 10
+    else if (raw >= 20) rounded = Math.round(raw / 5) * 5
+    else rounded = Math.round(raw)
+    ticks.push(rounded)
+  }
+  return [...new Set(ticks)]
 }
 
 // GAIN_MAX maps to y=0 (top of canvas) - canvas y grows downward, dB grows
@@ -164,13 +202,13 @@ function resizeCanvasForDisplay(canvas) {
 // were passed to setBandEnergy, independent of where the user later drags
 // any EQ node) so there's no ambiguity about a bar "belonging" to a
 // draggable node.
-function drawBandEnergyBackdrop(ctx, width, height, freqs, energies) {
+function drawBandEnergyBackdrop(ctx, width, height, freqs, energies, viewMinHz, viewMaxHz) {
   if (!freqs || !energies || freqs.length === 0) return
   const maxEnergy = Math.max(...energies, 0.0001)
   const barWidth = 28
   ctx.fillStyle = 'rgba(122, 162, 247, 0.16)'
   freqs.forEach((freqHz, i) => {
-    const x = freqToX(freqHz, width)
+    const x = freqToX(freqHz, width, viewMinHz, viewMaxHz)
     const normalized = Math.min(1, energies[i] / maxEnergy)
     const barHeight = normalized * height * 0.92
     ctx.fillRect(x - barWidth / 2, height - barHeight, barWidth, barHeight)
@@ -192,16 +230,16 @@ function drawBandEnergyBackdrop(ctx, width, height, freqs, energies) {
 // out, same as any real log-frequency spectrum display built from a linear
 // FFT. Pink/red (var(--danger) elsewhere in this app) to match the FL
 // Studio reference this was modeled on.
-function drawLiveSpectrum(ctx, width, height, freqData, sampleRate) {
+function drawLiveSpectrum(ctx, width, height, freqData, sampleRate, viewMinHz, viewMaxHz) {
   if (!freqData) return
   const binHz = sampleRate / 2 / freqData.length
   ctx.beginPath()
   ctx.moveTo(0, height)
   for (let i = 0; i < freqData.length; i++) {
     const freqHz = (i + 0.5) * binHz
-    if (freqHz < FREQ_MIN) continue
-    if (freqHz > FREQ_MAX) break
-    const x = freqToX(freqHz, width)
+    if (freqHz < viewMinHz) continue
+    if (freqHz > viewMaxHz) break
+    const x = freqToX(freqHz, width, viewMinHz, viewMaxHz)
     const magnitude = freqData[i] / 255
     const y = height - magnitude * height * 0.92
     ctx.lineTo(x, y)
@@ -268,14 +306,14 @@ function getResponseContext() {
 // curve multiplies that same single stage's response by its own stage count
 // (in the log domain, i.e. added that many times) to stay an honest
 // reflection of the real cascaded rolloff, not just the single-stage shape.
-function computeResponseCurve(bands, width, soloIndex) {
+function computeResponseCurve(bands, width, soloIndex, viewMinHz, viewMaxHz) {
   const activeBands = bands.filter((band, i) => !band.muted && band.type !== 'off' && (soloIndex === -1 || soloIndex === i))
   if (activeBands.length === 0) return null
 
   const sampleCount = Math.max(2, Math.round(width))
   const freqs = new Float32Array(sampleCount)
   for (let i = 0; i < sampleCount; i++) {
-    freqs[i] = xToFreq((i / (sampleCount - 1)) * width, width)
+    freqs[i] = xToFreq((i / (sampleCount - 1)) * width, width, viewMinHz, viewMaxHz)
   }
 
   const context = getResponseContext()
@@ -297,7 +335,7 @@ function computeResponseCurve(bands, width, soloIndex) {
   return totalDb
 }
 
-function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, responseCurve, hoveredIndex = -1) {
+function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, responseCurve, hoveredIndex = -1, viewMinHz = FREQ_MIN, viewMaxHz = FREQ_MAX) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -318,8 +356,8 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloInde
     ctx.fillText(`${g > 0 ? '+' : ''}${g}`, 4, Math.min(Math.max(y, 8), height - 8))
   }
 
-  for (const f of [100, 1000, 10000]) {
-    const x = freqToX(f, width)
+  for (const f of niceFreqTicks(viewMinHz, viewMaxHz)) {
+    const x = freqToX(f, width, viewMinHz, viewMaxHz)
     ctx.strokeStyle = 'rgba(59, 63, 88, 0.5)'
     ctx.beginPath()
     ctx.moveTo(x, 0)
@@ -334,8 +372,8 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloInde
   // informative once there's real signal to show, matching the FL Studio
   // reference behavior directly rather than leaving the static bars up
   // during playback too.
-  if (liveSpectrum) drawLiveSpectrum(ctx, width, height, liveSpectrum.freqData, liveSpectrum.sampleRate)
-  else if (bandEnergy) drawBandEnergyBackdrop(ctx, width, height, bandEnergy.freqs, bandEnergy.energies)
+  if (liveSpectrum) drawLiveSpectrum(ctx, width, height, liveSpectrum.freqData, liveSpectrum.sampleRate, viewMinHz, viewMaxHz)
+  else if (bandEnergy) drawBandEnergyBackdrop(ctx, width, height, bandEnergy.freqs, bandEnergy.energies, viewMinHz, viewMaxHz)
 
   drawCutOverlay(ctx, width, height, responseCurve)
 
@@ -374,7 +412,7 @@ function drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloInde
   bands.forEach((band, i) => {
     const type = band.type ?? 'peaking'
     const bypassed = band.muted || type === 'off' || (soloIndex !== -1 && soloIndex !== i)
-    const x = freqToX(band.freqHz, width)
+    const x = freqToX(band.freqHz, width, viewMinHz, viewMaxHz)
     const y = gainToY(band.gainDb, height)
     const color = TYPE_COLORS[type] ?? TYPE_COLORS.peaking
     const isSelected = i === selectedIndex
@@ -452,6 +490,13 @@ export function createEqEditorController(canvas) {
   // onto the trash can" doesn't need this controller to know anything about
   // the surrounding page layout beyond one element reference.
   let trashDropTarget = null
+  // The graph's own visible frequency window - see the Zoom in/out buttons
+  // (index.js) and the wheel-to-zoom handler below. Defaults to the full
+  // FREQ_MIN..FREQ_MAX span; reset back to that on every load() (a fresh
+  // sound/preset/group, or Reset EQ) since a zoomed-in view from whatever was
+  // being edited before has no reason to carry over to a different one.
+  let viewMinHz = FREQ_MIN
+  let viewMaxHz = FREQ_MAX
   let onChange = () => {}
   // Two distinct gestures, two distinct callbacks - deliberately split apart
   // (they used to fire the identical callback) after direct feedback: double
@@ -470,17 +515,48 @@ export function createEqEditorController(canvas) {
   let cachedCurve = null
 
   function getResponseCurve(width) {
-    const key = JSON.stringify(bands) + '|' + soloIndex + '|' + Math.round(width)
+    const key = JSON.stringify(bands) + '|' + soloIndex + '|' + Math.round(width) + '|' + viewMinHz + '|' + viewMaxHz
     if (key !== cachedCurveKey) {
       cachedCurveKey = key
-      cachedCurve = computeResponseCurve(bands, width, soloIndex)
+      cachedCurve = computeResponseCurve(bands, width, soloIndex, viewMinHz, viewMaxHz)
     }
     return cachedCurve
   }
 
   function redraw() {
     const { width } = canvas.getBoundingClientRect()
-    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, getResponseCurve(width), hoveredIndex)
+    drawEq(canvas, bands, selectedIndex, bandEnergy, liveSpectrum, soloIndex, getResponseCurve(width), hoveredIndex, viewMinHz, viewMaxHz)
+  }
+
+  // Zooms the visible frequency window in/out around centerHz (defaults to
+  // the current view's own center), scaling the *log-frequency* span by
+  // factor so it feels even regardless of current zoom level. Clamped to
+  // MIN_VIEW_OCTAVES at the narrow end and the full FREQ_MIN..FREQ_MAX span
+  // at the wide end; if the requested window would spill past either edge of
+  // the full range, it's shifted (not just clipped) to stay the same width
+  // and land fully inside - so zooming in near 20Hz or 20kHz doesn't produce
+  // a lopsided window narrower than intended.
+  function applyZoom(factor, centerHz) {
+    const fullMinLog2 = Math.log2(FREQ_MIN)
+    const fullMaxLog2 = Math.log2(FREQ_MAX)
+    const currentOctaves = Math.log2(viewMaxHz / viewMinHz)
+    const targetOctaves = Math.min(fullMaxLog2 - fullMinLog2, Math.max(MIN_VIEW_OCTAVES, currentOctaves * factor))
+    const centerLog2 = centerHz != null
+      ? Math.log2(Math.min(Math.max(centerHz, FREQ_MIN), FREQ_MAX))
+      : (Math.log2(viewMinHz) + Math.log2(viewMaxHz)) / 2
+    let newMinLog2 = centerLog2 - targetOctaves / 2
+    let newMaxLog2 = centerLog2 + targetOctaves / 2
+    if (newMinLog2 < fullMinLog2) {
+      newMaxLog2 += fullMinLog2 - newMinLog2
+      newMinLog2 = fullMinLog2
+    }
+    if (newMaxLog2 > fullMaxLog2) {
+      newMinLog2 -= newMaxLog2 - fullMaxLog2
+      newMaxLog2 = fullMaxLog2
+    }
+    viewMinHz = Math.pow(2, Math.max(fullMinLog2, newMinLog2))
+    viewMaxHz = Math.pow(2, Math.min(fullMaxLog2, newMaxLog2))
+    redraw()
   }
 
   // Interaction math (hit-testing, drag, wheel) works in the canvas's
@@ -497,7 +573,7 @@ export function createEqEditorController(canvas) {
     let best = -1
     let bestDist = Infinity
     bands.forEach((band, i) => {
-      const bx = freqToX(band.freqHz, width)
+      const bx = freqToX(band.freqHz, width, viewMinHz, viewMaxHz)
       const by = gainToY(band.gainDb, height)
       const dist = Math.hypot(x - bx, y - by)
       if (dist < bestDist) {
@@ -528,7 +604,7 @@ export function createEqEditorController(canvas) {
     }
     selectedIndex = idx
     dragging = true
-    dragVirtualX = freqToX(bands[idx].freqHz, width)
+    dragVirtualX = freqToX(bands[idx].freqHz, width, viewMinHz, viewMaxHz)
     dragVirtualY = gainToY(bands[idx].gainDb, height)
     lastMouseX = x
     lastMouseY = y
@@ -564,7 +640,7 @@ export function createEqEditorController(canvas) {
     lastMouseX = x
     lastMouseY = y
     const band = bands[selectedIndex]
-    band.freqHz = Math.round(xToFreq(dragVirtualX, width))
+    band.freqHz = Math.round(xToFreq(dragVirtualX, width, viewMinHz, viewMaxHz))
     band.gainDb = Math.round(yToGain(dragVirtualY, height) * 10) / 10
     redraw()
     onChange(getBands(), selectedIndex)
@@ -640,13 +716,20 @@ export function createEqEditorController(canvas) {
 
   // Q has no natural drag axis (both X and Y are already spoken for by
   // freq/gain) - mouse wheel while hovering a node is the same convention
-  // several real DAW EQ UIs use for exactly this reason.
+  // several real DAW EQ UIs use for exactly this reason. Scrolling anywhere
+  // else on the graph (not over a node) zooms the frequency axis instead,
+  // centered on the cursor - the same "wheel zoom centered on cursor"
+  // convention LoopEditor.js's own waveform already established, so the two
+  // canvases in this plugin behave consistently.
   function handleWheel(evt) {
     if (readOnly) return
     const { x, y, width, height } = eventPos(evt)
     const idx = nearestBandIndex(x, y, width, height)
-    if (idx === -1) return
     evt.preventDefault()
+    if (idx === -1) {
+      applyZoom(evt.deltaY < 0 ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR, xToFreq(x, width, viewMinHz, viewMaxHz))
+      return
+    }
     const band = bands[idx]
     const factor = evt.deltaY < 0 ? 1 + Q_WHEEL_STEP : 1 / (1 + Q_WHEEL_STEP)
     band.q = Math.min(Q_MAX, Math.max(Q_MIN, Math.round(band.q * factor * 100) / 100))
@@ -713,6 +796,8 @@ export function createEqEditorController(canvas) {
       // new arrangement, so carrying a stale solo forward would silently
       // keep other bands bypassed with no visible reason why.
       soloIndex = -1
+      viewMinHz = FREQ_MIN
+      viewMaxHz = FREQ_MAX
       redraw()
     },
     getBands,
@@ -799,6 +884,32 @@ export function createEqEditorController(canvas) {
     },
     addBand,
     removeSelectedBand,
+    // Ported from Audacity's Filter Curve EQ, which offers the same
+    // zoom-in/zoom-out affordance on its own frequency axis - useful for
+    // placing a band precisely in a crowded region without every other band
+    // crowding the same few pixels. Also reachable via mouse wheel over any
+    // empty part of the graph (see handleWheel above).
+    zoomIn() {
+      applyZoom(ZOOM_IN_FACTOR)
+    },
+    zoomOut() {
+      applyZoom(ZOOM_OUT_FACTOR)
+    },
+    // Flips every band's gain (boost <-> cut), same as Audacity's Filter
+    // Curve EQ "Invert" - handy for turning a curve that boosts a problem
+    // range into one that cuts it (or vice versa) without re-dragging every
+    // node by hand. Only gainDb is touched - freq/Q/type stay put, and a
+    // filter-shaped band (highpass/lowpass/etc, which has no real gain
+    // effect) just carries an inverted-but-inert number, same as it already
+    // does for a plain positive one.
+    invertBands() {
+      if (readOnly || bands.length === 0) return
+      bands.forEach((band) => {
+        band.gainDb = Math.round(-band.gainDb * 10) / 10
+      })
+      redraw()
+      onChange(getBands(), selectedIndex)
+    },
     // Registers the real trash-can button element for drag-to-delete
     // hit-testing (see pointerUp) - a plain setter rather than something
     // passed at construction time, since the canvas and its surrounding

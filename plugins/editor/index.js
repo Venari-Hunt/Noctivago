@@ -552,6 +552,16 @@ export default class EditorPlugin {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                   Reset EQ
                 </button>
+                <button id="editor-mix-preset-eq-zoom-out" class="btn btn-svg-icon" type="button" title="Zoom out on the frequency axis (or scroll over empty graph space)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
+                <button id="editor-mix-preset-eq-zoom-in" class="btn btn-svg-icon" type="button" title="Zoom in on the frequency axis (or scroll over empty graph space)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
+                <button id="editor-mix-preset-eq-invert" class="btn btn-small btn-icon-text" type="button" title="Flip every band's gain (boosts become cuts and vice versa)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                  Invert
+                </button>
               </div>
               <button id="editor-mix-preset-eq-revert-banner" class="editor-eq-revert-banner hidden" type="button">Click to revert to previous session's mix</button>
               <canvas id="editor-mix-preset-eq-canvas" class="editor-mix-eq-canvas" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click a node to reset its gain; Alt+click for a full reset."></canvas>
@@ -664,6 +674,16 @@ export default class EditorPlugin {
                 <button id="editor-mix-group-eq-reset" class="btn btn-small btn-icon-text" type="button">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                   Reset EQ
+                </button>
+                <button id="editor-mix-group-eq-zoom-out" class="btn btn-svg-icon" type="button" title="Zoom out on the frequency axis (or scroll over empty graph space)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
+                <button id="editor-mix-group-eq-zoom-in" class="btn btn-svg-icon" type="button" title="Zoom in on the frequency axis (or scroll over empty graph space)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
+                <button id="editor-mix-group-eq-invert" class="btn btn-small btn-icon-text" type="button" title="Flip every band's gain (boosts become cuts and vice versa)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                  Invert
                 </button>
               </div>
               <button id="editor-mix-group-eq-revert-banner" class="editor-eq-revert-banner hidden" type="button">Click to revert to previous session's group</button>
@@ -983,6 +1003,16 @@ export default class EditorPlugin {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                 Reset EQ
               </button>
+              <button id="editor-eq-zoom-out" class="btn btn-svg-icon" type="button" title="Zoom out on the frequency axis (or scroll over empty graph space)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              <button id="editor-eq-zoom-in" class="btn btn-svg-icon" type="button" title="Zoom in on the frequency axis (or scroll over empty graph space)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+              </button>
+              <button id="editor-eq-invert" class="btn btn-small btn-icon-text" type="button" title="Flip every band's gain (boosts become cuts and vice versa)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                Invert
+              </button>
             </div>
             <button id="editor-eq-revert-banner" class="editor-eq-revert-banner hidden" type="button">Click to revert to previous session's mix</button>
             <canvas id="editor-eq-canvas" width="640" height="140" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click a node to reset its gain; Alt+click for a full reset."></canvas>
@@ -1160,6 +1190,9 @@ export default class EditorPlugin {
       eqReset: container.querySelector('#editor-eq-reset'),
       eqAddBand: container.querySelector('#editor-eq-add-band'),
       eqRemoveBand: container.querySelector('#editor-eq-remove-band'),
+      eqZoomIn: container.querySelector('#editor-eq-zoom-in'),
+      eqZoomOut: container.querySelector('#editor-eq-zoom-out'),
+      eqInvert: container.querySelector('#editor-eq-invert'),
       eqCompareA: container.querySelector('#editor-eq-compare-a'),
       eqCompareB: container.querySelector('#editor-eq-compare-b'),
       eqRevertBanner: container.querySelector('#editor-eq-revert-banner'),
@@ -1217,6 +1250,9 @@ export default class EditorPlugin {
       mixPresetEqRevertBanner: container.querySelector('#editor-mix-preset-eq-revert-banner'),
       mixPresetEqAddBand: container.querySelector('#editor-mix-preset-eq-add-band'),
       mixPresetEqRemoveBand: container.querySelector('#editor-mix-preset-eq-remove-band'),
+      mixPresetEqZoomIn: container.querySelector('#editor-mix-preset-eq-zoom-in'),
+      mixPresetEqZoomOut: container.querySelector('#editor-mix-preset-eq-zoom-out'),
+      mixPresetEqInvert: container.querySelector('#editor-mix-preset-eq-invert'),
       mixPresetEqType: container.querySelector('#editor-mix-preset-eq-type'),
       mixPresetEqSlope: container.querySelector('#editor-mix-preset-eq-slope'),
       mixPresetEqSlopeLabel: container.querySelector('#editor-mix-preset-eq-slope-label'),
@@ -1255,6 +1291,9 @@ export default class EditorPlugin {
       mixGroupEqRevertBanner: container.querySelector('#editor-mix-group-eq-revert-banner'),
       mixGroupEqAddBand: container.querySelector('#editor-mix-group-eq-add-band'),
       mixGroupEqRemoveBand: container.querySelector('#editor-mix-group-eq-remove-band'),
+      mixGroupEqZoomIn: container.querySelector('#editor-mix-group-eq-zoom-in'),
+      mixGroupEqZoomOut: container.querySelector('#editor-mix-group-eq-zoom-out'),
+      mixGroupEqInvert: container.querySelector('#editor-mix-group-eq-invert'),
       mixGroupEqType: container.querySelector('#editor-mix-group-eq-type'),
       mixGroupEqSlope: container.querySelector('#editor-mix-group-eq-slope'),
       mixGroupEqSlopeLabel: container.querySelector('#editor-mix-group-eq-slope-label'),
@@ -1543,6 +1582,19 @@ export default class EditorPlugin {
     // node onto it deletes it, same as clicking it with a band selected
     // (see EqEditor.js's pointerUp).
     this.eqEditorController.setTrashDropTarget(this.els.eqRemoveBand)
+
+    // Zoom in/out (also reachable via mouse wheel over empty graph space)
+    // and Invert - both ported from Audacity's Filter Curve EQ. Invert
+    // mutates every band's gain, so it needs the same field-refresh +
+    // applyEqControls() pair every other band-mutating button already uses;
+    // zoom is purely a view change, no band data touched, no refresh needed.
+    this.els.eqZoomIn.addEventListener('click', () => this.eqEditorController.zoomIn())
+    this.els.eqZoomOut.addEventListener('click', () => this.eqEditorController.zoomOut())
+    this.els.eqInvert.addEventListener('click', () => {
+      this.eqEditorController.invertBands()
+      this.updateEqFieldsFromSelection()
+      this.applyEqControls()
+    })
 
     this.els.eqCompareA.addEventListener('click', () => this.switchEqCompareView('A'))
     this.els.eqCompareB.addEventListener('click', () => this.switchEqCompareView('B'))
@@ -3431,6 +3483,13 @@ export default class EditorPlugin {
       this.updatePresetEqFieldsFromSelection()
       this.applyPresetEqControls()
     })
+    this.els.mixPresetEqZoomIn.addEventListener('click', () => this.presetEq.zoomIn())
+    this.els.mixPresetEqZoomOut.addEventListener('click', () => this.presetEq.zoomOut())
+    this.els.mixPresetEqInvert.addEventListener('click', () => {
+      this.presetEq.invertBands()
+      this.updatePresetEqFieldsFromSelection()
+      this.applyPresetEqControls()
+    })
     this.els.mixPresetEqCompareA.addEventListener('click', () => this.switchPresetEqCompareView('A'))
     this.els.mixPresetEqCompareB.addEventListener('click', () => this.switchPresetEqCompareView('B'))
     this.els.mixPresetEqRevertBanner.addEventListener('click', () => this.revertPresetEqToSaved())
@@ -3485,6 +3544,13 @@ export default class EditorPlugin {
     })
     this.els.mixGroupEqRemoveBand.addEventListener('click', () => {
       this.groupEq.removeSelectedBand()
+      this.updateGroupEqFieldsFromSelection()
+      this.applyGroupEqControls()
+    })
+    this.els.mixGroupEqZoomIn.addEventListener('click', () => this.groupEq.zoomIn())
+    this.els.mixGroupEqZoomOut.addEventListener('click', () => this.groupEq.zoomOut())
+    this.els.mixGroupEqInvert.addEventListener('click', () => {
+      this.groupEq.invertBands()
       this.updateGroupEqFieldsFromSelection()
       this.applyGroupEqControls()
     })
