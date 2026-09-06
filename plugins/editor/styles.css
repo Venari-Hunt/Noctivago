@@ -803,7 +803,10 @@
 .editor-mix-eq-canvas {
   display: block;
   width: 100%;
-  height: 160px;
+  /* Matches #editor-eq-canvas's own height (Sound mode) now that Preset/
+     Group mode share the exact same EqEditor.js module - was 160px, a
+     leftover from the old scoped-down WholeMixEqEditor.js. */
+  height: 140px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-alt);

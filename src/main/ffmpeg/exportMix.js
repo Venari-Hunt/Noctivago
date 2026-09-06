@@ -5,7 +5,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { runFfmpegToFile } from './runFfmpeg.js'
-import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter } from './loopClip.js'
+import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass } from './loopClip.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
@@ -466,7 +466,12 @@ async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
 // brick-wall limiter regardless of whether the group boosts anything -
 // several loud member sounds honestly summed together can genuinely clip
 // with nothing else capping them.
-function buildGroupFilterChain(filters) {
+// skipLimiter is used when a reverb pass will run right after this chain -
+// applyReverbPass already bakes its own brick-wall limiter into its output,
+// so the pre-reverb chain would otherwise be limited twice (harmless
+// numerically, since limiting an already-limited signal at the same ceiling
+// is a near no-op, but pointless work and a confusing thing to read).
+function buildGroupFilterChain(filters, { skipLimiter = false } = {}) {
   const chain = []
   const f = filters ?? {}
   if ((f.highpassHz ?? 0) > 0) chain.push(`highpass=f=${f.highpassHz}`)
@@ -483,27 +488,61 @@ function buildGroupFilterChain(filters) {
   // buildFilterChain, ordered last (post-EQ/gain) to match SoundGroupChain's
   // live parallel echo tap, which reads off the already-EQ'd/gained signal.
   if (f.echoDelayMs > 0 && f.echoDecay > 0) chain.push(buildEchoFilter(f.echoDelayMs, f.echoDecay))
-  chain.push('alimiter=limit=0.95:level=disabled')
+  if (!skipLimiter) chain.push('alimiter=limit=0.95:level=disabled')
   return chain
 }
 
 // Applies one group's filter chain to its already-combined (single,
 // offset-0, full-duration) submix track, producing a new track that's ready
 // to drop straight into the outer final mix like any other pre-rendered
-// track.
+// track. Reverb (2026-09-06, same "not single-sound-specific" direction as
+// Echo) needs its own isolated pass - afir needs a second ffmpeg *input*
+// (the impulse response), which can't join this plain comma -af chain, so
+// it can't just be one more fragment in buildGroupFilterChain the way HP/LP/
+// EQ/Gain/Echo can. Mirrors loopClip.js's own per-sound doRender/
+// applyReverbPass split: render everything up to (not including) the
+// limiter to a WAV intermediate, then run the real reverb pass on it (which
+// bakes its own limiter into its output) - skipped entirely, byte-path
+// unchanged, whenever the group has no reverb set.
 async function applyGroupFilters(track, filters, durationSeconds, reporter) {
-  const outPath = tempPath(INTERMEDIATE_EXT)
-  await runFfmpegToFile(
-    [
+  const f = filters ?? {}
+  const hasReverb = (f.reverbSizeMs ?? 0) > 0 && (f.reverbMix ?? 0) > 0
+  if (!hasReverb) {
+    const outPath = tempPath(INTERMEDIATE_EXT)
+    await runFfmpegToFile(
+      [
+        '-y', '-i', track.path,
+        '-af', buildGroupFilterChain(f).join(','),
+        '-t', durationSeconds.toFixed(6),
+        ...INTERMEDIATE_CODEC, outPath
+      ],
+      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+    )
+    reporter?.completePhase(durationSeconds)
+    return { path: outPath, offset: 0 }
+  }
+
+  const preReverbPath = tempPath('wav')
+  const outPath = tempPath('wav')
+  // A group with only Reverb set (no HP/LP/EQ/Gain/Echo) has a genuinely
+  // empty pre-reverb chain (skipLimiter drops the one fragment that would
+  // otherwise always be there) - '-af' with an empty filter string is an
+  // invalid ffmpeg argument ("No filters specified in the graph
+  // description"), so it's omitted entirely rather than passed empty.
+  const preReverbChain = buildGroupFilterChain(f, { skipLimiter: true })
+  try {
+    await runFfmpegToFile([
       '-y', '-i', track.path,
-      '-af', buildGroupFilterChain(filters).join(','),
+      ...(preReverbChain.length ? ['-af', preReverbChain.join(',')] : []),
       '-t', durationSeconds.toFixed(6),
-      ...INTERMEDIATE_CODEC, outPath
-    ],
-    { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
-  )
-  reporter?.completePhase(durationSeconds)
-  return { path: outPath, offset: 0 }
+      '-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2', preReverbPath
+    ])
+    await applyReverbPass(preReverbPath, outPath, f.reverbSizeMs, f.reverbMix)
+    reporter?.completePhase(durationSeconds)
+    return { path: outPath, offset: 0 }
+  } finally {
+    await cleanupFiles([preReverbPath])
+  }
 }
 
 // Partitions every loop shot / batch track by which Sound Group (if any) its
@@ -597,7 +636,20 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
 // concept from the fadeInSeconds/fadeOutSeconds params here, which are the
 // Export tab's own start/end fade for the whole rendered file. Only
 // highpass/lowpass/gain/eq are shared between live and export.
-function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds }) {
+// True whenever a whole-mix config's Reverb is actually active - shared by
+// finalizeWholeMix (below) and plugins/export/index.js's own progress-budget
+// estimate.
+function wholeMixHasReverb(wholeMixFilters) {
+  return (wholeMixFilters?.reverbSizeMs ?? 0) > 0 && (wholeMixFilters?.reverbMix ?? 0) > 0
+}
+
+// deferReverbAndTail skips the limiter and fades - used when Reverb is
+// active, since that needs its own isolated pass (see finalizeWholeMix)
+// between this chain and the fades, and that pass already bakes its own
+// limiter into its output. False (the default, and the only path when
+// Reverb isn't set) keeps this function's original single-pass behavior
+// exactly, byte-path unchanged.
+function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds, deferReverbAndTail = false }) {
   const post = []
   if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)
   if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) post.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
@@ -614,6 +666,7 @@ function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSecond
   if (wholeMixFilters?.echoDelayMs > 0 && wholeMixFilters?.echoDecay > 0) {
     post.push(buildEchoFilter(wholeMixFilters.echoDelayMs, wholeMixFilters.echoDecay))
   }
+  if (deferReverbAndTail) return post
   // Brick-wall safety limiter whenever whole-mix processing is doing anything -
   // its gain and EQ bands have no other ceiling (same exposure Composite's bake
   // had before v0.1.113). Matches the live WholeMixChain limiter so an export
@@ -621,19 +674,91 @@ function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSecond
   // export leaves `post` empty and is untouched (keeps the blessed export
   // loudness, see the noctivago_feel_verdicts note).
   if (post.length > 0) post.push('alimiter=limit=0.95:level=disabled')
-  if (fadeInSeconds > 0) post.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
-  if (fadeOutSeconds > 0) {
-    post.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
-  }
+  post.push(...buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds }))
   return post
+}
+
+// Fade in/out only - split out of buildWholeMixPostChain so the reverb path
+// can apply these *after* its own pass instead of before it (a fade has to
+// be the very last thing that happens to the file, same as it always was).
+function buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds }) {
+  const tail = []
+  if (fadeInSeconds > 0) tail.push(`afade=t=in:d=${fadeInSeconds.toFixed(3)}`)
+  if (fadeOutSeconds > 0) {
+    tail.push(`afade=t=out:st=${Math.max(0, durationSeconds - fadeOutSeconds).toFixed(3)}:d=${fadeOutSeconds.toFixed(3)}`)
+  }
+  return tail
+}
+
+// Shared tail for renderFinalMixdown/renderFinalMixFromTracks - both build
+// their own `inputArgs`/`graph`/`mixLabels`/`idx` (the only real difference
+// between them: loop-shot -stream_loop tiling vs. already-pre-tiled tracks),
+// then hand off here for "apply whole-mix processing, encode" - previously
+// duplicated in both, which would have meant writing the Reverb isolated-
+// pass logic below twice. When Reverb is active, the main graph renders to
+// a WAV intermediate (pre-limiter, pre-fade - see buildWholeMixPostChain's
+// deferReverbAndTail), the real reverb pass runs on that (baking its own
+// limiter), then one small final pass applies fades (if any) and the actual
+// output format encode. Skipped entirely, single-pass, byte-path unchanged
+// when Reverb isn't set - matches the "blessed export loudness" guarantee
+// every other whole-mix addition here has kept.
+async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
+  const hasReverb = wholeMixHasReverb(wholeMixFilters)
+  const post = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds, deferReverbAndTail: hasReverb })
+  graph.push(
+    `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
+      `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
+  )
+
+  const scriptPath = tempPath('txt')
+  fs.writeFileSync(scriptPath, graph.join(';'))
+  const preReverbPath = hasReverb ? tempPath('wav') : null
+  const targetPath = hasReverb ? preReverbPath : outputPath
+  const targetCodecArgs = hasReverb ? ['-c:a', 'pcm_s16le'] : (FORMAT_CODECS[format] ?? FORMAT_CODECS.wav)
+  const targetSampleRate = hasReverb ? 44100 : outputSampleRate(format)
+  try {
+    await runFfmpegToFile(
+      [
+        '-y', ...inputArgs,
+        '-filter_complex_script', scriptPath,
+        '-map', '[out]',
+        '-t', durationSeconds.toFixed(6),
+        ...targetCodecArgs, '-ar', String(targetSampleRate), '-ac', '2',
+        targetPath
+      ],
+      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+    )
+    if (!hasReverb) {
+      reporter?.completePhase(durationSeconds)
+      return
+    }
+    const reverbWetPath = tempPath('wav')
+    try {
+      await applyReverbPass(preReverbPath, reverbWetPath, wholeMixFilters.reverbSizeMs, wholeMixFilters.reverbMix)
+      const tail = buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds })
+      const codecArgs = FORMAT_CODECS[format] ?? FORMAT_CODECS.wav
+      await runFfmpegToFile([
+        '-y', '-i', reverbWetPath,
+        ...(tail.length ? ['-af', tail.join(',')] : []),
+        '-t', durationSeconds.toFixed(6),
+        ...codecArgs, '-ar', String(outputSampleRate(format)), '-ac', '2',
+        outputPath
+      ])
+      reporter?.completePhase(durationSeconds)
+    } finally {
+      await cleanupFiles([reverbWetPath])
+    }
+  } finally {
+    await cleanupFiles(hasReverb ? [scriptPath, preReverbPath] : [scriptPath])
+  }
 }
 
 // The lightweight tail once every track (pre-tiled loop tracks at offset 0 +
 // sliced batch tracks at their own offsets, already reduced under
-// MAX_INPUTS_PER_PASS) is ready: adelay each to its offset, amix, apply
-// whole-mix processing + fades last, encode. Mirrors renderFinalMixdown's
-// own post-filter/encode tail exactly, minus the -stream_loop tiling this
-// version doesn't need to do inline anymore.
+// MAX_INPUTS_PER_PASS) is ready: adelay each to its offset, amix, then
+// finalizeWholeMix applies whole-mix processing + fades and encodes.
+// Mirrors renderFinalMixdown's own track-gathering shape exactly, minus the
+// -stream_loop tiling this version doesn't need to do inline anymore.
 async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
   const graph = []
   const mixLabels = []
@@ -651,34 +776,9 @@ async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilte
     })
   }
 
-  const post = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds })
-
-  graph.push(
-    `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
-      `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
-  )
-
-  const scriptPath = tempPath('txt')
-  fs.writeFileSync(scriptPath, graph.join(';'))
-  const codecArgs = FORMAT_CODECS[format] ?? FORMAT_CODECS.wav
   const inputArgs =
     tracks.length > 0 ? tracks.flatMap((t) => ['-i', t.path]) : ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo']
-  try {
-    await runFfmpegToFile(
-      [
-        '-y', ...inputArgs,
-        '-filter_complex_script', scriptPath,
-        '-map', '[out]',
-        '-t', durationSeconds.toFixed(6),
-        ...codecArgs, '-ar', String(outputSampleRate(format)), '-ac', '2',
-        outputPath
-      ],
-      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
-    )
-    reporter?.completePhase(durationSeconds)
-  } finally {
-    await cleanupFiles([scriptPath])
-  }
+  await finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
 }
 
 const FORMAT_CODECS = {
@@ -747,32 +847,7 @@ async function renderFinalMixdown({
     idx = 1
   }
 
-  const post = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds })
-
-  graph.push(
-    `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
-      `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
-  )
-
-  const scriptPath = tempPath('txt')
-  fs.writeFileSync(scriptPath, graph.join(';'))
-  const codecArgs = FORMAT_CODECS[format] ?? FORMAT_CODECS.wav
-  try {
-    await runFfmpegToFile(
-      [
-        '-y', ...inputArgs,
-        '-filter_complex_script', scriptPath,
-        '-map', '[out]',
-        '-t', durationSeconds.toFixed(6),
-        ...codecArgs, '-ar', String(outputSampleRate(format)), '-ac', '2',
-        outputPath
-      ],
-      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
-    )
-    reporter?.completePhase(durationSeconds)
-  } finally {
-    await cleanupFiles([scriptPath])
-  }
+  await finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
 }
 
 // Optional companion output for the Export tab's video-mode choice
@@ -986,13 +1061,21 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   // Sound Group processing (renderGroupBuses) adds real, full-duration
   // ffmpeg work that wasn't budgeted before groups were export-aware: one
   // tileLoopShotFull pass per grouped loop-mode sound, plus roughly one more
-  // duration's worth per used group for the combine+filter passes. A rough
-  // estimate (not exact, unlike the audio-seconds-of-work budgeting above) -
-  // good enough to keep the bar visibly moving instead of stalling, which is
-  // the actual bug this class of fix (v0.1.150) cares about.
+  // duration's worth per used group for the combine+filter passes (two more
+  // if that group's own reverb is active - applyGroupFilters then runs a
+  // pre-reverb pass and the real reverb pass instead of one plain -af pass).
+  // A rough estimate (not exact, unlike the audio-seconds-of-work budgeting
+  // above) - good enough to keep the bar visibly moving instead of
+  // stalling, which is the actual bug this class of fix (v0.1.150) cares
+  // about.
   const groupedLoopSoundCount = loopSounds.filter((s) => s.groupId).length
-  const usedGroupCount = new Set(sounds.map((s) => s.groupId).filter(Boolean)).size
-  const groupWorkSeconds = (groupedLoopSoundCount + usedGroupCount * 2) * durationSeconds
+  const usedGroupIds = new Set(sounds.map((s) => s.groupId).filter(Boolean))
+  const groupsWithReverbCount = [...usedGroupIds].filter((id) => {
+    const g = groups.find((group) => group.id === id)
+    return (g?.filters?.reverbSizeMs ?? 0) > 0 && (g?.filters?.reverbMix ?? 0) > 0
+  }).length
+  const groupWorkSeconds =
+    (groupedLoopSoundCount + usedGroupIds.size * 2 + groupsWithReverbCount) * durationSeconds
   const totalWorkSeconds =
     mixdownWorkSeconds +
     eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0) +

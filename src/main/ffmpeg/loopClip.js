@@ -596,7 +596,15 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
 // a sustained ambient sound's reverb tail building up real level over the
 // mix - measured directly: a continuous tone at mix 0.5+ was already
 // clipping-adjacent before this was added.
-async function applyReverbPass(inputPath, outputPath, reverbSizeMs, reverbMix) {
+// Exported (2026-09-06) so exportMix.js's whole-mix/group post-processing
+// can reuse this exact reverb pass for a preset's or Sound Group's own
+// reverb setting, instead of a second, duplicated implementation - same
+// directory, no plugin-boundary duplication needed (mirrors
+// buildEqBandFilter's/buildEchoFilter's own already-established export
+// reasoning above). Already bakes in the brick-wall limiter (see this
+// function's own doc comment) - a caller doesn't need to add another one on
+// top of this pass's own output.
+export async function applyReverbPass(inputPath, outputPath, reverbSizeMs, reverbMix) {
   const irPath = await getOrCreateReverbIR(reverbSizeMs / 1000)
   const mix = Math.max(0, Math.min(1, reverbMix))
   const dryGain = (1 - mix).toFixed(4)

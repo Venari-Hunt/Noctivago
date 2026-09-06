@@ -3,7 +3,6 @@ import { PreviewSource } from './audio/PreviewSource.js'
 import { BakedClipPreview } from './audio/BakedClipPreview.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
 import { createEqEditorController, Q_MIN, Q_MAX, SLOPE_CAPABLE_EQ_TYPES } from './ui/EqEditor.js'
-import { WholeMixEqEditor, EQ_TYPES as WHOLE_MIX_EQ_TYPES } from './ui/WholeMixEqEditor.js'
 import { createWaveformScrollbar } from './ui/WaveformScrollbar.js'
 import { formatDuration, parseDuration } from './util/time.js'
 
@@ -521,6 +520,16 @@ export default class EditorPlugin {
                 <span id="editor-mix-preset-echo-decay-value" class="editor-filter-value">Off</span>
               </label>
               <label>
+                <span>Reverb size</span>
+                <input id="editor-mix-preset-reverb-size" type="range" min="0" max="4000" value="0" step="100" />
+                <span id="editor-mix-preset-reverb-size-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Reverb mix</span>
+                <input id="editor-mix-preset-reverb-mix" type="range" min="0" max="1" value="0" step="0.01" />
+                <span id="editor-mix-preset-reverb-mix-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
                 <span>Fade in</span>
                 <input id="editor-mix-preset-fadein" type="number" min="0" max="60" step="0.5" value="0" />
                 <span class="editor-filter-value">s — eases the whole mix up when the preset loads</span>
@@ -529,16 +538,64 @@ export default class EditorPlugin {
             <div class="editor-eq">
               <div class="editor-eq-header">
                 <span class="editor-eq-label">Parametric EQ</span>
+                <div class="editor-eq-compare" role="group" aria-label="Compare current session vs. last saved">
+                  <button id="editor-mix-preset-eq-compare-a" class="editor-eq-compare-btn editor-eq-compare-btn-active" type="button" title="Current session (editable)">A</button>
+                  <button id="editor-mix-preset-eq-compare-b" class="editor-eq-compare-btn" type="button" title="Last saved mix (read-only)">B</button>
+                </div>
+                <button id="editor-mix-preset-eq-add-band" class="btn btn-svg-icon" type="button" title="Add a band">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <button id="editor-mix-preset-eq-remove-band" class="btn btn-svg-icon" type="button" title="Delete the selected band (or drag a node here)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+                <button id="editor-mix-preset-eq-reset" class="btn btn-small btn-icon-text" type="button">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  Reset EQ
+                </button>
               </div>
-              <canvas id="editor-mix-preset-eq-canvas" class="editor-mix-eq-canvas" title="Click the graph to add a band, drag to move, scroll for width (Q), right-click to remove."></canvas>
+              <button id="editor-mix-preset-eq-revert-banner" class="editor-eq-revert-banner hidden" type="button">Click to revert to previous session's mix</button>
+              <canvas id="editor-mix-preset-eq-canvas" class="editor-mix-eq-canvas" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click a node to reset its gain; Alt+click for a full reset."></canvas>
               <div class="editor-mix-eq-fields">
+                <label><span>Type</span>
+                  <select id="editor-mix-preset-eq-type">
+                    <option value="off">Off</option>
+                    <option value="lowpass">Low Pass</option>
+                    <option value="highpass">High Pass</option>
+                    <option value="bandpass">Band Pass</option>
+                    <option value="notch">Notch</option>
+                    <option value="lowshelf">Low Shelf</option>
+                    <option value="highshelf">High Shelf</option>
+                    <option value="peaking" selected>Peaking</option>
+                  </select>
+                </label>
+                <label id="editor-mix-preset-eq-slope-label"><span>Slope</span>
+                  <select id="editor-mix-preset-eq-slope">
+                    <option value="gentle" selected>Gentle</option>
+                    <option value="steep">Steep</option>
+                  </select>
+                </label>
                 <label><span>Freq</span><input id="editor-mix-preset-eq-freq" type="number" min="20" max="20000" step="1" /></label>
-                <label><span>Gain</span><input id="editor-mix-preset-eq-gain" type="number" min="-18" max="18" step="0.5" /></label>
+                <label><span>Gain</span><input id="editor-mix-preset-eq-gain" type="number" min="-24" max="24" step="0.1" /></label>
                 <label><span>Q</span><input id="editor-mix-preset-eq-q" type="number" min="0.1" max="20" step="0.1" /></label>
-                <label><span>Type</span><select id="editor-mix-preset-eq-type">${WHOLE_MIX_EQ_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}</select></label>
-                <button id="editor-mix-preset-eq-remove" class="btn btn-small" type="button">Remove band</button>
-                <button id="editor-mix-preset-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
+                <button id="editor-mix-preset-eq-mute" class="editor-eq-toggle-btn" type="button" title="Mute this band (keeps its settings, just stops applying it)">Mute</button>
+                <button id="editor-mix-preset-eq-solo" class="editor-eq-toggle-btn" type="button" title="Solo this band (hear only its effect, for auditioning while tuning)">Solo</button>
               </div>
+            </div>
+            <div class="editor-presets">
+              <span class="editor-presets-label">Presets</span>
+              <button class="btn btn-small" type="button" data-mix-preset-effect="muffled">Muffled</button>
+              <button class="btn btn-small" type="button" data-mix-preset-effect="phone">Over the Phone</button>
+              <button class="btn btn-small" type="button" data-mix-preset-effect="radio">On the Radio</button>
+              <button class="btn btn-small" type="button" data-mix-preset-effect="distant">Distant</button>
+              <button class="btn btn-small" type="button" data-mix-preset-effect="echo">Echo</button>
+              <button class="btn btn-small" type="button" data-mix-preset-effect="reverb">Reverb</button>
+              <button class="btn btn-small" type="button" data-mix-preset-effect="underwater">Underwater</button>
+            </div>
+            <div class="editor-actions">
+              <button id="editor-mix-preset-reset-filters" class="btn btn-icon-text" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Reset filters
+              </button>
             </div>
             <p id="editor-mix-preset-hint" class="editor-mix-status">Pick a preset above. These settings are saved on it and heard live on the whole mix whenever it's loaded in the Mixer.</p>
           </div>
@@ -580,20 +637,78 @@ export default class EditorPlugin {
                 <input id="editor-mix-group-echo-decay" type="range" min="0" max="0.85" value="0" step="0.01" />
                 <span id="editor-mix-group-echo-decay-value" class="editor-filter-value">Off</span>
               </label>
+              <label>
+                <span>Reverb size</span>
+                <input id="editor-mix-group-reverb-size" type="range" min="0" max="4000" value="0" step="100" />
+                <span id="editor-mix-group-reverb-size-value" class="editor-filter-value">Off</span>
+              </label>
+              <label>
+                <span>Reverb mix</span>
+                <input id="editor-mix-group-reverb-mix" type="range" min="0" max="1" value="0" step="0.01" />
+                <span id="editor-mix-group-reverb-mix-value" class="editor-filter-value">Off</span>
+              </label>
             </div>
             <div class="editor-eq">
               <div class="editor-eq-header">
                 <span class="editor-eq-label">Parametric EQ</span>
+                <div class="editor-eq-compare" role="group" aria-label="Compare current session vs. last saved">
+                  <button id="editor-mix-group-eq-compare-a" class="editor-eq-compare-btn editor-eq-compare-btn-active" type="button" title="Current session (editable)">A</button>
+                  <button id="editor-mix-group-eq-compare-b" class="editor-eq-compare-btn" type="button" title="Last saved group (read-only)">B</button>
+                </div>
+                <button id="editor-mix-group-eq-add-band" class="btn btn-svg-icon" type="button" title="Add a band">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <button id="editor-mix-group-eq-remove-band" class="btn btn-svg-icon" type="button" title="Delete the selected band (or drag a node here)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+                <button id="editor-mix-group-eq-reset" class="btn btn-small btn-icon-text" type="button">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  Reset EQ
+                </button>
               </div>
-              <canvas id="editor-mix-group-eq-canvas" class="editor-mix-eq-canvas" title="Click the graph to add a band, drag to move, scroll for width (Q), right-click to remove."></canvas>
+              <button id="editor-mix-group-eq-revert-banner" class="editor-eq-revert-banner hidden" type="button">Click to revert to previous session's group</button>
+              <canvas id="editor-mix-group-eq-canvas" class="editor-mix-eq-canvas" title="Drag a node to adjust frequency/gain (hold Ctrl while dragging for finer control). Scroll over a node to adjust its Q. Double-click a node to reset its gain; Alt+click for a full reset."></canvas>
               <div class="editor-mix-eq-fields">
+                <label><span>Type</span>
+                  <select id="editor-mix-group-eq-type">
+                    <option value="off">Off</option>
+                    <option value="lowpass">Low Pass</option>
+                    <option value="highpass">High Pass</option>
+                    <option value="bandpass">Band Pass</option>
+                    <option value="notch">Notch</option>
+                    <option value="lowshelf">Low Shelf</option>
+                    <option value="highshelf">High Shelf</option>
+                    <option value="peaking" selected>Peaking</option>
+                  </select>
+                </label>
+                <label id="editor-mix-group-eq-slope-label"><span>Slope</span>
+                  <select id="editor-mix-group-eq-slope">
+                    <option value="gentle" selected>Gentle</option>
+                    <option value="steep">Steep</option>
+                  </select>
+                </label>
                 <label><span>Freq</span><input id="editor-mix-group-eq-freq" type="number" min="20" max="20000" step="1" /></label>
-                <label><span>Gain</span><input id="editor-mix-group-eq-gain" type="number" min="-18" max="18" step="0.5" /></label>
+                <label><span>Gain</span><input id="editor-mix-group-eq-gain" type="number" min="-24" max="24" step="0.1" /></label>
                 <label><span>Q</span><input id="editor-mix-group-eq-q" type="number" min="0.1" max="20" step="0.1" /></label>
-                <label><span>Type</span><select id="editor-mix-group-eq-type">${WHOLE_MIX_EQ_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}</select></label>
-                <button id="editor-mix-group-eq-remove" class="btn btn-small" type="button">Remove band</button>
-                <button id="editor-mix-group-eq-reset" class="btn btn-small" type="button">Reset EQ</button>
+                <button id="editor-mix-group-eq-mute" class="editor-eq-toggle-btn" type="button" title="Mute this band (keeps its settings, just stops applying it)">Mute</button>
+                <button id="editor-mix-group-eq-solo" class="editor-eq-toggle-btn" type="button" title="Solo this band (hear only its effect, for auditioning while tuning)">Solo</button>
               </div>
+            </div>
+            <div class="editor-presets">
+              <span class="editor-presets-label">Presets</span>
+              <button class="btn btn-small" type="button" data-mix-group-effect="muffled">Muffled</button>
+              <button class="btn btn-small" type="button" data-mix-group-effect="phone">Over the Phone</button>
+              <button class="btn btn-small" type="button" data-mix-group-effect="radio">On the Radio</button>
+              <button class="btn btn-small" type="button" data-mix-group-effect="distant">Distant</button>
+              <button class="btn btn-small" type="button" data-mix-group-effect="echo">Echo</button>
+              <button class="btn btn-small" type="button" data-mix-group-effect="reverb">Reverb</button>
+              <button class="btn btn-small" type="button" data-mix-group-effect="underwater">Underwater</button>
+            </div>
+            <div class="editor-actions">
+              <button id="editor-mix-group-reset-filters" class="btn btn-icon-text" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Reset filters
+              </button>
             </div>
           </div>
           <p id="editor-mix-group-empty" class="editor-mix-status">Pick a preset above, then create or pick a group to EQ some of its sounds together (e.g. crickets + toads to sound like they're outside).</p>
@@ -1090,15 +1205,29 @@ export default class EditorPlugin {
       mixPresetEchoDelayValue: container.querySelector('#editor-mix-preset-echo-delay-value'),
       mixPresetEchoDecay: container.querySelector('#editor-mix-preset-echo-decay'),
       mixPresetEchoDecayValue: container.querySelector('#editor-mix-preset-echo-decay-value'),
+      mixPresetReverbSize: container.querySelector('#editor-mix-preset-reverb-size'),
+      mixPresetReverbSizeValue: container.querySelector('#editor-mix-preset-reverb-size-value'),
+      mixPresetReverbMix: container.querySelector('#editor-mix-preset-reverb-mix'),
+      mixPresetReverbMixValue: container.querySelector('#editor-mix-preset-reverb-mix-value'),
       mixPresetFadeIn: container.querySelector('#editor-mix-preset-fadein'),
       mixPresetWaveform: container.querySelector('#editor-mix-preset-waveform'),
       mixPresetEqCanvas: container.querySelector('#editor-mix-preset-eq-canvas'),
+      mixPresetEqCompareA: container.querySelector('#editor-mix-preset-eq-compare-a'),
+      mixPresetEqCompareB: container.querySelector('#editor-mix-preset-eq-compare-b'),
+      mixPresetEqRevertBanner: container.querySelector('#editor-mix-preset-eq-revert-banner'),
+      mixPresetEqAddBand: container.querySelector('#editor-mix-preset-eq-add-band'),
+      mixPresetEqRemoveBand: container.querySelector('#editor-mix-preset-eq-remove-band'),
+      mixPresetEqType: container.querySelector('#editor-mix-preset-eq-type'),
+      mixPresetEqSlope: container.querySelector('#editor-mix-preset-eq-slope'),
+      mixPresetEqSlopeLabel: container.querySelector('#editor-mix-preset-eq-slope-label'),
       mixPresetEqFreq: container.querySelector('#editor-mix-preset-eq-freq'),
       mixPresetEqGain: container.querySelector('#editor-mix-preset-eq-gain'),
       mixPresetEqQ: container.querySelector('#editor-mix-preset-eq-q'),
-      mixPresetEqType: container.querySelector('#editor-mix-preset-eq-type'),
-      mixPresetEqRemove: container.querySelector('#editor-mix-preset-eq-remove'),
+      mixPresetEqMute: container.querySelector('#editor-mix-preset-eq-mute'),
+      mixPresetEqSolo: container.querySelector('#editor-mix-preset-eq-solo'),
       mixPresetEqReset: container.querySelector('#editor-mix-preset-eq-reset'),
+      mixPresetResetFilters: container.querySelector('#editor-mix-preset-reset-filters'),
+      mixPresetEffectButtons: container.querySelectorAll('[data-mix-preset-effect]'),
       mixPresetHint: container.querySelector('#editor-mix-preset-hint'),
 
       mixGroupEditor: container.querySelector('#editor-mix-group-editor'),
@@ -1116,13 +1245,27 @@ export default class EditorPlugin {
       mixGroupEchoDelayValue: container.querySelector('#editor-mix-group-echo-delay-value'),
       mixGroupEchoDecay: container.querySelector('#editor-mix-group-echo-decay'),
       mixGroupEchoDecayValue: container.querySelector('#editor-mix-group-echo-decay-value'),
+      mixGroupReverbSize: container.querySelector('#editor-mix-group-reverb-size'),
+      mixGroupReverbSizeValue: container.querySelector('#editor-mix-group-reverb-size-value'),
+      mixGroupReverbMix: container.querySelector('#editor-mix-group-reverb-mix'),
+      mixGroupReverbMixValue: container.querySelector('#editor-mix-group-reverb-mix-value'),
       mixGroupEqCanvas: container.querySelector('#editor-mix-group-eq-canvas'),
+      mixGroupEqCompareA: container.querySelector('#editor-mix-group-eq-compare-a'),
+      mixGroupEqCompareB: container.querySelector('#editor-mix-group-eq-compare-b'),
+      mixGroupEqRevertBanner: container.querySelector('#editor-mix-group-eq-revert-banner'),
+      mixGroupEqAddBand: container.querySelector('#editor-mix-group-eq-add-band'),
+      mixGroupEqRemoveBand: container.querySelector('#editor-mix-group-eq-remove-band'),
+      mixGroupEqType: container.querySelector('#editor-mix-group-eq-type'),
+      mixGroupEqSlope: container.querySelector('#editor-mix-group-eq-slope'),
+      mixGroupEqSlopeLabel: container.querySelector('#editor-mix-group-eq-slope-label'),
       mixGroupEqFreq: container.querySelector('#editor-mix-group-eq-freq'),
       mixGroupEqGain: container.querySelector('#editor-mix-group-eq-gain'),
       mixGroupEqQ: container.querySelector('#editor-mix-group-eq-q'),
-      mixGroupEqType: container.querySelector('#editor-mix-group-eq-type'),
-      mixGroupEqRemove: container.querySelector('#editor-mix-group-eq-remove'),
-      mixGroupEqReset: container.querySelector('#editor-mix-group-eq-reset')
+      mixGroupEqMute: container.querySelector('#editor-mix-group-eq-mute'),
+      mixGroupEqSolo: container.querySelector('#editor-mix-group-eq-solo'),
+      mixGroupEqReset: container.querySelector('#editor-mix-group-eq-reset'),
+      mixGroupResetFilters: container.querySelector('#editor-mix-group-reset-filters'),
+      mixGroupEffectButtons: container.querySelectorAll('[data-mix-group-effect]')
     }
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
@@ -1203,8 +1346,40 @@ export default class EditorPlugin {
     this.wireLeaveConfirmDialog()
     this.refreshLibrary().catch((err) => console.error('Editor: failed to load library', err))
 
-    this.presetEq = new WholeMixEqEditor(this.els.mixPresetEqCanvas, (bands, opts) => this.onPresetEqChange(bands, opts))
-    this.groupEq = new WholeMixEqEditor(this.els.mixGroupEqCanvas, (bands, opts) => this.onGroupEqChange(bands, opts))
+    // Same real EqEditor.js module Sound mode uses (2026-09-06: the owner's
+    // own direction - "the same module... everything else should be kept" -
+    // rather than the old scoped-down WholeMixEqEditor.js, which is now
+    // deleted). It's a plain canvas-scoped controller with no dependency on
+    // a single preview source, so instantiating a second/third one for
+    // Preset/Group mode is exactly as simple as Sound mode's own setup.
+    this.presetEq = createEqEditorController(this.els.mixPresetEqCanvas)
+    this.presetEq.onChange(() => this.applyPresetEqControls())
+    this.presetEq.onDoubleClick((index) => {
+      this.presetEq.setSelectedIndex(index)
+      this.presetEq.setSelectedBand({ gainDb: 0 })
+      this.applyPresetEqControls()
+    })
+    this.presetEq.onAltClick((index) => {
+      this.presetEq.setSelectedIndex(index)
+      this.presetEq.setSelectedBand({ gainDb: 0, q: 1, type: 'peaking', slope: 'gentle' })
+      this.applyPresetEqControls()
+    })
+    this.presetEq.setTrashDropTarget(this.els.mixPresetEqRemoveBand)
+
+    this.groupEq = createEqEditorController(this.els.mixGroupEqCanvas)
+    this.groupEq.onChange(() => this.applyGroupEqControls())
+    this.groupEq.onDoubleClick((index) => {
+      this.groupEq.setSelectedIndex(index)
+      this.groupEq.setSelectedBand({ gainDb: 0 })
+      this.applyGroupEqControls()
+    })
+    this.groupEq.onAltClick((index) => {
+      this.groupEq.setSelectedIndex(index)
+      this.groupEq.setSelectedBand({ gainDb: 0, q: 1, type: 'peaking', slope: 'gentle' })
+      this.applyGroupEqControls()
+    })
+    this.groupEq.setTrashDropTarget(this.els.mixGroupEqRemoveBand)
+
     this.wireMixControls()
     this.refreshMixPanel().catch((err) => console.error('Editor: failed to load presets', err))
   }
@@ -3232,27 +3407,119 @@ export default class EditorPlugin {
     this.els.mixGroupSelect.addEventListener('change', () => this.selectGroup(this.els.mixGroupSelect.value))
     this.els.mixGroupNew.addEventListener('click', () => this.createGroup())
 
-    for (const el of [this.els.mixPresetHighpass, this.els.mixPresetLowpass, this.els.mixPresetGain, this.els.mixPresetEchoDelay, this.els.mixPresetEchoDecay]) {
+    for (const el of [this.els.mixPresetHighpass, this.els.mixPresetLowpass, this.els.mixPresetGain, this.els.mixPresetEchoDelay, this.els.mixPresetEchoDecay, this.els.mixPresetReverbSize, this.els.mixPresetReverbMix]) {
       el.addEventListener('input', () => this.readPresetMixControlsAndPreview())
     }
     this.els.mixPresetFadeIn.addEventListener('input', () => this.readPresetMixControlsAndPreview())
-    this.els.mixPresetEqFreq.addEventListener('input', () => this.presetEq.updateSelectedBand({ freqHz: Number(this.els.mixPresetEqFreq.value) }))
-    this.els.mixPresetEqGain.addEventListener('input', () => this.presetEq.updateSelectedBand({ gainDb: Number(this.els.mixPresetEqGain.value) }))
-    this.els.mixPresetEqQ.addEventListener('input', () => this.presetEq.updateSelectedBand({ q: Number(this.els.mixPresetEqQ.value) }))
-    this.els.mixPresetEqType.addEventListener('change', () => this.presetEq.updateSelectedBand({ type: this.els.mixPresetEqType.value }))
-    this.els.mixPresetEqRemove.addEventListener('click', () => this.presetEq.removeSelectedBand())
-    this.els.mixPresetEqReset.addEventListener('click', () => this.presetEq.clear())
+    this.els.mixPresetEqType.addEventListener('change', () => this.applyPresetEqFieldsToSelectedBand())
+    this.els.mixPresetEqSlope.addEventListener('change', () => this.applyPresetEqFieldsToSelectedBand())
+    this.els.mixPresetEqFreq.addEventListener('input', () => this.applyPresetEqFieldsToSelectedBand())
+    this.els.mixPresetEqGain.addEventListener('input', () => this.applyPresetEqFieldsToSelectedBand())
+    this.els.mixPresetEqQ.addEventListener('input', () => this.applyPresetEqFieldsToSelectedBand())
+    this.els.mixPresetEqReset.addEventListener('click', () => {
+      this.presetEq.load(defaultEqBands())
+      this.updatePresetEqFieldsFromSelection()
+      this.applyPresetEqControls()
+    })
+    this.els.mixPresetEqAddBand.addEventListener('click', () => {
+      this.presetEq.addBand()
+      this.updatePresetEqFieldsFromSelection()
+      this.applyPresetEqControls()
+    })
+    this.els.mixPresetEqRemoveBand.addEventListener('click', () => {
+      this.presetEq.removeSelectedBand()
+      this.updatePresetEqFieldsFromSelection()
+      this.applyPresetEqControls()
+    })
+    this.els.mixPresetEqCompareA.addEventListener('click', () => this.switchPresetEqCompareView('A'))
+    this.els.mixPresetEqCompareB.addEventListener('click', () => this.switchPresetEqCompareView('B'))
+    this.els.mixPresetEqRevertBanner.addEventListener('click', () => this.revertPresetEqToSaved())
+    this.els.mixPresetEqMute.addEventListener('click', () => {
+      const idx = this.presetEq.getSelectedIndex()
+      const band = this.presetEq.getBands()[idx]
+      if (!band) return
+      this.presetEq.setSelectedBand({ muted: !band.muted })
+      this.applyPresetEqControls()
+    })
+    this.els.mixPresetEqSolo.addEventListener('click', () => {
+      const idx = this.presetEq.getSelectedIndex()
+      if (idx === -1) return
+      const current = this.presetEq.getSoloIndex()
+      this.presetEq.setSoloIndex(current === idx ? -1 : idx)
+      this.applyPresetEqControls()
+    })
+    this.els.mixPresetResetFilters.addEventListener('click', () => {
+      this.writePresetMixControls(NEUTRAL_WHOLE_MIX)
+      this.presetEq.load(defaultEqBands())
+      this.updatePresetEqFieldsFromSelection()
+      this.readPresetMixControlsAndPreview()
+      this.applyPresetEqControls()
+    })
+    for (const button of this.els.mixPresetEffectButtons) {
+      button.addEventListener('click', () => {
+        const preset = FILTER_PRESETS[button.dataset.mixPresetEffect]
+        if (!preset) return
+        this.setPresetEffectPreset(preset)
+        this.readPresetMixControlsAndPreview()
+      })
+    }
 
     this.els.mixGroupName.addEventListener('input', () => this.updateGroupDirty())
-    for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay]) {
+    for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay, this.els.mixGroupReverbSize, this.els.mixGroupReverbMix]) {
       el.addEventListener('input', () => this.readGroupControlsAndPreview())
     }
-    this.els.mixGroupEqFreq.addEventListener('input', () => this.groupEq.updateSelectedBand({ freqHz: Number(this.els.mixGroupEqFreq.value) }))
-    this.els.mixGroupEqGain.addEventListener('input', () => this.groupEq.updateSelectedBand({ gainDb: Number(this.els.mixGroupEqGain.value) }))
-    this.els.mixGroupEqQ.addEventListener('input', () => this.groupEq.updateSelectedBand({ q: Number(this.els.mixGroupEqQ.value) }))
-    this.els.mixGroupEqType.addEventListener('change', () => this.groupEq.updateSelectedBand({ type: this.els.mixGroupEqType.value }))
-    this.els.mixGroupEqRemove.addEventListener('click', () => this.groupEq.removeSelectedBand())
-    this.els.mixGroupEqReset.addEventListener('click', () => this.groupEq.clear())
+    this.els.mixGroupEqType.addEventListener('change', () => this.applyGroupEqFieldsToSelectedBand())
+    this.els.mixGroupEqSlope.addEventListener('change', () => this.applyGroupEqFieldsToSelectedBand())
+    this.els.mixGroupEqFreq.addEventListener('input', () => this.applyGroupEqFieldsToSelectedBand())
+    this.els.mixGroupEqGain.addEventListener('input', () => this.applyGroupEqFieldsToSelectedBand())
+    this.els.mixGroupEqQ.addEventListener('input', () => this.applyGroupEqFieldsToSelectedBand())
+    this.els.mixGroupEqReset.addEventListener('click', () => {
+      this.groupEq.load(defaultEqBands())
+      this.updateGroupEqFieldsFromSelection()
+      this.applyGroupEqControls()
+    })
+    this.els.mixGroupEqAddBand.addEventListener('click', () => {
+      this.groupEq.addBand()
+      this.updateGroupEqFieldsFromSelection()
+      this.applyGroupEqControls()
+    })
+    this.els.mixGroupEqRemoveBand.addEventListener('click', () => {
+      this.groupEq.removeSelectedBand()
+      this.updateGroupEqFieldsFromSelection()
+      this.applyGroupEqControls()
+    })
+    this.els.mixGroupEqCompareA.addEventListener('click', () => this.switchGroupEqCompareView('A'))
+    this.els.mixGroupEqCompareB.addEventListener('click', () => this.switchGroupEqCompareView('B'))
+    this.els.mixGroupEqRevertBanner.addEventListener('click', () => this.revertGroupEqToSaved())
+    this.els.mixGroupEqMute.addEventListener('click', () => {
+      const idx = this.groupEq.getSelectedIndex()
+      const band = this.groupEq.getBands()[idx]
+      if (!band) return
+      this.groupEq.setSelectedBand({ muted: !band.muted })
+      this.applyGroupEqControls()
+    })
+    this.els.mixGroupEqSolo.addEventListener('click', () => {
+      const idx = this.groupEq.getSelectedIndex()
+      if (idx === -1) return
+      const current = this.groupEq.getSoloIndex()
+      this.groupEq.setSoloIndex(current === idx ? -1 : idx)
+      this.applyGroupEqControls()
+    })
+    this.els.mixGroupResetFilters.addEventListener('click', () => {
+      this.writeGroupControls(NEUTRAL_GROUP_FILTERS)
+      this.groupEq.load(defaultEqBands())
+      this.updateGroupEqFieldsFromSelection()
+      this.readGroupControlsAndPreview()
+      this.applyGroupEqControls()
+    })
+    for (const button of this.els.mixGroupEffectButtons) {
+      button.addEventListener('click', () => {
+        const preset = FILTER_PRESETS[button.dataset.mixGroupEffect]
+        if (!preset) return
+        this.setGroupEffectPreset(preset)
+        this.readGroupControlsAndPreview()
+      })
+    }
   }
 
   // Switches which of the three modes is showing. Leaving Sound pauses
@@ -3322,7 +3589,8 @@ export default class EditorPlugin {
   // A second, separate rAF loop from tickPreviewPlayhead (which only ever
   // drives Sound mode) - there's no playhead/progress to show here, this
   // loop's only job is polling whichever real engine node is relevant right
-  // now and feeding it to that mode's own WholeMixEqEditor.
+  // now and feeding it to that mode's own EqEditor controller (presetEq/
+  // groupEq).
   startWholeMixSpectrumTicking() {
     if (this._wholeMixSpectrumRafId) return
     const tick = () => {
@@ -3480,8 +3748,9 @@ export default class EditorPlugin {
     this.wholeMixSaved = cloneWholeMix(preset?.wholeMix ?? null)
     this.wholeMixCurrent = cloneWholeMix(this.wholeMixSaved)
     this.writePresetMixControls(this.wholeMixCurrent)
-    this.presetEq.setBands(this.wholeMixCurrent.eq)
-    this.syncPresetEqFields()
+    this.presetEq.load(this.wholeMixCurrent.eq)
+    this.resetPresetEqCompare()
+    this.updatePresetEqFieldsFromSelection()
     this.updatePresetMixLabels()
     this.els.mixPresetControls.classList.toggle('editor-mix-disabled', !preset)
     if (!silent && this.mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
@@ -3517,39 +3786,127 @@ export default class EditorPlugin {
     this.els.mixPresetGain.value = String(mix.gainDb)
     this.els.mixPresetEchoDelay.value = String(mix.echoDelayMs)
     this.els.mixPresetEchoDecay.value = String(mix.echoDecay)
+    this.els.mixPresetReverbSize.value = String(mix.reverbSizeMs ?? 0)
+    this.els.mixPresetReverbMix.value = String(mix.reverbMix ?? 0)
     this.els.mixPresetFadeIn.value = String(mix.fadeInSeconds)
   }
 
-  onPresetEqChange(bands, { selectionOnly = false } = {}) {
-    this.syncPresetEqFields()
-    if (selectionOnly) return
-    this.wholeMixCurrent = { ...this.wholeMixCurrent, eq: bands }
+  // Fires on every EQ graph change (drag, wheel Q, add/remove) and every
+  // precision-field edit - same shape as Sound mode's own applyEqControls,
+  // now that Preset mode shares the exact same EqEditor.js controller
+  // (2026-09-06 direction) instead of the old scoped-down WholeMixEqEditor.
+  applyPresetEqControls() {
+    this.updatePresetEqFieldsFromSelection()
+    this.wholeMixCurrent = { ...this.wholeMixCurrent, eq: this.presetEq.getBands() }
     this.updateModeUI()
-    // Mode-guarded to match onGroupEqChange's own guard (self-review
-    // v0.1.149) - the two had silently diverged (this one used to dispatch
-    // unconditionally), harmless today only because the hidden panel's
-    // canvas can't receive real pointer events to trigger this in the first
-    // place, but a real inconsistency worth closing rather than leaving as
-    // a trap for the next person to copy.
     if (this.mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
+    this.updatePresetEqRevertBannerVisibility()
   }
 
-  syncPresetEqFields() {
-    const band = this.presetEq.getSelectedBand()
-    const disabled = !band
-    for (const el of [this.els.mixPresetEqFreq, this.els.mixPresetEqGain, this.els.mixPresetEqQ, this.els.mixPresetEqType, this.els.mixPresetEqRemove]) {
-      el.disabled = disabled
-    }
-    if (!band) {
+  // Mirrors Sound mode's updateEqFieldsFromSelection exactly, just against
+  // this.presetEq/mixPreset* instead of the Sound-mode controller/els.
+  updatePresetEqFieldsFromSelection() {
+    const bands = this.presetEq.getBands()
+    const index = this.presetEq.getSelectedIndex()
+    const band = bands[index]
+    const readOnly = this.presetEq.isReadOnly()
+    const hasSelection = Boolean(band)
+    const disabled = readOnly || !hasSelection
+    this.els.mixPresetEqType.disabled = disabled
+    this.els.mixPresetEqFreq.disabled = disabled
+    this.els.mixPresetEqGain.disabled = disabled
+    this.els.mixPresetEqQ.disabled = disabled
+    this.els.mixPresetEqMute.disabled = disabled
+    this.els.mixPresetEqSolo.disabled = disabled
+    this.els.mixPresetEqRemoveBand.disabled = disabled
+    this.els.mixPresetEqAddBand.disabled = readOnly
+    if (!hasSelection) {
+      this.els.mixPresetEqType.value = 'peaking'
       this.els.mixPresetEqFreq.value = ''
       this.els.mixPresetEqGain.value = ''
       this.els.mixPresetEqQ.value = ''
+      this.els.mixPresetEqSlope.value = 'gentle'
+      this.els.mixPresetEqSlope.disabled = true
+      this.els.mixPresetEqSlopeLabel.classList.add('hidden')
+      this.els.mixPresetEqMute.classList.remove('editor-eq-mute-active')
+      this.els.mixPresetEqSolo.classList.remove('editor-eq-solo-active')
       return
     }
-    if (document.activeElement !== this.els.mixPresetEqFreq) this.els.mixPresetEqFreq.value = String(Math.round(band.freqHz))
-    if (document.activeElement !== this.els.mixPresetEqGain) this.els.mixPresetEqGain.value = String(band.gainDb)
-    if (document.activeElement !== this.els.mixPresetEqQ) this.els.mixPresetEqQ.value = String(band.q)
     this.els.mixPresetEqType.value = band.type ?? 'peaking'
+    this.els.mixPresetEqFreq.value = String(Math.round(band.freqHz))
+    this.els.mixPresetEqGain.value = String(band.gainDb)
+    this.els.mixPresetEqQ.value = String(band.q)
+    const slopeCapable = SLOPE_CAPABLE_EQ_TYPES.includes(band.type)
+    this.els.mixPresetEqSlope.value = band.slope ?? 'gentle'
+    this.els.mixPresetEqSlope.disabled = disabled || !slopeCapable
+    this.els.mixPresetEqSlopeLabel.classList.toggle('hidden', !slopeCapable)
+    this.els.mixPresetEqMute.classList.toggle('editor-eq-mute-active', Boolean(band.muted))
+    this.els.mixPresetEqSolo.classList.toggle('editor-eq-solo-active', this.presetEq.getSoloIndex() === index)
+  }
+
+  applyPresetEqFieldsToSelectedBand() {
+    const type = this.els.mixPresetEqType.value
+    const slope = this.els.mixPresetEqSlope.value
+    const freqHz = Math.min(20000, Math.max(20, Number(this.els.mixPresetEqFreq.value)))
+    const gainDb = Math.min(24, Math.max(-24, Number(this.els.mixPresetEqGain.value)))
+    const q = Math.min(Q_MAX, Math.max(Q_MIN, Number(this.els.mixPresetEqQ.value)))
+    this.presetEq.setSelectedBand({ type, slope, freqHz, gainDb, q })
+    this.applyPresetEqControls()
+  }
+
+  // True whenever the live EQ bands (A) differ from the saved preset's own
+  // EQ (B) - same technique as Sound mode's eqDiffersFromSaved, just against
+  // wholeMixSaved.eq (which - unlike Sound mode's savedEqSnapshot - *does*
+  // update after every real Save here, matching this mode's own pre-
+  // existing dirty-check semantics for HP/LP/Gain/Echo/Reverb).
+  presetEqDiffersFromSaved() {
+    if (!this.presetEq) return false
+    return JSON.stringify(this.presetEq.getBands()) !== JSON.stringify(this.wholeMixSaved.eq ?? [])
+  }
+
+  updatePresetEqRevertBannerVisibility() {
+    const show = this.presetEqCompareViewing === 'A' && this.presetEqDiffersFromSaved()
+    this.els.mixPresetEqRevertBanner.classList.toggle('hidden', !show)
+  }
+
+  switchPresetEqCompareView(target) {
+    if (target === this.presetEqCompareViewing || !this.presetEq) return
+    if (target === 'B') {
+      this.presetEqLiveBandsStash = this.presetEq.getBands()
+      this.presetEq.load((this.wholeMixSaved.eq ?? []).map((b) => ({ ...b })))
+    } else {
+      this.presetEq.load((this.presetEqLiveBandsStash ?? this.presetEq.getBands()).map((b) => ({ ...b })))
+      this.presetEqLiveBandsStash = null
+    }
+    this.presetEqCompareViewing = target
+    this.presetEq.setReadOnly(target === 'B')
+    this.updatePresetEqFieldsFromSelection()
+    this.applyPresetEqControls()
+    this.updatePresetEqCompareButtonsUI()
+  }
+
+  updatePresetEqCompareButtonsUI() {
+    this.els.mixPresetEqCompareA.classList.toggle('editor-eq-compare-btn-active', this.presetEqCompareViewing === 'A')
+    this.els.mixPresetEqCompareB.classList.toggle('editor-eq-compare-btn-active', this.presetEqCompareViewing === 'B')
+  }
+
+  revertPresetEqToSaved() {
+    if (!this.presetEq) return
+    this.presetEqLiveBandsStash = null
+    this.presetEqCompareViewing = 'A'
+    this.presetEq.setReadOnly(false)
+    this.presetEq.load((this.wholeMixSaved.eq ?? []).map((b) => ({ ...b })))
+    this.updatePresetEqFieldsFromSelection()
+    this.applyPresetEqControls()
+    this.updatePresetEqCompareButtonsUI()
+  }
+
+  resetPresetEqCompare() {
+    this.presetEqCompareViewing = 'A'
+    this.presetEqLiveBandsStash = null
+    this.presetEq?.setReadOnly(false)
+    this.updatePresetEqCompareButtonsUI()
+    this.updatePresetEqRevertBannerVisibility()
   }
 
   readPresetMixControlsAndPreview() {
@@ -3560,11 +3917,23 @@ export default class EditorPlugin {
       gainDb: Number(this.els.mixPresetGain.value),
       echoDelayMs: Number(this.els.mixPresetEchoDelay.value),
       echoDecay: Number(this.els.mixPresetEchoDecay.value),
+      reverbSizeMs: Number(this.els.mixPresetReverbSize.value),
+      reverbMix: Number(this.els.mixPresetReverbMix.value),
       fadeInSeconds: Math.max(0, Number(this.els.mixPresetFadeIn.value) || 0)
     }
     this.updatePresetMixLabels()
     this.updateModeUI()
     if (this.mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
+  }
+
+  setPresetEffectPreset(preset) {
+    this.els.mixPresetHighpass.value = String(preset.highpassHz)
+    this.els.mixPresetLowpass.value = String(preset.lowpassHz)
+    this.els.mixPresetGain.value = String(preset.gainDb)
+    this.els.mixPresetEchoDelay.value = String(preset.echoDelayMs ?? 0)
+    this.els.mixPresetEchoDecay.value = String(preset.echoDecay ?? 0)
+    this.els.mixPresetReverbSize.value = String(preset.reverbSizeMs ?? 0)
+    this.els.mixPresetReverbMix.value = String(preset.reverbMix ?? 0)
   }
 
   updatePresetMixLabels() {
@@ -3573,11 +3942,15 @@ export default class EditorPlugin {
     const gain = Number(this.els.mixPresetGain.value)
     const echoDelay = Number(this.els.mixPresetEchoDelay.value)
     const echoDecay = Number(this.els.mixPresetEchoDecay.value)
+    const reverbSize = Number(this.els.mixPresetReverbSize.value)
+    const reverbMix = Number(this.els.mixPresetReverbMix.value)
     this.els.mixPresetHighpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
     this.els.mixPresetLowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
     this.els.mixPresetGainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
     this.els.mixPresetEchoDelayValue.textContent = echoDelay > 0 ? `${echoDelay} ms` : 'Off'
     this.els.mixPresetEchoDecayValue.textContent = echoDecay > 0 ? echoDecay.toFixed(2) : 'Off'
+    this.els.mixPresetReverbSizeValue.textContent = reverbSize > 0 ? `${(reverbSize / 1000).toFixed(1)}s` : 'Off'
+    this.els.mixPresetReverbMixValue.textContent = reverbMix > 0 ? `${Math.round(reverbMix * 100)}%` : 'Off'
   }
 
   async saveWholeMix() {
@@ -3589,8 +3962,9 @@ export default class EditorPlugin {
       this.wholeMixSaved = cloneWholeMix(updated?.wholeMix ?? null)
       this.wholeMixCurrent = cloneWholeMix(this.wholeMixSaved)
       this.writePresetMixControls(this.wholeMixCurrent)
-      this.presetEq.setBands(this.wholeMixCurrent.eq)
-      this.syncPresetEqFields()
+      this.presetEq.load(this.wholeMixCurrent.eq)
+      this.updatePresetEqFieldsFromSelection()
+      this.updatePresetEqRevertBannerVisibility()
       this.updatePresetMixLabels()
       const local = this.presets.find((p) => p.id === this.selectedPresetId)
       if (local) local.wholeMix = updated?.wholeMix ?? null
@@ -3650,8 +4024,9 @@ export default class EditorPlugin {
     this.groupSaved = cloneGroupFilters(group.filters)
     this.groupCurrent = cloneGroupFilters(this.groupSaved)
     this.writeGroupControls(this.groupCurrent)
-    this.groupEq.setBands(this.groupCurrent.eq)
-    this.syncGroupEqFields()
+    this.groupEq.load(this.groupCurrent.eq)
+    this.resetGroupEqCompare()
+    this.updateGroupEqFieldsFromSelection()
     this.updateGroupLabels()
     this.renderGroupMembers()
     if (this.mode === 'group') this.dispatchGroupPreview(this.groupCurrent)
@@ -3742,32 +4117,116 @@ export default class EditorPlugin {
     this.els.mixGroupGain.value = String(filters.gainDb)
     this.els.mixGroupEchoDelay.value = String(filters.echoDelayMs)
     this.els.mixGroupEchoDecay.value = String(filters.echoDecay)
+    this.els.mixGroupReverbSize.value = String(filters.reverbSizeMs ?? 0)
+    this.els.mixGroupReverbMix.value = String(filters.reverbMix ?? 0)
   }
 
-  onGroupEqChange(bands, { selectionOnly = false } = {}) {
-    this.syncGroupEqFields()
-    if (selectionOnly) return
-    this.groupCurrent = { ...this.groupCurrent, eq: bands }
+  // Mirrors applyPresetEqControls exactly - see its own comment.
+  applyGroupEqControls() {
+    this.updateGroupEqFieldsFromSelection()
+    this.groupCurrent = { ...this.groupCurrent, eq: this.groupEq.getBands() }
     this.updateModeUI()
     if (this.mode === 'group') this.dispatchGroupPreview(this.groupCurrent)
+    this.updateGroupEqRevertBannerVisibility()
   }
 
-  syncGroupEqFields() {
-    const band = this.groupEq.getSelectedBand()
-    const disabled = !band
-    for (const el of [this.els.mixGroupEqFreq, this.els.mixGroupEqGain, this.els.mixGroupEqQ, this.els.mixGroupEqType, this.els.mixGroupEqRemove]) {
-      el.disabled = disabled
-    }
-    if (!band) {
+  updateGroupEqFieldsFromSelection() {
+    const bands = this.groupEq.getBands()
+    const index = this.groupEq.getSelectedIndex()
+    const band = bands[index]
+    const readOnly = this.groupEq.isReadOnly()
+    const hasSelection = Boolean(band)
+    const disabled = readOnly || !hasSelection
+    this.els.mixGroupEqType.disabled = disabled
+    this.els.mixGroupEqFreq.disabled = disabled
+    this.els.mixGroupEqGain.disabled = disabled
+    this.els.mixGroupEqQ.disabled = disabled
+    this.els.mixGroupEqMute.disabled = disabled
+    this.els.mixGroupEqSolo.disabled = disabled
+    this.els.mixGroupEqRemoveBand.disabled = disabled
+    this.els.mixGroupEqAddBand.disabled = readOnly
+    if (!hasSelection) {
+      this.els.mixGroupEqType.value = 'peaking'
       this.els.mixGroupEqFreq.value = ''
       this.els.mixGroupEqGain.value = ''
       this.els.mixGroupEqQ.value = ''
+      this.els.mixGroupEqSlope.value = 'gentle'
+      this.els.mixGroupEqSlope.disabled = true
+      this.els.mixGroupEqSlopeLabel.classList.add('hidden')
+      this.els.mixGroupEqMute.classList.remove('editor-eq-mute-active')
+      this.els.mixGroupEqSolo.classList.remove('editor-eq-solo-active')
       return
     }
-    if (document.activeElement !== this.els.mixGroupEqFreq) this.els.mixGroupEqFreq.value = String(Math.round(band.freqHz))
-    if (document.activeElement !== this.els.mixGroupEqGain) this.els.mixGroupEqGain.value = String(band.gainDb)
-    if (document.activeElement !== this.els.mixGroupEqQ) this.els.mixGroupEqQ.value = String(band.q)
     this.els.mixGroupEqType.value = band.type ?? 'peaking'
+    this.els.mixGroupEqFreq.value = String(Math.round(band.freqHz))
+    this.els.mixGroupEqGain.value = String(band.gainDb)
+    this.els.mixGroupEqQ.value = String(band.q)
+    const slopeCapable = SLOPE_CAPABLE_EQ_TYPES.includes(band.type)
+    this.els.mixGroupEqSlope.value = band.slope ?? 'gentle'
+    this.els.mixGroupEqSlope.disabled = disabled || !slopeCapable
+    this.els.mixGroupEqSlopeLabel.classList.toggle('hidden', !slopeCapable)
+    this.els.mixGroupEqMute.classList.toggle('editor-eq-mute-active', Boolean(band.muted))
+    this.els.mixGroupEqSolo.classList.toggle('editor-eq-solo-active', this.groupEq.getSoloIndex() === index)
+  }
+
+  applyGroupEqFieldsToSelectedBand() {
+    const type = this.els.mixGroupEqType.value
+    const slope = this.els.mixGroupEqSlope.value
+    const freqHz = Math.min(20000, Math.max(20, Number(this.els.mixGroupEqFreq.value)))
+    const gainDb = Math.min(24, Math.max(-24, Number(this.els.mixGroupEqGain.value)))
+    const q = Math.min(Q_MAX, Math.max(Q_MIN, Number(this.els.mixGroupEqQ.value)))
+    this.groupEq.setSelectedBand({ type, slope, freqHz, gainDb, q })
+    this.applyGroupEqControls()
+  }
+
+  groupEqDiffersFromSaved() {
+    if (!this.groupEq) return false
+    return JSON.stringify(this.groupEq.getBands()) !== JSON.stringify(this.groupSaved.eq ?? [])
+  }
+
+  updateGroupEqRevertBannerVisibility() {
+    const show = this.groupEqCompareViewing === 'A' && this.groupEqDiffersFromSaved()
+    this.els.mixGroupEqRevertBanner.classList.toggle('hidden', !show)
+  }
+
+  switchGroupEqCompareView(target) {
+    if (target === this.groupEqCompareViewing || !this.groupEq) return
+    if (target === 'B') {
+      this.groupEqLiveBandsStash = this.groupEq.getBands()
+      this.groupEq.load((this.groupSaved.eq ?? []).map((b) => ({ ...b })))
+    } else {
+      this.groupEq.load((this.groupEqLiveBandsStash ?? this.groupEq.getBands()).map((b) => ({ ...b })))
+      this.groupEqLiveBandsStash = null
+    }
+    this.groupEqCompareViewing = target
+    this.groupEq.setReadOnly(target === 'B')
+    this.updateGroupEqFieldsFromSelection()
+    this.applyGroupEqControls()
+    this.updateGroupEqCompareButtonsUI()
+  }
+
+  updateGroupEqCompareButtonsUI() {
+    this.els.mixGroupEqCompareA.classList.toggle('editor-eq-compare-btn-active', this.groupEqCompareViewing === 'A')
+    this.els.mixGroupEqCompareB.classList.toggle('editor-eq-compare-btn-active', this.groupEqCompareViewing === 'B')
+  }
+
+  revertGroupEqToSaved() {
+    if (!this.groupEq) return
+    this.groupEqLiveBandsStash = null
+    this.groupEqCompareViewing = 'A'
+    this.groupEq.setReadOnly(false)
+    this.groupEq.load((this.groupSaved.eq ?? []).map((b) => ({ ...b })))
+    this.updateGroupEqFieldsFromSelection()
+    this.applyGroupEqControls()
+    this.updateGroupEqCompareButtonsUI()
+  }
+
+  resetGroupEqCompare() {
+    this.groupEqCompareViewing = 'A'
+    this.groupEqLiveBandsStash = null
+    this.groupEq?.setReadOnly(false)
+    this.updateGroupEqCompareButtonsUI()
+    this.updateGroupEqRevertBannerVisibility()
   }
 
   readGroupControlsAndPreview() {
@@ -3777,11 +4236,23 @@ export default class EditorPlugin {
       lowpassHz: Number(this.els.mixGroupLowpass.value),
       gainDb: Number(this.els.mixGroupGain.value),
       echoDelayMs: Number(this.els.mixGroupEchoDelay.value),
-      echoDecay: Number(this.els.mixGroupEchoDecay.value)
+      echoDecay: Number(this.els.mixGroupEchoDecay.value),
+      reverbSizeMs: Number(this.els.mixGroupReverbSize.value),
+      reverbMix: Number(this.els.mixGroupReverbMix.value)
     }
     this.updateGroupLabels()
     this.updateModeUI()
     if (this.mode === 'group') this.dispatchGroupPreview(this.groupCurrent)
+  }
+
+  setGroupEffectPreset(preset) {
+    this.els.mixGroupHighpass.value = String(preset.highpassHz)
+    this.els.mixGroupLowpass.value = String(preset.lowpassHz)
+    this.els.mixGroupGain.value = String(preset.gainDb)
+    this.els.mixGroupEchoDelay.value = String(preset.echoDelayMs ?? 0)
+    this.els.mixGroupEchoDecay.value = String(preset.echoDecay ?? 0)
+    this.els.mixGroupReverbSize.value = String(preset.reverbSizeMs ?? 0)
+    this.els.mixGroupReverbMix.value = String(preset.reverbMix ?? 0)
   }
 
   updateGroupLabels() {
@@ -3790,11 +4261,15 @@ export default class EditorPlugin {
     const gain = Number(this.els.mixGroupGain.value)
     const echoDelay = Number(this.els.mixGroupEchoDelay.value)
     const echoDecay = Number(this.els.mixGroupEchoDecay.value)
+    const reverbSize = Number(this.els.mixGroupReverbSize.value)
+    const reverbMix = Number(this.els.mixGroupReverbMix.value)
     this.els.mixGroupHighpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
     this.els.mixGroupLowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
     this.els.mixGroupGainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
     this.els.mixGroupEchoDelayValue.textContent = echoDelay > 0 ? `${echoDelay} ms` : 'Off'
     this.els.mixGroupEchoDecayValue.textContent = echoDecay > 0 ? echoDecay.toFixed(2) : 'Off'
+    this.els.mixGroupReverbSizeValue.textContent = reverbSize > 0 ? `${(reverbSize / 1000).toFixed(1)}s` : 'Off'
+    this.els.mixGroupReverbMixValue.textContent = reverbMix > 0 ? `${Math.round(reverbMix * 100)}%` : 'Off'
   }
 
   updateGroupDirty() {
@@ -3827,8 +4302,9 @@ export default class EditorPlugin {
       this.groupCurrent = cloneGroupFilters(this.groupSaved)
       this.els.mixGroupName.value = group?.name ?? name
       this.writeGroupControls(this.groupCurrent)
-      this.groupEq.setBands(this.groupCurrent.eq)
-      this.syncGroupEqFields()
+      this.groupEq.load(this.groupCurrent.eq)
+      this.updateGroupEqFieldsFromSelection()
+      this.updateGroupEqRevertBannerVisibility()
       this.updateGroupLabels()
       this.renderGroupSelectOptions()
       this.els.mixGroupSelect.value = this.selectedGroupId

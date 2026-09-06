@@ -1,4 +1,5 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
+import { createReverbImpulse } from './reverbIR.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -43,6 +44,14 @@ export class SoundGroupChain {
     this.echoFeedbackGain = context.createGain()
     this.echoFeedbackGain.gain.value = 0
 
+    // Reverb: mirrors WholeMixChain's own reverb tap exactly - see its
+    // doc comment for the full reasoning.
+    this._reverbSizeMs = 0
+    this.reverbSendGain = context.createGain()
+    this.reverbSendGain.gain.value = 0
+    this.reverbConvolver = context.createConvolver()
+    this.reverbConvolver.normalize = true
+
     // Brick-wall safety limiter, same ceiling as WholeMixChain's - a group's
     // own gain/EQ boosts have no other ceiling, and several loud member
     // sounds summed together can genuinely clip.
@@ -68,6 +77,10 @@ export class SoundGroupChain {
     this.echoFeedbackGain.connect(this.echoDelay)
     this.echoDelay.connect(this.limiter)
 
+    this.gain.connect(this.reverbSendGain)
+    this.reverbSendGain.connect(this.reverbConvolver)
+    this.reverbConvolver.connect(this.limiter)
+
     this.limiter.connect(destination)
 
     // Read-only tap for the merged Remix tab's live spectrogram (Group
@@ -83,8 +96,8 @@ export class SoundGroupChain {
     this.config = null
   }
 
-  // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay, eq: [...] }
-  // or null / undefined for neutral.
+  // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay,
+  // reverbSizeMs, reverbMix, eq: [...] } or null / undefined for neutral.
   set(config) {
     this.config = config ?? null
     const c = config ?? {}
@@ -97,6 +110,13 @@ export class SoundGroupChain {
     this.echoDelay.delayTime.setTargetAtTime((c.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
     this.echoSendGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.echoFeedbackGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
+
+    const reverbSizeMs = c.reverbSizeMs ?? 0
+    if (reverbSizeMs !== this._reverbSizeMs) {
+      this._reverbSizeMs = reverbSizeMs
+      this.reverbConvolver.buffer = reverbSizeMs > 0 ? createReverbImpulse(this.context, reverbSizeMs / 1000) : null
+    }
+    this.reverbSendGain.gain.setTargetAtTime(c.reverbMix ?? 0, now, FILTER_SMOOTHING_SECONDS)
 
     const eq = c.eq ?? []
     const topology = eq.map(eqBandStageCount).join(',')
@@ -151,6 +171,8 @@ export class SoundGroupChain {
     this.echoDelay.disconnect()
     this.echoSendGain.disconnect()
     this.echoFeedbackGain.disconnect()
+    this.reverbSendGain.disconnect()
+    this.reverbConvolver.disconnect()
     this.limiter.disconnect()
     this.analyserFeed.disconnect()
     this.analyser.disconnect()

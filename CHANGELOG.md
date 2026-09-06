@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.161 — Remix: Preset and Group modes now match Sound mode's full EQ/filter toolkit
+
+- Preset mode and Group mode's Parametric EQ is now the exact same full-featured module Sound mode has: A/B compare, per-band Mute/Solo, the Steep/Gentle slope control, and the same ±24dB range — not the older, scoped-down version.
+- Both modes also gained Reverb (alongside the existing High-pass/Low-pass/Gain/Echo), the one-click effect Presets (Muffled/Phone/Radio/Distant/Echo/Reverb/Underwater), and a "Reset filters" button — the same tools Sound mode already had.
+- Everything applies live and bakes into exports, matching what you hear in the Mixer.
+
 ## v0.1.160 — Preset/Group filters can now include Echo too
 
 - The Remix tab's Preset mode and Group mode (whole-mix and Sound Group filters) now have Echo delay/decay sliders, alongside the existing High-pass/Low-pass/Gain and EQ — the same Echo effect single sounds already had. Applies live and in exports.

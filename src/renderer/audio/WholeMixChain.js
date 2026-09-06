@@ -1,4 +1,5 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
+import { createReverbImpulse } from './reverbIR.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -14,8 +15,9 @@ const MAX_ECHO_DELAY_SECONDS = 2.0
 // everything playing.
 //
 // Signal path: input -> highpass -> lowpass -> [eq bands...] -> gain ->
-// (dry, plus a parallel echo send/feedback tap off `gain`) -> fadeGain ->
-// limiter -> destination. The `limiter` is a brick-wall safety net: the
+// (dry, plus a parallel echo send/feedback tap and a parallel reverb send/
+// convolver tap, both off `gain`) -> fadeGain -> limiter -> destination.
+// The `limiter` is a brick-wall safety net: the
 // user's gain (up to +24 dB) and each EQ band (up to +30 dB) have no other
 // ceiling, so an aggressive preset could otherwise clip/distort the whole
 // live mix - the same exposure Composite's bake had before v0.1.113. Export's
@@ -59,6 +61,20 @@ export class WholeMixChain {
     this.echoFeedbackGain = context.createGain()
     this.echoFeedbackGain.gain.value = 0
 
+    // Reverb: a real convolution reverb, mirroring SoundSource.js's own
+    // per-sound reverb exactly - a second parallel send off the post-EQ/gain
+    // signal (independent of Echo, not chained after it), same as the
+    // owner's own Echo direction extended to Reverb too (2026-09-06:
+    // confirmed both belong in whole-mix/group filters, not just a sound's
+    // own). reverbConvolver.buffer is only regenerated when reverbSizeMs
+    // actually changes (see set()) - a fresh IR on every tiny gain tweak
+    // would be wasteful and would also audibly reset the tail.
+    this._reverbSizeMs = 0
+    this.reverbSendGain = context.createGain()
+    this.reverbSendGain.gain.value = 0
+    this.reverbConvolver = context.createConvolver()
+    this.reverbConvolver.normalize = true
+
     // Brick-wall safety limiter on the summed whole-mix output. Ceiling ~0.95
     // (-0.45 dBFS) to match Export's `alimiter=limit=0.95`; transparent well
     // below that, so a neutral / cut-only whole mix is unaffected.
@@ -84,6 +100,10 @@ export class WholeMixChain {
     this.echoFeedbackGain.connect(this.echoDelay)
     this.echoDelay.connect(this.fadeGain)
 
+    this.gain.connect(this.reverbSendGain)
+    this.reverbSendGain.connect(this.reverbConvolver)
+    this.reverbConvolver.connect(this.fadeGain)
+
     this.fadeGain.connect(this.limiter)
     this.limiter.connect(destination)
 
@@ -101,8 +121,9 @@ export class WholeMixChain {
     this.config = null
   }
 
-  // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay, eq: [...] }
-  // or null / undefined for neutral. fadeInSeconds > 0 ramps fadeGain 0 -> 1 over that time (used
+  // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay,
+  // reverbSizeMs, reverbMix, eq: [...] } or null / undefined for neutral.
+  // fadeInSeconds > 0 ramps fadeGain 0 -> 1 over that time (used
   // only when a preset is actually loaded; live-preview edits pass 0 so the
   // value just eases back to 1).
   set(config, { fadeInSeconds = 0 } = {}) {
@@ -117,6 +138,13 @@ export class WholeMixChain {
     this.echoDelay.delayTime.setTargetAtTime((c.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
     this.echoSendGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.echoFeedbackGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
+
+    const reverbSizeMs = c.reverbSizeMs ?? 0
+    if (reverbSizeMs !== this._reverbSizeMs) {
+      this._reverbSizeMs = reverbSizeMs
+      this.reverbConvolver.buffer = reverbSizeMs > 0 ? createReverbImpulse(this.context, reverbSizeMs / 1000) : null
+    }
+    this.reverbSendGain.gain.setTargetAtTime(c.reverbMix ?? 0, now, FILTER_SMOOTHING_SECONDS)
 
     const eq = c.eq ?? []
     const topology = eq.map(eqBandStageCount).join(',')
