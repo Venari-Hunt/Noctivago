@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.158 — Export: info.txt's AI prompt asks for hashtags in one place only
+
+- Removed the duplicate "3-5 hashtags" request from the AI prompt — it's now only asked for once, as part of the description.
+
 ## v0.1.157 — Export: info.txt's AI prompt now asks for hashtags in the description too
 
 - The ready-to-paste AI prompt in info.txt now asks for the description to already end with its own 3-5 hashtags, not just as a separate closing item.

@@ -111,8 +111,7 @@ function buildInfoFileText({ presetName, durationSeconds, format, videoMode, vid
     'Using the ambient mix details above, write everything needed to upload this as a YouTube video: ' +
       '(1) a title under 100 characters, (2) a 2-3 paragraph description mentioning the mood/setting and the ' +
       'included sounds + 3-5 hashtags at the end to close the description with, written for people searching for ' +
-      'ambient/relaxing/sleep/focus audio, (3) a list of 10-15 relevant YouTube tags (comma-separated), and ' +
-      '(4) 3-5 hashtags to close the description with.'
+      'ambient/relaxing/sleep/focus audio, and (3) a list of 10-15 relevant YouTube tags (comma-separated).'
   )
   return lines.join('\n')
 }
