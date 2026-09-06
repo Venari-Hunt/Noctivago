@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.157 — Export: info.txt's AI prompt now asks for hashtags in the description too
+
+- The ready-to-paste AI prompt in info.txt now asks for the description to already end with its own 3-5 hashtags, not just as a separate closing item.
+
 ## v0.1.156 — Export: clearer message when the disk runs out of space
 
 - A failed export now leads with a plain-language reason when it's a known, common cause (currently: running out of disk space) instead of just a raw ffmpeg error code and technical dump — the full detail is still there below it.
