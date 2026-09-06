@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.162 — Two bug fixes: leftover export temp files, and hidden Sound Group members
+
+- If an export (or Composite bake) ever got interrupted by a crash, a force-quit, or the app closing mid-render, its temporary working files could be left behind in a hidden folder with nothing to ever clean them up — reported directly ("temporary export files are taking up some space on my machine"). The app now clears that folder automatically every time it starts, since anything still there at that point is always safe to remove.
+- Reported directly: adding a sound to a Sound Group via the Mixer's right-click menu could leave it invisible in the Remix tab's Group mode member list, even though the group's own EQ was already correctly applied to it. The member checklist now always shows every sound actually in the group, not just the ones already saved into the preset's own sound list.
+
 ## v0.1.161 — Remix: Preset and Group modes now match Sound mode's full EQ/filter toolkit
 
 - Preset mode and Group mode's Parametric EQ is now the exact same full-featured module Sound mode has: A/B compare, per-band Mute/Solo, the Steep/Gentle slope control, and the same ±24dB range — not the older, scoped-down version.

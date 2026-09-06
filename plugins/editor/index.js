@@ -4035,22 +4035,35 @@ export default class EditorPlugin {
 
   // The preset's own sound list, cross-referenced with the library for
   // display names - membership only ever makes sense for sounds actually in
-  // this preset's mix.
+  // this preset's mix. BUG FIX (reported directly, "they just don't show up
+  // on the interface completely"): the Mixer's own right-click "add to
+  // group"/"new group with this sound" menu never required the sound to
+  // already be saved into the preset's own `sounds` array - it operates on
+  // whatever's in the live mix (state.activePresetId), which routes/EQs the
+  // sound correctly (group.soundIds already has it) even if the owner never
+  // hit "Save changes to <preset>" to persist that sound into preset.sounds
+  // itself. This checklist used to only ever iterate preset.sounds, so a
+  // member added that way was invisible here even though the group's own
+  // count (soundIds.length, read elsewhere) already reflected it correctly.
+  // Now iterates the union of both lists so a real member is always shown,
+  // regardless of which side of that (pre-existing, deliberate) save/live
+  // split it came from.
   renderGroupMembers() {
     this.els.mixGroupMembers.innerHTML = ''
     const preset = this.presets.find((p) => p.id === this.selectedPresetId)
     const group = this.groups.find((g) => g.id === this.selectedGroupId)
     if (!preset || !group) return
-    for (const item of preset.sounds) {
-      const sound = this.library.find((s) => s.id === item.soundId)
+    const soundIds = [...new Set([...preset.sounds.map((s) => s.soundId), ...group.soundIds])]
+    for (const soundId of soundIds) {
+      const sound = this.library.find((s) => s.id === soundId)
       const label = document.createElement('label')
       label.className = 'editor-mix-group-member'
       const checkbox = document.createElement('input')
       checkbox.type = 'checkbox'
-      checkbox.checked = group.soundIds.includes(item.soundId)
-      checkbox.addEventListener('change', () => this.toggleGroupMember(item.soundId))
+      checkbox.checked = group.soundIds.includes(soundId)
+      checkbox.addEventListener('change', () => this.toggleGroupMember(soundId))
       const name = document.createElement('span')
-      name.textContent = sound?.name ?? item.soundId
+      name.textContent = sound?.name ?? soundId
       label.appendChild(checkbox)
       label.appendChild(name)
       this.els.mixGroupMembers.appendChild(label)

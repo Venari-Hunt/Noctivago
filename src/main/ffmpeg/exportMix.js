@@ -163,6 +163,28 @@ async function cleanupFiles(paths) {
   }
 }
 
+// Reported directly ("temporary export files are taking up some space...
+// verify if the cleanup after export should be more agile"). Every write
+// path into export-tmp (this file's own cleanupFiles calls, ipc.js's
+// Composite bake) is careful to remove its own files via try/finally on
+// every controlled exit - but none of that runs if the whole process dies
+// mid-export instead of unwinding normally (force-quit, a crash, Windows
+// forcing a restart, a laptop losing power) - a real, ordinary way for a
+// multi-hour export's intermediates (which can be sizeable: per-batch
+// tracks, full-duration tiled loop renders, group buses) to survive past
+// the run that created them with nothing left to ever clean them up.
+// Anything still in export-tmp at the *next* launch is guaranteed orphaned
+// - no export or Composite bake can span an app restart - so a full sweep
+// on startup is always safe, mirroring presetPortable.js's own
+// sweepImportSessions() for the exact same reason.
+export function sweepExportTempDir() {
+  try {
+    fs.rmSync(exportTempDir(), { recursive: true, force: true })
+  } catch {
+    // best-effort
+  }
+}
+
 // Progress reporting for the Export tab's bar + verbose log. The rewrite has
 // ~1 heavy full-duration pass (the final mix) plus many short ones (the
 // sliced batches), so progress is weighted by *audio-seconds to process* -
