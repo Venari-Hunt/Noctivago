@@ -67,10 +67,17 @@ const store = new Store({
     // app's cookie store is a real capability, opt-in only.
     ytDlpCookiesBrowser: 'none',
     // Remembered so a nightly-use sleep timer doesn't need re-picking every
-    // time - just the last chosen values, not an active timer (that's
-    // session-only, main-process state in sleepTimer.js).
+    // time - the last chosen input values.
     sleepTimerMinutes: 30,
     sleepTimerAction: 'stop', // 'stop' | 'sleep' | 'shutdown'
+    sleepTimerMode: 'in', // 'in' (a number of minutes) | 'at' (a time of day)
+    sleepTimerTimeOfDay: '', // "HH:MM" for the 'at' mode, empty until set
+    // A *running* sleep timer, persisted so it survives an app restart /
+    // auto-update (owner: "Timer shouldn't be stopped nor lost when you close
+    // the app and reopens it"). { firesAt: epoch ms, action } or null.
+    // sleepTimer.js re-arms from this on launch; the renderer never reads it
+    // directly (it goes through sleepTimer:get like the in-memory one).
+    sleepTimerRunState: null,
     // The app version the last time it ran - compared against the current
     // version on startup to detect "we just updated" and show the What's-new
     // screen (see autoUpdate.js). null on a first-ever launch, which
@@ -190,6 +197,9 @@ export function getSettings() {
     ytDlpCookiesBrowser: store.get('ytDlpCookiesBrowser'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
+    sleepTimerMode: store.get('sleepTimerMode'),
+    sleepTimerTimeOfDay: store.get('sleepTimerTimeOfDay'),
+    sleepTimerRunState: store.get('sleepTimerRunState'),
     lastRunVersion: store.get('lastRunVersion'),
     lastExportFolder: store.get('lastExportFolder'),
     exportLoopVideoPath: store.get('exportLoopVideoPath'),
@@ -217,10 +227,26 @@ export function setLastExportFolder(folderPath) {
   return getSettings()
 }
 
-export function setSleepTimerPrefs({ minutes, action }) {
+export function setSleepTimerPrefs({ minutes, action, mode, timeOfDay }) {
   if (Number.isFinite(minutes) && minutes > 0) store.set('sleepTimerMinutes', Math.round(minutes))
   if (['stop', 'sleep', 'shutdown'].includes(action)) store.set('sleepTimerAction', action)
+  if (mode === 'in' || mode === 'at') store.set('sleepTimerMode', mode)
+  if (typeof timeOfDay === 'string' && /^\d{2}:\d{2}$/.test(timeOfDay)) store.set('sleepTimerTimeOfDay', timeOfDay)
   return getSettings()
+}
+
+// The one running sleep timer, persisted so a restart / auto-update can
+// re-arm it (see sleepTimer.js). Pass null to clear.
+export function setSleepTimerRunState(state) {
+  if (state && Number.isFinite(state.firesAt) && ['stop', 'sleep', 'shutdown'].includes(state.action)) {
+    store.set('sleepTimerRunState', { firesAt: state.firesAt, action: state.action })
+  } else {
+    store.set('sleepTimerRunState', null)
+  }
+}
+
+export function getSleepTimerRunState() {
+  return store.get('sleepTimerRunState') ?? null
 }
 
 export function setAutoUpdateEnabled(enabled) {

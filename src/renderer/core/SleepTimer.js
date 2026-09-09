@@ -58,18 +58,73 @@ function chosenAction() {
   return checked ? checked.value : 'stop'
 }
 
-async function start() {
+function chosenMode() {
+  const checked = els.setup.querySelector('input[name="sleep-timer-mode"]:checked')
+  return checked ? checked.value : 'in'
+}
+
+// "HH:MM" -> the next Date that matches it (today if still ahead, else
+// tomorrow), or null if the string isn't a valid time.
+function targetFromTimeOfDay(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm || '').trim())
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (h > 23 || min > 59) return null
+  const now = new Date()
+  const target = new Date(now)
+  target.setHours(h, min, 0, 0)
+  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1)
+  return target
+}
+
+// Shows/hides the minutes vs. time-of-day inputs and keeps the "that's in
+// about …" hint current for the 'at' mode.
+function updateModeUI() {
+  const at = chosenMode() === 'at'
+  els.minutesField.classList.toggle('hidden', at)
+  els.presets.classList.toggle('hidden', at)
+  els.atField.classList.toggle('hidden', !at)
+  els.atHint.classList.toggle('hidden', !at)
+  if (at) {
+    const target = targetFromTimeOfDay(els.atInput.value)
+    if (!target) {
+      els.atHint.textContent = 'Pick a time.'
+    } else {
+      const secs = Math.round((target.getTime() - Date.now()) / 1000)
+      const when = target.getDate() === new Date().getDate() ? 'today' : 'tomorrow'
+      els.atHint.textContent = `That's in ${formatDuration(secs)} — ${when}.`
+    }
+  }
+}
+
+// Reads the chosen mode into { durationSeconds } (+ prefs to remember), or
+// null if the input is invalid (and focuses it).
+function readDuration() {
+  if (chosenMode() === 'at') {
+    const target = targetFromTimeOfDay(els.atInput.value)
+    if (!target) {
+      els.atInput.focus()
+      return null
+    }
+    return {
+      durationSeconds: Math.max(1, Math.round((target.getTime() - Date.now()) / 1000)),
+      mode: 'at',
+      timeOfDay: els.atInput.value
+    }
+  }
   const minutes = Number(els.minutesInput.value)
   if (!Number.isFinite(minutes) || minutes < 1) {
     els.minutesInput.focus()
-    return
+    return null
   }
-  const action = chosenAction()
-  const state = await window.noctivago.sleepTimer.start({
-    durationSeconds: minutes * 60,
-    minutes,
-    action
-  })
+  return { durationSeconds: minutes * 60, mode: 'in', minutes }
+}
+
+async function start() {
+  const dur = readDuration()
+  if (!dur) return
+  const state = await window.noctivago.sleepTimer.start({ ...dur, action: chosenAction() })
   applyState(state)
 }
 
@@ -111,6 +166,11 @@ export function installSleepTimer() {
     setup: document.getElementById('sleep-timer-setup'),
     activeBox: document.getElementById('sleep-timer-active'),
     minutesInput: document.getElementById('sleep-timer-minutes'),
+    minutesField: document.getElementById('sleep-timer-minutes-field'),
+    presets: document.getElementById('sleep-timer-presets'),
+    atField: document.getElementById('sleep-timer-at-field'),
+    atInput: document.getElementById('sleep-timer-at'),
+    atHint: document.getElementById('sleep-timer-at-hint'),
     countdownValue: document.getElementById('sleep-timer-countdown-value'),
     activeAction: document.getElementById('sleep-timer-active-action'),
     startBtn: document.getElementById('sleep-timer-start'),
@@ -130,10 +190,16 @@ export function installSleepTimer() {
     ])
     if (!state.active) {
       els.minutesInput.value = settings.sleepTimerMinutes ?? 30
-      const radio = els.setup.querySelector(
+      els.atInput.value = settings.sleepTimerTimeOfDay ?? ''
+      const actionRadio = els.setup.querySelector(
         `input[name="sleep-timer-action"][value="${settings.sleepTimerAction ?? 'stop'}"]`
       )
-      if (radio) radio.checked = true
+      if (actionRadio) actionRadio.checked = true
+      const modeRadio = els.setup.querySelector(
+        `input[name="sleep-timer-mode"][value="${settings.sleepTimerMode ?? 'in'}"]`
+      )
+      if (modeRadio) modeRadio.checked = true
+      updateModeUI()
     }
     applyState(state)
     showModal(els.modal)
@@ -145,7 +211,12 @@ export function installSleepTimer() {
   els.startBtn.addEventListener('click', start)
   els.cancelBtn.addEventListener('click', cancel)
 
-  for (const btn of els.setup.querySelectorAll('.sleep-timer-presets button')) {
+  for (const radio of els.setup.querySelectorAll('input[name="sleep-timer-mode"]')) {
+    radio.addEventListener('change', updateModeUI)
+  }
+  els.atInput.addEventListener('input', updateModeUI)
+
+  for (const btn of els.presets.querySelectorAll('button')) {
     btn.addEventListener('click', () => {
       els.minutesInput.value = btn.dataset.min
     })

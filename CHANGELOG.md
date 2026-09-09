@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.170 — Sleep timer survives a restart, and can end at a set time
+
+- A running sleep timer is no longer lost when the app closes and reopens (including an auto-update restart) — it comes back with the time still remaining. If it already ran out while the app was closed, it only still acts if that was in the last few minutes; a timer whose moment passed long ago is quietly dropped.
+- The sleep-timer dialog now has an "At a set time" mode alongside "In a number of minutes" — pick a time of day and it counts down to the next time the clock hits it (today, or tomorrow if it's already passed). Your last-used mode and time are remembered.
+
 ## v0.1.169 — Add from link: length cap + real progress
 
 - "Add from link" now has a "Max length to download" field, defaulting to 10 minutes — a link to a multi-hour stream no longer downloads in full (you can loop and crossfade a short clip in the app anyway). Set it to 0 to grab the whole thing.

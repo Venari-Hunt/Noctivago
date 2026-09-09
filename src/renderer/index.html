@@ -348,10 +348,15 @@
         <h2>Sleep timer</h2>
         <div id="sleep-timer-setup">
           <p class="modal-hint">When the time is up, Noctívago does the action you pick.</p>
-          <label class="field-label">Minutes
+          <fieldset class="sleep-timer-mode">
+            <legend>Set the timer</legend>
+            <label><input type="radio" name="sleep-timer-mode" value="in" checked /> In a number of minutes</label>
+            <label><input type="radio" name="sleep-timer-mode" value="at" /> At a set time</label>
+          </fieldset>
+          <label class="field-label" id="sleep-timer-minutes-field">Minutes
             <input id="sleep-timer-minutes" type="number" min="1" max="1440" step="1" value="30" />
           </label>
-          <div class="sleep-timer-presets">
+          <div class="sleep-timer-presets" id="sleep-timer-presets">
             <button class="btn btn-small" type="button" data-min="15">15m</button>
             <button class="btn btn-small" type="button" data-min="30">30m</button>
             <button class="btn btn-small" type="button" data-min="45">45m</button>
@@ -359,6 +364,10 @@
             <button class="btn btn-small" type="button" data-min="90">1h 30m</button>
             <button class="btn btn-small" type="button" data-min="120">2h</button>
           </div>
+          <label class="field-label hidden" id="sleep-timer-at-field">Time of day
+            <input id="sleep-timer-at" type="time" />
+          </label>
+          <p class="modal-hint hidden" id="sleep-timer-at-hint"></p>
           <fieldset class="sleep-timer-action">
             <legend>When the time is up</legend>
             <label><input type="radio" name="sleep-timer-action" value="stop" checked /> Stop all sounds</label>

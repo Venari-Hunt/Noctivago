@@ -1,14 +1,27 @@
 import { spawn } from 'node:child_process'
 import log from 'electron-log/main'
+import { setSleepTimerRunState, getSleepTimerRunState } from './settings.js'
 
-// Sleep timer: after a set duration, either stop all sounds, put the
-// computer to sleep, or shut it down. The main process owns the actual
-// timer (a plain setTimeout is never throttled the way a hidden renderer's
-// timers are - matters since the window is often minimised to the tray
-// while this runs), and runs the OS power command. The renderer owns the
-// countdown display and the "about to shut down - cancel?" warning; for the
-// destructive actions main only fires the OS command once the renderer has
-// asked it to (via runEndAction), so the warning can always intervene.
+// Sleep timer: after a set duration (or at a chosen time of day), either
+// stop all sounds, put the computer to sleep, or shut it down. The main
+// process owns the actual timer (a plain setTimeout is never throttled the
+// way a hidden renderer's timers are - matters since the window is often
+// minimised to the tray while this runs), and runs the OS power command.
+// The renderer owns the countdown display and the "about to shut down -
+// cancel?" warning; for the destructive actions main only fires the OS
+// command once the renderer has asked it to (via runEndAction), so the
+// warning can always intervene.
+//
+// v0.1.170: the running timer is also persisted (electron-store, via
+// settings.js) so it survives an app restart / auto-update - owner: "Timer
+// shouldn't be stopped nor lost when you close the app and reopens it." On
+// launch restoreSleepTimer() re-arms it for the time still remaining. If it
+// already elapsed while the app was closed, it only still acts if that was
+// recent (RESTORE_GRACE_MS - covers a quick crash/update restart); a timer
+// whose moment passed long ago is treated as stale and dropped rather than,
+// say, shutting the machine down the instant the app is reopened hours later.
+
+const RESTORE_GRACE_MS = 5 * 60 * 1000
 
 let timeout = null
 let current = null // { firesAt, action }
@@ -16,25 +29,46 @@ let mainWindow = null
 
 export function initSleepTimer(win) {
   mainWindow = win
+  restoreSleepTimer()
 }
 
 export function getSleepTimer() {
   return current ? { active: true, firesAt: current.firesAt, action: current.action } : { active: false }
 }
 
-export function startSleepTimer(durationSeconds, action) {
-  cancelSleepTimer()
-  const ms = Math.max(1, Math.round(durationSeconds * 1000))
-  current = { firesAt: Date.now() + ms, action }
+// Sends the elapsed event to the renderer, waiting for it to finish loading
+// first if it hasn't yet (the restore path can run before the window's page
+// is ready).
+function fireElapsed(action) {
+  const send = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sleep-timer:elapsed', { action })
+    }
+  }
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', send)
+  } else {
+    send()
+  }
+}
+
+function armFor(ms) {
   timeout = setTimeout(() => {
     const fired = current
     current = null
     timeout = null
+    setSleepTimerRunState(null)
     log.info(`Sleep timer elapsed, action: ${fired.action}`)
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('sleep-timer:elapsed', { action: fired.action })
-    }
-  }, ms)
+    fireElapsed(fired.action)
+  }, Math.max(1, ms))
+}
+
+export function startSleepTimer(durationSeconds, action) {
+  cancelSleepTimer()
+  const ms = Math.max(1, Math.round(durationSeconds * 1000))
+  current = { firesAt: Date.now() + ms, action }
+  setSleepTimerRunState(current)
+  armFor(ms)
   return getSleepTimer()
 }
 
@@ -42,7 +76,30 @@ export function cancelSleepTimer() {
   if (timeout) clearTimeout(timeout)
   timeout = null
   current = null
+  setSleepTimerRunState(null)
   return { active: false }
+}
+
+// Called once at startup (from initSleepTimer) - re-arms a timer that was
+// running when the app last closed.
+export function restoreSleepTimer() {
+  const saved = getSleepTimerRunState()
+  if (!saved) return
+  const remaining = saved.firesAt - Date.now()
+  if (remaining > 0) {
+    current = { firesAt: saved.firesAt, action: saved.action }
+    armFor(remaining)
+    log.info(`Sleep timer restored, ${Math.round(remaining / 1000)}s left, action: ${saved.action}`)
+    return
+  }
+  // Already elapsed while the app was closed.
+  setSleepTimerRunState(null)
+  if (remaining > -RESTORE_GRACE_MS) {
+    log.info(`Sleep timer elapsed while closed (recently), acting: ${saved.action}`)
+    fireElapsed(saved.action)
+  } else {
+    log.info('Sleep timer elapsed while the app was closed (stale), dropped')
+  }
 }
 
 // Called by the renderer once its own warning countdown has run out (or the

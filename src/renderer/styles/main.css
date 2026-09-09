@@ -936,6 +936,7 @@ main {
   margin: -4px 0 16px;
 }
 
+.sleep-timer-mode,
 .sleep-timer-action {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -943,12 +944,18 @@ main {
   margin: 0 0 8px;
 }
 
+.sleep-timer-mode {
+  margin-bottom: 14px;
+}
+
+.sleep-timer-mode legend,
 .sleep-timer-action legend {
   font-size: 11px;
   color: var(--text-dim);
   padding: 0 4px;
 }
 
+.sleep-timer-mode label,
 .sleep-timer-action label {
   display: flex;
   align-items: center;

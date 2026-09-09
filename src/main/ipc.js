@@ -94,8 +94,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setLastActivePresetId', (_event, id) => setLastActivePresetId(id))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
-  ipcMain.handle('sleepTimer:start', (_event, { durationSeconds, action, minutes }) => {
-    setSleepTimerPrefs({ minutes, action })
+  ipcMain.handle('sleepTimer:start', (_event, { durationSeconds, action, minutes, mode, timeOfDay }) => {
+    setSleepTimerPrefs({ minutes, action, mode, timeOfDay })
     return startSleepTimer(durationSeconds, action)
   })
   ipcMain.handle('sleepTimer:cancel', () => cancelSleepTimer())
