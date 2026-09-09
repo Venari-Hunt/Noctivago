@@ -1,5 +1,6 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
+import { Modulator } from './Modulator.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -52,6 +53,19 @@ export class SoundGroupChain {
     this.reverbConvolver = context.createConvolver()
     this.reverbConvolver.normalize = true
 
+    // Fluctuation (v0.1.166): slow bounded random-walk attenuation on this
+    // group's summed output - see WholeMixChain's identical node for the full
+    // reasoning. Volume axis only (a group is a sum of sources, nothing to
+    // detune). Sits between the dry/echo/reverb merge point and the limiter,
+    // so all three feed through it.
+    this.fluctGain = context.createGain()
+    this.fluctGain.gain.value = 1
+    this._fluctMod = new Modulator({
+      onValue: (v) => this.fluctGain.gain.setTargetAtTime(v, this.context.currentTime, FILTER_SMOOTHING_SECONDS),
+      neutral: 1
+    })
+    this._fluctKey = ''
+
     // Brick-wall safety limiter, same ceiling as WholeMixChain's - a group's
     // own gain/EQ boosts have no other ceiling, and several loud member
     // sounds summed together can genuinely clip.
@@ -69,18 +83,19 @@ export class SoundGroupChain {
     this.input.connect(this.highpass)
     this.highpass.connect(this.lowpass)
     this._rebuildEqChain([])
-    this.gain.connect(this.limiter)
+    this.gain.connect(this.fluctGain)
 
     this.gain.connect(this.echoSendGain)
     this.echoSendGain.connect(this.echoDelay)
     this.echoDelay.connect(this.echoFeedbackGain)
     this.echoFeedbackGain.connect(this.echoDelay)
-    this.echoDelay.connect(this.limiter)
+    this.echoDelay.connect(this.fluctGain)
 
     this.gain.connect(this.reverbSendGain)
     this.reverbSendGain.connect(this.reverbConvolver)
-    this.reverbConvolver.connect(this.limiter)
+    this.reverbConvolver.connect(this.fluctGain)
 
+    this.fluctGain.connect(this.limiter)
     this.limiter.connect(destination)
 
     // Read-only tap for the merged Remix tab's live spectrogram (Group
@@ -134,6 +149,31 @@ export class SoundGroupChain {
         }
       })
     }
+
+    this.setFluctuation(c.fluctuation)
+  }
+
+  // config.fluctuation: { volume: { enabled, min, max, bias, changeRate,
+  // transition } } or null/undefined. Same idempotent shape as
+  // WholeMixChain.setFluctuation - see its comment.
+  setFluctuation(fluctuation) {
+    const vol = fluctuation?.volume
+    const key = JSON.stringify(vol?.enabled ? vol : null)
+    if (key === this._fluctKey) return
+    this._fluctKey = key
+    if (vol?.enabled) {
+      this._fluctMod.configure({
+        enabled: true,
+        min: vol.min,
+        max: vol.max,
+        bias: vol.bias,
+        changeRate: vol.changeRate,
+        transition: vol.transition
+      })
+      if (!this._fluctMod.running) this._fluctMod.start()
+    } else {
+      this._fluctMod.stop()
+    }
   }
 
   _rebuildEqChain(eq) {
@@ -168,6 +208,8 @@ export class SoundGroupChain {
     this.lowpass.disconnect()
     for (const node of this.eqNodes) node.disconnect()
     this.gain.disconnect()
+    this._fluctMod.dispose()
+    this.fluctGain.disconnect()
     this.echoDelay.disconnect()
     this.echoSendGain.disconnect()
     this.echoFeedbackGain.disconnect()

@@ -1,5 +1,6 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
+import { Modulator } from './Modulator.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -75,6 +76,25 @@ export class WholeMixChain {
     this.reverbConvolver = context.createConvolver()
     this.reverbConvolver.normalize = true
 
+    // Fluctuation (v0.1.166): a slow, bounded random-walk attenuation on the
+    // whole processed+faded mix - the Preset-mode counterpart of a sound's
+    // own Remix "Volume drift" (weather rolling through: the whole ambience
+    // swelling and fading). Its own node, after fadeGain and before the
+    // limiter, driven by a Modulator (0..1 multiplier, attenuation only, so
+    // it can never push the mix into the limiter). Only the volume axis: a
+    // whole-mix is a *sum* of independent sources, so there's nothing to
+    // detune - pitch fluctuation stays a per-sound thing. Runs whenever
+    // enabled regardless of play state (one setInterval; when the mix is
+    // paused the gain just wobbles on silence, and resuming picks up wherever
+    // the "gust" is - correct, weather doesn't reset on unpause).
+    this.fluctGain = context.createGain()
+    this.fluctGain.gain.value = 1
+    this._fluctMod = new Modulator({
+      onValue: (v) => this.fluctGain.gain.setTargetAtTime(v, this.context.currentTime, FILTER_SMOOTHING_SECONDS),
+      neutral: 1
+    })
+    this._fluctKey = ''
+
     // Brick-wall safety limiter on the summed whole-mix output. Ceiling ~0.95
     // (-0.45 dBFS) to match Export's `alimiter=limit=0.95`; transparent well
     // below that, so a neutral / cut-only whole mix is unaffected.
@@ -104,7 +124,8 @@ export class WholeMixChain {
     this.reverbSendGain.connect(this.reverbConvolver)
     this.reverbConvolver.connect(this.fadeGain)
 
-    this.fadeGain.connect(this.limiter)
+    this.fadeGain.connect(this.fluctGain)
+    this.fluctGain.connect(this.limiter)
     this.limiter.connect(destination)
 
     // Read-only tap for the merged Remix tab's live spectrogram (Preset
@@ -169,6 +190,34 @@ export class WholeMixChain {
       this.fadeGain.gain.linearRampToValueAtTime(1, now + fadeInSeconds)
     } else {
       this.fadeGain.gain.setTargetAtTime(1, now, FILTER_SMOOTHING_SECONDS)
+    }
+
+    this.setFluctuation(c.fluctuation)
+  }
+
+  // config.fluctuation: { volume: { enabled, min, max, bias, changeRate,
+  // transition } } or null/undefined for neutral. Idempotent - keyed on a
+  // stable fingerprint so the every-preview-tick calls from set() don't
+  // restart a running modulator; a genuine change reconfigures it in place
+  // (Modulator.configure clamps an in-flight target into the new bounds),
+  // and disabling stops it and eases fluctGain back to 1.
+  setFluctuation(fluctuation) {
+    const vol = fluctuation?.volume
+    const key = JSON.stringify(vol?.enabled ? vol : null)
+    if (key === this._fluctKey) return
+    this._fluctKey = key
+    if (vol?.enabled) {
+      this._fluctMod.configure({
+        enabled: true,
+        min: vol.min,
+        max: vol.max,
+        bias: vol.bias,
+        changeRate: vol.changeRate,
+        transition: vol.transition
+      })
+      if (!this._fluctMod.running) this._fluctMod.start()
+    } else {
+      this._fluctMod.stop()
     }
   }
 

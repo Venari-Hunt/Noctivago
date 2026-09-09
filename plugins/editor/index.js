@@ -159,8 +159,63 @@ const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echo
 // a future EQ-band field addition (this file already has direct history of
 // exactly this bug class - the v0.1.91 Doppler/v0.1.135 speed-range
 // "flattened field list, edit by hand" misses) only has one place to update.
+// Fluctuation (v0.1.166) on a whole-mix / group bus - volume drift only
+// (no pitch axis: a bus is a sum of sources, nothing to detune). Always
+// held as an object in the plugin's working state ({ volume: {...} }, with
+// enabled defaulting false) so the dirty-check and write path don't have to
+// special-case null; presets.js collapses a disabled one back to null on
+// save. Deep-copied by cloneMixFilters the same way `eq` is, so editing
+// this.wholeMixCurrent.fluctuation never mutates the shared neutral/saved.
+function defaultMixFluctuation() {
+  return { volume: { enabled: false, min: 0.5, max: 1, bias: 0.8, changeRate: 0.5, transition: 0.5 } }
+}
+
+function cloneMixFluctuation(f) {
+  // No saved fluctuation → start the bar/sliders at a sensible spread (not
+  // all three handles collapsed at 1), same as Sound mode's defaultFluctuation.
+  const src = f?.volume ?? defaultMixFluctuation().volume
+  return { volume: { ...defaultMixFluctuation().volume, ...normalizeFluctuationAxis(src, 1) } }
+}
+
 function cloneMixFilters(obj, neutral) {
-  return { ...neutral, ...(obj ?? {}), eq: (obj?.eq ?? []).map((b) => ({ ...b })) }
+  return {
+    ...neutral,
+    ...(obj ?? {}),
+    eq: (obj?.eq ?? []).map((b) => ({ ...b })),
+    fluctuation: cloneMixFluctuation(obj?.fluctuation)
+  }
+}
+
+// Markup for the Fluctuation block, shared by the Preset and Group filter
+// panels (prefix 'preset' | 'group') - one volume bar + Change rate /
+// Transition sliders + an enable checkbox. Deliberately simpler than Sound
+// mode's own two-axis version (no pitch: a bus is a sum of sources).
+function mixFluctuationMarkup(prefix) {
+  const scope = prefix === 'group' ? "this group's sounds" : 'the whole mix'
+  return `
+          <div class="editor-fluctuation">
+            <div class="editor-fluctuation-head">
+              <span class="editor-fluctuation-label">Fluctuation</span>
+              <span class="editor-fluctuation-hint">Slow, random volume drift on ${scope} — weather rolling through, the ambience swelling and fading on its own. Drag the outer circles for the quietest/loudest it reaches, the middle circle for where it sits most of the time. Change rate = how often it picks a new target; Transition = how fast it glides there. Applies live in the Mixer; not baked into an export yet.</span>
+            </div>
+            <div class="editor-fluctuation-axis">
+              <label class="editor-fluctuation-enable">
+                <input id="editor-mix-${prefix}-fluc-enabled" type="checkbox" />
+                Volume drift <span class="editor-fluctuation-sub">(only ever dips below the current level)</span>
+              </label>
+              <canvas id="editor-mix-${prefix}-fluc-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
+              <div class="editor-fluctuation-knobs">
+                <label><span>Change rate</span>
+                  <input id="editor-mix-${prefix}-fluc-rate" type="range" min="0" max="100" value="50" step="1" />
+                  <span id="editor-mix-${prefix}-fluc-rate-value" class="editor-filter-value">50%</span>
+                </label>
+                <label><span>Transition</span>
+                  <input id="editor-mix-${prefix}-fluc-transition" type="range" min="0" max="100" value="50" step="1" />
+                  <span id="editor-mix-${prefix}-fluc-transition-value" class="editor-filter-value">50%</span>
+                </label>
+              </div>
+            </div>
+          </div>`
 }
 
 // Order-insensitive value compare - the EQ editor and the persisted store
@@ -176,6 +231,17 @@ function canonicalMixFilters(obj, { includeFadeIn }) {
     echoDelayMs: Number(o.echoDelayMs) || 0,
     echoDecay: Number(o.echoDecay) || 0,
     ...(includeFadeIn ? { fadeInSeconds: Number(o.fadeInSeconds) || 0 } : {}),
+    fluctuation: (() => {
+      const v = o.fluctuation?.volume
+      if (!v?.enabled) return null
+      return {
+        min: Number(v.min) || 0,
+        max: Number(v.max ?? 1),
+        bias: Number(v.bias ?? 0.8),
+        changeRate: Number(v.changeRate ?? 0.5),
+        transition: Number(v.transition ?? 0.5)
+      }
+    })(),
     eq: (o.eq ?? []).map((b) => ({
       freqHz: Math.round(Number(b.freqHz) || 0),
       gainDb: Number(b.gainDb) || 0,
@@ -626,6 +692,7 @@ export default class EditorPlugin {
                 Reset filters
               </button>
             </div>
+${mixFluctuationMarkup('preset')}
             <p id="editor-mix-preset-hint" class="editor-mix-status">Pick a preset above. These settings are saved on it and heard live on the whole mix whenever it's loaded in the Mixer.</p>
           </div>
         </div>
@@ -749,6 +816,7 @@ export default class EditorPlugin {
                 Reset filters
               </button>
             </div>
+${mixFluctuationMarkup('group')}
           </div>
           <p id="editor-mix-group-empty" class="editor-mix-status">Pick a preset above, then create or pick a group to EQ some of its sounds together (e.g. crickets + toads to sound like they're outside).</p>
         </div>
@@ -1337,6 +1405,12 @@ export default class EditorPlugin {
       mixPresetResetFilters: container.querySelector('#editor-mix-preset-reset-filters'),
       mixPresetEffectButtons: container.querySelectorAll('[data-mix-preset-effect]'),
       mixPresetHint: container.querySelector('#editor-mix-preset-hint'),
+      mixPresetFlucEnabled: container.querySelector('#editor-mix-preset-fluc-enabled'),
+      mixPresetFlucBar: container.querySelector('#editor-mix-preset-fluc-bar'),
+      mixPresetFlucRate: container.querySelector('#editor-mix-preset-fluc-rate'),
+      mixPresetFlucRateValue: container.querySelector('#editor-mix-preset-fluc-rate-value'),
+      mixPresetFlucTransition: container.querySelector('#editor-mix-preset-fluc-transition'),
+      mixPresetFlucTransitionValue: container.querySelector('#editor-mix-preset-fluc-transition-value'),
 
       mixGroupEditor: container.querySelector('#editor-mix-group-editor'),
       mixGroupEmpty: container.querySelector('#editor-mix-group-empty'),
@@ -1376,7 +1450,13 @@ export default class EditorPlugin {
       mixGroupEqSolo: container.querySelector('#editor-mix-group-eq-solo'),
       mixGroupEqReset: container.querySelector('#editor-mix-group-eq-reset'),
       mixGroupResetFilters: container.querySelector('#editor-mix-group-reset-filters'),
-      mixGroupEffectButtons: container.querySelectorAll('[data-mix-group-effect]')
+      mixGroupEffectButtons: container.querySelectorAll('[data-mix-group-effect]'),
+      mixGroupFlucEnabled: container.querySelector('#editor-mix-group-fluc-enabled'),
+      mixGroupFlucBar: container.querySelector('#editor-mix-group-fluc-bar'),
+      mixGroupFlucRate: container.querySelector('#editor-mix-group-fluc-rate'),
+      mixGroupFlucRateValue: container.querySelector('#editor-mix-group-fluc-rate-value'),
+      mixGroupFlucTransition: container.querySelector('#editor-mix-group-fluc-transition'),
+      mixGroupFlucTransitionValue: container.querySelector('#editor-mix-group-fluc-transition-value')
     }
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
@@ -1490,6 +1570,30 @@ export default class EditorPlugin {
       this.applyGroupEqControls()
     })
     this.groupEq.setTrashDropTarget(this.els.mixGroupEqRemoveBand)
+
+    // Fluctuation bars for Preset / Group mode (volume axis only). onChange
+    // writes the three handle values into this.wholeMixCurrent/groupCurrent
+    // and re-runs the same read+preview path the sliders use.
+    this.presetFlucBar = createFluctuationBar(this.els.mixPresetFlucBar, {
+      valueMin: 0,
+      valueMax: 1,
+      defaults: { min: 0.5, bias: 0.8, max: 1 },
+      format: (v) => `${Math.round(v * 100)}%`,
+      onChange: (vals) => {
+        this.wholeMixCurrent.fluctuation = { volume: { ...this.wholeMixCurrent.fluctuation.volume, ...vals } }
+        this.readPresetMixControlsAndPreview()
+      }
+    })
+    this.groupFlucBar = createFluctuationBar(this.els.mixGroupFlucBar, {
+      valueMin: 0,
+      valueMax: 1,
+      defaults: { min: 0.5, bias: 0.8, max: 1 },
+      format: (v) => `${Math.round(v * 100)}%`,
+      onChange: (vals) => {
+        this.groupCurrent.fluctuation = { volume: { ...this.groupCurrent.fluctuation.volume, ...vals } }
+        this.readGroupControlsAndPreview()
+      }
+    })
 
     this.wireMixControls()
     this.refreshMixPanel().catch((err) => console.error('Editor: failed to load presets', err))
@@ -3690,6 +3794,9 @@ export default class EditorPlugin {
       el.addEventListener('input', () => this.readPresetMixControlsAndPreview())
     }
     this.els.mixPresetFadeIn.addEventListener('input', () => this.readPresetMixControlsAndPreview())
+    for (const el of [this.els.mixPresetFlucEnabled, this.els.mixPresetFlucRate, this.els.mixPresetFlucTransition]) {
+      el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => this.readPresetMixControlsAndPreview())
+    }
     this.els.mixPresetEqType.addEventListener('change', () => this.applyPresetEqFieldsToSelectedBand())
     this.els.mixPresetEqSlope.addEventListener('change', () => this.applyPresetEqFieldsToSelectedBand())
     this.els.mixPresetEqFreq.addEventListener('input', () => this.applyPresetEqFieldsToSelectedBand())
@@ -3753,6 +3860,9 @@ export default class EditorPlugin {
     this.els.mixGroupName.addEventListener('input', () => this.updateGroupDirty())
     for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay, this.els.mixGroupReverbSize, this.els.mixGroupReverbMix]) {
       el.addEventListener('input', () => this.readGroupControlsAndPreview())
+    }
+    for (const el of [this.els.mixGroupFlucEnabled, this.els.mixGroupFlucRate, this.els.mixGroupFlucTransition]) {
+      el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => this.readGroupControlsAndPreview())
     }
     this.els.mixGroupEqType.addEventListener('change', () => this.applyGroupEqFieldsToSelectedBand())
     this.els.mixGroupEqSlope.addEventListener('change', () => this.applyGroupEqFieldsToSelectedBand())
@@ -3842,6 +3952,11 @@ export default class EditorPlugin {
       if (mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
       else if (this.selectedGroupId) this.dispatchGroupPreview(this.groupCurrent)
       this.startWholeMixSpectrumTicking()
+      // A canvas measures 0x0 while its panel is display:none, so its last
+      // draw (from writeMixFluctuation during selectMixPreset/selectGroup,
+      // possibly while this panel was hidden) rendered nothing - redraw now
+      // that it's visible. Same fix Sound mode's own bars needed (v0.1.164).
+      ;(mode === 'preset' ? this.presetFlucBar : this.groupFlucBar)?.redraw()
     }
 
     this.updateModeUI()
@@ -4082,6 +4197,14 @@ export default class EditorPlugin {
     this.els.mixPresetReverbSize.value = String(mix.reverbSizeMs ?? 0)
     this.els.mixPresetReverbMix.value = String(mix.reverbMix ?? 0)
     this.els.mixPresetFadeIn.value = String(mix.fadeInSeconds)
+    this.writeMixFluctuation(mix.fluctuation, {
+      enabledEl: this.els.mixPresetFlucEnabled,
+      bar: this.presetFlucBar,
+      rateEl: this.els.mixPresetFlucRate,
+      transEl: this.els.mixPresetFlucTransition,
+      rateValEl: this.els.mixPresetFlucRateValue,
+      transValEl: this.els.mixPresetFlucTransitionValue
+    })
   }
 
   // Fires on every EQ graph change (drag, wheel Q, add/remove) and every
@@ -4212,11 +4335,51 @@ export default class EditorPlugin {
       echoDecay: Number(this.els.mixPresetEchoDecay.value),
       reverbSizeMs: Number(this.els.mixPresetReverbSize.value),
       reverbMix: Number(this.els.mixPresetReverbMix.value),
-      fadeInSeconds: Math.max(0, Number(this.els.mixPresetFadeIn.value) || 0)
+      fadeInSeconds: Math.max(0, Number(this.els.mixPresetFadeIn.value) || 0),
+      fluctuation: this.readMixFluctuation(this.els.mixPresetFlucEnabled, this.presetFlucBar, this.els.mixPresetFlucRate, this.els.mixPresetFlucTransition)
     }
     this.updatePresetMixLabels()
+    this.updateMixFlucEnabledUI(this.els.mixPresetFlucEnabled, this.presetFlucBar, this.els.mixPresetFlucRate, this.els.mixPresetFlucTransition)
+    this.els.mixPresetFlucRateValue.textContent = `${this.els.mixPresetFlucRate.value}%`
+    this.els.mixPresetFlucTransitionValue.textContent = `${this.els.mixPresetFlucTransition.value}%`
     this.updateModeUI()
     if (this.mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
+  }
+
+  // --- Fluctuation shared helpers (Preset + Group mode, volume axis only) ---
+  readMixFluctuation(enabledEl, bar, rateEl, transEl) {
+    const v = bar.getValues()
+    return {
+      volume: {
+        enabled: enabledEl.checked,
+        min: v.min,
+        max: v.max,
+        bias: v.bias,
+        changeRate: Number(rateEl.value) / 100,
+        transition: Number(transEl.value) / 100
+      }
+    }
+  }
+
+  writeMixFluctuation(fluctuation, { enabledEl, bar, rateEl, transEl, rateValEl, transValEl }) {
+    // No saved axis (a neutral preset, or Reset filters) → show the default
+    // spread, not all three handles collapsed at 1.
+    const src = fluctuation && fluctuation.volume ? fluctuation.volume : defaultMixFluctuation().volume
+    const vol = { ...defaultMixFluctuation().volume, ...normalizeFluctuationAxis(src, 1) }
+    enabledEl.checked = vol.enabled
+    rateEl.value = String(Math.round(vol.changeRate * 100))
+    transEl.value = String(Math.round(vol.transition * 100))
+    rateValEl.textContent = `${rateEl.value}%`
+    transValEl.textContent = `${transEl.value}%`
+    bar.setValues(vol)
+    this.updateMixFlucEnabledUI(enabledEl, bar, rateEl, transEl)
+  }
+
+  updateMixFlucEnabledUI(enabledEl, bar, rateEl, transEl) {
+    const on = enabledEl.checked
+    bar.setEnabled(on)
+    rateEl.disabled = !on
+    transEl.disabled = !on
   }
 
   setPresetEffectPreset(preset) {
@@ -4425,6 +4588,14 @@ export default class EditorPlugin {
     this.els.mixGroupEchoDecay.value = String(filters.echoDecay)
     this.els.mixGroupReverbSize.value = String(filters.reverbSizeMs ?? 0)
     this.els.mixGroupReverbMix.value = String(filters.reverbMix ?? 0)
+    this.writeMixFluctuation(filters.fluctuation, {
+      enabledEl: this.els.mixGroupFlucEnabled,
+      bar: this.groupFlucBar,
+      rateEl: this.els.mixGroupFlucRate,
+      transEl: this.els.mixGroupFlucTransition,
+      rateValEl: this.els.mixGroupFlucRateValue,
+      transValEl: this.els.mixGroupFlucTransitionValue
+    })
   }
 
   // Mirrors applyPresetEqControls exactly - see its own comment.
@@ -4544,9 +4715,13 @@ export default class EditorPlugin {
       echoDelayMs: Number(this.els.mixGroupEchoDelay.value),
       echoDecay: Number(this.els.mixGroupEchoDecay.value),
       reverbSizeMs: Number(this.els.mixGroupReverbSize.value),
-      reverbMix: Number(this.els.mixGroupReverbMix.value)
+      reverbMix: Number(this.els.mixGroupReverbMix.value),
+      fluctuation: this.readMixFluctuation(this.els.mixGroupFlucEnabled, this.groupFlucBar, this.els.mixGroupFlucRate, this.els.mixGroupFlucTransition)
     }
     this.updateGroupLabels()
+    this.updateMixFlucEnabledUI(this.els.mixGroupFlucEnabled, this.groupFlucBar, this.els.mixGroupFlucRate, this.els.mixGroupFlucTransition)
+    this.els.mixGroupFlucRateValue.textContent = `${this.els.mixGroupFlucRate.value}%`
+    this.els.mixGroupFlucTransitionValue.textContent = `${this.els.mixGroupFlucTransition.value}%`
     this.updateModeUI()
     if (this.mode === 'group') this.dispatchGroupPreview(this.groupCurrent)
   }

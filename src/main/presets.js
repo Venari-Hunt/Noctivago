@@ -32,6 +32,31 @@ function normalizeEqBand(band) {
   }
 }
 
+// Fluctuation (v0.1.166): slow random volume drift on the whole mix / a
+// group bus - the multi-sound counterpart of a sound's own filters.
+// fluctuation. Volume axis only (a bus is a sum of sources, nothing to
+// pitch-shift). Stored as null when disabled so the "does this have
+// whole-mix settings" truthiness checks stay simple; a group keeps it as a
+// field of its always-present filters object (also null when off).
+function normalizeMixFluctuation(input) {
+  const vol = input && typeof input === 'object' && typeof input.volume === 'object' ? input.volume : null
+  if (!vol || !vol.enabled) return null
+  const min = clamp(vol.min, 0, 1, 0.5)
+  const max = clamp(vol.max, 0, 1, 1)
+  const lo = Math.min(min, max)
+  const hi = Math.max(min, max)
+  return {
+    volume: {
+      enabled: true,
+      min: lo,
+      max: hi,
+      bias: clamp(vol.bias, lo, hi, (lo + hi) / 2),
+      changeRate: clamp(vol.changeRate, 0, 1, 0.5),
+      transition: clamp(vol.transition, 0, 1, 0.5)
+    }
+  }
+}
+
 export function normalizeWholeMix(input) {
   if (!input || typeof input !== 'object') return null
   const normalized = {
@@ -49,6 +74,7 @@ export function normalizeWholeMix(input) {
     echoDecay: clamp(input.echoDecay, 0, 0.85, 0),
     reverbSizeMs: clamp(input.reverbSizeMs, 0, 4000, 0),
     reverbMix: clamp(input.reverbMix, 0, 1, 0),
+    fluctuation: normalizeMixFluctuation(input.fluctuation),
     eq: Array.isArray(input.eq) ? input.eq.map(normalizeEqBand).filter(Boolean) : []
   }
   // A fully-neutral config is stored as null so the "does this preset have
@@ -62,6 +88,7 @@ export function normalizeWholeMix(input) {
     normalized.echoDecay === 0 &&
     normalized.reverbSizeMs === 0 &&
     normalized.reverbMix === 0 &&
+    normalized.fluctuation === null &&
     normalized.eq.length === 0
   return neutral ? null : normalized
 }
@@ -87,6 +114,7 @@ export function normalizeGroupFilters(input) {
     echoDecay: clamp(src.echoDecay, 0, 0.85, 0),
     reverbSizeMs: clamp(src.reverbSizeMs, 0, 4000, 0),
     reverbMix: clamp(src.reverbMix, 0, 1, 0),
+    fluctuation: normalizeMixFluctuation(src.fluctuation),
     eq: Array.isArray(src.eq) ? src.eq.map(normalizeEqBand).filter(Boolean) : []
   }
 }

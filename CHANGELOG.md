@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.167 — Fluctuation for Preset and Group modes
+
+- The Remix tab's Preset and Group modes now have their own Fluctuation control (alongside the filters and EQ) — slow, random volume drift on the whole mix, or on just one group's sounds. Weather rolling through: the ambience swelling and fading on its own.
+- Volume only here (no pitch): a whole mix or a group is several sounds at once, so there's nothing single to pitch-shift — pitch drift stays a per-sound thing in Sound mode.
+- Same three-circle bar as Sound mode (quietest / loudest / where it sits most), plus Change rate and Transition. Applies live in the Mixer and is saved on the preset; not baked into an export yet.
+
 ## v0.1.166 — The top-bar preset name opens Presets
 
 - Clicking the active-preset pill in the top bar now opens the Presets window, so it's a one-tap way to load a different preset (or pick one when none is loaded), not just a label.
