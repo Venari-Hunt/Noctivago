@@ -69,6 +69,8 @@ const els = {
   globalPlayPause: document.getElementById('global-play-pause'),
   globalVolume: document.getElementById('global-volume'),
   globalMute: document.getElementById('global-mute'),
+  activePresetIndicator: document.getElementById('active-preset-indicator'),
+  activePresetName: document.getElementById('active-preset-name'),
   addSoundBtn: document.getElementById('add-sound'),
   addSoundMenu: document.getElementById('add-sound-menu'),
   addSoundFileItem: document.getElementById('add-sound-file'),
@@ -1230,12 +1232,25 @@ async function refreshPresetList() {
 // if nothing's been loaded yet, or if that preset was deleted since.
 function updateActivePresetButtonState(presets) {
   const active = presets.find((p) => p.id === state.activePresetId)
+  setActivePresetIndicator(active?.name ?? null)
   if (!active) {
     els.updateActivePresetBtn.classList.add('hidden')
     return
   }
   els.updateActivePresetBtn.classList.remove('hidden')
   els.updateActivePresetLabel.textContent = `Save changes to "${active.name}"`
+}
+
+// The top-bar preset-name indicator (index.html, left of the Play-all
+// controls). Kept in sync from every place state.activePresetId changes -
+// loadPreset / restoreLastActivePreset / deletePreset directly (they have
+// the preset in hand and don't all round-trip through refreshPresetList),
+// plus updateActivePresetButtonState above for renames / external edits.
+function setActivePresetIndicator(name) {
+  const has = Boolean(name)
+  els.activePresetIndicator.classList.toggle('has-preset', has)
+  els.activePresetName.textContent = has ? name : 'No preset'
+  els.activePresetIndicator.title = has ? `Editing preset "${name}"` : 'No preset loaded'
 }
 
 async function exportPreset(preset) {
@@ -1346,6 +1361,7 @@ async function loadPreset(preset) {
   // whatever Sound Group EQ/whole-mix processing was shaping the mix - see
   // restoreLastActivePreset(), called on next launch.
   api.settings.setLastActivePresetId(preset.id)
+  setActivePresetIndicator(preset.name)
   engine.wholeMix.set(preset.wholeMix ?? null, { fadeInSeconds: preset.wholeMix?.fadeInSeconds ?? 0 })
 
   // Sound Groups (see AudioEngine.js's SoundGroupChain) - install this
@@ -1373,6 +1389,7 @@ async function deletePreset(id) {
     if (state.soloedGroupId) releaseGroupSolo()
     state.activePresetId = null
     api.settings.setLastActivePresetId(null)
+    setActivePresetIndicator(null)
     state.groups = []
     engine.setSoundGroups([])
     for (const [sourceId, source] of state.sources) engine.routeSound(sourceId, source)
@@ -1509,6 +1526,7 @@ async function restoreLastActivePreset(settings) {
   }
 
   state.activePresetId = preset.id
+  setActivePresetIndicator(preset.name)
   engine.wholeMix.set(preset.wholeMix ?? null)
   state.groups = preset.groups ?? []
   engine.setSoundGroups(state.groups)

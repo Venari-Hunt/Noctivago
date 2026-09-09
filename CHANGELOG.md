@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.165 — Top bar: which preset is loaded
+
+- The toolbar now always shows which preset the mix is built from, just left of the Play-all button — an accent-outlined pill with the preset's name, or a dim "No preset" when you haven't loaded one.
+- Updates as you load, save, rename, or delete presets, and shows the right one again on the next launch (the app already reloads your last-active preset on startup).
+
 ## v0.1.164 — Remix: Fluctuation — slow volume and pitch drift on a looping sound
 
 - New "Fluctuation" section in the Remix tab (Sound mode): make a looping sound's volume and/or pitch drift slowly and randomly over time — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further.

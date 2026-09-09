@@ -600,6 +600,48 @@ main {
   width: 140px;
 }
 
+/* Always-visible reminder of which preset the Mixer / Remix tab is editing
+   (owner: "there should always be a preset loaded... and a preset-name
+   indicator in the top bar", placed here per their choice — left of the
+   Play-all / master-volume controls). Dim "No preset" until one is loaded;
+   an accent-outlined pill with the name once one is. Truncates with an
+   ellipsis so a long preset name can't push the toolbar around; full name
+   on hover via the title attribute. */
+.active-preset-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 200px;
+  padding: 0 9px;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.active-preset-indicator .active-preset-icon {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.active-preset-indicator .active-preset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-preset-indicator.has-preset {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.active-preset-indicator.has-preset .active-preset-icon {
+  opacity: 1;
+  color: var(--accent);
+}
+
 .global-volume-label {
   display: flex;
   align-items: center;
