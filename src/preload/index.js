@@ -97,6 +97,7 @@ const api = {
     updateVolume: (id, volume) => ipcRenderer.invoke('library:updateVolume', id, volume),
     updateIncluded: (id, included) => ipcRenderer.invoke('library:updateIncluded', id, included),
     updateCrossfade: (id, crossfadeSeconds) => ipcRenderer.invoke('library:updateCrossfade', id, crossfadeSeconds),
+    updateFluctuation: (id, fluctuation) => ipcRenderer.invoke('library:updateFluctuation', id, fluctuation),
     updateTags: (id, tags) => ipcRenderer.invoke('library:updateTags', id, tags),
     updateSpeedPitch: (id, speedPitch) => ipcRenderer.invoke('library:updateSpeedPitch', id, speedPitch),
     updatePlayMode: (id, playMode) => ipcRenderer.invoke('library:updatePlayMode', id, playMode),

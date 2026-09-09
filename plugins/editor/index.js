@@ -4,6 +4,8 @@ import { BakedClipPreview } from './audio/BakedClipPreview.js'
 import { createLoopEditorController } from './ui/LoopEditor.js'
 import { createEqEditorController, Q_MIN, Q_MAX, SLOPE_CAPABLE_EQ_TYPES } from './ui/EqEditor.js'
 import { createWaveformScrollbar } from './ui/WaveformScrollbar.js'
+import { createFluctuationBar } from './ui/FluctuationBar.js'
+import { normalizeFluctuationAxis } from './audio/Modulator.js'
 import { formatDuration, parseDuration } from './util/time.js'
 
 // Mirrors src/shared/constants.js's MAX_BUFFER_CLIP_SECONDS. Duplicated here
@@ -90,6 +92,21 @@ function defaultEqBands() {
 }
 
 const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() }
+
+// Mirrors library.js's defaultFluctuation() - same cross-directory
+// duplication reason as MAX_BUFFER_CLIP_SECONDS. volume rides 0..1
+// (attenuation only, never boosts past the sound's set level); pitch is a
+// semitone offset. Both axes off by default.
+const FLUC_VOL_MIN = 0
+const FLUC_VOL_MAX = 1
+const FLUC_PITCH_MIN = -6
+const FLUC_PITCH_MAX = 6
+function defaultFluctuation() {
+  return {
+    volume: { enabled: false, min: 0.5, max: 1, bias: 0.8, changeRate: 0.5, transition: 0.5 },
+    pitch: { enabled: false, min: -1, max: 1, bias: 0, changeRate: 0.5, transition: 0.5 }
+  }
+}
 
 // Curated highpass/lowpass/gain/echo combos for the one-click preset
 // buttons. "Underwater" needs the lowpass slider's range extended below its
@@ -463,6 +480,8 @@ export default class EditorPlugin {
     this.stopWholeMixSpectrumTicking()
     this.presetEq?.destroy()
     this.groupEq?.destroy()
+    this.flucVolBar?.destroy()
+    this.flucPitchBar?.destroy()
     this.unregister?.()
   }
 
@@ -1072,6 +1091,46 @@ export default class EditorPlugin {
               Reset filters
             </button>
           </div>
+          <div id="editor-fluctuation-section" class="editor-fluctuation">
+            <div class="editor-fluctuation-head">
+              <span class="editor-fluctuation-label">Fluctuation</span>
+              <span class="editor-fluctuation-hint">Slow, random drift while the sound loops — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further. On each bar: drag the outer circles for the lowest/highest it reaches, the middle circle for where it sits most of the time. Change rate = how often it picks a new target; Transition = how fast it glides there. Applies live in the Mixer and the preview; not baked into an export.</span>
+            </div>
+            <div class="editor-fluctuation-axis">
+              <label class="editor-fluctuation-enable">
+                <input id="editor-fluc-vol-enabled" type="checkbox" />
+                Volume drift <span class="editor-fluctuation-sub">(rides below the sound's set volume)</span>
+              </label>
+              <canvas id="editor-fluc-vol-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
+              <div class="editor-fluctuation-knobs">
+                <label><span>Change rate</span>
+                  <input id="editor-fluc-vol-rate" type="range" min="0" max="100" value="50" step="1" />
+                  <span id="editor-fluc-vol-rate-value" class="editor-filter-value">50%</span>
+                </label>
+                <label><span>Transition</span>
+                  <input id="editor-fluc-vol-transition" type="range" min="0" max="100" value="50" step="1" />
+                  <span id="editor-fluc-vol-transition-value" class="editor-filter-value">50%</span>
+                </label>
+              </div>
+            </div>
+            <div class="editor-fluctuation-axis">
+              <label class="editor-fluctuation-enable">
+                <input id="editor-fluc-pitch-enabled" type="checkbox" />
+                Pitch drift <span class="editor-fluctuation-sub">(small shifts read as a gentle wobble)</span>
+              </label>
+              <canvas id="editor-fluc-pitch-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
+              <div class="editor-fluctuation-knobs">
+                <label><span>Change rate</span>
+                  <input id="editor-fluc-pitch-rate" type="range" min="0" max="100" value="50" step="1" />
+                  <span id="editor-fluc-pitch-rate-value" class="editor-filter-value">50%</span>
+                </label>
+                <label><span>Transition</span>
+                  <input id="editor-fluc-pitch-transition" type="range" min="0" max="100" value="50" step="1" />
+                  <span id="editor-fluc-pitch-transition-value" class="editor-filter-value">50%</span>
+                </label>
+              </div>
+            </div>
+          </div>
           <p id="editor-save-status" class="editor-save-status"></p>
         </div>
         <p id="editor-empty" class="editor-empty">Select a sound above to trim and apply filters.</p>
@@ -1206,6 +1265,19 @@ export default class EditorPlugin {
       eqSolo: container.querySelector('#editor-eq-solo'),
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
+      fluctuationSection: container.querySelector('#editor-fluctuation-section'),
+      flucVolEnabled: container.querySelector('#editor-fluc-vol-enabled'),
+      flucVolBar: container.querySelector('#editor-fluc-vol-bar'),
+      flucVolRate: container.querySelector('#editor-fluc-vol-rate'),
+      flucVolRateValue: container.querySelector('#editor-fluc-vol-rate-value'),
+      flucVolTransition: container.querySelector('#editor-fluc-vol-transition'),
+      flucVolTransitionValue: container.querySelector('#editor-fluc-vol-transition-value'),
+      flucPitchEnabled: container.querySelector('#editor-fluc-pitch-enabled'),
+      flucPitchBar: container.querySelector('#editor-fluc-pitch-bar'),
+      flucPitchRate: container.querySelector('#editor-fluc-pitch-rate'),
+      flucPitchRateValue: container.querySelector('#editor-fluc-pitch-rate-value'),
+      flucPitchTransition: container.querySelector('#editor-fluc-pitch-transition'),
+      flucPitchTransitionValue: container.querySelector('#editor-fluc-pitch-transition-value'),
       saveStatus: container.querySelector('#editor-save-status'),
       scrollTop: container.querySelector('#editor-scroll-top'),
       leaveConfirmDialog: container.querySelector('#editor-leave-confirm'),
@@ -1631,6 +1703,45 @@ export default class EditorPlugin {
         this.setFilterSliders(preset)
         this.applyFilterControls()
       })
+    }
+
+    // --- Fluctuation (v0.1.164) ---
+    // The two 3-circle bars. Unlike trim/filters/EQ, fluctuation is NOT part
+    // of the snapshot/undo/autosave/A-B-compare machinery - it's a
+    // playback-time behavior, never baked, so it persists on its own (a
+    // debounced library.updateFluctuation) the moment a control settles,
+    // and previews live without any ffmpeg round-trip.
+    this.fluctuation = defaultFluctuation()
+    this.flucVolBar = createFluctuationBar(this.els.flucVolBar, {
+      valueMin: FLUC_VOL_MIN,
+      valueMax: FLUC_VOL_MAX,
+      defaults: { min: 0.5, bias: 0.8, max: 1 },
+      format: (v) => `${Math.round(v * 100)}%`,
+      onChange: (vals) => {
+        this.fluctuation.volume = { ...this.fluctuation.volume, ...vals }
+        this.applyFluctuationControls()
+      }
+    })
+    this.flucPitchBar = createFluctuationBar(this.els.flucPitchBar, {
+      valueMin: FLUC_PITCH_MIN,
+      valueMax: FLUC_PITCH_MAX,
+      defaults: { min: -1, bias: 0, max: 1 },
+      format: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} st`,
+      onChange: (vals) => {
+        this.fluctuation.pitch = { ...this.fluctuation.pitch, ...vals }
+        this.applyFluctuationControls()
+      }
+    })
+    const flucInputs = [
+      this.els.flucVolEnabled,
+      this.els.flucVolRate,
+      this.els.flucVolTransition,
+      this.els.flucPitchEnabled,
+      this.els.flucPitchRate,
+      this.els.flucPitchTransition
+    ]
+    for (const el of flucInputs) {
+      el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => this.applyFluctuationControls())
     }
   }
 
@@ -2317,6 +2428,104 @@ export default class EditorPlugin {
     this.updateSaveButtonState()
   }
 
+  // --- Fluctuation (v0.1.164) ---
+  // Pushes entry.fluctuation into the two bars + rate/transition sliders,
+  // called from loadSound. The bars own their own min/bias/max; the sliders
+  // and checkboxes own enabled/changeRate/transition.
+  setFluctuationControls(fluctuation) {
+    const f = {
+      volume: normalizeFluctuationAxis(fluctuation?.volume, 1),
+      pitch: normalizeFluctuationAxis(fluctuation?.pitch, 0)
+    }
+    this.fluctuation = f
+    this.els.flucVolEnabled.checked = f.volume.enabled
+    this.els.flucVolRate.value = String(Math.round(f.volume.changeRate * 100))
+    this.els.flucVolTransition.value = String(Math.round(f.volume.transition * 100))
+    this.flucVolBar.setValues(f.volume)
+    this.els.flucPitchEnabled.checked = f.pitch.enabled
+    this.els.flucPitchRate.value = String(Math.round(f.pitch.changeRate * 100))
+    this.els.flucPitchTransition.value = String(Math.round(f.pitch.transition * 100))
+    this.flucPitchBar.setValues(f.pitch)
+    this.updateFluctuationEnabledUI()
+    this.updateFluctuationLabels()
+  }
+
+  updateFluctuationEnabledUI() {
+    const vOn = this.els.flucVolEnabled.checked
+    const pOn = this.els.flucPitchEnabled.checked
+    this.flucVolBar.setEnabled(vOn)
+    this.flucPitchBar.setEnabled(pOn)
+    this.els.flucVolRate.disabled = !vOn
+    this.els.flucVolTransition.disabled = !vOn
+    this.els.flucPitchRate.disabled = !pOn
+    this.els.flucPitchTransition.disabled = !pOn
+  }
+
+  updateFluctuationLabels() {
+    this.els.flucVolRateValue.textContent = `${this.els.flucVolRate.value}%`
+    this.els.flucVolTransitionValue.textContent = `${this.els.flucVolTransition.value}%`
+    this.els.flucPitchRateValue.textContent = `${this.els.flucPitchRate.value}%`
+    this.els.flucPitchTransitionValue.textContent = `${this.els.flucPitchTransition.value}%`
+  }
+
+  // Reads every fluctuation control into this.fluctuation, previews it live,
+  // and (debounced) persists + tells the Mixer. No snapshot/undo hookup by
+  // design - see the wireControls comment.
+  applyFluctuationControls() {
+    const volVals = this.flucVolBar.getValues()
+    const pitchVals = this.flucPitchBar.getValues()
+    this.fluctuation = {
+      volume: {
+        enabled: this.els.flucVolEnabled.checked,
+        min: volVals.min,
+        max: volVals.max,
+        bias: volVals.bias,
+        changeRate: Number(this.els.flucVolRate.value) / 100,
+        transition: Number(this.els.flucVolTransition.value) / 100
+      },
+      pitch: {
+        enabled: this.els.flucPitchEnabled.checked,
+        min: pitchVals.min,
+        max: pitchVals.max,
+        bias: pitchVals.bias,
+        changeRate: Number(this.els.flucPitchRate.value) / 100,
+        transition: Number(this.els.flucPitchTransition.value) / 100
+      }
+    }
+    this.updateFluctuationEnabledUI()
+    this.updateFluctuationLabels()
+    this.previewSource?.setFluctuation(this.fluctuation)
+    this.persistFluctuation()
+  }
+
+  persistFluctuation() {
+    if (!this.currentEntry) return
+    this._pendingFluctuation = { id: this.currentEntry.id, fluctuation: this.fluctuation }
+    clearTimeout(this._fluctuationSaveTimer)
+    this._fluctuationSaveTimer = setTimeout(() => this.flushFluctuation(), 400)
+  }
+
+  // Writes any pending fluctuation edit now (keyed by the captured id, so
+  // it's safe regardless of what's currently open) and tells the Mixer.
+  // Called on the debounce timer, and synchronously from loadSound before a
+  // sound switch so a fast switch can't drop the edit.
+  flushFluctuation() {
+    clearTimeout(this._fluctuationSaveTimer)
+    const pending = this._pendingFluctuation
+    if (!pending) return
+    this._pendingFluctuation = null
+    const { id, fluctuation } = pending
+    this.api.library
+      .updateFluctuation(id, fluctuation)
+      .then(() => {
+        if (this.currentEntry?.id === id) this.currentEntry.fluctuation = fluctuation
+        window.dispatchEvent(
+          new CustomEvent('noctivago:sound-fluctuation-changed', { detail: { soundId: id, fluctuation } })
+        )
+      })
+      .catch((err) => console.error('Editor: fluctuation save failed', err))
+  }
+
   currentPlayMode() {
     if (this.els.playModeScatter.checked) return 'scatter'
     if (this.els.playModeScheduled.checked) return 'scheduled'
@@ -2330,6 +2539,18 @@ export default class EditorPlugin {
     this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
     this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
+    // Fluctuation is continuous drift on a held loop - it has no meaning for
+    // Random Interval / Scheduled one-shots (which have their own per-shot
+    // pitch/volume randomization), and the Source classes for those modes
+    // don't wire it up. Hide it rather than show an inert control.
+    const flucHidden = playMode === 'scatter' || playMode === 'scheduled'
+    this.els.fluctuationSection.classList.toggle('hidden', flucHidden)
+    if (!flucHidden) {
+      // Canvases measure 0 while their section is display:none - redraw once
+      // it's back on screen so the bars aren't stuck at a stale size.
+      this.flucVolBar?.redraw()
+      this.flucPitchBar?.redraw()
+    }
   }
 
   currentScatterConfig() {
@@ -2976,6 +3197,7 @@ export default class EditorPlugin {
   disposePreview() {
     this.stopPreviewTicking()
     clearTimeout(this._autosaveTimer)
+    this.flushFluctuation()
     this.eqEditorController?.clearSpectrum()
     this.previewMode = 'live'
     if (this.bakedPreview) {
@@ -3131,6 +3353,9 @@ export default class EditorPlugin {
     this.updateScatterLabels(scatter)
     this.setScheduleControls(schedule)
 
+    const fluctuation = entry.fluctuation ?? defaultFluctuation()
+    this.setFluctuationControls(fluctuation)
+
     await this.engine.resume()
     this.previewSource = new PreviewSource(this.engine, {
       soundId: entry.id,
@@ -3139,7 +3364,8 @@ export default class EditorPlugin {
       volume: this.effectivePreviewVolume(),
       looping: this.looping,
       crossfadeSeconds: crossfadeMs / 1000,
-      speedPitch
+      speedPitch,
+      fluctuation
     })
     this.previewMode = 'live'
     // Constructed unconditionally (cheap - a plain <audio> pointed at the
@@ -3168,6 +3394,7 @@ export default class EditorPlugin {
     const loopEnd = entry.loopEnd ?? duration
     this.previewSource.setLoopPoints(loopStart, loopEnd)
     this.previewSource.setFilters(this.previewFilters())
+    this.previewSource.setFluctuation(this.fluctuation)
     this.previewSource.audioEl.currentTime = loopStart
     this.loopEditorController.load(duration, loopStart, loopEnd)
     this.loopEditorController.setDopplerEnabled(speedPitch.dopplerEnabled ?? false)

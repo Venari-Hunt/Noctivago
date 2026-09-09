@@ -943,3 +943,90 @@
   color: var(--text-dim);
   min-height: 1em;
 }
+
+/* --- Fluctuation (v0.1.164) - slow volume/pitch drift on a looping sound.
+   The two "bar with 3 circles" controls are canvases (see
+   ui/FluctuationBar.js), styled here at a fixed height with a full-width
+   bitmap resized to match on every draw. --- */
+.editor-fluctuation {
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.editor-fluctuation-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.editor-fluctuation-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.editor-fluctuation-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.editor-fluctuation-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.editor-fluctuation-enable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.editor-fluctuation-sub {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.editor-fluctuation-bar {
+  width: 100%;
+  height: 54px;
+  display: block;
+  touch-action: none;
+}
+
+.editor-fluctuation-knobs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.editor-fluctuation-knobs label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 1 1 200px;
+}
+
+.editor-fluctuation-knobs label > span:first-child {
+  width: 82px;
+  flex-shrink: 0;
+}
+
+.editor-fluctuation-knobs input[type='range'] {
+  flex: 1;
+}
+
+.editor-fluctuation-knobs input:disabled {
+  opacity: 0.4;
+}

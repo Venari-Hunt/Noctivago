@@ -1,5 +1,6 @@
 import log from 'electron-log/renderer'
 import { createReverbImpulse } from './reverbIR.js'
+import { SoundFluctuation, fluctuationKey } from './Modulator.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -77,7 +78,7 @@ export function eqBandStageCount(band) {
 // masks that jitter far better than the old hard `currentTime = loopStart`
 // seek did. entry.crossfadeSeconds === 0 opts back out to that hard seek.
 export class LocalFileSoundSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume, filters, speed, crossfadeSeconds }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, filters, speed, crossfadeSeconds, fluctuation }) {
     this.engine = engine
     this.soundId = soundId
     this.loopStart = loopStart ?? 0
@@ -98,6 +99,12 @@ export class LocalFileSoundSource {
     // long to bake, same category as buffer mode's other seam-smoothness-
     // only advantages over streaming.
     this.speed = speed ?? 1
+    // Live pitch-fluctuation multiplier on top of Speed (see this._fluctuation
+    // below). 1 when no pitch drift is active. Stream mode has no detune
+    // primitive on <audio>, so pitch drift here rides playbackRate the same
+    // way Speed does - which also nudges tempo, the same documented trade-off
+    // the Remix Pitch preview already accepts.
+    this._pitchFactor = 1
     // Nullable - null means "use DEFAULT_STREAM_CROSSFADE_SECONDS". See
     // _crossfadeSeconds() / _tick() for how it drives the loop-seam blend.
     this.crossfadeSeconds = crossfadeSeconds ?? null
@@ -115,7 +122,7 @@ export class LocalFileSoundSource {
       el.crossOrigin = 'anonymous'
       el.preload = 'auto'
       el.src = `sound://${soundId}`
-      el.playbackRate = this.speed
+      el.playbackRate = this._rate
       const srcNode = engine.context.createMediaElementSource(el)
       const xfade = engine.context.createGain()
       xfade.gain.value = i === 0 ? 1 : 0
@@ -212,6 +219,25 @@ export class LocalFileSoundSource {
       this.reverbConvolver.buffer = createReverbImpulse(engine.context, this._reverbSizeMs / 1000)
     }
 
+    // Fluctuation (v0.1.164): slow volume/pitch drift. fluctuationGain sits
+    // between the filter/echo/reverb chain and the per-sound volume gainNode,
+    // so its 0..1 multiplier rides *below* the sound's set volume (never
+    // boosts - can't push into clipping) and composes cleanly with the
+    // play/pause fade and Sound Groups routing (both of which act on
+    // gainNode, left untouched here). Pitch drift has no node - it rides
+    // this._pitchFactor into playbackRate (see _rate). Modulators only run
+    // while actually playing and while the axis is enabled.
+    this.fluctuationGain = engine.context.createGain()
+    this.fluctuationGain.gain.value = 1
+    this._fluctuation = new SoundFluctuation({
+      onVolume: (v) => this.fluctuationGain.gain.setTargetAtTime(v, this.engine.context.currentTime, 0.12),
+      onPitch: (semitones) => {
+        this._pitchFactor = Math.pow(2, semitones / 12)
+        this._applyPlaybackRate()
+      }
+    })
+    this._fluctuation.configure(fluctuation ?? {})
+
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
@@ -219,19 +245,29 @@ export class LocalFileSoundSource {
     this._xfadeGains[1].connect(this.highpassNode)
     this.highpassNode.connect(this.lowpassNode)
     this._rebuildEqChain(this.filters.eq ?? [])
-    this.filterGainNode.connect(this.gainNode)
+    this.filterGainNode.connect(this.fluctuationGain)
 
     this.filterGainNode.connect(this.echoSendGain)
     this.echoSendGain.connect(this.echoDelayNode)
     this.echoDelayNode.connect(this.echoFeedbackGain)
     this.echoFeedbackGain.connect(this.echoDelayNode)
-    this.echoDelayNode.connect(this.gainNode)
+    this.echoDelayNode.connect(this.fluctuationGain)
 
     this.filterGainNode.connect(this.reverbSendGain)
     this.reverbSendGain.connect(this.reverbConvolver)
-    this.reverbConvolver.connect(this.gainNode)
+    this.reverbConvolver.connect(this.fluctuationGain)
 
+    this.fluctuationGain.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
+  }
+
+  // Speed x live pitch-fluctuation factor - the actual <audio> playbackRate.
+  get _rate() {
+    return this.speed * this._pitchFactor
+  }
+
+  _applyPlaybackRate() {
+    for (const el of this._els) el.playbackRate = this._rate
   }
 
   get audioEl() {
@@ -299,9 +335,9 @@ export class LocalFileSoundSource {
     try {
       el.load()
       // load() resets playbackRate to the default (1) per the HTML spec -
-      // restore the sound's Speed so a stall-recovered element doesn't
-      // silently revert to 1x.
-      el.playbackRate = this.speed
+      // restore the sound's Speed (x any live pitch drift) so a stall-
+      // recovered element doesn't silently revert to 1x.
+      el.playbackRate = this._rate
       el.currentTime = resumeAt
       await el.play()
       log.info(`Sound ${this.soundId} recovery attempt ${this._recoveryAttempts} succeeded`)
@@ -438,7 +474,16 @@ export class LocalFileSoundSource {
 
   setSpeed(speed) {
     this.speed = speed ?? 1
-    for (const el of this._els) el.playbackRate = this.speed
+    this._applyPlaybackRate()
+  }
+
+  setFluctuation(fluctuation) {
+    this._fluctuation.configure(fluctuation ?? {})
+    this._fluctuation.sync(this.playing)
+  }
+
+  hasFluctuation(fluctuation) {
+    return this._fluctuation.key === fluctuationKey(fluctuation)
   }
 
   hasSpeed(speed) {
@@ -481,7 +526,7 @@ export class LocalFileSoundSource {
         // `fade` is wall-clock; at a non-default Speed the active element
         // covers `speed * fade` media-seconds while the ramp runs, so start
         // that much earlier to keep the swap centred on loopEnd.
-        if (!this._crossfading && this.audioEl.currentTime >= end - fade * this.speed) {
+        if (!this._crossfading && this.audioEl.currentTime >= end - fade * this._rate) {
           this._startCrossfade(fade)
         }
       } else if (this.audioEl.currentTime >= end - LOOP_EPSILON_SECONDS) {
@@ -508,7 +553,7 @@ export class LocalFileSoundSource {
       // not loaded yet - extremely unlikely this deep into playback; the
       // ramp below still runs and the element catches up
     }
-    standby.playbackRate = this.speed
+    standby.playbackRate = this._rate
     standby.play().catch(() => {})
 
     const activeGain = this._activeXfadeGain
@@ -579,7 +624,7 @@ export class LocalFileSoundSource {
     this._standbyXfadeGain.cancelScheduledValues(resetAt)
     this._standbyXfadeGain.setValueAtTime(0, resetAt)
 
-    for (const el of this._els) el.playbackRate = this.speed
+    this._applyPlaybackRate()
     try {
       if (this._standbyEl.paused) this._standbyEl.currentTime = this.loopStart
     } catch {
@@ -596,6 +641,7 @@ export class LocalFileSoundSource {
     this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
     this.gainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
     this.playing = true
+    this._fluctuation.sync(true)
     this._tick()
   }
 
@@ -606,6 +652,7 @@ export class LocalFileSoundSource {
     this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
     this.gainNode.gain.linearRampToValueAtTime(0, now + RAMP_SECONDS)
     this.playing = false
+    this._fluctuation.stop()
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     if (this._stallTimeoutId) {
@@ -634,6 +681,7 @@ export class LocalFileSoundSource {
 
   dispose() {
     this.playing = false
+    this._fluctuation.dispose()
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     if (this._stallTimeoutId) clearTimeout(this._stallTimeoutId)
@@ -657,6 +705,7 @@ export class LocalFileSoundSource {
     this.echoFeedbackGain.disconnect()
     this.reverbSendGain.disconnect()
     this.reverbConvolver.disconnect()
+    this.fluctuationGain.disconnect()
     this.gainNode.disconnect()
   }
 }

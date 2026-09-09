@@ -114,6 +114,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:updateVolume', (_event, id, volume) => library.updateVolume(id, volume))
   ipcMain.handle('library:updateIncluded', (_event, id, included) => library.updateIncluded(id, included))
   ipcMain.handle('library:updateCrossfade', (_event, id, crossfadeSeconds) => library.updateCrossfade(id, crossfadeSeconds))
+  ipcMain.handle('library:updateFluctuation', (_event, id, fluctuation) => library.updateFluctuation(id, fluctuation))
   ipcMain.handle('library:updateTags', (_event, id, tags) => library.updateTags(id, tags))
   ipcMain.handle('library:updateSpeedPitch', (_event, id, speedPitch) => library.updateSpeedPitch(id, speedPitch))
   ipcMain.handle('library:updatePlayMode', (_event, id, playMode) => library.updatePlayMode(id, playMode))

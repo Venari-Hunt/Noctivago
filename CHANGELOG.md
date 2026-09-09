@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.164 — Remix: Fluctuation — slow volume and pitch drift on a looping sound
+
+- New "Fluctuation" section in the Remix tab (Sound mode): make a looping sound's volume and/or pitch drift slowly and randomly over time — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further.
+- Each one is a bar with three circles: the outer two set the lowest and highest it drifts to, the middle one sets where it sits most of the time. Two sliders control how often it picks a new target (Change rate) and how fast it glides there (Transition).
+- Volume drift rides below the sound's set level (it dips and returns, never boosts into distortion). Pitch drift is a small semitone wobble.
+- Applies live in the Mixer and in the Remix preview, and is remembered across restarts. Not baked into an export yet, and not available for Random Interval / Scheduled sounds (which have their own per-shot randomization). Preset and Group modes are a planned follow-up.
+
 ## v0.1.163 — Remix EQ graph: zoom in/out and an Invert button
 
 - The Parametric EQ graph (Sound, Preset, and Group mode alike) can now be zoomed in and out on the frequency axis — two new buttons next to Reset EQ, or scroll the mouse wheel over any empty part of the graph (away from a node) to zoom centered on the cursor. Useful for placing a band precisely in a crowded frequency range.

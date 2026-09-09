@@ -78,6 +78,24 @@ function defaultEqBands() {
   return []
 }
 
+// The Remix "Fluctuation" feature (v0.1.164) - slow, organic drift of a
+// looping sound's volume and/or pitch (wind gusts, rain swelling and
+// fading). Its own top-level entry field rather than folded into `filters`,
+// because unlike every filter it's never baked into the loop clip - it's a
+// playback-time behavior applied live by the Source classes (same category
+// as crossfadeSeconds / scatter / schedule). Both axes disabled by default,
+// so a fresh sound behaves exactly as before until the user turns one on.
+// volume: a 0..1 multiplier that rides *below* the sound's set level
+// (attenuation only - never boosts, so it can't push a hot sound into
+// clipping). pitch: a semitone offset. changeRate/transition are 0..1 feel
+// knobs (see src/renderer/audio/Modulator.js for how they map to seconds).
+export function defaultFluctuation() {
+  return {
+    volume: { enabled: false, min: 0.5, max: 1, bias: 0.8, changeRate: 0.5, transition: 0.5 },
+    pitch: { enabled: false, min: -1, max: 1, bias: 0, changeRate: 0.5, transition: 0.5 }
+  }
+}
+
 // Backfills fields added after some entries already existed (tags, dateAdded,
 // dateCreated, sortIndex) - same in-place-refresh-on-read pattern checkStatus
 // already uses for `status`, so older libraries pick these up transparently
@@ -310,6 +328,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     loopEnd: null,
     filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() },
     crossfadeSeconds: null,
+    fluctuation: defaultFluctuation(),
     // dopplerEnabled: a simulated vehicle/siren pass-by - pitch bends
     // smoothly upward approaching the "closest" point (dopplerClosestFraction,
     // 0-1 across the loop region, shown as a draggable marker on the Remix
@@ -650,7 +669,8 @@ export const IMPORTED_SETTINGS_KEYS = [
   'speedPitch',
   'playMode',
   'scatter',
-  'schedule'
+  'schedule',
+  'fluctuation'
 ]
 
 export function applyImportedSettings(id, settings) {
@@ -759,6 +779,13 @@ export function updateSchedule(id, schedule) {
 // the Remix plugin's crossfade slider is actually touched and saved.
 export function updateCrossfade(id, crossfadeSeconds) {
   return updateEntry(id, { crossfadeSeconds })
+}
+
+// v0.1.164 - see defaultFluctuation above. Its own update path (not folded
+// into updateFilters) so saving a fluctuation tweak never marks the baked
+// loop clip stale / triggers a re-bake, the way a real filter change does.
+export function updateFluctuation(id, fluctuation) {
+  return updateEntry(id, { fluctuation })
 }
 
 export function updateTags(id, tags) {

@@ -474,6 +474,13 @@ function reconcileSource(entry) {
     return
   }
 
+  // Fluctuation (v0.1.164) is playback-time only, never baked - so unlike
+  // filters it applies to buffer-mode sources too, and it's reconciled here
+  // for every source kind that supports it rather than inside one branch.
+  if (source.hasFluctuation && !source.hasFluctuation(entry.fluctuation)) {
+    source.setFluctuation(entry.fluctuation)
+  }
+
   if (desiredKind === 'loop-stream') {
     if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
     if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
@@ -587,7 +594,7 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
     } else if (isScheduled) {
       source = new BufferScheduledSource(engine, { audioBuffer, volume, schedule: entry.schedule })
     } else {
-      source = new BufferSoundSource(engine, { audioBuffer, volume })
+      source = new BufferSoundSource(engine, { audioBuffer, volume, fluctuation: entry.fluctuation })
     }
     source.kind = isScatter ? 'scatter-buffer' : isScheduled ? 'scheduled-buffer' : 'loop-buffer'
     source.bakeSnapshot = bufferBakeSnapshot(entry)
@@ -644,7 +651,8 @@ async function getOrCreateSource(entry) {
             volume,
             filters: entry.filters,
             speed: entry.speedPitch?.speed,
-            crossfadeSeconds: entry.crossfadeSeconds
+            crossfadeSeconds: entry.crossfadeSeconds,
+            fluctuation: entry.fluctuation
           })
     source.kind = isScatter ? 'scatter-stream' : isScheduled ? 'scheduled-stream' : 'loop-stream'
     if (isScatter) source.onShotStart = () => propagateSync(entry.id)
@@ -1587,6 +1595,20 @@ document.addEventListener('library:linked', refreshList)
   window.addEventListener('noctivago:stop-all-playback', () => {
     for (const id of [...state.playing]) stopPlayback(id)
     render()
+  })
+  // The Remix plugin's Sound mode dispatches this (debounced) whenever the
+  // Fluctuation controls change, having already persisted the new value via
+  // library.updateFluctuation. Patch the cached entry and reconcile just
+  // that live source, so a sound already in the mix picks up the new drift
+  // immediately rather than only on the next full tab-switch refresh -
+  // matching how the whole-mix/group preview bridges keep the Mixer in sync.
+  window.addEventListener('noctivago:sound-fluctuation-changed', (e) => {
+    const { soundId, fluctuation } = e.detail ?? {}
+    if (!soundId) return
+    const entry = state.library.find((s) => s.id === soundId)
+    if (!entry) return
+    entry.fluctuation = fluctuation
+    reconcileSource(entry)
   })
   // The Remix plugin's Preset mode (plugins/editor/) dispatches this on
   // every control change while editing a preset, and once more with the

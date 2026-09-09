@@ -1,4 +1,5 @@
 import { createReverbImpulse } from './reverbIR.js'
+import { SoundFluctuation } from './Modulator.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -211,12 +212,15 @@ function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, ec
 // give an immediate, rough sense of direction while dragging, not a
 // faithful stand-in for the bake. Reverse has no live preview at all - it
 // only takes effect once saved.
-function applySpeedPitchToVoice(voice, speedPitch) {
+// pitchModFactor folds in live pitch fluctuation (see PreviewSource's
+// this._fluctuation) - a plain multiplier on playbackRate, same limitation
+// as Pitch itself here (also nudges tempo). 1 when no pitch drift is active.
+function applySpeedPitchToVoice(voice, speedPitch, pitchModFactor = 1) {
   const speed = speedPitch?.speed ?? 1
   const pitchSemitones = speedPitch?.pitchSemitones ?? 0
   const pitchRatio = Math.pow(2, pitchSemitones / 12)
-  voice.audioEl.preservesPitch = pitchSemitones === 0
-  voice.audioEl.playbackRate = speed * pitchRatio
+  voice.audioEl.preservesPitch = pitchSemitones === 0 && pitchModFactor === 1
+  voice.audioEl.playbackRate = speed * pitchRatio * pitchModFactor
 }
 
 function disposeVoice(voice) {
@@ -255,7 +259,7 @@ function disposeVoice(voice) {
 // playback has everywhere else in this app) - good enough to judge "does
 // this duration sound right," not a substitute for the real bake.
 export class PreviewSource {
-  constructor(engine, { soundId, loopStart, loopEnd, volume, looping = true, crossfadeSeconds = 0, speedPitch = null }) {
+  constructor(engine, { soundId, loopStart, loopEnd, volume, looping = true, crossfadeSeconds = 0, speedPitch = null, fluctuation = null }) {
     this.engine = engine
     this.loopStart = loopStart ?? 0
     this.loopEnd = loopEnd ?? null
@@ -266,15 +270,33 @@ export class PreviewSource {
     this._rafId = null
     this._pauseTimeoutId = null
     this._crossfading = false
+    this._speedPitch = speedPitch
+    this._pitchModFactor = 1
 
     this.voices = [createVoice(engine, soundId), createVoice(engine, soundId)]
     this.activeIndex = 0
     this.voices[0].crossfadeGain.gain.value = 1
     for (const voice of this.voices) applySpeedPitchToVoice(voice, speedPitch)
 
+    // Fluctuation (v0.1.164): one shared drift stage after both crossfade
+    // voices combine, so a loop-seam crossfade doesn't fight it. Mirrors
+    // core's LocalFileSoundSource - volume rides a 0..1 multiplier below the
+    // preview volume, pitch rides playbackRate. Only runs while previewing.
+    this.fluctuationGain = engine.context.createGain()
+    this.fluctuationGain.gain.value = 1
+    this._fluctuation = new SoundFluctuation({
+      onVolume: (v) => this.fluctuationGain.gain.setTargetAtTime(v, this.engine.context.currentTime, 0.12),
+      onPitch: (semitones) => {
+        this._pitchModFactor = Math.pow(2, semitones / 12)
+        this._applyPlaybackRate()
+      }
+    })
+    this._fluctuation.configure(fluctuation ?? {})
+
     this.outputGainNode = engine.context.createGain()
     this.outputGainNode.gain.value = 0
-    for (const voice of this.voices) voice.crossfadeGain.connect(this.outputGainNode)
+    for (const voice of this.voices) voice.crossfadeGain.connect(this.fluctuationGain)
+    this.fluctuationGain.connect(this.outputGainNode)
     this.outputGainNode.connect(engine.masterGain)
 
     // Real-time spectrum analyzer tap for the Remix EQ graph's live backdrop
@@ -351,7 +373,17 @@ export class PreviewSource {
   }
 
   setSpeedPitch(speedPitch) {
-    for (const voice of this.voices) applySpeedPitchToVoice(voice, speedPitch)
+    this._speedPitch = speedPitch
+    this._applyPlaybackRate()
+  }
+
+  _applyPlaybackRate() {
+    for (const voice of this.voices) applySpeedPitchToVoice(voice, this._speedPitch, this._pitchModFactor)
+  }
+
+  setFluctuation(fluctuation) {
+    this._fluctuation.configure(fluctuation ?? {})
+    this._fluctuation.sync(this.playing)
   }
 
   // Cancels any in-progress crossfade and collapses back to a single active
@@ -458,6 +490,7 @@ export class PreviewSource {
     this.outputGainNode.gain.setValueAtTime(this.outputGainNode.gain.value, now)
     this.outputGainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
     this.playing = true
+    this._fluctuation.sync(true)
     this._tick()
   }
 
@@ -468,6 +501,7 @@ export class PreviewSource {
     this.outputGainNode.gain.setValueAtTime(this.outputGainNode.gain.value, now)
     this.outputGainNode.gain.linearRampToValueAtTime(0, now + RAMP_SECONDS)
     this.playing = false
+    this._fluctuation.stop()
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     this._pauseTimeoutId = setTimeout(() => {
@@ -490,7 +524,9 @@ export class PreviewSource {
     this.playing = false
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
+    this._fluctuation.dispose()
     for (const voice of this.voices) disposeVoice(voice)
+    this.fluctuationGain.disconnect()
     this.outputGainNode.disconnect()
     this.analyserFeedNode.disconnect()
     this.analyserNode.disconnect()
