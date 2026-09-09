@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.168 — Fluctuation now tells you it saved
+
+- Changing a sound's Fluctuation (volume/pitch drift) in the Remix tab's Sound mode now lights up the Save button and, a moment later, confirms "saved automatically" under it — before, it saved silently with no sign anything happened, which looked like it wasn't saving or working at all.
+- Hitting Save after only changing Fluctuation no longer re-renders the loop clip (nothing about the baked audio changed) — it just saves the setting.
+- Added a note in the Fluctuation section when you're auditioning the "Saved audio" preview: drift only plays in the "Live edit" preview and in the Mixer, never in the baked clip.
+
 ## v0.1.167 — Fluctuation for Preset and Group modes
 
 - The Remix tab's Preset and Group modes now have their own Fluctuation control (alongside the filters and EQ) — slow, random volume drift on the whole mix, or on just one group's sounds. Weather rolling through: the ambience swelling and fading on its own.

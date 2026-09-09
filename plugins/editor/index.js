@@ -366,6 +366,14 @@ export default class EditorPlugin {
     this.pickerQuery = ''
     this.pickerHighlightIndex = -1
     this.previewSource = null
+    // Baseline for the Fluctuation dirty-check (see fluctuationDirty()) - the
+    // last value that's actually persisted to the library. Set on every load
+    // and after every fluctuation write (manual Save or the debounced
+    // autosave), so the Save button and its status line can tell the user
+    // their drift settings did get saved. Fluctuation deliberately stays out
+    // of snapshotOf()/undo/A-B-compare (a playback-time behavior, never
+    // baked) - this is its own small parallel dirty flag instead.
+    this.savedFluctuationSnapshot = null
     // The "hear the real baked file" half of the preview toggle - see
     // BakedClipPreview.js's own doc comment for why this exists (Doppler and
     // Reverse have no live preview at all; Pitch is only a rough
@@ -1162,8 +1170,9 @@ ${mixFluctuationMarkup('group')}
           <div id="editor-fluctuation-section" class="editor-fluctuation">
             <div class="editor-fluctuation-head">
               <span class="editor-fluctuation-label">Fluctuation</span>
-              <span class="editor-fluctuation-hint">Slow, random drift while the sound loops — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further. On each bar: drag the outer circles for the lowest/highest it reaches, the middle circle for where it sits most of the time. Change rate = how often it picks a new target; Transition = how fast it glides there. Applies live in the Mixer and the preview; not baked into an export.</span>
+              <span class="editor-fluctuation-hint">Slow, random drift while the sound loops — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further. On each bar: drag the outer circles for the lowest/highest it reaches, the middle circle for where it sits most of the time. Change rate = how often it picks a new target; Transition = how fast it glides there. Applies live in the Mixer and the preview; not baked into an export. Saves on its own the moment you let go of a control — no need to hit Save.</span>
             </div>
+            <p id="editor-fluctuation-saved-note" class="editor-fluctuation-hint hidden">Drift only plays in the <strong>Live edit</strong> preview — the <strong>Saved audio</strong> preview is the baked clip, which never contains it. Switch the preview toggle to Live edit to hear it.</p>
             <div class="editor-fluctuation-axis">
               <label class="editor-fluctuation-enable">
                 <input id="editor-fluc-vol-enabled" type="checkbox" />
@@ -1334,6 +1343,7 @@ ${mixFluctuationMarkup('group')}
       resetFilters: container.querySelector('#editor-reset-filters'),
       presetButtons: container.querySelectorAll('[data-preset]'),
       fluctuationSection: container.querySelector('#editor-fluctuation-section'),
+      fluctuationSavedNote: container.querySelector('#editor-fluctuation-saved-note'),
       flucVolEnabled: container.querySelector('#editor-fluc-vol-enabled'),
       flucVolBar: container.querySelector('#editor-fluc-vol-bar'),
       flucVolRate: container.querySelector('#editor-fluc-vol-rate'),
@@ -2083,6 +2093,8 @@ ${mixFluctuationMarkup('group')}
           : 'Hearing the actual saved/baked audio - click to switch back to the live editable preview'
         : 'Hearing the live editable preview (Doppler and Reverse have no live preview, and Pitch is only approximate) - click to hear the actual saved audio instead'
       : 'Save first to unlock hearing the actual baked audio'
+    // Keep the "drift needs Live edit preview" note in sync with the mode.
+    if (this.flucVolBar) this.updateFluctuationEnabledUI()
   }
 
   updatePreviewMuteIcon() {
@@ -2552,6 +2564,8 @@ ${mixFluctuationMarkup('group')}
     this.flucPitchBar.setValues(f.pitch)
     this.updateFluctuationEnabledUI()
     this.updateFluctuationLabels()
+    // Freshly loaded from the library == the saved baseline for the dirty-check.
+    this.savedFluctuationSnapshot = this.fluctuationSnapshot()
   }
 
   updateFluctuationEnabledUI() {
@@ -2563,6 +2577,10 @@ ${mixFluctuationMarkup('group')}
     this.els.flucVolTransition.disabled = !vOn
     this.els.flucPitchRate.disabled = !pOn
     this.els.flucPitchTransition.disabled = !pOn
+    // Drift is a live-preview / Mixer behavior only - warn if the user has an
+    // axis on but is auditioning the baked "Saved audio" clip, which by
+    // design has no fluctuation (so it'd look like the feature does nothing).
+    this.els.fluctuationSavedNote?.classList.toggle('hidden', !((vOn || pOn) && this.previewMode === 'saved'))
   }
 
   updateFluctuationLabels() {
@@ -2600,6 +2618,10 @@ ${mixFluctuationMarkup('group')}
     this.updateFluctuationLabels()
     this.previewSource?.setFluctuation(this.fluctuation)
     this.persistFluctuation()
+    // Light the Save button now (it clears again a moment later when the
+    // debounced write below lands - see flushFluctuation) so a drift edit
+    // never looks like it went nowhere.
+    this.updateSaveButtonState()
   }
 
   persistFluctuation() {
@@ -2626,8 +2648,22 @@ ${mixFluctuationMarkup('group')}
         window.dispatchEvent(
           new CustomEvent('noctivago:sound-fluctuation-changed', { detail: { soundId: id, fluctuation } })
         )
+        // Confirm the write so the Save button and status line stop implying
+        // the drift edit is unsaved (fluctuation persists on its own, no
+        // manual Save needed - but a silent write reads as "nothing happened").
+        if (this.currentEntry?.id === id) {
+          this.savedFluctuationSnapshot = JSON.stringify({
+            volume: normalizeFluctuationAxis(fluctuation?.volume, 1),
+            pitch: normalizeFluctuationAxis(fluctuation?.pitch, 0)
+          })
+          this.updateSaveButtonState()
+          this.els.saveStatus.textContent = 'Fluctuation applied — saved automatically (no bake needed).'
+        }
       })
-      .catch((err) => console.error('Editor: fluctuation save failed', err))
+      .catch((err) => {
+        console.error('Editor: fluctuation save failed', err)
+        if (this.currentEntry?.id === id) this.els.saveStatus.textContent = 'Fluctuation change could not be saved.'
+      })
   }
 
   currentPlayMode() {
@@ -2987,6 +3023,23 @@ ${mixFluctuationMarkup('group')}
     )
   }
 
+  // Normalized fingerprint of the current Fluctuation config, compared
+  // against savedFluctuationSnapshot to know whether the drift settings have
+  // unsaved edits. Kept separate from hasUnsavedChanges()/snapshotOf() on
+  // purpose: fluctuation is never baked, so a fluctuation-only change must
+  // NOT mark the saved loop clip stale or drive undo/A-B - it just needs the
+  // Save button to light up and a "saved" confirmation once it's written.
+  fluctuationSnapshot() {
+    return JSON.stringify({
+      volume: normalizeFluctuationAxis(this.fluctuation?.volume, 1),
+      pitch: normalizeFluctuationAxis(this.fluctuation?.pitch, 0)
+    })
+  }
+
+  fluctuationDirty() {
+    return this.savedFluctuationSnapshot != null && this.fluctuationSnapshot() !== this.savedFluctuationSnapshot
+  }
+
   updateSaveButtonState() {
     // While viewing the read-only B (last saved) reference, currentFilters()
     // reflects B's data rather than A's real live edits (A's own bands are
@@ -3002,7 +3055,12 @@ ${mixFluctuationMarkup('group')}
       this.updatePreviewModeToggle()
       return
     }
-    const dirty = this.hasUnsavedChanges()
+    // Fluctuation isn't part of hasUnsavedChanges() (it never re-bakes), but
+    // a pending drift edit is still something the user expects Save to act on
+    // - fold it in here only, so the button lights up and performSave() knows
+    // to persist it, without fluctuation leaking into the stale-clip / undo
+    // machinery hasUnsavedChanges() also feeds.
+    const dirty = this.hasUnsavedChanges() || this.fluctuationDirty()
     this.els.save.disabled = !dirty
     this.els.saveLabel.textContent = dirty ? 'Save' : 'Nothing to save'
     // Unlike Save, always enabled while viewing A regardless of dirty state -
@@ -3566,6 +3624,13 @@ ${mixFluctuationMarkup('group')}
   async performSave(trigger) {
     const savedWord = trigger === 'auto' ? 'Auto-saved' : 'Saved'
     const id = this.currentEntry.id
+    // Captured before savedSnapshot is rewritten below. The Save button can
+    // now be lit by a fluctuation-only edit (see updateSaveButtonState) - in
+    // that case nothing that feeds the ffmpeg render actually changed, so
+    // skip the bake round-trip entirely rather than re-rendering a
+    // byte-identical clip (fluctuation is never baked in).
+    const bakeRelevantDirty = this.hasUnsavedChanges()
+    const flucDirty = this.fluctuationDirty()
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     const filters = this.currentFilters()
     const crossfadeMs = this.currentCrossfadeMs()
@@ -3600,6 +3665,28 @@ ${mixFluctuationMarkup('group')}
     this.currentEntry.scatter = scatter
     this.currentEntry.schedule = schedule
     this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter, schedule)
+
+    // Persist the drift settings in the same Save (their own IPC call, not
+    // folded into the bake) and cancel any still-pending debounced write so
+    // it doesn't fire a second, redundant one right after.
+    if (flucDirty) {
+      clearTimeout(this._fluctuationSaveTimer)
+      this._pendingFluctuation = null
+      await this.api.library.updateFluctuation(id, this.fluctuation)
+      this.currentEntry.fluctuation = this.fluctuation
+      window.dispatchEvent(
+        new CustomEvent('noctivago:sound-fluctuation-changed', { detail: { soundId: id, fluctuation: this.fluctuation } })
+      )
+      this.savedFluctuationSnapshot = this.fluctuationSnapshot()
+    }
+
+    // Only fluctuation (or nothing) changed - the existing bake, if any, is
+    // still valid. Skip the ffmpeg re-render.
+    if (!bakeRelevantDirty) {
+      this.els.saveStatus.textContent = `${savedWord} — original file untouched.`
+      this.updateSaveButtonState()
+      return
+    }
 
     // This never touches the original audio file: trim points and filters
     // are stored as metadata, applied live whenever the Mixer streams the
