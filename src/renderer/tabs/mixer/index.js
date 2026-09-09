@@ -1269,12 +1269,19 @@ async function exportPreset(preset) {
   els.presetSaveHint.textContent = `Exported "${preset.name}" — ${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}${missingNote}${mb}.`
 }
 
-els.openPresetsBtn.addEventListener('click', async () => {
+async function openPresetsModal() {
   els.presetSaveHint.textContent = ''
   els.presetSaveHint.classList.remove('ok')
   await refreshPresetList()
   showModal(els.presetsModal)
-})
+}
+
+els.openPresetsBtn.addEventListener('click', openPresetsModal)
+// The top-bar active-preset indicator (v0.1.165) doubles as a shortcut into
+// the Presets modal - it reads as a button, and "which preset am I on → tap
+// → load a different one" is the natural next action. Works whether or not a
+// preset is currently loaded (the "No preset" state opens it to pick one).
+els.activePresetIndicator.addEventListener('click', openPresetsModal)
 
 els.presetsClose.addEventListener('click', () => hideModal(els.presetsModal))
 

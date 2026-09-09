@@ -620,6 +620,11 @@ main {
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
+  cursor: pointer;
+}
+
+.active-preset-indicator:hover {
+  border-color: var(--accent);
 }
 
 .active-preset-indicator .active-preset-icon {

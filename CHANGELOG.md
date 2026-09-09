@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.166 — The top-bar preset name opens Presets
+
+- Clicking the active-preset pill in the top bar now opens the Presets window, so it's a one-tap way to load a different preset (or pick one when none is loaded), not just a label.
+
 ## v0.1.165 — Top bar: which preset is loaded
 
 - The toolbar now always shows which preset the mix is built from, just left of the Play-all button — an accent-outlined pill with the preset's name, or a dim "No preset" when you haven't loaded one.
