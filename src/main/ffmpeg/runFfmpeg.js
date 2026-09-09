@@ -27,7 +27,11 @@ function captureStderrTail(stream) {
 // waveform analysis, reverb, composite bakes) can hit the same disk-full
 // condition, not just a long export's own final mixdown.
 const FRIENDLY_FFMPEG_ERRORS = [
-  { pattern: /no space left on device/i, message: 'Not enough free disk space to finish writing the file.' }
+  { pattern: /no space left on device/i, message: 'Not enough free disk space to finish writing the file.' },
+  {
+    pattern: /(HTTP error 4\d\d|Server returned \d\d\d [A-Za-z])/i,
+    message: 'That link could not be opened - it may be a dead link, need a login, or not point at a media file.'
+  }
 ]
 
 function ffmpegError(code, stderrTail) {

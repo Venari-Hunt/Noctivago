@@ -90,6 +90,13 @@ const api = {
     addSound: (payload) => ipcRenderer.invoke('library:addSound', payload),
     addRecordedSound: (payload) => ipcRenderer.invoke('library:addRecordedSound', payload),
     addSoundFromUrl: (payload) => ipcRenderer.invoke('library:addSoundFromUrl', payload),
+    // Progress while a link downloads: { type:'step'|'status', message } or
+    // { type:'progress', percent } (0..100). Returns an unsubscribe fn.
+    onAddSoundFromUrlProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('library:addSoundFromUrlProgress', listener)
+      return () => ipcRenderer.removeListener('library:addSoundFromUrlProgress', listener)
+    },
     addFolderSounds: (folderPath, options) => ipcRenderer.invoke('library:addFolderSounds', folderPath, options),
     updateMeta: (id, meta) => ipcRenderer.invoke('library:updateMeta', id, meta),
     updateLoopPoints: (id, points) => ipcRenderer.invoke('library:updateLoopPoints', id, points),

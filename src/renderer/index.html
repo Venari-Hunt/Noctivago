@@ -144,7 +144,15 @@
         <label class="field-label">Name
           <input id="add-link-name" type="text" placeholder="(from the URL)" />
         </label>
+        <label class="field-label">Max length to download (minutes)
+          <input id="add-link-maxlen" type="number" min="0" step="1" value="10" />
+        </label>
+        <p class="modal-hint add-link-maxlen-hint">A safety cap — you can loop and crossfade a short clip in the app, so there's rarely a reason to pull a multi-hour stream in full. Set to 0 to download the whole thing.</p>
         <p id="add-link-status" class="add-folder-preset-status"></p>
+        <div id="add-link-progress" class="add-link-progress hidden">
+          <div class="add-link-progress-track"><div id="add-link-progress-fill" class="add-link-progress-fill"></div></div>
+          <pre id="add-link-log" class="add-link-log" aria-live="polite"></pre>
+        </div>
         <div class="modal-actions">
           <button id="add-link-cancel" class="btn btn-icon-text" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

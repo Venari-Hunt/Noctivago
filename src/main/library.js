@@ -522,19 +522,21 @@ export async function addRecordedSound({ name, buffer }) {
 // shipped v0.1.121 behavior.
 const DOWNLOAD_RW_TIMEOUT_MICROSECONDS = 30_000_000 // 30s
 
-async function downloadDirectAudio(parsed) {
+async function downloadDirectAudio(parsed, { maxSeconds = 0, onProgress } = {}) {
   const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
   fs.mkdirSync(tmpDir, { recursive: true })
   const wavPath = path.join(tmpDir, `${crypto.randomUUID()}.wav`)
-  await runFfmpegToFile([
-    '-y',
-    '-rw_timeout',
-    String(DOWNLOAD_RW_TIMEOUT_MICROSECONDS),
-    '-i',
-    parsed.toString(),
-    '-vn',
-    wavPath
-  ])
+  const args = ['-y', '-rw_timeout', String(DOWNLOAD_RW_TIMEOUT_MICROSECONDS), '-i', parsed.toString(), '-vn']
+  // -t as an output option stops muxing (and pulling the input stream) at
+  // maxSeconds - so a link to a 10-hour stream only pulls the first N minutes.
+  if (maxSeconds > 0) args.push('-t', String(maxSeconds))
+  args.push(wavPath)
+  await runFfmpegToFile(args, {
+    onProgress:
+      maxSeconds > 0 && onProgress
+        ? (sec) => onProgress({ type: 'progress', percent: Math.max(0, Math.min(100, (sec / maxSeconds) * 100)) })
+        : undefined
+  })
   return wavPath
 }
 
@@ -548,7 +550,7 @@ async function downloadDirectAudio(parsed) {
 // YouTube's current bot-detection otherwise rejects anonymous extraction
 // outright ("Sign in to confirm you're not a bot"), confirmed directly
 // against the real yt-dlp binary before writing this.
-async function downloadViaYtDlp(url) {
+async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress } = {}) {
   const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
   fs.mkdirSync(tmpDir, { recursive: true })
   const id = crypto.randomUUID()
@@ -556,17 +558,28 @@ async function downloadViaYtDlp(url) {
   const cookiesBrowser = getSettings().ytDlpCookiesBrowser
 
   const args = ['--no-playlist', '-x', '--audio-format', 'wav', '--ffmpeg-location', resolveFfmpegPath(), '-o', outputTemplate, '--newline']
+  // "*0-N" downloads only the first N seconds of the source rather than the
+  // whole thing - verified against the real bundled yt-dlp with -x audio
+  // extraction before shipping.
+  if (maxSeconds > 0) args.push('--download-sections', `*0-${maxSeconds}`)
   if (cookiesBrowser && cookiesBrowser !== 'none') args.push('--cookies-from-browser', cookiesBrowser)
   args.push(url)
 
-  await runYtDlp(args)
+  await runYtDlp(args, {
+    onProgress: onProgress ? (percent) => onProgress({ type: 'progress', percent }) : undefined,
+    onStatus: onProgress ? (message) => onProgress({ type: 'status', message }) : undefined
+  })
 
   const match = fs.readdirSync(tmpDir).find((f) => f.startsWith(id))
   if (!match) throw new Error('yt-dlp reported success but produced no output file.')
   return path.join(tmpDir, match)
 }
 
-export async function addSoundFromUrl({ name, url }) {
+// onProgress (optional) is fed { type:'step', message } for the coarse
+// phase changes, { type:'status', message } for yt-dlp's own verbose lines,
+// and { type:'progress', percent } as the download advances - the IPC
+// handler forwards each straight to the Add-from-link dialog.
+export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
   let parsed
   try {
     parsed = new URL(url)
@@ -577,14 +590,21 @@ export async function addSoundFromUrl({ name, url }) {
     throw new Error('Only http:// and https:// links are supported.')
   }
 
+  // A safety cap (dialog default 10 min) so a link to a multi-hour stream
+  // doesn't pull in full - 0 / blank means "download the whole thing".
+  const cap = Number.isFinite(maxSeconds) && maxSeconds > 0 ? Math.round(maxSeconds) : 0
+  if (cap > 0) onProgress?.({ type: 'step', message: `Limiting the download to the first ${Math.round(cap / 60)} min.` })
+
   let wavPath
   let usedYtDlp = false
   try {
-    wavPath = await downloadDirectAudio(parsed)
+    onProgress?.({ type: 'step', message: 'Trying a direct audio download…' })
+    wavPath = await downloadDirectAudio(parsed, { maxSeconds: cap, onProgress })
   } catch (directErr) {
     if (!isYtDlpAvailable()) throw directErr
     try {
-      wavPath = await downloadViaYtDlp(parsed.toString())
+      onProgress?.({ type: 'step', message: 'Not a direct audio file — handing it to yt-dlp (YouTube / video sites)…' })
+      wavPath = await downloadViaYtDlp(parsed.toString(), { maxSeconds: cap, onProgress })
       usedYtDlp = true
     } catch (ytDlpErr) {
       throw new Error(`Couldn't download that link directly (${directErr.message}), and yt-dlp also failed: ${ytDlpErr.message}`)
@@ -592,6 +612,8 @@ export async function addSoundFromUrl({ name, url }) {
   }
 
   try {
+    onProgress?.({ type: 'progress', percent: 100 })
+    onProgress?.({ type: 'step', message: 'Adding it to your library…' })
     const fallbackName =
       (usedYtDlp ? null : decodeURIComponent(path.basename(parsed.pathname)).replace(/\.[^.]+$/, '')) || 'Downloaded audio'
     return addSound({ path: wavPath, name: name || fallbackName, keepCopy: true })

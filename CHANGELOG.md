@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.169 — Add from link: length cap + real progress
+
+- "Add from link" now has a "Max length to download" field, defaulting to 10 minutes — a link to a multi-hour stream no longer downloads in full (you can loop and crossfade a short clip in the app anyway). Set it to 0 to grab the whole thing.
+- The dialog now shows a real progress bar and a running log of what's happening (extracting the page, picking a format, downloading, converting) instead of a bare "Downloading…".
+- A failed link now leads with a short reason, with the full technical detail in the log below it.
+
 ## v0.1.168 — Fluctuation now tells you it saved
 
 - Changing a sound's Fluctuation (volume/pitch drift) in the Remix tab's Sound mode now lights up the Save button and, a moment later, confirms "saved automatically" under it — before, it saved silently with no sign anything happened, which looked like it wasn't saving or working at all.
