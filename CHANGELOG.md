@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.174 — Noise gate in Remix (Sound mode)
+
+- New per-sound "Gate" controls in the Remix tab's Filters section: Threshold, Reduction, Attack, and Release. The gate quiets a sound whenever it drops below the threshold — useful for cutting a hissy or rumbly noise floor in the gaps between events on a self-recorded or noisy clip.
+- Threshold at the far left, or Reduction at 0, means off (the default). It applies live in the preview and the Mixer, and bakes into an exported file, like every other filter.
+- A longer Release keeps a fading tail from chattering. A frequency-selective mode (gate only the hiss, always let the bass through) is a possible follow-up.
+
 ## v0.1.173 — Fix: your mix was empty after a restart until you re-added sounds
 
 - If you closed the app while the mix was paused (not playing), the next launch opened with every sound showing "Add" instead of "In Mix", the Current Mix section empty, and the "Play all" button doing nothing when clicked — you had to click each sound back into the mix by hand. Your mix is now restored on launch: the sounds you had in it show as "In Mix" again and "Play all" starts them.

@@ -55,7 +55,7 @@ function checkStatus(entry) {
 }
 
 // Six-band parametric EQ, folded into the existing `filters` bag (alongside
-// highpassHz/lowpassHz/gainDb/echoDelayMs/echoDecay) rather than a new
+// highpassHz/lowpassHz/gainDb/gateThresholdDb.../echoDelayMs/echoDecay) rather than a new
 // top-level field - reuses every bit of existing filters plumbing (Remix's
 // updateFilters, the loopClipFilters staleness comparison, LocalFileSoundSource/
 // PreviewSource's live-update paths) with zero new schema/IPC/staleness code.
@@ -326,7 +326,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     included: false,
     loopStart: 0,
     loopEnd: null,
-    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() },
+    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() },
     crossfadeSeconds: null,
     fluctuation: defaultFluctuation(),
     // dopplerEnabled: a simulated vehicle/siren pass-by - pitch bends

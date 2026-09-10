@@ -91,7 +91,7 @@ function defaultEqBands() {
   return []
 }
 
-const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() }
+const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() }
 
 // Mirrors library.js's defaultFluctuation() - same cross-directory
 // duplication reason as MAX_BUFFER_CLIP_SECONDS. volume rides 0..1
@@ -1060,6 +1060,26 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-gain" type="range" min="-24" max="24" value="0" step="0.5" />
               <span id="editor-gain-value" class="editor-filter-value">0 dB</span>
             </label>
+            <label title="Noise gate: quiets the sound whenever it drops below this level, to cut a hissy/rumbly noise floor between events. Left edge = off.">
+              <span>Gate threshold</span>
+              <input id="editor-gate-threshold" type="range" min="-80" max="0" value="-80" step="1" />
+              <span id="editor-gate-threshold-value" class="editor-filter-value">Off</span>
+            </label>
+            <label title="How much quieter the sound gets while the gate is closed (below the threshold). 0 = off.">
+              <span>Gate reduction</span>
+              <input id="editor-gate-range" type="range" min="0" max="80" value="0" step="1" />
+              <span id="editor-gate-range-value" class="editor-filter-value">Off</span>
+            </label>
+            <label title="How quickly the gate opens once the sound rises above the threshold.">
+              <span>Gate attack</span>
+              <input id="editor-gate-attack" type="range" min="1" max="200" value="10" step="1" />
+              <span id="editor-gate-attack-value" class="editor-filter-value">10 ms</span>
+            </label>
+            <label title="How quickly the gate closes again once the sound falls back below the threshold. A longer release keeps a fading tail from chattering.">
+              <span>Gate release</span>
+              <input id="editor-gate-release" type="range" min="10" max="1000" value="150" step="10" />
+              <span id="editor-gate-release-value" class="editor-filter-value">150 ms</span>
+            </label>
             <label>
               <span>Echo delay</span>
               <input id="editor-echo-delay" type="range" min="0" max="1500" value="0" step="10" />
@@ -1314,6 +1334,14 @@ ${mixFluctuationMarkup('group')}
       lowpassValue: container.querySelector('#editor-lowpass-value'),
       gain: container.querySelector('#editor-gain'),
       gainValue: container.querySelector('#editor-gain-value'),
+      gateThreshold: container.querySelector('#editor-gate-threshold'),
+      gateThresholdValue: container.querySelector('#editor-gate-threshold-value'),
+      gateRange: container.querySelector('#editor-gate-range'),
+      gateRangeValue: container.querySelector('#editor-gate-range-value'),
+      gateAttack: container.querySelector('#editor-gate-attack'),
+      gateAttackValue: container.querySelector('#editor-gate-attack-value'),
+      gateRelease: container.querySelector('#editor-gate-release'),
+      gateReleaseValue: container.querySelector('#editor-gate-release-value'),
       echoDelay: container.querySelector('#editor-echo-delay'),
       echoDelayValue: container.querySelector('#editor-echo-delay-value'),
       echoDecay: container.querySelector('#editor-echo-decay'),
@@ -1727,6 +1755,10 @@ ${mixFluctuationMarkup('group')}
     this.els.highpass.addEventListener('input', () => this.applyFilterControls())
     this.els.lowpass.addEventListener('input', () => this.applyFilterControls())
     this.els.gain.addEventListener('input', () => this.applyFilterControls())
+    this.els.gateThreshold.addEventListener('input', () => this.applyFilterControls())
+    this.els.gateRange.addEventListener('input', () => this.applyFilterControls())
+    this.els.gateAttack.addEventListener('input', () => this.applyFilterControls())
+    this.els.gateRelease.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDelay.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDecay.addEventListener('input', () => this.applyFilterControls())
     this.els.reverbSize.addEventListener('input', () => this.applyFilterControls())
@@ -2329,6 +2361,10 @@ ${mixFluctuationMarkup('group')}
     this.els.highpass.value = String(filters.highpassHz)
     this.els.lowpass.value = String(filters.lowpassHz)
     this.els.gain.value = String(filters.gainDb)
+    this.els.gateThreshold.value = String(filters.gateThresholdDb ?? -80)
+    this.els.gateRange.value = String(filters.gateRangeDb ?? 0)
+    this.els.gateAttack.value = String(filters.gateAttackMs ?? 10)
+    this.els.gateRelease.value = String(filters.gateReleaseMs ?? 150)
     this.els.echoDelay.value = String(filters.echoDelayMs ?? 0)
     this.els.echoDecay.value = String(filters.echoDecay ?? 0)
     this.els.reverbSize.value = String(filters.reverbSizeMs ?? 0)
@@ -2344,6 +2380,10 @@ ${mixFluctuationMarkup('group')}
       highpassHz: Number(this.els.highpass.value),
       lowpassHz: Number(this.els.lowpass.value),
       gainDb: Number(this.els.gain.value),
+      gateThresholdDb: Number(this.els.gateThreshold.value),
+      gateRangeDb: Number(this.els.gateRange.value),
+      gateAttackMs: Number(this.els.gateAttack.value),
+      gateReleaseMs: Number(this.els.gateRelease.value),
       echoDelayMs: Number(this.els.echoDelay.value),
       echoDecay: Number(this.els.echoDecay.value),
       reverbSizeMs: Number(this.els.reverbSize.value),
@@ -2516,6 +2556,11 @@ ${mixFluctuationMarkup('group')}
     this.els.highpassValue.textContent = filters.highpassHz > 0 ? `${filters.highpassHz} Hz` : 'Off'
     this.els.lowpassValue.textContent = filters.lowpassHz < 20000 ? `${filters.lowpassHz} Hz` : 'Off'
     this.els.gainValue.textContent = `${filters.gainDb > 0 ? '+' : ''}${filters.gainDb} dB`
+    const gateOn = filters.gateThresholdDb > -80 && filters.gateRangeDb > 0
+    this.els.gateThresholdValue.textContent = filters.gateThresholdDb > -80 ? `${filters.gateThresholdDb} dB` : 'Off'
+    this.els.gateRangeValue.textContent = filters.gateRangeDb > 0 ? `-${filters.gateRangeDb} dB` : 'Off'
+    this.els.gateAttackValue.textContent = gateOn ? `${filters.gateAttackMs} ms` : '—'
+    this.els.gateReleaseValue.textContent = gateOn ? `${filters.gateReleaseMs} ms` : '—'
     this.els.echoDelayValue.textContent = filters.echoDelayMs > 0 ? `${filters.echoDelayMs} ms` : 'Off'
     this.els.echoDecayValue.textContent = filters.echoDecay > 0 ? filters.echoDecay.toFixed(2) : 'Off'
     this.els.reverbSizeValue.textContent = filters.reverbSizeMs > 0 ? `${(filters.reverbSizeMs / 1000).toFixed(1)}s` : 'Off'
@@ -2949,6 +2994,10 @@ ${mixFluctuationMarkup('group')}
         highpassHz: filters.highpassHz ?? 0,
         lowpassHz: filters.lowpassHz ?? 20000,
         gainDb: filters.gainDb ?? 0,
+        gateThresholdDb: filters.gateThresholdDb ?? -80,
+        gateRangeDb: filters.gateRangeDb ?? 0,
+        gateAttackMs: filters.gateAttackMs ?? 10,
+        gateReleaseMs: filters.gateReleaseMs ?? 150,
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0,
         reverbSizeMs: filters.reverbSizeMs ?? 0,

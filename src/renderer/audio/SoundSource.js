@@ -1,6 +1,7 @@
 import log from 'electron-log/renderer'
 import { createReverbImpulse } from './reverbIR.js'
 import { SoundFluctuation, fluctuationKey } from './Modulator.js'
+import { NoiseGate } from './NoiseGate.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -143,6 +144,14 @@ export class LocalFileSoundSource {
     // whether filters apply. Both crossfade voices feed into it.
     this.filters = filters ?? {}
 
+    // Noise gate: sits first in the chain (before highpass), on the summed
+    // output of both crossfade voices. Baked into the clip for buffer-mode
+    // sounds, so this live node only matters for the stream-mode fallback -
+    // same "filters still apply even without a baked clip" reasoning as the
+    // highpass/lowpass/EQ nodes below.
+    this.noiseGate = new NoiseGate(engine.context)
+    this.noiseGate.configure(this.filters)
+
     this.highpassNode = engine.context.createBiquadFilter()
     this.highpassNode.type = 'highpass'
     this.highpassNode.frequency.value = this.filters.highpassHz ?? 0
@@ -241,8 +250,9 @@ export class LocalFileSoundSource {
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
-    this._xfadeGains[0].connect(this.highpassNode)
-    this._xfadeGains[1].connect(this.highpassNode)
+    this._xfadeGains[0].connect(this.noiseGate.input)
+    this._xfadeGains[1].connect(this.noiseGate.input)
+    this.noiseGate.output.connect(this.highpassNode)
     this.highpassNode.connect(this.lowpassNode)
     this._rebuildEqChain(this.filters.eq ?? [])
     this.filterGainNode.connect(this.fluctuationGain)
@@ -384,6 +394,8 @@ export class LocalFileSoundSource {
   setFilters(filters) {
     this.filters = filters ?? {}
     const now = this.engine.context.currentTime
+    this.noiseGate.configure(this.filters)
+    this.noiseGate.sync(this.playing)
     this.highpassNode.frequency.setTargetAtTime(this.filters.highpassHz ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.lowpassNode.frequency.setTargetAtTime(this.filters.lowpassHz ?? 20000, now, FILTER_SMOOTHING_SECONDS)
     this.filterGainNode.gain.setTargetAtTime(this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1, now, FILTER_SMOOTHING_SECONDS)
@@ -642,6 +654,7 @@ export class LocalFileSoundSource {
     this.gainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
     this.playing = true
     this._fluctuation.sync(true)
+    this.noiseGate.sync(true)
     this._tick()
   }
 
@@ -653,6 +666,7 @@ export class LocalFileSoundSource {
     this.gainNode.gain.linearRampToValueAtTime(0, now + RAMP_SECONDS)
     this.playing = false
     this._fluctuation.stop()
+    this.noiseGate.sync(false)
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     if (this._stallTimeoutId) {
@@ -696,6 +710,7 @@ export class LocalFileSoundSource {
     }
     for (const node of this._srcNodes) node.disconnect()
     for (const gain of this._xfadeGains) gain.disconnect()
+    this.noiseGate.dispose()
     this.highpassNode.disconnect()
     this.lowpassNode.disconnect()
     for (const node of this.eqNodes) node.disconnect()

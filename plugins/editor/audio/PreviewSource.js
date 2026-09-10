@@ -1,5 +1,6 @@
 import { createReverbImpulse } from './reverbIR.js'
 import { SoundFluctuation } from './Modulator.js'
+import { NoiseGate } from './NoiseGate.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -47,6 +48,11 @@ function createVoice(engine, soundId) {
   audioEl.src = `sound://${soundId}`
 
   const sourceNode = engine.context.createMediaElementSource(audioEl)
+
+  // Noise gate - first in the chain, before highpass, mirroring core's
+  // LocalFileSoundSource. One per voice (like every other filter node here),
+  // since the chain is per-voice up to crossfadeGain.
+  const noiseGate = new NoiseGate(engine.context)
 
   const highpassNode = engine.context.createBiquadFilter()
   highpassNode.type = 'highpass'
@@ -99,7 +105,8 @@ function createVoice(engine, soundId) {
   const crossfadeGain = engine.context.createGain()
   crossfadeGain.gain.value = 0
 
-  sourceNode.connect(highpassNode)
+  sourceNode.connect(noiseGate.input)
+  noiseGate.output.connect(highpassNode)
   highpassNode.connect(lowpassNode)
   const eqChainEnd = eqNodes.reduce((prev, node) => {
     prev.connect(node)
@@ -118,7 +125,7 @@ function createVoice(engine, soundId) {
   reverbSendGain.connect(reverbConvolver)
   reverbConvolver.connect(crossfadeGain)
 
-  return { audioEl, sourceNode, highpassNode, lowpassNode, eqNodes, eqNodeGroups, eqTopology: '', filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, reverbSendGain, reverbConvolver, reverbSizeMs: 0, crossfadeGain }
+  return { audioEl, sourceNode, noiseGate, highpassNode, lowpassNode, eqNodes, eqNodeGroups, eqTopology: '', filterGainNode, echoDelayNode, echoSendGain, echoFeedbackGain, reverbSendGain, reverbConvolver, reverbSizeMs: 0, crossfadeGain }
 }
 
 // Tears down and rebuilds a voice's eqNodes chain to match a new band
@@ -156,8 +163,10 @@ function rebuildEqChain(voice, context, eq) {
   eqChainEnd.connect(voice.filterGainNode)
 }
 
-function applyFiltersToVoice(voice, context, { highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0, reverbSizeMs = 0, reverbMix = 0, eq = [] }) {
+function applyFiltersToVoice(voice, context, filters) {
+  const { highpassHz, lowpassHz, gainDb, echoDelayMs = 0, echoDecay = 0, reverbSizeMs = 0, reverbMix = 0, eq = [] } = filters
   const now = context.currentTime
+  voice.noiseGate.configure(filters)
   voice.highpassNode.frequency.setTargetAtTime(highpassHz, now, FILTER_SMOOTHING_SECONDS)
   voice.lowpassNode.frequency.setTargetAtTime(lowpassHz, now, FILTER_SMOOTHING_SECONDS)
   voice.filterGainNode.gain.setTargetAtTime(Math.pow(10, gainDb / 20), now, FILTER_SMOOTHING_SECONDS)
@@ -228,6 +237,7 @@ function disposeVoice(voice) {
   voice.audioEl.removeAttribute('src')
   voice.audioEl.load()
   voice.sourceNode.disconnect()
+  voice.noiseGate.dispose()
   voice.highpassNode.disconnect()
   voice.lowpassNode.disconnect()
   for (const node of voice.eqNodes) node.disconnect()
@@ -370,6 +380,13 @@ export class PreviewSource {
 
   setFilters(filters) {
     for (const voice of this.voices) applyFiltersToVoice(voice, this.engine.context, filters)
+    this._syncGates()
+  }
+
+  // The noise gate's poll loop only runs while previewing and while the gate
+  // is actually enabled - same start/stop lifecycle as core's copy.
+  _syncGates() {
+    for (const voice of this.voices) voice.noiseGate.sync(this.playing)
   }
 
   setSpeedPitch(speedPitch) {
@@ -491,6 +508,7 @@ export class PreviewSource {
     this.outputGainNode.gain.linearRampToValueAtTime(this.volume, now + RAMP_SECONDS)
     this.playing = true
     this._fluctuation.sync(true)
+    this._syncGates()
     this._tick()
   }
 
@@ -502,6 +520,7 @@ export class PreviewSource {
     this.outputGainNode.gain.linearRampToValueAtTime(0, now + RAMP_SECONDS)
     this.playing = false
     this._fluctuation.stop()
+    this._syncGates()
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
     this._pauseTimeoutId = setTimeout(() => {

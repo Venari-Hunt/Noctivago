@@ -165,6 +165,31 @@ export function buildEchoFilter(delayMs, decay) {
   return `aecho=1.0:1.0:${delays.join('|')}:${decays.join('|')}`
 }
 
+// Noise gate (Remix, per-sound) - ffmpeg's own `agate`, verified against the
+// real bundled binary before writing this (a pink-noise floor at -54dB gated
+// down to -91dB while loud events passed through untouched). Maps the UI's dB
+// units to agate's linear 0..1 threshold/range: thresholdDb is where the gate
+// opens; rangeDb is how far below it the quiet parts are pushed (agate's
+// `range` is the *floor gain*, so a bigger reduction is a smaller linear
+// value). ratio=9000 makes it a hard gate rather than a downward expander;
+// detection=rms matches the live NoiseGate.js follower. `agate` has no hold
+// parameter (Audacity's noisegate.ny does) - a generous Release covers the
+// same "don't chatter on a decaying tail" need in practice, and the optional
+// high/low crossover from that same reference is a deferred follow-up (a
+// naive lowpass+highpass split sums to a deep null at the crossover
+// frequency, so doing it right needs a complementary-filter pass). Returns
+// null when the gate is off (threshold at its -80 floor, or zero reduction).
+export function buildGateFilter(filters) {
+  const thr = Number.isFinite(filters?.gateThresholdDb) ? filters.gateThresholdDb : -80
+  const rangeDb = Number(filters?.gateRangeDb) || 0
+  if (!(thr > -80) || !(rangeDb > 0)) return null
+  const thresholdLin = Math.pow(10, thr / 20)
+  const rangeLin = Math.pow(10, -Math.abs(rangeDb) / 20)
+  const attack = Math.max(1, Number(filters?.gateAttackMs) || 10)
+  const release = Math.max(1, Number(filters?.gateReleaseMs) || 150)
+  return `agate=threshold=${thresholdLin.toFixed(6)}:range=${rangeLin.toFixed(6)}:attack=${attack}:release=${release}:ratio=9000:detection=rms`
+}
+
 // Maps one EQ band's chosen type to the real ffmpeg filter that implements
 // it, verified against the real bundled binary before writing this (all six
 // filter types chained together in one real invocation, exit 0, real
@@ -227,16 +252,21 @@ export function buildEqBandFilter(band) {
   }
 }
 
-// Builds an ffmpeg filter chain fragment from a {highpassHz, lowpassHz,
-// gainDb, echoDelayMs, echoDecay, eq} filter set, skipping any band left at
-// its neutral/no-op value. Returns null if every band is neutral (nothing
-// to apply). Deliberately excludes reverbSizeMs/reverbMix - afir needs a
+// Builds an ffmpeg filter chain fragment from a {gateThresholdDb/Range/Attack/
+// Release, highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay, eq} filter
+// set, skipping any band left at its neutral/no-op value. Returns null if
+// every band is neutral (nothing to apply). Deliberately excludes reverbSizeMs/reverbMix - afir needs a
 // second ffmpeg *input* (the impulse response), which can't join this plain
 // comma-separated -af fragment; see applyReverbPass/doRender below for its
 // own isolated pass.
 function buildFilterChain(filters) {
   if (!filters) return null
   const parts = []
+  // Gate first - it should act on the raw trimmed source, before highpass/EQ
+  // colour it (same position the live NoiseGate.js sits at, and the
+  // conventional channel-strip order).
+  const gate = buildGateFilter(filters)
+  if (gate) parts.push(gate)
   if (filters.highpassHz > 0) parts.push(`highpass=f=${filters.highpassHz}`)
   if (filters.lowpassHz > 0 && filters.lowpassHz < 20000) parts.push(`lowpass=f=${filters.lowpassHz}`)
   if (filters.gainDb) parts.push(`volume=${filters.gainDb}dB`)
