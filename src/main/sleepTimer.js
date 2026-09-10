@@ -3,7 +3,8 @@ import log from 'electron-log/main'
 import { setSleepTimerRunState, getSleepTimerRunState } from './settings.js'
 
 // Sleep timer: after a set duration (or at a chosen time of day), either
-// stop all sounds, put the computer to sleep, or shut it down. The main
+// stop all sounds, turn the displays off (leaving the sound playing), put
+// the computer to sleep, or shut it down. The main
 // process owns the actual timer (a plain setTimeout is never throttled the
 // way a hidden renderer's timers are - matters since the window is often
 // minimised to the tray while this runs), and runs the OS power command.
@@ -94,6 +95,14 @@ export function restoreSleepTimer() {
   }
   // Already elapsed while the app was closed.
   setSleepTimerRunState(null)
+  // 'displays' is never fired from the restore path: if it elapsed while the
+  // app was closed, the user is now actively at the machine (they just
+  // reopened the app), so blanking their screen would be a nuisance, not the
+  // sleeping-hours convenience it's meant to be.
+  if (saved.action === 'displays') {
+    log.info('Sleep timer (turn off displays) elapsed while closed, dropped')
+    return
+  }
   if (remaining > -RESTORE_GRACE_MS) {
     log.info(`Sleep timer elapsed while closed (recently), acting: ${saved.action}`)
     fireElapsed(saved.action)
@@ -104,10 +113,28 @@ export function restoreSleepTimer() {
 
 // Called by the renderer once its own warning countdown has run out (or the
 // user hit "do it now"). 'stop' is handled entirely renderer-side and never
-// reaches here.
+// reaches here. 'displays' comes straight here with no warning - it's
+// non-destructive and reversible (any mouse move or key press wakes the
+// screen), and the sound keeps playing.
 export function runSleepTimerEndAction(action) {
   try {
-    if (action === 'shutdown') {
+    if (action === 'displays') {
+      // Turn off all monitors via WM_SYSCOMMAND / SC_MONITORPOWER broadcast,
+      // the standard Windows way (what nircmd and the well-known one-liner
+      // do). No bundled tool or native module needed - PowerShell compiles
+      // the tiny P/Invoke shim inline. PostMessage (not SendMessage) so a
+      // stuck listener can't hang the call. lParam 2 = power off.
+      const ps = [
+        '$m = Add-Type -MemberDefinition',
+        "'[DllImport(\"user32.dll\")] public static extern int PostMessage(int hWnd, int Msg, int wParam, int lParam);'",
+        '-Name MonitorPower -Namespace NoctivagoNative -PassThru;',
+        '$m::PostMessage(-1, 0x0112, 0xF170, 2) | Out-Null'
+      ].join(' ')
+      spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], {
+        windowsHide: true,
+        detached: true
+      }).unref()
+    } else if (action === 'shutdown') {
       spawn('shutdown', ['/s', '/t', '0'], { windowsHide: true, detached: true }).unref()
     } else if (action === 'sleep') {
       // Puts the machine to sleep (S3). Note: on a system with hibernation

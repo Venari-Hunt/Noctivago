@@ -69,7 +69,7 @@ const store = new Store({
     // Remembered so a nightly-use sleep timer doesn't need re-picking every
     // time - the last chosen input values.
     sleepTimerMinutes: 30,
-    sleepTimerAction: 'stop', // 'stop' | 'sleep' | 'shutdown'
+    sleepTimerAction: 'stop', // 'stop' | 'displays' | 'sleep' | 'shutdown'
     sleepTimerMode: 'in', // 'in' (a number of minutes) | 'at' (a time of day)
     sleepTimerTimeOfDay: '', // "HH:MM" for the 'at' mode, empty until set
     // A *running* sleep timer, persisted so it survives an app restart /
@@ -229,7 +229,7 @@ export function setLastExportFolder(folderPath) {
 
 export function setSleepTimerPrefs({ minutes, action, mode, timeOfDay }) {
   if (Number.isFinite(minutes) && minutes > 0) store.set('sleepTimerMinutes', Math.round(minutes))
-  if (['stop', 'sleep', 'shutdown'].includes(action)) store.set('sleepTimerAction', action)
+  if (['stop', 'displays', 'sleep', 'shutdown'].includes(action)) store.set('sleepTimerAction', action)
   if (mode === 'in' || mode === 'at') store.set('sleepTimerMode', mode)
   if (typeof timeOfDay === 'string' && /^\d{2}:\d{2}$/.test(timeOfDay)) store.set('sleepTimerTimeOfDay', timeOfDay)
   return getSettings()
@@ -238,7 +238,7 @@ export function setSleepTimerPrefs({ minutes, action, mode, timeOfDay }) {
 // The one running sleep timer, persisted so a restart / auto-update can
 // re-arm it (see sleepTimer.js). Pass null to clear.
 export function setSleepTimerRunState(state) {
-  if (state && Number.isFinite(state.firesAt) && ['stop', 'sleep', 'shutdown'].includes(state.action)) {
+  if (state && Number.isFinite(state.firesAt) && ['stop', 'displays', 'sleep', 'shutdown'].includes(state.action)) {
     store.set('sleepTimerRunState', { firesAt: state.firesAt, action: state.action })
   } else {
     store.set('sleepTimerRunState', null)

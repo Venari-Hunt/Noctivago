@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.180 — Sleep timer can turn off the displays and keep playing
+
+- New sleep-timer action: "Turn off the displays, keep the sound playing". Set a timer (or a time of day) and when it's up, your monitors switch off while the mix keeps going — for falling asleep to a mix without a lit screen in the room.
+- It's not sleep or shutdown — only the displays turn off, and any mouse move or key press wakes them straight back up. The sound is never touched.
+- Sits alongside the existing "Stop all sounds", "Put the computer to sleep", and "Shut down" actions in the sleep-timer window. There's no 30-second warning for this one since nothing destructive happens.
+
 ## v0.1.179 — Pitch drift now bakes into exports
 
 - If a looping sound has a Fluctuation pitch drift (Remix — Sound mode), an exported file now bakes that slow pitch wander in, the same way volume drift already did. Before, exports played it at a steady pitch.

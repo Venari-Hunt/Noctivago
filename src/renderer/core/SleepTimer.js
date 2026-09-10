@@ -8,6 +8,7 @@ import { formatDuration } from '../util/time.js'
 
 const ACTION_ACTIVE_TEXT = {
   stop: 'All sounds will stop when the timer ends.',
+  displays: 'Your displays will turn off when the timer ends — the sound keeps playing. Move the mouse or press a key to wake them.',
   sleep: 'The computer will go to sleep when the timer ends — you can still cancel then.',
   shutdown: 'The computer will shut down when the timer ends — you can still cancel then.'
 }
@@ -226,6 +227,10 @@ export function installSleepTimer() {
     applyState({ active: false })
     if (action === 'stop') {
       window.dispatchEvent(new CustomEvent('noctivago:stop-all-playback'))
+    } else if (action === 'displays') {
+      // Non-destructive and reversible (any input wakes the screen) - no
+      // warning countdown, just do it. Playback is untouched.
+      window.noctivago.sleepTimer.runEndAction('displays')
     } else {
       beginWarning(action)
     }
