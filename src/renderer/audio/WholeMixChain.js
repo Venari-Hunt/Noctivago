@@ -1,6 +1,6 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
-import { Modulator } from './Modulator.js'
+import { Modulator, normalizeFluctuationAxis } from './Modulator.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -91,7 +91,9 @@ export class WholeMixChain {
     this.fluctGain.gain.value = 1
     this._fluctMod = new Modulator({
       onValue: (v) => this.fluctGain.gain.setTargetAtTime(v, this.context.currentTime, FILTER_SMOOTHING_SECONDS),
-      neutral: 1
+      neutral: 1,
+      rangeMin: 0,
+      rangeMax: 1
     })
     this._fluctKey = ''
 
@@ -195,26 +197,21 @@ export class WholeMixChain {
     this.setFluctuation(c.fluctuation)
   }
 
-  // config.fluctuation: { volume: { enabled, min, max, bias, changeRate,
-  // transition } } or null/undefined for neutral. Idempotent - keyed on a
-  // stable fingerprint so the every-preview-tick calls from set() don't
+  // config.fluctuation: { volume: { enabled, fullyRandom, min, max, bias,
+  // changeMinSeconds, changeMaxSeconds, transitionSeconds } } or
+  // null/undefined for neutral (pre-v0.1.176 changeRate/transition also
+  // accepted - normalizeFluctuationAxis migrates them). Idempotent - keyed on
+  // a stable fingerprint so the every-preview-tick calls from set() don't
   // restart a running modulator; a genuine change reconfigures it in place
   // (Modulator.configure clamps an in-flight target into the new bounds),
   // and disabling stops it and eases fluctGain back to 1.
   setFluctuation(fluctuation) {
-    const vol = fluctuation?.volume
-    const key = JSON.stringify(vol?.enabled ? vol : null)
+    const vol = normalizeFluctuationAxis(fluctuation?.volume, 1)
+    const key = JSON.stringify(vol.enabled ? vol : null)
     if (key === this._fluctKey) return
     this._fluctKey = key
-    if (vol?.enabled) {
-      this._fluctMod.configure({
-        enabled: true,
-        min: vol.min,
-        max: vol.max,
-        bias: vol.bias,
-        changeRate: vol.changeRate,
-        transition: vol.transition
-      })
+    if (vol.enabled) {
+      this._fluctMod.configure(vol)
       if (!this._fluctMod.running) this._fluctMod.start()
     } else {
       this._fluctMod.stop()

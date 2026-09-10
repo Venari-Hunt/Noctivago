@@ -8,9 +8,9 @@
 // wind gusting stronger and weaker, rain swelling and fading, something
 // drifting closer and further). Every so often it picks a new target value
 // somewhere in [min, max] - biased toward `bias`, where the value sits most
-// of the time - and glides there over a time set by `transition`. How often
-// a new target is picked is set by `changeRate`. Purely a playback-time
-// behavior, never baked into a clip.
+// of the time - and glides there over `transitionSeconds`. How often a new
+// target is picked is a random gap in [changeMinSeconds, changeMaxSeconds].
+// Purely a playback-time behavior, never baked into a clip.
 //
 // Researched first (see the ranked backlog / CLAUDE.md): this is the
 // game-audio "random modulator" / "LFO with a random shape" pattern (Wwise
@@ -28,21 +28,65 @@
 // step does, just in bigger hops.
 const TICK_MS = 60
 
-// changeRate 0..1 -> seconds between target changes (before per-change
-// jitter). transition 0..1 -> the exponential-approach time constant in
-// seconds (value covers ~63% of the remaining distance per tau, ~95% in
-// 3*tau). Both deliberately span "barely moving / very slow" to "restless /
-// snappy" rather than a tight musical range - this is ambience drift, not
-// vibrato.
+// v0.1.176 - the timing controls are now flat seconds the user reads
+// directly (owner feedback: a 0..100% slider "doesn't make any sense... what
+// does the percentage represent?"). Older saved configs used `changeRate` /
+// `transition` in 0..1; normalizeFluctuationAxis() migrates them below.
+//
+// changeMinSeconds..changeMaxSeconds: a new target is picked after a random
+// gap uniformly in that range. transitionSeconds: the value covers ~95% of
+// the distance to a new target in that time (the exponential time constant
+// tau is transitionSeconds/3). `fullyRandom` bypasses min/bias/max entirely
+// and roams the whole axis uniformly (owner: "there's no fully random volume
+// nor fully random pitch - there should be").
+export const FLUCTUATION_PITCH_RANGE = 6
+
 function lerp(a, b, t) {
   return a + (b - a) * Math.max(0, Math.min(1, t))
 }
 
+function clampNum(v, lo, hi, fallback) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(lo, Math.min(hi, n))
+}
+
+// Resolves an axis's timing fields to the current flat-seconds shape,
+// accepting either the new fields, the pre-v0.1.176 `changeRate`/`transition`
+// (0..1), or nothing. gainEnvelope.js keeps its own copy of this mapping (the
+// main process can't import from src/renderer/) - keep the two in sync.
+export function resolveFluctuationTiming(axis) {
+  if (Number.isFinite(axis?.changeMinSeconds) || Number.isFinite(axis?.transitionSeconds)) {
+    const lo = clampNum(axis.changeMinSeconds, 0.2, 300, 6)
+    const hi = clampNum(axis.changeMaxSeconds, 0.2, 300, 14)
+    return {
+      changeMinSeconds: Math.min(lo, hi),
+      changeMaxSeconds: Math.max(lo, hi),
+      transitionSeconds: clampNum(axis.transitionSeconds, 0.2, 120, 8)
+    }
+  }
+  if (Number.isFinite(axis?.changeRate) || Number.isFinite(axis?.transition)) {
+    const r = Number.isFinite(axis.changeRate) ? axis.changeRate : 0.5
+    const t = Number.isFinite(axis.transition) ? axis.transition : 0.5
+    const centre = lerp(20, 1.5, r) // old intervalSeconds
+    const tau = lerp(9, 0.15, t) // old time constant
+    return {
+      changeMinSeconds: Math.round(centre * 0.6 * 10) / 10,
+      changeMaxSeconds: Math.round(centre * 1.4 * 10) / 10,
+      transitionSeconds: Math.round(tau * 3 * 10) / 10
+    }
+  }
+  return { changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
+}
+
 export class Modulator {
-  constructor({ onValue, neutral = 1 }) {
+  constructor({ onValue, neutral = 1, rangeMin = neutral, rangeMax = neutral }) {
     this.onValue = onValue
     this.neutral = neutral
+    this.rangeMin = Math.min(rangeMin, rangeMax)
+    this.rangeMax = Math.max(rangeMin, rangeMax)
     this.enabled = false
+    this.fullyRandom = false
     this.running = false
     this._timerId = null
     this._lastTick = 0
@@ -51,34 +95,46 @@ export class Modulator {
     this.min = neutral
     this.max = neutral
     this.bias = neutral
-    this.intervalSeconds = 10
+    this.changeMinSeconds = 6
+    this.changeMaxSeconds = 14
     this.tau = 3
 
     this.value = neutral
     this.target = neutral
   }
 
-  configure({ enabled, min, max, bias, changeRate, transition }) {
+  configure({ enabled, fullyRandom, min, max, bias, changeMinSeconds, changeMaxSeconds, transitionSeconds }) {
     this.enabled = Boolean(enabled)
-    this.min = Math.min(min, max)
-    this.max = Math.max(min, max)
-    this.bias = Math.min(this.max, Math.max(this.min, bias))
-    this.intervalSeconds = lerp(20, 1.5, changeRate)
-    this.tau = lerp(9, 0.15, transition)
+    this.fullyRandom = Boolean(fullyRandom)
+    if (this.fullyRandom) {
+      this.min = this.rangeMin
+      this.max = this.rangeMax
+      this.bias = (this.rangeMin + this.rangeMax) / 2
+    } else {
+      this.min = Math.min(min, max)
+      this.max = Math.max(min, max)
+      this.bias = Math.min(this.max, Math.max(this.min, bias))
+    }
+    this.changeMinSeconds = Math.max(0.1, Math.min(changeMinSeconds, changeMaxSeconds))
+    this.changeMaxSeconds = Math.max(this.changeMinSeconds, changeMinSeconds, changeMaxSeconds)
+    this.tau = Math.max(0.05, transitionSeconds / 3)
     // Keep an in-flight target inside any freshly narrowed bounds.
     this.target = Math.min(this.max, Math.max(this.min, this.target))
   }
 
-  _jitteredIntervalMs() {
-    // +/-40% so the drift never falls into an audible metronome.
-    return this.intervalSeconds * (0.6 + Math.random() * 0.8) * 1000
+  _nextIntervalMs() {
+    return (this.changeMinSeconds + Math.random() * (this.changeMaxSeconds - this.changeMinSeconds)) * 1000
   }
 
   // Value sits near `bias` most of the time, wandering out toward the
   // extremes only occasionally - and toward whichever side has more room, so
   // an off-center bias still reaches both ends. Math.pow(random, 1.7) skews
-  // the pick toward small deviations from the bias.
+  // the pick toward small deviations from the bias. `fullyRandom` drops all
+  // of that and picks uniformly across the whole axis.
   _pickTarget() {
+    if (this.fullyRandom) {
+      return this.min + Math.random() * (this.max - this.min)
+    }
     const lower = this.bias - this.min
     const upper = this.max - this.bias
     const span = lower + upper
@@ -94,7 +150,7 @@ export class Modulator {
     this.value = this.bias
     this.target = this.bias
     this._lastTick = performance.now()
-    this._nextChangeAt = this._lastTick + this._jitteredIntervalMs()
+    this._nextChangeAt = this._lastTick + this._nextIntervalMs()
     this.onValue(this.value)
     this._timerId = setInterval(() => this._tick(), TICK_MS)
   }
@@ -106,7 +162,7 @@ export class Modulator {
     this._lastTick = now
     if (now >= this._nextChangeAt) {
       this.target = this._pickTarget()
-      this._nextChangeAt = now + this._jitteredIntervalMs()
+      this._nextChangeAt = now + this._nextIntervalMs()
     }
     const k = 1 - Math.exp(-dt / this.tau)
     this.value += (this.target - this.value) * k
@@ -130,15 +186,19 @@ export class Modulator {
 // Shared normalization for the fluctuation config bag - one axis (volume or
 // pitch). Used by library.js's defaults, the Mixer's live-source reconcile
 // staleness check, and the Remix plugin. `undefined` (a sound predating this
-// feature) and an explicit disabled/neutral object must compare equal.
+// feature), a pre-v0.1.176 percentage-based object, and an explicit
+// disabled/neutral object must all round-trip to a stable shape.
 export function normalizeFluctuationAxis(axis, neutral) {
+  const timing = resolveFluctuationTiming(axis)
   return {
     enabled: Boolean(axis?.enabled),
+    fullyRandom: Boolean(axis?.fullyRandom),
     min: Number.isFinite(axis?.min) ? axis.min : neutral,
     max: Number.isFinite(axis?.max) ? axis.max : neutral,
     bias: Number.isFinite(axis?.bias) ? axis.bias : neutral,
-    changeRate: Number.isFinite(axis?.changeRate) ? axis.changeRate : 0.5,
-    transition: Number.isFinite(axis?.transition) ? axis.transition : 0.5
+    changeMinSeconds: timing.changeMinSeconds,
+    changeMaxSeconds: timing.changeMaxSeconds,
+    transitionSeconds: timing.transitionSeconds
   }
 }
 
@@ -159,8 +219,13 @@ export function fluctuationKey(fluctuation) {
 // duplicated per the plugin's bundle-your-own rule, the Remix PreviewSource).
 export class SoundFluctuation {
   constructor({ onVolume, onPitch }) {
-    this.volMod = new Modulator({ onValue: onVolume, neutral: 1 })
-    this.pitchMod = new Modulator({ onValue: onPitch, neutral: 0 })
+    this.volMod = new Modulator({ onValue: onVolume, neutral: 1, rangeMin: 0, rangeMax: 1 })
+    this.pitchMod = new Modulator({
+      onValue: onPitch,
+      neutral: 0,
+      rangeMin: -FLUCTUATION_PITCH_RANGE,
+      rangeMax: FLUCTUATION_PITCH_RANGE
+    })
     this.key = fluctuationKey(null)
   }
 

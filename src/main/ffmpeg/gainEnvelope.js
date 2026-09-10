@@ -17,18 +17,51 @@ import { app } from 'electron'
 // The walk math below is a deliberate, self-contained copy of Modulator's -
 // the main process never imports from src/renderer/ (see CLAUDE.md), so this
 // mirrors that file the same way the Remix plugin keeps its own bundled
-// copy. If Modulator's mapping (intervalSeconds/tau ranges, the jitter
-// window, the pow(r,1.7) bias skew, pickTarget) changes, change it here too.
+// copy. If Modulator's mapping (the flat-seconds timing fields + legacy
+// changeRate/transition migration, the pow(r,1.7) bias skew, pickTarget, the
+// fullyRandom uniform pick) changes, change it here too.
 
-// Control signal sample rate. Far below audio rate - the drift is slow
-// (Modulator's fastest tau is 0.15s, target changes no more than ~once a
-// second) so 1000 Hz is already smooth for a gain automation curve, and
-// exportMix.js `aresample`s it up to 44100 before the multiply. Keeps the
-// file tiny even for a multi-hour export (~7 MB/hour stereo 16-bit).
+// Control signal sample rate. Far below audio rate - the drift is slow (even
+// the snappiest allowed settings put the time constant near ~0.07s and a new
+// target no more than a few times a second) so 1000 Hz is already smooth for
+// a gain automation curve, and exportMix.js `aresample`s it up to 44100
+// before the multiply. Keeps the file tiny even for a multi-hour export
+// (~7 MB/hour stereo 16-bit).
 const GEN_RATE = 1000
 
 function lerp(a, b, t) {
   return a + (b - a) * Math.max(0, Math.min(1, t))
+}
+
+function num(v, fallback) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+// Mirror of Modulator.js's resolveFluctuationTiming - accepts the flat-seconds
+// fields (v0.1.176+), the legacy 0..1 changeRate/transition, or nothing.
+function resolveTiming(axis) {
+  if (Number.isFinite(axis?.changeMinSeconds) || Number.isFinite(axis?.transitionSeconds)) {
+    const lo = num(axis.changeMinSeconds, 6)
+    const hi = num(axis.changeMaxSeconds, 14)
+    return {
+      changeMinSeconds: Math.max(0.1, Math.min(lo, hi)),
+      changeMaxSeconds: Math.max(Math.max(0.1, Math.min(lo, hi)), hi),
+      transitionSeconds: Math.max(0.2, num(axis.transitionSeconds, 8))
+    }
+  }
+  if (Number.isFinite(axis?.changeRate) || Number.isFinite(axis?.transition)) {
+    const r = num(axis.changeRate, 0.5)
+    const t = num(axis.transition, 0.5)
+    const centre = lerp(20, 1.5, r)
+    const tau = lerp(9, 0.15, t)
+    return {
+      changeMinSeconds: centre * 0.6,
+      changeMaxSeconds: centre * 1.4,
+      transitionSeconds: tau * 3
+    }
+  }
+  return { changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
 }
 
 // Reproduces Modulator's bounded random walk for `durationSeconds`, sampled
@@ -36,14 +69,18 @@ function lerp(a, b, t) {
 // injectable so a test can make it deterministic; a real export uses
 // Math.random (one fresh realization per run, matching scatter/scheduled).
 export function sampleVolumeWalk(config, durationSeconds, rng = Math.random) {
-  const min = Math.min(config.min, config.max)
-  const max = Math.max(config.min, config.max)
-  const bias = Math.min(max, Math.max(min, config.bias))
-  const intervalSeconds = lerp(20, 1.5, config.changeRate)
-  const tau = lerp(9, 0.15, config.transition)
+  const fullyRandom = Boolean(config.fullyRandom)
+  const min = fullyRandom ? 0 : Math.min(config.min, config.max)
+  const max = fullyRandom ? 1 : Math.max(config.min, config.max)
+  const bias = fullyRandom ? (min + max) / 2 : Math.min(max, Math.max(min, config.bias))
+  const timing = resolveTiming(config)
+  const changeMin = timing.changeMinSeconds
+  const changeSpan = timing.changeMaxSeconds - timing.changeMinSeconds
+  const tau = Math.max(0.05, timing.transitionSeconds / 3)
 
-  const jitteredInterval = () => intervalSeconds * (0.6 + rng() * 0.8)
+  const jitteredInterval = () => changeMin + rng() * changeSpan
   const pickTarget = () => {
+    if (fullyRandom) return min + rng() * (max - min)
     const lower = bias - min
     const upper = max - bias
     const span = lower + upper

@@ -87,12 +87,16 @@ function defaultEqBands() {
 // so a fresh sound behaves exactly as before until the user turns one on.
 // volume: a 0..1 multiplier that rides *below* the sound's set level
 // (attenuation only - never boosts, so it can't push a hot sound into
-// clipping). pitch: a semitone offset. changeRate/transition are 0..1 feel
-// knobs (see src/renderer/audio/Modulator.js for how they map to seconds).
+// clipping). pitch: a semitone offset. changeMinSeconds/changeMaxSeconds
+// (random gap between target picks) and transitionSeconds (glide time) are
+// flat seconds the user sets directly (v0.1.176 - was a 0..1 percentage);
+// fullyRandom bypasses min/bias/max and roams the whole axis. Pre-v0.1.176
+// saves with changeRate/transition are migrated in normalizeFluctuationAxis
+// (src/renderer/audio/Modulator.js).
 export function defaultFluctuation() {
   return {
-    volume: { enabled: false, min: 0.5, max: 1, bias: 0.8, changeRate: 0.5, transition: 0.5 },
-    pitch: { enabled: false, min: -1, max: 1, bias: 0, changeRate: 0.5, transition: 0.5 }
+    volume: { enabled: false, fullyRandom: false, min: 0.5, max: 1, bias: 0.8, changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 },
+    pitch: { enabled: false, fullyRandom: false, min: -1, max: 1, bias: 0, changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
   }
 }
 

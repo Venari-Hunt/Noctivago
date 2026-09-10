@@ -1,6 +1,6 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
-import { Modulator } from './Modulator.js'
+import { Modulator, normalizeFluctuationAxis } from './Modulator.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -62,7 +62,9 @@ export class SoundGroupChain {
     this.fluctGain.gain.value = 1
     this._fluctMod = new Modulator({
       onValue: (v) => this.fluctGain.gain.setTargetAtTime(v, this.context.currentTime, FILTER_SMOOTHING_SECONDS),
-      neutral: 1
+      neutral: 1,
+      rangeMin: 0,
+      rangeMax: 1
     })
     this._fluctKey = ''
 
@@ -153,23 +155,17 @@ export class SoundGroupChain {
     this.setFluctuation(c.fluctuation)
   }
 
-  // config.fluctuation: { volume: { enabled, min, max, bias, changeRate,
-  // transition } } or null/undefined. Same idempotent shape as
-  // WholeMixChain.setFluctuation - see its comment.
+  // config.fluctuation: { volume: { enabled, fullyRandom, min, max, bias,
+  // changeMinSeconds, changeMaxSeconds, transitionSeconds } } or
+  // null/undefined. Same idempotent shape as WholeMixChain.setFluctuation -
+  // see its comment.
   setFluctuation(fluctuation) {
-    const vol = fluctuation?.volume
-    const key = JSON.stringify(vol?.enabled ? vol : null)
+    const vol = normalizeFluctuationAxis(fluctuation?.volume, 1)
+    const key = JSON.stringify(vol.enabled ? vol : null)
     if (key === this._fluctKey) return
     this._fluctKey = key
-    if (vol?.enabled) {
-      this._fluctMod.configure({
-        enabled: true,
-        min: vol.min,
-        max: vol.max,
-        bias: vol.bias,
-        changeRate: vol.changeRate,
-        transition: vol.transition
-      })
+    if (vol.enabled) {
+      this._fluctMod.configure(vol)
       if (!this._fluctMod.running) this._fluctMod.start()
     } else {
       this._fluctMod.stop()

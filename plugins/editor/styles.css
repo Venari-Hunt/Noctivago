@@ -1030,3 +1030,29 @@
 .editor-fluctuation-knobs input:disabled {
   opacity: 0.4;
 }
+
+.editor-fluctuation-num {
+  width: 56px;
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.editor-fluctuation-dash {
+  color: var(--text-dim);
+}
+
+/* The Fully-random checkbox row spans the whole knobs area rather than
+   sharing it with the seconds fields. */
+.editor-fluctuation-fullrandom {
+  flex: 1 1 100%;
+  align-items: flex-start;
+}
+
+.editor-fluctuation-fullrandom > span {
+  flex: 1;
+}

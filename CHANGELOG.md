@@ -6,7 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
-## v0.1.175 — "Weird synth-like sound", take two: per-shot Speed no longer time-stretches live
+## v0.1.176 — Fluctuation: real seconds instead of percentages, plus a "Fully random" option
+
+- The Fluctuation controls (Remix — Sound, Preset and Group mode) no longer use vague 0–100% sliders for their timing. "Change every" is now two number boxes in seconds — the shortest and longest gap before the drift picks a new target — and "Transition" is a number box in seconds for roughly how long each glide takes. You can read and set the timing directly instead of guessing what a percentage meant.
+- New "Fully random" checkbox on each drift axis (volume, and pitch in Sound mode). Tick it and the drift ignores the three circles entirely and roams the whole range — genuinely random volume, or genuinely random pitch — the same idea as the "Fully random pitch/gap" options on Random Interval sounds.
+- Your existing drift settings carry over automatically — the old percentage values are converted to the equivalent seconds, so anything you'd already set keeps behaving the same.
+- Exports that bake in volume drift use the same new settings.
 
 - v0.1.172's fix wasn't enough — you reported the loud, sustained synth-like noise still comes back with per-shot random Speed on a thunderclap. The narrower guard it added still let the buzzy time-stretch run in a range where it can artifact.
 - Per-shot Speed on a Random Interval / Scheduled sound is now always a plain tape-style speed-up in the live Mixer: it changes the shot's tempo and length and shifts its pitch along with it (a fast thunderclap sounds a little higher, like a record sped up). It is no longer routed through the pitch-preserving time-stretch at all, so it can't buzz. Per-shot Pitch still keeps the shot's length exactly as before.

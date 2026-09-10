@@ -45,14 +45,37 @@ function normalizeMixFluctuation(input) {
   const max = clamp(vol.max, 0, 1, 1)
   const lo = Math.min(min, max)
   const hi = Math.max(min, max)
+  // v0.1.176: flat-seconds timing (was 0..1 changeRate/transition). A
+  // pre-v0.1.176 preset still carries the old fields; map them the same way
+  // Modulator.js's resolveFluctuationTiming does so the migration is lossless.
+  let changeMinSeconds
+  let changeMaxSeconds
+  let transitionSeconds
+  if (Number.isFinite(vol.changeMinSeconds) || Number.isFinite(vol.transitionSeconds)) {
+    const cLo = clamp(vol.changeMinSeconds, 0.2, 300, 6)
+    const cHi = clamp(vol.changeMaxSeconds, 0.2, 300, 14)
+    changeMinSeconds = Math.min(cLo, cHi)
+    changeMaxSeconds = Math.max(cLo, cHi)
+    transitionSeconds = clamp(vol.transitionSeconds, 0.2, 120, 8)
+  } else {
+    const r = clamp(vol.changeRate, 0, 1, 0.5)
+    const t = clamp(vol.transition, 0, 1, 0.5)
+    const centre = 20 + (1.5 - 20) * r
+    const tau = 9 + (0.15 - 9) * t
+    changeMinSeconds = Math.round(centre * 0.6 * 10) / 10
+    changeMaxSeconds = Math.round(centre * 1.4 * 10) / 10
+    transitionSeconds = Math.round(tau * 3 * 10) / 10
+  }
   return {
     volume: {
       enabled: true,
+      fullyRandom: Boolean(vol.fullyRandom),
       min: lo,
       max: hi,
       bias: clamp(vol.bias, lo, hi, (lo + hi) / 2),
-      changeRate: clamp(vol.changeRate, 0, 1, 0.5),
-      transition: clamp(vol.transition, 0, 1, 0.5)
+      changeMinSeconds,
+      changeMaxSeconds,
+      transitionSeconds
     }
   }
 }
