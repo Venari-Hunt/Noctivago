@@ -91,7 +91,7 @@ function defaultEqBands() {
   return []
 }
 
-const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() }
+const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() }
 
 // Mirrors library.js's defaultFluctuation() - same cross-directory
 // duplication reason as MAX_BUFFER_CLIP_SECONDS. volume rides 0..1
@@ -1111,6 +1111,29 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-gate-release" type="range" min="10" max="1000" value="150" step="10" />
               <span id="editor-gate-release-value" class="editor-filter-value">150 ms</span>
             </label>
+            <label title="Reduce steady background noise (hiss, hum, an air conditioner). Two-step: mark a stretch of the trimmed region that is noise only in the two fields below, then Save. Bake-only — no live preview, switch the preview to Saved audio to hear it.">
+              <span>Noise reduction</span>
+              <input id="editor-denoise-enabled" type="checkbox" />
+              <span id="editor-denoise-value" class="editor-filter-value">Off</span>
+            </label>
+            <label title="How aggressively to subtract the sampled noise profile. Higher removes more but can start to sound watery.">
+              <span>NR strength</span>
+              <input id="editor-denoise-strength" type="range" min="1" max="48" value="12" step="1" />
+              <span id="editor-denoise-strength-value" class="editor-filter-value">12 dB</span>
+            </label>
+            <label title="Start of the noise-only sample, in seconds into the file. Pick a stretch of the trimmed loop region with only background noise and no events — ideally near its start.">
+              <span>Noise from</span>
+              <input id="editor-denoise-start" type="number" min="0" step="0.1" value="0" />
+              <span class="editor-filter-value">s</span>
+            </label>
+            <label title="End of the noise-only sample, in seconds into the file.">
+              <span>Noise to</span>
+              <input id="editor-denoise-end" type="number" min="0" step="0.1" value="0" />
+              <span class="editor-filter-value">s</span>
+            </label>
+            <div class="editor-filter-action">
+              <button id="editor-denoise-from-loop" class="btn btn-small" type="button" title="Set the noise sample to the first ~1.5 seconds of the trimmed loop region">Noise sample from loop start</button>
+            </div>
             <label>
               <span>Echo delay</span>
               <input id="editor-echo-delay" type="range" min="0" max="1500" value="0" step="10" />
@@ -1355,6 +1378,13 @@ ${mixFluctuationMarkup('group')}
       gateAttackValue: container.querySelector('#editor-gate-attack-value'),
       gateRelease: container.querySelector('#editor-gate-release'),
       gateReleaseValue: container.querySelector('#editor-gate-release-value'),
+      denoiseEnabled: container.querySelector('#editor-denoise-enabled'),
+      denoiseValue: container.querySelector('#editor-denoise-value'),
+      denoiseStrength: container.querySelector('#editor-denoise-strength'),
+      denoiseStrengthValue: container.querySelector('#editor-denoise-strength-value'),
+      denoiseStart: container.querySelector('#editor-denoise-start'),
+      denoiseEnd: container.querySelector('#editor-denoise-end'),
+      denoiseFromLoop: container.querySelector('#editor-denoise-from-loop'),
       echoDelay: container.querySelector('#editor-echo-delay'),
       echoDelayValue: container.querySelector('#editor-echo-delay-value'),
       echoDecay: container.querySelector('#editor-echo-decay'),
@@ -1792,6 +1822,18 @@ ${mixFluctuationMarkup('group')}
     this.els.gateRange.addEventListener('input', () => this.applyFilterControls())
     this.els.gateAttack.addEventListener('input', () => this.applyFilterControls())
     this.els.gateRelease.addEventListener('input', () => this.applyFilterControls())
+    this.els.denoiseEnabled.addEventListener('change', () => this.applyFilterControls())
+    this.els.denoiseStrength.addEventListener('input', () => this.applyFilterControls())
+    this.els.denoiseStart.addEventListener('input', () => this.applyFilterControls())
+    this.els.denoiseEnd.addEventListener('input', () => this.applyFilterControls())
+    this.els.denoiseFromLoop.addEventListener('click', () => {
+      const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+      const end = Math.min(loopEnd, loopStart + Math.min(1.5, (loopEnd - loopStart) / 3))
+      this.els.denoiseStart.value = loopStart.toFixed(2)
+      this.els.denoiseEnd.value = end.toFixed(2)
+      if (!this.els.denoiseEnabled.checked) this.els.denoiseEnabled.checked = true
+      this.applyFilterControls()
+    })
     this.els.echoDelay.addEventListener('input', () => this.applyFilterControls())
     this.els.echoDecay.addEventListener('input', () => this.applyFilterControls())
     this.els.reverbSize.addEventListener('input', () => this.applyFilterControls())
@@ -2160,7 +2202,7 @@ ${mixFluctuationMarkup('group')}
         ? stale
           ? 'Hearing the last saved/baked audio - edited since then, autosave will refresh it shortly. Click to switch to the live editable preview'
           : 'Hearing the actual saved/baked audio - click to switch back to the live editable preview'
-        : 'Hearing the live editable preview (Doppler and Reverse have no live preview, and Pitch is only approximate) - click to hear the actual saved audio instead'
+        : 'Hearing the live editable preview (Doppler, Reverse and Noise reduction have no live preview, and Pitch is only approximate) - click to hear the actual saved audio instead'
       : 'Save first to unlock hearing the actual baked audio'
     // Keep the "drift needs Live edit preview" note in sync with the mode.
     if (this.flucVolBar) this.updateFluctuationEnabledUI()
@@ -2402,6 +2444,10 @@ ${mixFluctuationMarkup('group')}
     this.els.gateRange.value = String(filters.gateRangeDb ?? 0)
     this.els.gateAttack.value = String(filters.gateAttackMs ?? 10)
     this.els.gateRelease.value = String(filters.gateReleaseMs ?? 150)
+    this.els.denoiseEnabled.checked = Boolean(filters.denoiseEnabled)
+    this.els.denoiseStrength.value = String(filters.denoiseStrengthDb ?? 12)
+    this.els.denoiseStart.value = String(filters.denoiseSampleStartSec ?? 0)
+    this.els.denoiseEnd.value = String(filters.denoiseSampleEndSec ?? 0)
     this.els.echoDelay.value = String(filters.echoDelayMs ?? 0)
     this.els.echoDecay.value = String(filters.echoDecay ?? 0)
     this.els.reverbSize.value = String(filters.reverbSizeMs ?? 0)
@@ -2421,6 +2467,10 @@ ${mixFluctuationMarkup('group')}
       gateRangeDb: Number(this.els.gateRange.value),
       gateAttackMs: Number(this.els.gateAttack.value),
       gateReleaseMs: Number(this.els.gateRelease.value),
+      denoiseEnabled: this.els.denoiseEnabled.checked,
+      denoiseStrengthDb: Number(this.els.denoiseStrength.value),
+      denoiseSampleStartSec: Number(this.els.denoiseStart.value) || 0,
+      denoiseSampleEndSec: Number(this.els.denoiseEnd.value) || 0,
       echoDelayMs: Number(this.els.echoDelay.value),
       echoDecay: Number(this.els.echoDecay.value),
       reverbSizeMs: Number(this.els.reverbSize.value),
@@ -2598,6 +2648,8 @@ ${mixFluctuationMarkup('group')}
     this.els.gateRangeValue.textContent = filters.gateRangeDb > 0 ? `-${filters.gateRangeDb} dB` : 'Off'
     this.els.gateAttackValue.textContent = gateOn ? `${filters.gateAttackMs} ms` : '—'
     this.els.gateReleaseValue.textContent = gateOn ? `${filters.gateReleaseMs} ms` : '—'
+    this.els.denoiseValue.textContent = filters.denoiseEnabled ? 'On (bake only)' : 'Off'
+    this.els.denoiseStrengthValue.textContent = filters.denoiseEnabled ? `${filters.denoiseStrengthDb} dB` : '—'
     this.els.echoDelayValue.textContent = filters.echoDelayMs > 0 ? `${filters.echoDelayMs} ms` : 'Off'
     this.els.echoDecayValue.textContent = filters.echoDecay > 0 ? filters.echoDecay.toFixed(2) : 'Off'
     this.els.reverbSizeValue.textContent = filters.reverbSizeMs > 0 ? `${(filters.reverbSizeMs / 1000).toFixed(1)}s` : 'Off'
@@ -3034,6 +3086,10 @@ ${mixFluctuationMarkup('group')}
         gateRangeDb: filters.gateRangeDb ?? 0,
         gateAttackMs: filters.gateAttackMs ?? 10,
         gateReleaseMs: filters.gateReleaseMs ?? 150,
+        denoiseEnabled: filters.denoiseEnabled ?? false,
+        denoiseStrengthDb: filters.denoiseStrengthDb ?? 12,
+        denoiseSampleStartSec: filters.denoiseSampleStartSec ?? 0,
+        denoiseSampleEndSec: filters.denoiseSampleEndSec ?? 0,
         echoDelayMs: filters.echoDelayMs ?? 0,
         echoDecay: filters.echoDecay ?? 0,
         reverbSizeMs: filters.reverbSizeMs ?? 0,

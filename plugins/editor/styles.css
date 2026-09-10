@@ -471,6 +471,15 @@
   flex: 1;
 }
 
+.editor-filters input[type='number'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.editor-filter-action {
+  display: flex;
+}
+
 .editor-filter-value {
   width: 60px;
   flex-shrink: 0;

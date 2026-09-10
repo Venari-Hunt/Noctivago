@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.177 — Noise reduction in Remix (Sound mode)
+
+- New per-sound "Noise reduction" in the Remix tab's Filters section — reduces steady background noise (tape hiss, mains hum, an air conditioner) on a noisy clip, on top of what the Noise gate already does for the silent gaps.
+- Two-step, like Audacity's: turn it on, then set "Noise from" / "Noise to" (in seconds) to a stretch of the trimmed loop region that is background noise only — no events. "Noise sample from loop start" fills in the first ~1.5 seconds for you. On Save, it measures that stretch and subtracts its noise fingerprint from the whole clip. "NR strength" controls how aggressively (higher removes more but can start to sound watery).
+- Bake-only — there is no live preview for it (there's no real-time way to do this kind of processing). Save, then flip the preview toggle to "Saved audio" to hear the result. It bakes into an exported file like every other filter.
+- Follow-ups noted for later: a frequency crossover (denoise only the hiss, leave the bass), and picking the noise region on the waveform instead of typing seconds.
+
 ## v0.1.176 — Fluctuation: real seconds instead of percentages, plus a "Fully random" option
 
 - The Fluctuation controls (Remix — Sound, Preset and Group mode) no longer use vague 0–100% sliders for their timing. "Change every" is now two number boxes in seconds — the shortest and longest gap before the drift picks a new target — and "Transition" is a number box in seconds for roughly how long each glide takes. You can read and set the timing directly instead of guessing what a percentage meant.

@@ -330,7 +330,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     included: false,
     loopStart: 0,
     loopEnd: null,
-    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() },
+    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() },
     crossfadeSeconds: null,
     fluctuation: defaultFluctuation(),
     // dopplerEnabled: a simulated vehicle/siren pass-by - pitch bends
