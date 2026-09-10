@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import { runFfmpegToFile } from './runFfmpeg.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass } from './loopClip.js'
 import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
+import { renderPitchCommandFile, pitchCommandFilter, hasPitchFluctuation } from './pitchEnvelope.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
@@ -515,6 +516,60 @@ async function applyEnvelopeToTrack(track, fluctuation, durationSeconds, reporte
   }
 }
 
+// Pitch Fluctuation baking (v0.1.179): the companion to applyEnvelopeToTrack
+// for the pitch axis. Renders one realization of the sound's pitch drift to
+// an `asendcmd` command file (see pitchEnvelope.js) and runs the already-
+// materialized, full-duration, offset-0 track through `rubberband` with that
+// file stepping the pitch scale factor over time - length-preserving, so the
+// result drops back into the mix like any other offset-0 track. Per-sound
+// only (a bus has nothing single to detune). A no-op returning the same track
+// when the config isn't active.
+async function applyPitchEnvelopeToTrack(track, fluctuation, durationSeconds, reporter) {
+  const cmdPath = renderPitchCommandFile(fluctuation, durationSeconds)
+  if (!cmdPath) return track
+  const outPath = tempPath(INTERMEDIATE_EXT)
+  try {
+    await runFfmpegToFile(
+      [
+        '-y', '-i', track.path,
+        '-af', pitchCommandFilter(cmdPath),
+        '-t', durationSeconds.toFixed(6),
+        ...INTERMEDIATE_CODEC, outPath
+      ],
+      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+    )
+    reporter?.completePhase(durationSeconds)
+    return { path: outPath, offset: 0 }
+  } finally {
+    await cleanupFiles([cmdPath])
+  }
+}
+
+// A loop sound's own per-sound Fluctuation, applied to its full-duration
+// tiled track in the same order the live signal chain uses: pitch (detune,
+// ahead of everything) then volume (fluctuationGain). Either axis may be
+// inactive; returns the (possibly unchanged) track plus any new intermediate
+// paths for the caller to clean up.
+async function applyLoopFluctuation(tile, fluctuation, durationSeconds, reporter) {
+  const newPaths = []
+  let track = tile
+  if (hasPitchFluctuation(fluctuation)) {
+    track = await applyPitchEnvelopeToTrack(track, fluctuation, durationSeconds, reporter)
+    newPaths.push(track.path)
+  }
+  if (hasVolumeFluctuation(fluctuation)) {
+    track = await applyEnvelopeToTrack(track, fluctuation, durationSeconds, reporter)
+    newPaths.push(track.path)
+  }
+  return { track, newPaths }
+}
+
+// True when a loop sound needs pulling off renderFinalMixdown's cheap
+// -stream_loop path onto a materialized full-duration track (either drift axis).
+function hasLoopFluctuation(fluctuation) {
+  return hasVolumeFluctuation(fluctuation) || hasPitchFluctuation(fluctuation)
+}
+
 // Sound Groups (see AudioEngine.js's SoundGroupChain, and the Remix tab's
 // Group mode / the Mixer's right-click "Add to group…") - BUG FIX (reported
 // directly, "fix ASAP"): a group's own highpass/lowpass/EQ/gain sounds
@@ -652,17 +707,15 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       for (const shot of memberLoopShots) {
         const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
         ownPaths.push(tile.path)
-        // Per-sound volume Fluctuation on a grouped loop sound: apply the
-        // sound's own drift to its tiled track *before* it's combined into
+        // Per-sound Fluctuation on a grouped loop sound: apply the sound's own
+        // pitch + volume drift to its tiled track *before* it's combined into
         // the group submix, matching the live signal order (a sound's own
-        // fluctuationGain sits ahead of its Sound Group routing).
-        if (hasVolumeFluctuation(shot.fluctuation)) {
-          const drifted = await applyEnvelopeToTrack(tile, shot.fluctuation, durationSeconds, reporter)
-          ownPaths.push(drifted.path)
-          tiledLoops.push(drifted)
-        } else {
-          tiledLoops.push(tile)
-        }
+        // detune / fluctuationGain sit ahead of its Sound Group routing).
+        const { track: drifted, newPaths } = await applyLoopFluctuation(
+          tile, shot.fluctuation, durationSeconds, reporter
+        )
+        ownPaths.push(...newPaths)
+        tiledLoops.push(drifted)
       }
 
       const memberTracks = [...tiledLoops, ...memberBatchTracks]
@@ -1189,20 +1242,25 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   }).length
   const groupWorkSeconds =
     (groupedLoopSoundCount + usedGroupIds.size * 2 + groupsWithReverbCount) * durationSeconds
-  // Volume Fluctuation baking (v0.1.171) adds full-duration ffmpeg work not
-  // budgeted before: an ungrouped fluctuating loop sound needs its own tile
-  // pass + an envelope-multiply pass (2x duration); a grouped one needs the
-  // multiply (its tile is already counted in groupedLoopSoundCount); a group
-  // or the whole mix drifting needs one multiply pass each. Same rough-
-  // estimate spirit as groupWorkSeconds above.
-  const fluctLoopUngrouped = loopSounds.filter((s) => !s.groupId && hasVolumeFluctuation(s.fluctuation)).length
-  const fluctLoopGrouped = loopSounds.filter((s) => s.groupId && hasVolumeFluctuation(s.fluctuation)).length
+  // Fluctuation baking (v0.1.171 volume, v0.1.179 pitch) adds full-duration
+  // ffmpeg work not budgeted before: an ungrouped fluctuating loop sound
+  // needs its own tile pass (2x duration) plus one pass per active axis
+  // (volume multiply and/or pitch rubberband); a grouped one skips the tile
+  // (already counted in groupedLoopSoundCount) but still needs its axis
+  // pass(es); a group or the whole mix drifting needs one volume-multiply
+  // pass each. Same rough-estimate spirit as groupWorkSeconds above.
+  const loopAxisPasses = (s) =>
+    (hasVolumeFluctuation(s.fluctuation) ? 1 : 0) + (hasPitchFluctuation(s.fluctuation) ? 1 : 0)
+  const fluctLoopUngrouped = loopSounds
+    .filter((s) => !s.groupId)
+    .reduce((sum, s) => sum + (loopAxisPasses(s) > 0 ? loopAxisPasses(s) + 1 : 0), 0)
+  const fluctLoopGrouped = loopSounds.filter((s) => s.groupId).reduce((sum, s) => sum + loopAxisPasses(s), 0)
   const fluctGroupCount = [...usedGroupIds].filter((id) =>
     hasVolumeFluctuation(groups.find((group) => group.id === id)?.filters?.fluctuation)
   ).length
   const wholeMixFluctSeconds = hasVolumeFluctuation(wholeMixFilters?.fluctuation) ? durationSeconds : 0
   const fluctuationWorkSeconds =
-    (fluctLoopUngrouped * 2 + fluctLoopGrouped + fluctGroupCount) * durationSeconds + wholeMixFluctSeconds
+    (fluctLoopUngrouped + fluctLoopGrouped + fluctGroupCount) * durationSeconds + wholeMixFluctSeconds
   const totalWorkSeconds =
     mixdownWorkSeconds +
     eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0) +
@@ -1317,25 +1375,28 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       ownPaths: groupBusPaths
     })
 
-    // Per-sound volume Fluctuation (v0.1.171): an ungrouped loop sound with
-    // its own volume drift can't ride renderFinalMixdown's cheap
-    // -stream_loop path - it needs a materialized full-duration track to
-    // multiply the drift envelope against (same as a grouped one already
-    // gets inside renderGroupBuses). Tile + envelope it here, then it joins
-    // the final mix as a plain offset-0 track. Loop sounds with no drift
-    // stay on the fast path untouched.
+    // Per-sound Fluctuation (v0.1.171 volume, v0.1.179 pitch): an ungrouped
+    // loop sound with its own volume and/or pitch drift can't ride
+    // renderFinalMixdown's cheap -stream_loop path - it needs a materialized
+    // full-duration track to multiply the drift envelope against / step
+    // rubberband over (same as a grouped one already gets inside
+    // renderGroupBuses). Tile + apply the drift here, then it joins the final
+    // mix as a plain offset-0 track. Loop sounds with no drift stay on the
+    // fast path untouched.
     const plainLoopShots = []
     const fluctuatingLoopTracks = []
     for (const shot of ungroupedLoopShots) {
-      if (!hasVolumeFluctuation(shot.fluctuation)) {
+      if (!hasLoopFluctuation(shot.fluctuation)) {
         plainLoopShots.push(shot)
         continue
       }
-      reporter.step('Baking volume drift into a loop sound…')
+      reporter.step('Baking drift into a loop sound…')
       const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
       tiledLoopTrackPaths.push(tile.path)
-      const drifted = await applyEnvelopeToTrack(tile, shot.fluctuation, durationSeconds, reporter)
-      tiledLoopTrackPaths.push(drifted.path)
+      const { track: drifted, newPaths } = await applyLoopFluctuation(
+        tile, shot.fluctuation, durationSeconds, reporter
+      )
+      tiledLoopTrackPaths.push(...newPaths)
       fluctuatingLoopTracks.push(drifted)
     }
     const finalMixTracks = [...tracksForFinalMix, ...fluctuatingLoopTracks]

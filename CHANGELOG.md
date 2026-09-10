@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.179 — Pitch drift now bakes into exports
+
+- If a looping sound has a Fluctuation pitch drift (Remix — Sound mode), an exported file now bakes that slow pitch wander in, the same way volume drift already did. Before, exports played it at a steady pitch.
+- One take of the drift is rendered in (it's random, so each export's is slightly different) — same as how a Random Interval sound's timing is baked.
+- Volume + pitch drift together both bake now. A sound with no drift, or drift set to pitch-off, exports exactly as before.
+- Pitch drift is a per-sound thing, so this doesn't apply to a whole preset's or a Sound Group's drift (those are volume-only, as before).
+
 ## v0.1.178 — Presets autosave the mix
 
 - Load a preset, then add or remove a sound or drag a volume, and the change now saves back into that preset automatically — no need to hit a Save button. This matches how the Remix tab already autosaves.
