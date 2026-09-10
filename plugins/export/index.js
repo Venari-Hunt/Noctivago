@@ -576,20 +576,24 @@ export default class ExportPlugin {
 
   // No Export-tab UI of its own for these (see the mount() comment above) -
   // instead inherits the exported preset's own Preset Remix `wholeMix`
-  // (highpass/lowpass/gain/EQ) directly, applied last over the whole export.
-  // Direct owner answer (2026-09-02) to the "keep it on Preset Remix" v0.1.125
-  // ambiguity: "Yeah it should [inherit them]. Should be the last thing
-  // applied tho." `wholeMix` is `null` on a preset with no Preset Remix
-  // settings saved, which correctly collapses to the same all-neutral
-  // shape this always returned before.
+  // directly, applied last over the whole export. Direct owner answer
+  // (2026-09-02) to the "keep it on Preset Remix" v0.1.125 ambiguity: "Yeah
+  // it should [inherit them]. Should be the last thing applied tho."
+  //
+  // Forwards the whole normalized `wholeMix` object (spread), not a
+  // hand-picked field list - BUG FIX (v0.1.171): the old list-of-four here
+  // silently dropped Echo, Reverb, and Fluctuation, so a preset's whole-mix
+  // Echo/Reverb (v0.1.160/161) and volume drift never actually reached a
+  // real export even though exportMix.js's own pipeline had been taught to
+  // bake all of them (the Node harnesses that "verified" those releases
+  // called exportMix directly with a hand-built object, bypassing this
+  // function). `wholeMix` is `null` on a preset with no Preset Remix
+  // settings, which collapses to the same all-neutral shape this always
+  // returned.
   currentWholeMixFilters(preset) {
     const wholeMix = preset?.wholeMix
-    return {
-      highpassHz: wholeMix?.highpassHz ?? 0,
-      lowpassHz: wholeMix?.lowpassHz ?? 20000,
-      gainDb: wholeMix?.gainDb ?? 0,
-      eq: wholeMix?.eq ?? []
-    }
+    if (!wholeMix) return { highpassHz: 0, lowpassHz: 20000, gainDb: 0, eq: [] }
+    return { ...wholeMix }
   }
 
   async runExport() {
@@ -640,6 +644,10 @@ export default class ExportPlugin {
         crossfadeSeconds: entry.crossfadeSeconds ?? null,
         volume: presetSound.volume ?? entry.volume ?? 0.7,
         groupId: groupIdBySoundId.get(entry.id) ?? null,
+        // Volume Fluctuation (v0.1.171) - baked for loop-mode sounds only
+        // (the UI hides it for scatter/scheduled). exportMix.js ignores it
+        // for anything that isn't an ungrouped/grouped loop sound.
+        fluctuation: entry.fluctuation ?? null,
         events: simulateEvents({ entry, durationSeconds })
       })
       soundInfoList.push({ name: entry.name, tags: entry.tags ?? [] })

@@ -6,6 +6,7 @@ import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { runFfmpegToFile } from './runFfmpeg.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass } from './loopClip.js'
+import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
@@ -477,6 +478,43 @@ async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
   return { path: outPath, offset: 0 }
 }
 
+// Fluctuation baking (v0.1.171): multiplies one already-materialized,
+// full-duration, offset-0 track by a rendered volume-drift control signal
+// (see gainEnvelope.js) via ffmpeg's `amultiply`, producing a new offset-0
+// track that drops into the mix like any other. Used for a fluctuating loop
+// sound's own tiled track, a Sound Group's submix bus, and (folded into
+// finalizeWholeMix, not here) the whole final mix. The envelope is
+// generated at 1000 Hz and `aresample`d up to the mix rate here; both
+// streams are forced to stereo fltp so amultiply never hits a format/
+// channel/rate mismatch. Since fluctuation is attenuation-only (values
+// 0..1), applying it after a track's own limiter - which is where a group
+// bus / whole mix ends up - can't introduce clipping, so the exact node
+// position (live: before the limiter) doesn't matter for the bake.
+async function applyEnvelopeToTrack(track, fluctuation, durationSeconds, reporter) {
+  const envPath = renderGainEnvelopeWav(fluctuation, durationSeconds)
+  if (!envPath) return track
+  const outPath = tempPath(INTERMEDIATE_EXT)
+  try {
+    await runFfmpegToFile(
+      [
+        '-y', '-i', track.path, '-i', envPath,
+        '-filter_complex',
+        '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env];' +
+          '[0:a]aformat=channel_layouts=stereo:sample_fmts=fltp[sig];' +
+          '[sig][env]amultiply[out]',
+        '-map', '[out]',
+        '-t', durationSeconds.toFixed(6),
+        ...INTERMEDIATE_CODEC, outPath
+      ],
+      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+    )
+    reporter?.completePhase(durationSeconds)
+    return { path: outPath, offset: 0 }
+  } finally {
+    await cleanupFiles([envPath])
+  }
+}
+
 // Sound Groups (see AudioEngine.js's SoundGroupChain, and the Remix tab's
 // Group mode / the Mixer's right-click "Add to group…") - BUG FIX (reported
 // directly, "fix ASAP"): a group's own highpass/lowpass/EQ/gain sounds
@@ -614,7 +652,17 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       for (const shot of memberLoopShots) {
         const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
         ownPaths.push(tile.path)
-        tiledLoops.push(tile)
+        // Per-sound volume Fluctuation on a grouped loop sound: apply the
+        // sound's own drift to its tiled track *before* it's combined into
+        // the group submix, matching the live signal order (a sound's own
+        // fluctuationGain sits ahead of its Sound Group routing).
+        if (hasVolumeFluctuation(shot.fluctuation)) {
+          const drifted = await applyEnvelopeToTrack(tile, shot.fluctuation, durationSeconds, reporter)
+          ownPaths.push(drifted.path)
+          tiledLoops.push(drifted)
+        } else {
+          tiledLoops.push(tile)
+        }
       }
 
       const memberTracks = [...tiledLoops, ...memberBatchTracks]
@@ -633,9 +681,17 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
         bounded.length === 1 && bounded[0].offset === 0 ? bounded[0] : await combineTracks(bounded)
       if (combined !== bounded[0]) ownPaths.push(combined.path)
 
-      const filtered = await applyGroupFilters(combined, groupsById.get(groupId)?.filters, durationSeconds, reporter)
-      ownPaths.push(filtered.path)
-      groupBusTracks.push(filtered)
+      const groupFilters = groupsById.get(groupId)?.filters
+      let bus = await applyGroupFilters(combined, groupFilters, durationSeconds, reporter)
+      ownPaths.push(bus.path)
+      // The group's own volume Fluctuation (Remix Group mode) - the whole
+      // bus drifting, applied after its filter/limiter chain (attenuation
+      // only, so post-limiter is safe - see applyEnvelopeToTrack).
+      if (hasVolumeFluctuation(groupFilters?.fluctuation)) {
+        bus = await applyEnvelopeToTrack(bus, groupFilters.fluctuation, durationSeconds, reporter)
+        ownPaths.push(bus.path)
+      }
+      groupBusTracks.push(bus)
     })
   }
 
@@ -665,13 +721,14 @@ function wholeMixHasReverb(wholeMixFilters) {
   return (wholeMixFilters?.reverbSizeMs ?? 0) > 0 && (wholeMixFilters?.reverbMix ?? 0) > 0
 }
 
-// deferReverbAndTail skips the limiter and fades - used when Reverb is
-// active, since that needs its own isolated pass (see finalizeWholeMix)
-// between this chain and the fades, and that pass already bakes its own
-// limiter into its output. False (the default, and the only path when
-// Reverb isn't set) keeps this function's original single-pass behavior
-// exactly, byte-path unchanged.
-function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds, deferReverbAndTail = false }) {
+// includeLimiter=false when Reverb is active (its own isolated pass, see
+// finalizeWholeMix, already bakes a brick-wall limiter into its output).
+// includeTail=false whenever a later pass runs (Reverb, or whole-mix volume
+// Fluctuation) - the start/end fades have to be the very last thing done to
+// the file, so they move to that final pass. Both true (the default, and
+// the only path when neither Reverb nor Fluctuation is set) keeps this
+// function's original single-pass behavior exactly, byte-path unchanged.
+function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds, includeLimiter = true, includeTail = true }) {
   const post = []
   if (wholeMixFilters?.highpassHz > 0) post.push(`highpass=f=${wholeMixFilters.highpassHz}`)
   if (wholeMixFilters?.lowpassHz > 0 && wholeMixFilters.lowpassHz < 20000) post.push(`lowpass=f=${wholeMixFilters.lowpassHz}`)
@@ -688,15 +745,14 @@ function buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSecond
   if (wholeMixFilters?.echoDelayMs > 0 && wholeMixFilters?.echoDecay > 0) {
     post.push(buildEchoFilter(wholeMixFilters.echoDelayMs, wholeMixFilters.echoDecay))
   }
-  if (deferReverbAndTail) return post
   // Brick-wall safety limiter whenever whole-mix processing is doing anything -
   // its gain and EQ bands have no other ceiling (same exposure Composite's bake
   // had before v0.1.113). Matches the live WholeMixChain limiter so an export
   // sounds like the Mixer. Only reached when whole-mix settings exist; a plain
   // export leaves `post` empty and is untouched (keeps the blessed export
   // loudness, see the noctivago_feel_verdicts note).
-  if (post.length > 0) post.push('alimiter=limit=0.95:level=disabled')
-  post.push(...buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds }))
+  if (includeLimiter && post.length > 0) post.push('alimiter=limit=0.95:level=disabled')
+  if (includeTail) post.push(...buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds }))
   return post
 }
 
@@ -716,17 +772,31 @@ function buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds
 // their own `inputArgs`/`graph`/`mixLabels`/`idx` (the only real difference
 // between them: loop-shot -stream_loop tiling vs. already-pre-tiled tracks),
 // then hand off here for "apply whole-mix processing, encode" - previously
-// duplicated in both, which would have meant writing the Reverb isolated-
-// pass logic below twice. When Reverb is active, the main graph renders to
-// a WAV intermediate (pre-limiter, pre-fade - see buildWholeMixPostChain's
-// deferReverbAndTail), the real reverb pass runs on that (baking its own
-// limiter), then one small final pass applies fades (if any) and the actual
-// output format encode. Skipped entirely, single-pass, byte-path unchanged
-// when Reverb isn't set - matches the "blessed export loudness" guarantee
-// every other whole-mix addition here has kept.
+// duplicated in both, which would have meant writing the Reverb / Fluctuation
+// isolated-pass logic below twice.
+//
+// Reverb (afir) and whole-mix volume Fluctuation (v0.1.171) both need a
+// pass *after* the main filtergraph, so when either is active the main graph
+// renders to a WAV intermediate instead of straight to the output file:
+//   main graph -> [reverb pass, if any] -> [envelope multiply, if any] +
+//   start/end fades + real format encode.
+// The main graph keeps its own limiter unless Reverb is active (applyReverb
+// Pass bakes its own); the fades always move to the final pass so they stay
+// dead last. Skipped entirely, single-pass, byte-path unchanged when neither
+// is set - matches the "blessed export loudness" guarantee every other
+// whole-mix addition here has kept.
 async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
   const hasReverb = wholeMixHasReverb(wholeMixFilters)
-  const post = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds, deferReverbAndTail: hasReverb })
+  const hasFluct = hasVolumeFluctuation(wholeMixFilters?.fluctuation)
+  const needsIntermediate = hasReverb || hasFluct
+  const post = buildWholeMixPostChain({
+    wholeMixFilters,
+    durationSeconds,
+    fadeInSeconds,
+    fadeOutSeconds,
+    includeLimiter: !hasReverb,
+    includeTail: !needsIntermediate
+  })
   graph.push(
     `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
       `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
@@ -734,10 +804,11 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
 
   const scriptPath = tempPath('txt')
   fs.writeFileSync(scriptPath, graph.join(';'))
-  const preReverbPath = hasReverb ? tempPath('wav') : null
-  const targetPath = hasReverb ? preReverbPath : outputPath
-  const targetCodecArgs = hasReverb ? ['-c:a', 'pcm_s16le'] : (FORMAT_CODECS[format] ?? FORMAT_CODECS.wav)
-  const targetSampleRate = hasReverb ? 44100 : outputSampleRate(format)
+  const mainWavPath = needsIntermediate ? tempPath('wav') : null
+  const targetPath = needsIntermediate ? mainWavPath : outputPath
+  const targetCodecArgs = needsIntermediate ? ['-c:a', 'pcm_s16le'] : (FORMAT_CODECS[format] ?? FORMAT_CODECS.wav)
+  const targetSampleRate = needsIntermediate ? 44100 : outputSampleRate(format)
+  const toCleanup = [scriptPath]
   try {
     await runFfmpegToFile(
       [
@@ -750,28 +821,48 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
       ],
       { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
     )
-    if (!hasReverb) {
+    if (!needsIntermediate) {
       reporter?.completePhase(durationSeconds)
       return
     }
-    const reverbWetPath = tempPath('wav')
-    try {
-      await applyReverbPass(preReverbPath, reverbWetPath, wholeMixFilters.reverbSizeMs, wholeMixFilters.reverbMix)
-      const tail = buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds })
-      const codecArgs = FORMAT_CODECS[format] ?? FORMAT_CODECS.wav
+
+    let stageInPath = mainWavPath
+    if (hasReverb) {
+      const reverbWetPath = tempPath('wav')
+      toCleanup.push(reverbWetPath)
+      await applyReverbPass(stageInPath, reverbWetPath, wholeMixFilters.reverbSizeMs, wholeMixFilters.reverbMix)
+      stageInPath = reverbWetPath
+    }
+
+    const tail = buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds })
+    const codecArgs = FORMAT_CODECS[format] ?? FORMAT_CODECS.wav
+    if (hasFluct) {
+      const envPath = renderGainEnvelopeWav(wholeMixFilters.fluctuation, durationSeconds)
+      toCleanup.push(envPath)
+      const filterComplex =
+        '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env];' +
+        '[0:a]aformat=channel_layouts=stereo:sample_fmts=fltp[sig];' +
+        `[sig][env]amultiply${tail.length ? `,${tail.join(',')}` : ''}[out]`
       await runFfmpegToFile([
-        '-y', '-i', reverbWetPath,
+        '-y', '-i', stageInPath, '-i', envPath,
+        '-filter_complex', filterComplex,
+        '-map', '[out]',
+        '-t', durationSeconds.toFixed(6),
+        ...codecArgs, '-ar', String(outputSampleRate(format)), '-ac', '2',
+        outputPath
+      ])
+    } else {
+      await runFfmpegToFile([
+        '-y', '-i', stageInPath,
         ...(tail.length ? ['-af', tail.join(',')] : []),
         '-t', durationSeconds.toFixed(6),
         ...codecArgs, '-ar', String(outputSampleRate(format)), '-ac', '2',
         outputPath
       ])
-      reporter?.completePhase(durationSeconds)
-    } finally {
-      await cleanupFiles([reverbWetPath])
     }
+    reporter?.completePhase(durationSeconds)
   } finally {
-    await cleanupFiles(hasReverb ? [scriptPath, preReverbPath] : [scriptPath])
+    await cleanupFiles(mainWavPath ? [...toCleanup, mainWavPath] : toCleanup)
   }
 }
 
@@ -1098,11 +1189,26 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   }).length
   const groupWorkSeconds =
     (groupedLoopSoundCount + usedGroupIds.size * 2 + groupsWithReverbCount) * durationSeconds
+  // Volume Fluctuation baking (v0.1.171) adds full-duration ffmpeg work not
+  // budgeted before: an ungrouped fluctuating loop sound needs its own tile
+  // pass + an envelope-multiply pass (2x duration); a grouped one needs the
+  // multiply (its tile is already counted in groupedLoopSoundCount); a group
+  // or the whole mix drifting needs one multiply pass each. Same rough-
+  // estimate spirit as groupWorkSeconds above.
+  const fluctLoopUngrouped = loopSounds.filter((s) => !s.groupId && hasVolumeFluctuation(s.fluctuation)).length
+  const fluctLoopGrouped = loopSounds.filter((s) => s.groupId && hasVolumeFluctuation(s.fluctuation)).length
+  const fluctGroupCount = [...usedGroupIds].filter((id) =>
+    hasVolumeFluctuation(groups.find((group) => group.id === id)?.filters?.fluctuation)
+  ).length
+  const wholeMixFluctSeconds = hasVolumeFluctuation(wholeMixFilters?.fluctuation) ? durationSeconds : 0
+  const fluctuationWorkSeconds =
+    (fluctLoopUngrouped * 2 + fluctLoopGrouped + fluctGroupCount) * durationSeconds + wholeMixFluctSeconds
   const totalWorkSeconds =
     mixdownWorkSeconds +
     eventSounds.reduce((sum, es) => sum + es.batches.reduce((s, b) => s + b.span, 0), 0) +
     videoWorkSeconds +
-    groupWorkSeconds
+    groupWorkSeconds +
+    fluctuationWorkSeconds
   const reporter = makeReporter(onProgress, totalWorkSeconds)
 
   if (sounds.length === 0) return { ok: false, error: 'No sounds to export' }
@@ -1144,7 +1250,12 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     await mapPool(loopSounds, concurrency, async (sound) => {
       const shot = await bakeShotClip(sound, { forLoop: true })
       if (shot.owned) ownedShotPaths.push(shot.path)
-      loopShots.push({ path: shot.path, volume: sound.volume ?? 0.7, groupId: sound.groupId ?? null })
+      loopShots.push({
+        path: shot.path,
+        volume: sound.volume ?? 0.7,
+        groupId: sound.groupId ?? null,
+        fluctuation: sound.fluctuation ?? null
+      })
     })
 
     const eventShotPathBySound = new Map()
@@ -1206,25 +1317,48 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       ownPaths: groupBusPaths
     })
 
+    // Per-sound volume Fluctuation (v0.1.171): an ungrouped loop sound with
+    // its own volume drift can't ride renderFinalMixdown's cheap
+    // -stream_loop path - it needs a materialized full-duration track to
+    // multiply the drift envelope against (same as a grouped one already
+    // gets inside renderGroupBuses). Tile + envelope it here, then it joins
+    // the final mix as a plain offset-0 track. Loop sounds with no drift
+    // stay on the fast path untouched.
+    const plainLoopShots = []
+    const fluctuatingLoopTracks = []
+    for (const shot of ungroupedLoopShots) {
+      if (!hasVolumeFluctuation(shot.fluctuation)) {
+        plainLoopShots.push(shot)
+        continue
+      }
+      reporter.step('Baking volume drift into a loop sound…')
+      const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
+      tiledLoopTrackPaths.push(tile.path)
+      const drifted = await applyEnvelopeToTrack(tile, shot.fluctuation, durationSeconds, reporter)
+      tiledLoopTrackPaths.push(drifted.path)
+      fluctuatingLoopTracks.push(drifted)
+    }
+    const finalMixTracks = [...tracksForFinalMix, ...fluctuatingLoopTracks]
+
     // Keep the final mixdown's input count under the OS command-line limit
     // (see MAX_INPUTS_PER_PASS). Loop shots each take one input too and can't
     // be pre-combined (they're -stream_loop tiled), so the batch tracks get
     // whatever's left of the budget. Cheap no-op when the export is small
     // enough that everything already fits.
-    const batchTrackBudget = Math.max(4, MAX_INPUTS_PER_PASS - ungroupedLoopShots.length)
+    const batchTrackBudget = Math.max(4, MAX_INPUTS_PER_PASS - plainLoopShots.length)
     const finalBatchTracks =
-      tracksForFinalMix.length > batchTrackBudget
-        ? await reduceTrackCount(tracksForFinalMix, batchTrackBudget, groupBusPaths, reporter, mergeConcurrency)
-        : tracksForFinalMix
+      finalMixTracks.length > batchTrackBudget
+        ? await reduceTrackCount(finalMixTracks, batchTrackBudget, groupBusPaths, reporter, mergeConcurrency)
+        : finalMixTracks
 
-    if (parallelMixdown && ungroupedLoopShots.length > 0) {
+    if (parallelMixdown && plainLoopShots.length > 0) {
       // Tile every loop sound to its own full-duration track, several at
       // once - the actual Part B win, see tileLoopShotFull's doc comment.
       reporter.step(
-        `Parallel mixdown on — tiling ${ungroupedLoopShots.length} loop sound${ungroupedLoopShots.length === 1 ? '' : 's'} at once…`
+        `Parallel mixdown on — tiling ${plainLoopShots.length} loop sound${plainLoopShots.length === 1 ? '' : 's'} at once…`
       )
       const tiledLoopTracks = []
-      await mapPool(ungroupedLoopShots, mixdownConcurrency, async (shot) => {
+      await mapPool(plainLoopShots, mixdownConcurrency, async (shot) => {
         const track = await tileLoopShotFull({ shot, durationSeconds, reporter })
         tiledLoopTrackPaths.push(track.path)
         tiledLoopTracks.push(track)
@@ -1250,7 +1384,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     } else {
       reporter.step('Final mixdown + whole-mix processing…')
       await renderFinalMixdown({
-        loopShots: ungroupedLoopShots,
+        loopShots: plainLoopShots,
         batchTracks: finalBatchTracks,
         durationSeconds,
         wholeMixFilters,

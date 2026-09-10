@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.171 — Fluctuation now bakes into exports
+
+- Volume Fluctuation (the slow, random volume drift you can set on a looping sound, a whole preset's mix, or a Sound Group) is now baked into an exported file — before, exports ignored it entirely and played a steady level. One fixed take of the drift is rendered into the file, the same way a Random Interval sound's timing is baked as one realization.
+- Also fixed a related gap: a preset's whole-mix Echo and Reverb (set on the Remix tab's Preset mode) were silently left out of exports too — they now bake in, applied last over the whole mix, matching how they sound live.
+- Pitch Fluctuation still isn't baked into exports (only volume) — that's a harder problem and stays a follow-up.
+
 ## v0.1.170 — Sleep timer survives a restart, and can end at a set time
 
 - A running sleep timer is no longer lost when the app closes and reopens (including an auto-update restart) — it comes back with the time still remaining. If it already ran out while the app was closed, it only still acts if that was in the last few minutes; a timer whose moment passed long ago is quietly dropped.
