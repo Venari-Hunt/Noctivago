@@ -1,6 +1,6 @@
 import log from 'electron-log/renderer'
 import { randomPitchSemitones, randomVolumeScale, randomSpeedFactor, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
-import { shiftAndStretchBuffer } from './pitchStretch.js'
+import { pitchShiftBuffer } from './pitchStretch.js'
 
 const RAMP_SECONDS = 0.15
 
@@ -122,16 +122,20 @@ export class BufferScheduledSource {
     const semitones = randomPitchSemitones(this.schedule)
     const speedFactor = randomSpeedFactor(this.schedule)
     node.detune.value = semitones * 100
-    // Pre-stretch the clip so a pitch shift doesn't change shot length
-    // (v0.1.111) and a per-shot Speed change is a pure tempo/length change
-    // with pitch preserved - same mechanism BufferScatterSource uses, see
-    // shiftAndStretchBuffer. null (clip too long to stretch on the main
-    // thread, or an aggressive compression WSOLA would buzz on - see
-    // MIN_CLEAN_STRETCH_RATIO) falls back to resampling, so also apply speed
-    // via playbackRate there and use the adjusted length for the envelope.
-    const shifted = shiftAndStretchBuffer(this.engine.context, this.audioBuffer, semitones, speedFactor)
+    // Per-shot PITCH keeps the shot's trimmed length via a WSOLA pre-stretch
+    // (v0.1.111). Per-shot SPEED (v0.1.135) is applied as plain `playbackRate`
+    // varispeed - it changes tempo/length and couples pitch with it, and is
+    // deliberately NOT routed through the WSOLA time-stretch, which buzzes on
+    // an aggressive time-compression of a broadband transient (a sped-up
+    // thunderclap - the "loud synth-like noise" report; v0.1.175 takes speed
+    // off that path entirely, same as BufferScatterSource). `pitchShiftBuffer`
+    // returns null for a clip too long to stretch or a pitch shift steeper
+    // than the WSOLA handles - `detune` then resamples the pitch (also speeding
+    // the shot up by the pitch ratio, hence the extra term in the fallback
+    // duration).
+    const shifted = pitchShiftBuffer(this.engine.context, this.audioBuffer, semitones)
     node.buffer = shifted ?? this.audioBuffer
-    if (!shifted) node.playbackRate.value = speedFactor
+    node.playbackRate.value = speedFactor
     const durationSeconds = shifted
       ? this.audioBuffer.duration / speedFactor
       : this.audioBuffer.duration / (Math.pow(2, semitones / 12) * speedFactor)

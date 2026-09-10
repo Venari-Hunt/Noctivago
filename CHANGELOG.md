@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.175 — "Weird synth-like sound", take two: per-shot Speed no longer time-stretches live
+
+- v0.1.172's fix wasn't enough — you reported the loud, sustained synth-like noise still comes back with per-shot random Speed on a thunderclap. The narrower guard it added still let the buzzy time-stretch run in a range where it can artifact.
+- Per-shot Speed on a Random Interval / Scheduled sound is now always a plain tape-style speed-up in the live Mixer: it changes the shot's tempo and length and shifts its pitch along with it (a fast thunderclap sounds a little higher, like a record sped up). It is no longer routed through the pitch-preserving time-stretch at all, so it can't buzz. Per-shot Pitch still keeps the shot's length exactly as before.
+- Exports are unaffected — they already keep Speed and Pitch independent with a higher-quality offline process that doesn't have this problem.
+- If you want per-shot Speed to keep pitch fixed in the live mix too (the way it briefly did), tell me — that needs a different approach and I'll plan it separately.
+
 ## v0.1.174 — Noise gate in Remix (Sound mode)
 
 - New per-sound "Gate" controls in the Remix tab's Filters section: Threshold, Reduction, Attack, and Release. The gate quiets a sound whenever it drops below the threshold — useful for cutting a hissy or rumbly noise floor in the gaps between events on a self-recorded or noisy clip.

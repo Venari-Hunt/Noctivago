@@ -56,23 +56,25 @@ const MAX_STRETCH_SECONDS = 12
 // run at neutral settings" convention as IDENTITY_PITCH_EPSILON_SEMITONES.
 export const IDENTITY_SPEED_EPSILON = 0.005
 
-// Smallest overall stretch ratio (2^(st/12) / speedFactor) this WSOLA
-// compressor handles cleanly. Below it, `anaHop` (= SYNTH_HOP / ratio) grows
-// past FRAME_SIZE, so consecutive analysis frames no longer overlap and the
-// similarity search can't reliably bridge the skipped input - on broadband
-// non-periodic content (a thunderclap is the pathological case) the
-// overlap-add then splices mismatched material every synthesis hop, which
-// reads as a metallic buzz roughly at SR/SYNTH_HOP (~86 Hz). Measured (an
-// isolated harness on chaotic broadband noise): HF energy is unchanged
-// through ratio ~0.7, ~1.5x by 0.6, ~2.3x by 0.5. So `shiftAndStretchBuffer`
-// returns null under this and the caller falls back to plain resample -
-// clean (no buzz), at the cost of coupling pitch to tempo for that shot
-// (classic varispeed), the same trade already accepted for the >12s and
-// stream-mode paths. Reachable only via the per-shot Speed range (v0.1.135):
-// pure pitch stays >= 0.5 (pitchRatio itself), but speed 2x, or speed >1.67x
-// with any downward pitch, drops under this. Reported as a "loud, sustained,
-// synth-like" sound that went away when the owner disabled per-shot speed.
-const MIN_CLEAN_STRETCH_RATIO = 0.6
+// Smallest stretch ratio this WSOLA compressor handles without artifacting.
+// At `ratio < 0.5` the analysis hop (`SYNTH_HOP / ratio`) exceeds FRAME_SIZE,
+// so consecutive analysis frames stop overlapping, constant-overlap-add
+// breaks, and the output gets a periodic amplitude modulation at the
+// synthesis-hop rate (~86 Hz) that reads as a metallic/synth-like buzz - very
+// audible on broadband non-periodic content (a thunderclap is the
+// pathological case). `shiftAndStretchBuffer` returns null under this and the
+// caller falls back to plain resampling for that shot (clean, at the cost of
+// coupling pitch to tempo - classic varispeed).
+//
+// This is now only reached by the per-shot *pitch* range (a downward shift of
+// more than ~-12 st), which is a rare extreme setting - `ratio = pitchRatio`
+// there since the callers no longer route per-shot *speed* through the WSOLA
+// at all (v0.1.175: per-shot speed is applied purely as `playbackRate`
+// varispeed, sidestepping this buzz entirely - it was the "loud synth-like
+// noise on a sped-up thunderclap" report that v0.1.172's narrower guard
+// didn't fully kill). The pitch-only path at `ratio >= 0.5` has shipped
+// since v0.1.111 without complaint.
+const MIN_CLEAN_STRETCH_RATIO = 0.5
 
 const FRAME_SIZE = 1024
 // Synthesis hop = FRAME_SIZE / 2 => 50% overlap, where a Hann window has

@@ -1,5 +1,5 @@
 import log from 'electron-log/renderer'
-import { shiftAndStretchBuffer } from './pitchStretch.js'
+import { pitchShiftBuffer } from './pitchStretch.js'
 
 const RAMP_SECONDS = 0.15
 // Matches the Remix plugin's Pitch slider range (plugins/editor/index.js) -
@@ -63,9 +63,12 @@ export function randomVolumeScale(scatter) {
 
 // Per-shot wall-clock playback speed (Random Interval / Scheduled "Speed"
 // range), as a multiplier - 1 = original tempo, 2 = twice as fast (half as
-// long), 0.5 = half speed. Pitch is preserved (the shot clip is time-
-// stretched, see shiftAndStretchBuffer / the export's rubberband tempo pass),
-// matching the Remix "Speed" control. Like volume, 1 isn't silence so there's
+// long), 0.5 = half speed. In the live Mixer this is plain `playbackRate`
+// varispeed (pitch rises/falls with tempo, like a tape machine); exports
+// keep pitch fixed via rubberband's own tempo pass. (Live used to WSOLA
+// time-stretch this to preserve pitch too, but that buzzed on aggressive
+// compression of broadband transients - v0.1.175.) Like volume, 1 isn't
+// silence so there's
 // no "both 0" special case - both bounds at 1 (the default) means no speed
 // variation. Floored at 0.1 so a stray 0 can't divide-by-zero the duration
 // math or ask for an infinite stretch.
@@ -194,20 +197,30 @@ export class BufferScatterSource {
     const semitones = randomPitchSemitones(this.scatter)
     const speedFactor = randomSpeedFactor(this.scatter)
     node.detune.value = semitones * 100
-    // Pre-stretch the clip in time by the pitch ratio divided by the speed
-    // factor, so playing it back at the detune ratio (what detune does) lands
-    // the pitch shift without changing length (v0.1.111) *and* the speed
-    // change as a pure tempo/length change with pitch preserved (see
-    // shiftAndStretchBuffer). Returns the buffer unchanged when both are
-    // negligible, and null for a clip too long to stretch on the main thread
-    // OR an aggressive compression WSOLA would buzz on (MIN_CLEAN_STRETCH_
-    // RATIO - a fast per-shot Speed on a thunderclap was the reported case) -
-    // in which case detune only resamples the pitch, so also apply the speed
-    // via playbackRate (couples pitch there, an accepted-limitation fallback)
-    // and size the fade-out envelope to the real shot length.
-    const shifted = shiftAndStretchBuffer(this.engine.context, this.audioBuffer, semitones, speedFactor)
+    // Per-shot PITCH keeps the shot's trimmed length via a WSOLA pre-stretch
+    // (v0.1.111): the clip is stretched by the pitch ratio, then `detune`
+    // plays it back at that ratio - pitch moves, duration doesn't.
+    //
+    // Per-shot SPEED (v0.1.135) is applied as plain `playbackRate` varispeed -
+    // it changes tempo/length and couples pitch along with it (like a tape
+    // machine). It is deliberately NOT routed through the WSOLA time-stretch:
+    // an aggressive time-compression there buzzes badly on broadband
+    // transients (a sped-up thunderclap - the "loud synth-like noise"
+    // reports; v0.1.172's narrow ratio guard didn't fully kill it, v0.1.175
+    // takes speed off that path entirely).
+    //
+    // `pitchShiftBuffer` returns the buffer unchanged for a negligible shift,
+    // and null for a clip too long to stretch on the main thread or a pitch
+    // shift steeper than the WSOLA handles - in which case `detune` alone
+    // resamples the pitch, which also speeds the shot up by the pitch ratio
+    // (hence the pitchRatio term in the fallback duration below).
+    //
+    // `playbackRate = speedFactor` in both cases: with a valid pitch-stretched
+    // buffer it's the only source of the speed change; on the resample
+    // fallback it stacks on top of detune's own pitchRatio speed-up.
+    const shifted = pitchShiftBuffer(this.engine.context, this.audioBuffer, semitones)
     node.buffer = shifted ?? this.audioBuffer
-    if (!shifted) node.playbackRate.value = speedFactor
+    node.playbackRate.value = speedFactor
     const durationSeconds = shifted
       ? this.audioBuffer.duration / speedFactor
       : this.audioBuffer.duration / (Math.pow(2, semitones / 12) * speedFactor)
