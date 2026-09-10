@@ -53,7 +53,8 @@ const state = {
   // whole-mix processing is live on engine.wholeMix, and gates the Preset
   // Remix plugin's live-preview events (only the active preset's edits are
   // heard). Not cleared when the user then deviates from the preset by hand -
-  // it just tracks "what did we last load."
+  // instead, deviations (adding/removing a sound, changing a volume) autosave
+  // straight back into it - see autosaveActivePreset().
   activePresetId: null,
   // Sound Groups (see AudioEngine.js's SoundGroupChain) belonging to
   // whichever preset is active - kept here purely so the right-click
@@ -106,6 +107,7 @@ const els = {
   presetsModal: document.getElementById('presets-modal'),
   updateActivePresetBtn: document.getElementById('update-active-preset'),
   updateActivePresetLabel: document.getElementById('update-active-preset-label'),
+  presetAutosaveNote: document.getElementById('preset-autosave-note'),
   newPresetName: document.getElementById('new-preset-name'),
   savePresetBtn: document.getElementById('save-preset'),
   presetSaveHint: document.getElementById('preset-save-hint'),
@@ -741,10 +743,12 @@ async function startPlayback(id, entry) {
     if (!state.volumes.has(id)) state.volumes.set(id, entry.volume ?? DEFAULT_VOLUME)
     source.setVolume(effectiveVolume(id))
     await source.play()
+    const newlyIncluded = !state.included.has(id)
     state.playing.add(id)
     state.included.add(id)
     persistIncluded(id, true)
     persistPlayingState()
+    if (newlyIncluded) autosaveActivePreset()
   } catch (err) {
     console.error('Failed to play sound', entry.name, err)
     state.errors.set(id, 'Could not decode this audio file.')
@@ -772,6 +776,7 @@ async function toggleIncluded(id) {
   if (state.included.has(id)) {
     state.included.delete(id)
     persistIncluded(id, false)
+    autosaveActivePreset()
     stopPlayback(id)
     render()
     return
@@ -812,6 +817,9 @@ function changeVolume(id, volume) {
       api.library.updateVolume(id, volume)
     }, VOLUME_SAVE_DEBOUNCE_MS)
   )
+  // A volume tweak on a sound that's part of the loaded preset is a preset
+  // edit too - persist it back (only matters when this id is in state.included).
+  if (state.included.has(id)) autosaveActivePreset()
 }
 
 function toggleMute(id) {
@@ -998,12 +1006,16 @@ async function testFireOneShot(id) {
 }
 
 async function removeSound(id) {
+  const wasInMix = state.included.has(id)
   state.sources.get(id)?.dispose()
   state.sources.delete(id)
   state.playing.delete(id)
   state.included.delete(id)
   state.volumes.delete(id)
   state.mutedSounds.delete(id)
+  // Deleting a library sound that was in the loaded preset drops it from the
+  // preset too (currentMixSounds no longer lists it).
+  if (wasInMix) autosaveActivePreset()
   await api.library.remove(id)
   await refreshList()
 }
@@ -1260,10 +1272,12 @@ function updateActivePresetButtonState(presets) {
   setActivePresetIndicator(active?.name ?? null)
   if (!active) {
     els.updateActivePresetBtn.classList.add('hidden')
+    els.presetAutosaveNote.classList.add('hidden')
     return
   }
   els.updateActivePresetBtn.classList.remove('hidden')
-  els.updateActivePresetLabel.textContent = `Save changes to "${active.name}"`
+  els.presetAutosaveNote.classList.remove('hidden')
+  els.updateActivePresetLabel.textContent = `Save "${active.name}" now`
 }
 
 // The top-bar preset-name indicator (index.html, left of the Play-all
@@ -1297,6 +1311,9 @@ async function exportPreset(preset) {
 async function openPresetsModal() {
   els.presetSaveHint.textContent = ''
   els.presetSaveHint.classList.remove('ok')
+  // Make sure the list about to be rendered reflects any just-made mix edit
+  // that's still inside the autosave debounce window.
+  await flushPresetAutosave()
   await refreshPresetList()
   showModal(els.presetsModal)
 }
@@ -1319,6 +1336,61 @@ function currentMixSounds() {
     soundId: id,
     volume: state.volumes.get(id) ?? DEFAULT_VOLUME
   }))
+}
+
+// Autosave-on-edit for the loaded preset (owner request, inbox 2026-09-10:
+// "Are presets being autosaved? If not they should be" - matching how the
+// Remix tab autosaves its edits). While a preset is loaded, any mix mutation
+// - adding or removing a sound, or dragging a per-sound volume - writes the
+// new sound list straight back into that preset. Debounced so a volume drag
+// doesn't hammer electron-store's synchronous file write. The explicit "Save
+// changes to X" button stays as a save-now affordance but is rarely needed.
+//
+// - `presetAutosaveReady` gates out the startup sequence (restoreLastActive-
+//   Preset + maybeResumeOnLaunch fire startPlayback for each resumed sound
+//   before the user has touched anything - no need to rewrite the preset with
+//   what it already contains).
+// - `presetAutosaveLoading` gates out loadPreset() itself, which mutates
+//   state.included / state.volumes heavily while converging on the preset's
+//   own contents.
+// - An empty mix is never persisted (matches the explicit button's own rule)
+//   so toggling a preset's last sound off doesn't blow the preset away.
+// - The pending write captures the preset id and bails if the active preset
+//   changed during the debounce, so a fast A->B switch can't write A's mix
+//   into B.
+const PRESET_AUTOSAVE_DEBOUNCE_MS = 600
+let presetAutosaveReady = false
+let presetAutosaveLoading = false
+let presetAutosaveTimer = null
+
+function autosaveActivePreset() {
+  if (!presetAutosaveReady || presetAutosaveLoading) return
+  const presetId = state.activePresetId
+  if (!presetId || state.included.size === 0) return
+  clearTimeout(presetAutosaveTimer)
+  presetAutosaveTimer = setTimeout(async () => {
+    presetAutosaveTimer = null
+    if (state.activePresetId !== presetId || state.included.size === 0) return
+    const updated = await api.presets.updateSounds(presetId, currentMixSounds())
+    if (updated && !els.presetsModal.classList.contains('hidden')) {
+      els.presetSaveHint.classList.add('ok')
+      els.presetSaveHint.textContent = `Autosaved changes to "${updated.name}".`
+      await refreshPresetList()
+    }
+  }, PRESET_AUTOSAVE_DEBOUNCE_MS)
+}
+
+// Forces any pending autosave to land immediately (and synchronously awaits
+// it) - called before switching presets or opening the Presets modal, so the
+// debounce window can't drop the last edit or land it against the wrong
+// preset.
+async function flushPresetAutosave() {
+  if (!presetAutosaveTimer) return
+  clearTimeout(presetAutosaveTimer)
+  presetAutosaveTimer = null
+  const presetId = state.activePresetId
+  if (!presetId || state.included.size === 0) return
+  await api.presets.updateSounds(presetId, currentMixSounds())
 }
 
 els.updateActivePresetBtn.addEventListener('click', async () => {
@@ -1356,6 +1428,20 @@ els.savePresetBtn.addEventListener('click', async () => {
 // preset being loaded, so sounds common to both keep playing uninterrupted
 // (just a volume update) instead of being stopped and immediately restarted.
 async function loadPreset(preset) {
+  // Land any pending autosave against the *current* preset before we switch
+  // away from it, then suppress autosave for the duration of this load (it
+  // churns state.included / state.volumes heavily while converging on the
+  // new preset's own contents).
+  await flushPresetAutosave()
+  presetAutosaveLoading = true
+  try {
+    await loadPresetInner(preset)
+  } finally {
+    presetAutosaveLoading = false
+  }
+}
+
+async function loadPresetInner(preset) {
   // A group solo from the *previous* preset means nothing once its sounds
   // are gone from the mix - releasing it here avoids leaving unrelated
   // sounds from the newly-loaded preset stuck muted by a stale solo.
@@ -1620,6 +1706,9 @@ export function mount(container) {
     await refreshList()
     await restoreLastActivePreset(settings)
     await maybeResumeOnLaunch(settings)
+    // Startup is done converging on the restored/resumed state - from here on,
+    // mix edits are the user's and should autosave into the loaded preset.
+    presetAutosaveReady = true
   })
   // mount() only ever runs once (TabHost lazily mounts each tab a single
   // time), so this is a one-time listener registration, not a per-mount leak.

@@ -211,10 +211,13 @@ export function updatePresetWholeMix(id, wholeMix) {
   return presets[idx]
 }
 
-// Edits an existing preset's own sound list/volumes in place (the Mixer's
-// "Save changes" button on whatever preset was last loaded - direct request,
-// 2026-09-02: "Save button for saving changes made on the current preset
-// without the need of creating a new one"). Mirrors savePreset's own
+// Edits an existing preset's own sound list/volumes in place - driven both
+// by the Mixer's explicit "Save X now" button and, since v0.1.178, by the
+// debounced autosave that fires on every mix mutation while a preset is
+// loaded (owner request, 2026-09-10: "Are presets being autosaved? If not
+// they should be"; original explicit-button request 2026-09-02: "Save button
+// for saving changes made on the current preset without the need of creating
+// a new one"). Mirrors savePreset's own
 // sounds.map shape exactly so a preset updated this way is byte-identical in
 // structure to one created fresh. name/createdAt/wholeMix are left untouched
 // - this only ever touches the sound list, matching the button's own scope.

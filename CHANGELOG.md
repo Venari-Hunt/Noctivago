@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.178 — Presets autosave the mix
+
+- Load a preset, then add or remove a sound or drag a volume, and the change now saves back into that preset automatically — no need to hit a Save button. This matches how the Remix tab already autosaves.
+- Only the preset's sound list and per-sound volumes autosave. The master volume is not part of a preset (it's remembered separately). Whole-mix and Sound Group filters still have their own Save in the Remix tab's Preset/Group modes.
+- The Presets window's button is now labelled "Save … now" for when you want to save immediately, with a note that changes save on their own.
+- Removing the last sound from a loaded preset does not empty the preset — it keeps its last non-empty state, same as before.
+
 ## v0.1.177 — Noise reduction in Remix (Sound mode)
 
 - New per-sound "Noise reduction" in the Remix tab's Filters section — reduces steady background noise (tape hiss, mains hum, an air conditioner) on a noisy clip, on top of what the Noise gate already does for the silent gaps.
