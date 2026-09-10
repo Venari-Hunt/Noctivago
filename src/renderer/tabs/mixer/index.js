@@ -513,8 +513,33 @@ function swapSource(entry) {
   }
 }
 
+// Set true once state.included has been seeded from the persisted per-sound
+// `included` flags. Only the very first library load does this - after that
+// state.included is authoritative and kept in sync with disk by
+// startPlayback/toggleIncluded, so re-seeding on every tab-switch
+// refreshList() would risk a fire-and-forget persistIncluded() write that
+// hasn't landed yet clobbering an in-session change.
+let includedSeeded = false
+
 async function refreshList() {
   state.library = await api.library.list()
+  // BUG FIX (reported: "opened the app after an update and no preset was
+  // playing nor loaded - hit play and nothing played"). "In mix" membership
+  // is persisted per-sound (persistIncluded), but state.included - the Set
+  // "Play all" iterates and every row's In Mix / Add label reads - was only
+  // ever populated by startPlayback/toggleIncluded during a session, or by
+  // maybeResumeOnLaunch (which only runs when the app was actually *playing*,
+  // not merely paused, on close). So closing the app while paused dropped the
+  // whole mix: every sound showed "Add", the Current Mix section was empty,
+  // and Play all had nothing to start. Seed it from the persisted flags,
+  // once, on the first load (missing sounds excluded, matching
+  // maybeResumeOnLaunch).
+  if (!includedSeeded) {
+    for (const entry of state.library) {
+      if (entry.included && entry.status !== 'missing') state.included.add(entry.id)
+    }
+    includedSeeded = true
+  }
   for (const entry of state.library) {
     // Seeds state.volumes from the persisted value the first time this
     // entry is seen in a session (e.g. right after app startup, when

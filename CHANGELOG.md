@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.173 — Fix: your mix was empty after a restart until you re-added sounds
+
+- If you closed the app while the mix was paused (not playing), the next launch opened with every sound showing "Add" instead of "In Mix", the Current Mix section empty, and the "Play all" button doing nothing when clicked — you had to click each sound back into the mix by hand. Your mix is now restored on launch: the sounds you had in it show as "In Mix" again and "Play all" starts them.
+- Auto-resume (the mix starting on its own if it was playing when you closed the app) is unchanged — this only fixes the case where it was paused.
+
 ## v0.1.172 — Likely fix for the "weird synth-like sound" during a mix
 
 - A Random Interval / Scheduled sound with a wide per-shot Speed range (roughly 170%+, or a bit less when combined with a downward pitch roll) could produce a loud, sustained, metallic/synth-like sound on a broadband hit like a thunderclap — the time-stretch used for that couldn't compress that aggressively without buzzing. Those shots now fall back to a plain speed-up (which also shifts pitch, like an old tape machine) instead — clean, no buzz.
