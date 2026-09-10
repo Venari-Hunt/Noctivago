@@ -126,8 +126,9 @@ export class BufferScheduledSource {
     // (v0.1.111) and a per-shot Speed change is a pure tempo/length change
     // with pitch preserved - same mechanism BufferScatterSource uses, see
     // shiftAndStretchBuffer. null (clip too long to stretch on the main
-    // thread) falls back to resampling, so also apply speed via playbackRate
-    // there and use the adjusted length for the envelope.
+    // thread, or an aggressive compression WSOLA would buzz on - see
+    // MIN_CLEAN_STRETCH_RATIO) falls back to resampling, so also apply speed
+    // via playbackRate there and use the adjusted length for the envelope.
     const shifted = shiftAndStretchBuffer(this.engine.context, this.audioBuffer, semitones, speedFactor)
     node.buffer = shifted ?? this.audioBuffer
     if (!shifted) node.playbackRate.value = speedFactor

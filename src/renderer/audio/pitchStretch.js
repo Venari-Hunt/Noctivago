@@ -56,6 +56,24 @@ const MAX_STRETCH_SECONDS = 12
 // run at neutral settings" convention as IDENTITY_PITCH_EPSILON_SEMITONES.
 export const IDENTITY_SPEED_EPSILON = 0.005
 
+// Smallest overall stretch ratio (2^(st/12) / speedFactor) this WSOLA
+// compressor handles cleanly. Below it, `anaHop` (= SYNTH_HOP / ratio) grows
+// past FRAME_SIZE, so consecutive analysis frames no longer overlap and the
+// similarity search can't reliably bridge the skipped input - on broadband
+// non-periodic content (a thunderclap is the pathological case) the
+// overlap-add then splices mismatched material every synthesis hop, which
+// reads as a metallic buzz roughly at SR/SYNTH_HOP (~86 Hz). Measured (an
+// isolated harness on chaotic broadband noise): HF energy is unchanged
+// through ratio ~0.7, ~1.5x by 0.6, ~2.3x by 0.5. So `shiftAndStretchBuffer`
+// returns null under this and the caller falls back to plain resample -
+// clean (no buzz), at the cost of coupling pitch to tempo for that shot
+// (classic varispeed), the same trade already accepted for the >12s and
+// stream-mode paths. Reachable only via the per-shot Speed range (v0.1.135):
+// pure pitch stays >= 0.5 (pitchRatio itself), but speed 2x, or speed >1.67x
+// with any downward pitch, drops under this. Reported as a "loud, sustained,
+// synth-like" sound that went away when the owner disabled per-shot speed.
+const MIN_CLEAN_STRETCH_RATIO = 0.6
+
 const FRAME_SIZE = 1024
 // Synthesis hop = FRAME_SIZE / 2 => 50% overlap, where a Hann window has
 // exact constant-overlap-add (consecutive windows sum to 1.0 everywhere).
@@ -226,8 +244,11 @@ export function pitchShiftBuffer(context, audioBuffer, semitones) {
 //     divided by the resample ratio) - i.e. speed changes tempo/length with
 //     pitch preserved, matching how the Remix "Speed" control behaves.
 // speedFactor 1 collapses to plain pitchShiftBuffer. Returns the original
-// buffer unchanged when both are no-ops, and null if the clip is too long to
-// stretch synchronously (caller falls back to resampling for that shot).
+// buffer unchanged when both are no-ops, and null when the caller should
+// fall back to plain resampling for that shot instead - either the clip is
+// too long to stretch synchronously, or the overall stretch is an
+// aggressive compression this WSOLA can't do without a buzz (see
+// MIN_CLEAN_STRETCH_RATIO).
 export function shiftAndStretchBuffer(context, audioBuffer, semitones, speedFactor = 1) {
   const speedIsNoop = Math.abs(speedFactor - 1) < IDENTITY_SPEED_EPSILON
   if (Math.abs(semitones) < IDENTITY_PITCH_EPSILON_SEMITONES && speedIsNoop) return audioBuffer
@@ -235,6 +256,7 @@ export function shiftAndStretchBuffer(context, audioBuffer, semitones, speedFact
 
   const pitchRatio = Math.pow(2, semitones / 12)
   const ratio = pitchRatio / (speedIsNoop ? 1 : speedFactor)
+  if (ratio < MIN_CLEAN_STRETCH_RATIO) return null
   const channels = audioBuffer.numberOfChannels
 
   // Plan the frame alignment once, on a mono downmix, then render every

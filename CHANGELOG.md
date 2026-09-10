@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.172 — Likely fix for the "weird synth-like sound" during a mix
+
+- A Random Interval / Scheduled sound with a wide per-shot Speed range (roughly 170%+, or a bit less when combined with a downward pitch roll) could produce a loud, sustained, metallic/synth-like sound on a broadband hit like a thunderclap — the time-stretch used for that couldn't compress that aggressively without buzzing. Those shots now fall back to a plain speed-up (which also shifts pitch, like an old tape machine) instead — clean, no buzz.
+- This matches what you found: disabling per-shot random speed made the sound go away. Please re-enable it and let me know if the noise is truly gone or still happens.
+
 ## v0.1.171 — Fluctuation now bakes into exports
 
 - Volume Fluctuation (the slow, random volume drift you can set on a looping sound, a whole preset's mix, or a Sound Group) is now baked into an exported file — before, exports ignored it entirely and played a steady level. One fixed take of the drift is rendered into the file, the same way a Random Interval sound's timing is baked as one realization.

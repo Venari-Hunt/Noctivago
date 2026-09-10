@@ -200,8 +200,10 @@ export class BufferScatterSource {
     // change as a pure tempo/length change with pitch preserved (see
     // shiftAndStretchBuffer). Returns the buffer unchanged when both are
     // negligible, and null for a clip too long to stretch on the main thread
-    // - in which case detune only resamples the pitch, so also apply the
-    // speed via playbackRate (couples pitch there, a rare-corner fallback)
+    // OR an aggressive compression WSOLA would buzz on (MIN_CLEAN_STRETCH_
+    // RATIO - a fast per-shot Speed on a thunderclap was the reported case) -
+    // in which case detune only resamples the pitch, so also apply the speed
+    // via playbackRate (couples pitch there, an accepted-limitation fallback)
     // and size the fade-out envelope to the real shot length.
     const shifted = shiftAndStretchBuffer(this.engine.context, this.audioBuffer, semitones, speedFactor)
     node.buffer = shifted ?? this.audioBuffer
