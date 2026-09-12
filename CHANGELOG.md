@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.182 — Sound Group "Occlusion" + a Preset/Group Reverb save bug fixed
+
+- New "Occlusion" slider on a Sound Group's filters (Remix — Group mode): one knob for "this group sounds like it's behind a wall or door" — pulls the lowpass down and pushes reverb up together, instead of balancing two sliders by ear. Combines with whatever Lowpass/Reverb you've already set, only ever adding muffling on top.
+- BUG FIX: changing only the Reverb size/mix sliders in Preset mode or Group mode never lit the Save button, so a reverb-only edit could be silently lost if you navigated away without touching anything else first. Fixed — reverb changes now count as unsaved changes like every other filter.
+
 ## v0.1.181 — Sound Groups: group-by option, and a color per group
 
 - The Mixer's "Group by" dropdown has a new option, "Group: Sound Group" — bucket your sound list by which Sound Group each sound belongs to, with an "Ungrouped" section at the end.

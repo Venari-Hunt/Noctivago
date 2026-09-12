@@ -11,6 +11,7 @@ import { renderPitchCommandFile, pitchCommandFilter, hasPitchFluctuation } from 
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
+import { applyOcclusionToFilters } from '../../shared/constants.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -620,7 +621,10 @@ function buildGroupFilterChain(filters, { skipLimiter = false } = {}) {
 // bakes its own limiter into its output) - skipped entirely, byte-path
 // unchanged, whenever the group has no reverb set.
 async function applyGroupFilters(track, filters, durationSeconds, reporter) {
-  const f = filters ?? {}
+  // Occlusion (v0.1.182) folded into the effective lowpass/reverb values
+  // here, mirroring SoundGroupChain.js's live chain exactly (same shared
+  // helper) - see src/shared/constants.js's applyOcclusionToFilters.
+  const f = applyOcclusionToFilters(filters)
   const hasReverb = (f.reverbSizeMs ?? 0) > 0 && (f.reverbMix ?? 0) > 0
   if (!hasReverb) {
     const outPath = tempPath(INTERMEDIATE_EXT)
@@ -1238,7 +1242,10 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   const usedGroupIds = new Set(sounds.map((s) => s.groupId).filter(Boolean))
   const groupsWithReverbCount = [...usedGroupIds].filter((id) => {
     const g = groups.find((group) => group.id === id)
-    return (g?.filters?.reverbSizeMs ?? 0) > 0 && (g?.filters?.reverbMix ?? 0) > 0
+    // Occlusion (v0.1.182) can imply a reverb pass even when the group's own
+    // reverbSizeMs/reverbMix are 0 - budget against the effective values.
+    const f = applyOcclusionToFilters(g?.filters)
+    return (f.reverbSizeMs ?? 0) > 0 && (f.reverbMix ?? 0) > 0
   }).length
   const groupWorkSeconds =
     (groupedLoopSoundCount + usedGroupIds.size * 2 + groupsWithReverbCount) * durationSeconds

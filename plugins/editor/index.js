@@ -154,8 +154,11 @@ const FILTER_PRESETS = {
 const NEUTRAL_WHOLE_MIX = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, fadeInSeconds: 0, echoDelayMs: 0, echoDecay: 0, eq: [] }
 // A group's own filters (see AudioEngine.js's SoundGroupChain) are the same
 // shape as the whole-mix's, minus fadeInSeconds - a group has no "on load"
-// moment of its own to fade in on.
-const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, eq: [] }
+// moment of its own to fade in on. `occlusion` (v0.1.182) is group-only -
+// see src/shared/constants.js's applyOcclusionToFilters (duplicated here
+// only as this plain default, per this plugin's own can't-import-outside-
+// its-directory rule; the actual formula lives in that one shared place).
+const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, occlusion: 0, eq: [] }
 
 // Shared by both the whole-mix (Preset mode) and group (Group mode) filter
 // shapes below - self-review v0.1.149: these were originally two byte-for-
@@ -258,6 +261,14 @@ function canonicalMixFilters(obj, { includeFadeIn }) {
     gainDb: Number(o.gainDb) || 0,
     echoDelayMs: Number(o.echoDelayMs) || 0,
     echoDecay: Number(o.echoDecay) || 0,
+    // BUG FIX (v0.1.182): reverbSizeMs/reverbMix were missing from this
+    // fingerprint entirely, so a Preset/Group-mode edit that touched only
+    // Reverb never marked the panel dirty and the Save button never lit -
+    // the edit was silently lost the moment you navigated away. occlusion
+    // is new here, group-only (always 0 on a whole-mix object, harmless).
+    reverbSizeMs: Number(o.reverbSizeMs) || 0,
+    reverbMix: Number(o.reverbMix) || 0,
+    occlusion: Number(o.occlusion) || 0,
     ...(includeFadeIn ? { fadeInSeconds: Number(o.fadeInSeconds) || 0 } : {}),
     fluctuation: (() => {
       const v = o.fluctuation?.volume
@@ -781,6 +792,11 @@ ${mixFluctuationMarkup('preset')}
                 <span>Reverb mix</span>
                 <input id="editor-mix-group-reverb-mix" type="range" min="0" max="1" value="0" step="0.01" />
                 <span id="editor-mix-group-reverb-mix-value" class="editor-filter-value">Off</span>
+              </label>
+              <label title="Sounds like this group is behind a wall or door - pulls the lowpass down and pushes reverb up together, on top of whatever Lowpass/Reverb are already set above. Left edge = off.">
+                <span>Occlusion</span>
+                <input id="editor-mix-group-occlusion" type="range" min="0" max="1" value="0" step="0.01" />
+                <span id="editor-mix-group-occlusion-value" class="editor-filter-value">Off</span>
               </label>
             </div>
             <div class="editor-eq">
@@ -1512,6 +1528,8 @@ ${mixFluctuationMarkup('group')}
       mixGroupReverbSizeValue: container.querySelector('#editor-mix-group-reverb-size-value'),
       mixGroupReverbMix: container.querySelector('#editor-mix-group-reverb-mix'),
       mixGroupReverbMixValue: container.querySelector('#editor-mix-group-reverb-mix-value'),
+      mixGroupOcclusion: container.querySelector('#editor-mix-group-occlusion'),
+      mixGroupOcclusionValue: container.querySelector('#editor-mix-group-occlusion-value'),
       mixGroupEqCanvas: container.querySelector('#editor-mix-group-eq-canvas'),
       mixGroupEqCompareA: container.querySelector('#editor-mix-group-eq-compare-a'),
       mixGroupEqCompareB: container.querySelector('#editor-mix-group-eq-compare-b'),
@@ -4086,7 +4104,7 @@ ${mixFluctuationMarkup('group')}
     }
 
     this.els.mixGroupName.addEventListener('input', () => this.updateGroupDirty())
-    for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay, this.els.mixGroupReverbSize, this.els.mixGroupReverbMix]) {
+    for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay, this.els.mixGroupReverbSize, this.els.mixGroupReverbMix, this.els.mixGroupOcclusion]) {
       el.addEventListener('input', () => this.readGroupControlsAndPreview())
     }
     for (const el of [this.els.mixGroupFlucEnabled, this.els.mixGroupFlucFullRandom, this.els.mixGroupFlucChangeMin, this.els.mixGroupFlucChangeMax, this.els.mixGroupFlucTransition]) {
@@ -4814,6 +4832,7 @@ ${mixFluctuationMarkup('group')}
     this.els.mixGroupEchoDecay.value = String(filters.echoDecay)
     this.els.mixGroupReverbSize.value = String(filters.reverbSizeMs ?? 0)
     this.els.mixGroupReverbMix.value = String(filters.reverbMix ?? 0)
+    this.els.mixGroupOcclusion.value = String(filters.occlusion ?? 0)
     this.writeMixFluctuation(filters.fluctuation, this.groupFlucEls)
   }
 
@@ -4935,6 +4954,7 @@ ${mixFluctuationMarkup('group')}
       echoDecay: Number(this.els.mixGroupEchoDecay.value),
       reverbSizeMs: Number(this.els.mixGroupReverbSize.value),
       reverbMix: Number(this.els.mixGroupReverbMix.value),
+      occlusion: Number(this.els.mixGroupOcclusion.value),
       fluctuation: this.readMixFluctuation(this.groupFlucEls)
     }
     this.updateGroupLabels()
@@ -4961,6 +4981,7 @@ ${mixFluctuationMarkup('group')}
     const echoDecay = Number(this.els.mixGroupEchoDecay.value)
     const reverbSize = Number(this.els.mixGroupReverbSize.value)
     const reverbMix = Number(this.els.mixGroupReverbMix.value)
+    const occlusion = Number(this.els.mixGroupOcclusion.value)
     this.els.mixGroupHighpassValue.textContent = hp > 0 ? `${hp} Hz` : 'Off'
     this.els.mixGroupLowpassValue.textContent = lp < 20000 ? `${lp} Hz` : 'Off'
     this.els.mixGroupGainValue.textContent = `${gain > 0 ? '+' : ''}${gain} dB`
@@ -4968,6 +4989,7 @@ ${mixFluctuationMarkup('group')}
     this.els.mixGroupEchoDecayValue.textContent = echoDecay > 0 ? echoDecay.toFixed(2) : 'Off'
     this.els.mixGroupReverbSizeValue.textContent = reverbSize > 0 ? `${(reverbSize / 1000).toFixed(1)}s` : 'Off'
     this.els.mixGroupReverbMixValue.textContent = reverbMix > 0 ? `${Math.round(reverbMix * 100)}%` : 'Off'
+    this.els.mixGroupOcclusionValue.textContent = occlusion > 0 ? `${Math.round(occlusion * 100)}%` : 'Off'
   }
 
   updateGroupDirty() {

@@ -137,6 +137,10 @@ export function normalizeGroupFilters(input) {
     echoDecay: clamp(src.echoDecay, 0, 0.85, 0),
     reverbSizeMs: clamp(src.reverbSizeMs, 0, 4000, 0),
     reverbMix: clamp(src.reverbMix, 0, 1, 0),
+    // Occlusion (v0.1.182) - group-only, see src/shared/constants.js's
+    // applyOcclusionToFilters for the full reasoning. Not part of
+    // normalizeWholeMix - a whole preset has no "inside/outside" of itself.
+    occlusion: clamp(src.occlusion, 0, 1, 0),
     fluctuation: normalizeMixFluctuation(src.fluctuation),
     eq: Array.isArray(src.eq) ? src.eq.map(normalizeEqBand).filter(Boolean) : []
   }

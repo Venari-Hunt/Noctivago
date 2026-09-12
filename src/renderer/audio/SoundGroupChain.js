@@ -1,6 +1,7 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
 import { Modulator, normalizeFluctuationAxis } from './Modulator.js'
+import { applyOcclusionToFilters } from '../../shared/constants.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -114,10 +115,15 @@ export class SoundGroupChain {
   }
 
   // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay,
-  // reverbSizeMs, reverbMix, eq: [...] } or null / undefined for neutral.
+  // reverbSizeMs, reverbMix, occlusion, eq: [...] } or null / undefined for
+  // neutral. `occlusion` (v0.1.182) is folded into the effective
+  // lowpass/reverb values here via applyOcclusionToFilters, rather than
+  // being its own node - it's a UI-level convenience over the same two
+  // knobs, not a distinct DSP stage. `this.config` keeps the raw,
+  // pre-occlusion config for anything reading it back.
   set(config) {
     this.config = config ?? null
-    const c = config ?? {}
+    const c = applyOcclusionToFilters(config ?? {})
     const now = this.context.currentTime
 
     this.highpass.frequency.setTargetAtTime(c.highpassHz ?? 0, now, FILTER_SMOOTHING_SECONDS)
