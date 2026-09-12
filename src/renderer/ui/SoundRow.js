@@ -228,7 +228,39 @@ function buildTagsRow(entry, callbacks, allTags) {
   return tagsRow
 }
 
-export function createSoundRow(entry, { included, loading, error, volume, muted, soloed, groupName = null }, callbacks, allTags = []) {
+// A stable (not re-randomized every render), distinct-per-group badge color -
+// hashes the group's own id (not its display name, so a rename doesn't shift
+// the color) into a hue, then applies it at the same saturation/lightness/
+// alpha the old single hardcoded purple used, so every group's badge still
+// reads as "the same kind of thing" at a glance, just individually
+// colored. Requested directly: "each group should have a random different
+// color" (owner's own suggestion), plus "the tag should be closer to the
+// name" - see the .sound-row-name flex fix in main.css for that second half.
+// FNV-1a, not a plain polynomial rolling hash - verified live that the
+// naive version correlated badly on realistic inputs (two group ids
+// differing by one trailing character landed only ~2deg apart in hue,
+// which read as "the same color" at a glance - not caught by review, only
+// by actually creating two groups and comparing the rendered badges).
+// FNV-1a's avalanche keeps similar ids from mapping to similar hues.
+function hashHue(id) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0) % 360
+}
+
+function groupBadgeColors(groupId) {
+  const hue = hashHue(groupId)
+  return {
+    background: `hsla(${hue}, 70%, 68%, 0.18)`,
+    borderColor: `hsla(${hue}, 70%, 68%, 0.45)`,
+    color: `hsl(${hue}, 85%, 78%)`
+  }
+}
+
+export function createSoundRow(entry, { included, loading, error, volume, muted, soloed, groupName = null, groupId = null }, callbacks, allTags = []) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
@@ -316,6 +348,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     groupBadge.className = 'sound-row-group-badge'
     groupBadge.textContent = groupName
     groupBadge.title = `In the "${groupName}" sound group - click to change`
+    if (groupId) Object.assign(groupBadge.style, groupBadgeColors(groupId))
     groupBadge.addEventListener('click', (evt) => {
       evt.stopPropagation()
       callbacks.onContextMenu(entry.id, evt)

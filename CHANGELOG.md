@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.181 — Sound Groups: group-by option, and a color per group
+
+- The Mixer's "Group by" dropdown has a new option, "Group: Sound Group" — bucket your sound list by which Sound Group each sound belongs to, with an "Ungrouped" section at the end.
+- Each Sound Group's badge on a sound row now gets its own distinct, consistent color, instead of every group looking the same purple — makes it easier to tell groups apart at a glance in a longer list.
+- Fixed the group badge sitting far off to the right of a short sound name instead of right next to it — it was a real layout bug, not intentional spacing.
+
 ## v0.1.180 — Sleep timer can turn off the displays and keep playing
 
 - New sleep-timer action: "Turn off the displays, keep the sound playing". Set a timer (or a time of day) and when it's up, your monitors switch off while the mix keeps going — for falling asleep to a mix without a lit screen in the room.

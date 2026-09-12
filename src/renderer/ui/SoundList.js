@@ -15,7 +15,8 @@ export const GROUP_MODES = [
   { value: 'alphabetical', label: 'Group: Alphabetical' },
   { value: 'date-added', label: 'Group: Date added' },
   { value: 'date-created', label: 'Group: Date created' },
-  { value: 'tags', label: 'Group: Tags' }
+  { value: 'tags', label: 'Group: Tags' },
+  { value: 'sound-group', label: 'Group: Sound Group' }
 ]
 
 function compareBySortMode(a, b, sortMode) {
@@ -62,7 +63,7 @@ function formatDateGroupLabel(ms) {
 // one tag arbitrarily. Groups themselves are ordered independently of
 // sortMode (alphabetically, or newest-date-first); sortMode still governs
 // the order of entries *within* each group.
-function groupEntries(sortedEntries, groupMode) {
+function groupEntries(sortedEntries, groupMode, soundGroups) {
   if (groupMode === 'alphabetical') {
     const buckets = new Map()
     for (const entry of sortedEntries) {
@@ -101,6 +102,25 @@ function groupEntries(sortedEntries, groupMode) {
     return [...buckets.keys()]
       .sort((a, b) => (a === 'Untagged' ? 1 : b === 'Untagged' ? -1 : a.localeCompare(b)))
       .map((key) => ({ label: key, entries: buckets.get(key) }))
+  }
+
+  if (groupMode === 'sound-group') {
+    // One bucket per Sound Group (a sound belongs to at most one, per
+    // AudioEngine.js's SoundGroupChain - unlike Tags above, no entry appears
+    // twice), plus an "Ungrouped" bucket for everything else, sorted last -
+    // same convention alphabetical/tags already use for their own catch-all.
+    const buckets = new Map()
+    for (const entry of sortedEntries) {
+      const group = soundGroups?.find((g) => g.soundIds.includes(entry.id)) ?? null
+      const key = group?.id ?? '__ungrouped'
+      if (!buckets.has(key)) buckets.set(key, { label: group?.name ?? 'Ungrouped', entries: [] })
+      buckets.get(key).entries.push(entry)
+    }
+    return [...buckets.entries()]
+      .sort(([keyA, a], [keyB, b]) =>
+        keyA === '__ungrouped' ? 1 : keyB === '__ungrouped' ? -1 : a.label.localeCompare(b.label)
+      )
+      .map(([, { label, entries }]) => ({ label, entries }))
   }
 
   return [{ label: null, entries: sortedEntries }]
@@ -200,8 +220,10 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     // to right-click the sound and check which group had a checkmark
     // (reported directly: "you don't have any way to know if an audio is in
     // a group unless you go ahead and right click it").
-    const groupName = playbackState.groups?.find((g) => g.soundIds.includes(entry.id))?.name ?? null
-    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName }, draggable, callbacks, allTags))
+    const soundGroup = playbackState.groups?.find((g) => g.soundIds.includes(entry.id)) ?? null
+    const groupName = soundGroup?.name ?? null
+    const groupId = soundGroup?.id ?? null
+    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName, groupId }, draggable, callbacks, allTags))
   }
 
   function appendHeader(label) {
@@ -231,7 +253,7 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     return
   }
 
-  for (const group of groupEntries(sorted, viewState.groupMode)) {
+  for (const group of groupEntries(sorted, viewState.groupMode, playbackState.groups)) {
     appendHeader(group.label)
     for (const entry of group.entries) appendRow(entry)
   }

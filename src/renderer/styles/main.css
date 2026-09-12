@@ -400,7 +400,15 @@ main {
 }
 
 .sound-row-name {
-  flex: 1;
+  /* Was flex: 1, which force-filled all remaining space in .sound-row-name-row
+     regardless of the name's own length - fine for a lone name, but it pushed
+     a following badge (composite/group) all the way to the row's right edge
+     even for a short name, reported directly as "the tag should be closer to
+     the name". flex: 0 1 auto keeps the existing shrink-and-ellipsize
+     behavior for a name too long to fit (min-width: 0 below is what allows
+     that), it just no longer grows past its own content when there's room
+     not to. */
+  flex: 0 1 auto;
   min-width: 0;
   font-weight: 600;
   font-size: 15px;
@@ -457,19 +465,25 @@ main {
 
 .sound-row-group-badge {
   display: inline-block;
+  flex: 0 0 auto;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
+  /* Background/border/text color are set inline per-group (SoundRow.js's
+     groupBadgeColors) so each Sound Group gets its own stable, distinct
+     color - these are just a fallback in case that's ever skipped. */
   background: rgba(187, 154, 247, 0.18);
   color: #bb9af7;
   border: 1px solid rgba(187, 154, 247, 0.4);
   margin-left: 6px;
   cursor: pointer;
   font-family: inherit;
+  filter: brightness(1);
+  transition: filter 0.1s ease;
 }
 
 .sound-row-group-badge:hover {
-  background: rgba(187, 154, 247, 0.3);
+  filter: brightness(1.35);
 }
 
 .sound-row-tags {
