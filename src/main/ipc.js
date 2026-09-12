@@ -23,7 +23,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -92,6 +92,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setYtDlpCookiesBrowser', (_event, browser) => setYtDlpCookiesBrowser(browser))
   ipcMain.handle('settings:setGlobalVolumePosition', (_event, position) => setGlobalVolumePosition(position))
   ipcMain.handle('settings:setLastActivePresetId', (_event, id) => setLastActivePresetId(id))
+  ipcMain.handle('settings:setPresetAutosaveEnabled', (_event, enabled) => setPresetAutosaveEnabled(enabled))
 
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
   ipcMain.handle('sleepTimer:start', (_event, { durationSeconds, action, minutes, mode, timeOfDay }) => {

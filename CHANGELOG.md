@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.183 — New-preset options, an Autosave toggle, and a "Save as new preset" bug fixed
+
+- Creating a new preset from the Presets window now offers two clear options: "New blank preset" (starts empty, for building up from scratch) and "Save current mix as new preset" (a renamed, clearer "Save as new preset" — snapshots everything currently in the mix).
+- BUG FIX: "Save as new preset" never carried over the current preset's whole-mix filters/EQ or Sound Groups — only the sound list. Fixed; a new preset saved from the current mix now carries all of it.
+- New "Autosave changes to the loaded preset" checkbox in the Presets window — autosave (added in v0.1.178) is on by default, but can now be turned off if you'd rather save by hand with the "Save … now" button.
+
 ## v0.1.182 — Sound Group "Occlusion" + a Preset/Group Reverb save bug fixed
 
 - New "Occlusion" slider on a Sound Group's filters (Remix — Group mode): one knob for "this group sounds like it's behind a wall or door" — pulls the lowpass down and pushes reverb up together, instead of balancing two sliders by ear. Combines with whatever Lowpass/Reverb you've already set, only ever adding muffling on top.

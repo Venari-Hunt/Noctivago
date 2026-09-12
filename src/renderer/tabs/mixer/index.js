@@ -108,7 +108,9 @@ const els = {
   updateActivePresetBtn: document.getElementById('update-active-preset'),
   updateActivePresetLabel: document.getElementById('update-active-preset-label'),
   presetAutosaveNote: document.getElementById('preset-autosave-note'),
+  presetAutosaveToggle: document.getElementById('preset-autosave-toggle'),
   newPresetName: document.getElementById('new-preset-name'),
+  newPresetBlankBtn: document.getElementById('new-preset-blank'),
   savePresetBtn: document.getElementById('save-preset'),
   presetSaveHint: document.getElementById('preset-save-hint'),
   presetList: document.getElementById('preset-list'),
@@ -1277,6 +1279,7 @@ function updateActivePresetButtonState(presets) {
   }
   els.updateActivePresetBtn.classList.remove('hidden')
   els.presetAutosaveNote.classList.remove('hidden')
+  updatePresetAutosaveNoteText()
   els.updateActivePresetLabel.textContent = `Save "${active.name}" now`
 }
 
@@ -1362,9 +1365,21 @@ const PRESET_AUTOSAVE_DEBOUNCE_MS = 600
 let presetAutosaveReady = false
 let presetAutosaveLoading = false
 let presetAutosaveTimer = null
+// Owner inbox (2026-09-12): "Autosave should be a toggle on the preset
+// modal" - a plain opt-out for the whole autosave behavior above, on by
+// default. Mirrors settings.js's presetAutosaveEnabled; kept as a live local
+// var (rather than re-reading api.settings.get() on every mix edit) since
+// autosaveActivePreset() can fire on every volume drag.
+let presetAutosaveUserEnabled = true
+
+function updatePresetAutosaveNoteText() {
+  els.presetAutosaveNote.textContent = presetAutosaveUserEnabled
+    ? 'Changes to the loaded preset save automatically as you edit the mix.'
+    : 'Autosave is off - use "Save … now" below to update this preset by hand.'
+}
 
 function autosaveActivePreset() {
-  if (!presetAutosaveReady || presetAutosaveLoading) return
+  if (!presetAutosaveReady || presetAutosaveLoading || !presetAutosaveUserEnabled) return
   const presetId = state.activePresetId
   if (!presetId || state.included.size === 0) return
   clearTimeout(presetAutosaveTimer)
@@ -1419,9 +1434,50 @@ els.savePresetBtn.addEventListener('click', async () => {
     return
   }
   els.presetSaveHint.textContent = ''
-  await api.presets.save({ name, sounds: currentMixSounds() })
+  // BUG FIX (reported directly, "obviously a bug"): this used to send only
+  // `sounds`, so saving the current mix as a new preset silently dropped
+  // whatever whole-mix filters/EQ and Sound Groups the currently-loaded
+  // preset had. state.groups already tracks "the active preset's groups, or
+  // [] if none" (see loadPresetInner/deletePreset); wholeMix isn't cached in
+  // state at all (it's applied straight onto the live engine.wholeMix node),
+  // so it's re-fetched from the active preset's own record here.
+  const activePreset = state.activePresetId
+    ? (await api.presets.list()).find((p) => p.id === state.activePresetId)
+    : null
+  await api.presets.save({
+    name,
+    sounds: currentMixSounds(),
+    wholeMix: activePreset?.wholeMix ?? null,
+    groups: state.groups
+  })
   els.newPresetName.value = ''
   await refreshPresetList()
+})
+
+// Owner inbox (2026-09-12): "creating a new preset there should be 2
+// options" - a clean-slate preset alongside the existing (now-renamed,
+// same note) "based on the current mix" save above. Always empty regardless
+// of what's currently in the mix, then loaded like any other preset (via
+// the same loadPreset every other entry point uses) so the Mixer actually
+// clears down to nothing, ready to build up from scratch.
+els.newPresetBlankBtn.addEventListener('click', async () => {
+  const name = els.newPresetName.value.trim()
+  if (!name) {
+    els.newPresetName.focus()
+    els.newPresetName.placeholder = 'Enter a name first'
+    return
+  }
+  els.presetSaveHint.textContent = ''
+  const created = await api.presets.save({ name, sounds: [], wholeMix: null, groups: [] })
+  els.newPresetName.value = ''
+  await refreshPresetList()
+  if (created) await loadPreset(created)
+})
+
+els.presetAutosaveToggle.addEventListener('change', () => {
+  presetAutosaveUserEnabled = els.presetAutosaveToggle.checked
+  api.settings.setPresetAutosaveEnabled(presetAutosaveUserEnabled)
+  updatePresetAutosaveNoteText()
 })
 
 // Only touches sounds that actually changed between the current mix and the
@@ -1703,6 +1759,9 @@ export function mount(container) {
   api.settings.get().then(async (settings) => {
     els.globalVolume.value = String(settings.globalVolumePosition)
     applyGlobalVolume()
+    presetAutosaveUserEnabled = settings.presetAutosaveEnabled
+    els.presetAutosaveToggle.checked = presetAutosaveUserEnabled
+    updatePresetAutosaveNoteText()
     await refreshList()
     await restoreLastActivePreset(settings)
     await maybeResumeOnLaunch(settings)

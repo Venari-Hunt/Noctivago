@@ -893,8 +893,13 @@ main {
 
 .preset-save-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.preset-autosave-toggle-row {
+  margin-bottom: 8px;
 }
 
 .preset-save-row input[type='text'] {

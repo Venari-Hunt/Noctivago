@@ -144,7 +144,14 @@ const store = new Store({
     // whole-mix processing shaping the mix are back in place before
     // playback resumes, instead of every sound silently reverting to raw,
     // unprocessed settings the moment the app restarts.
-    lastActivePresetId: null
+    lastActivePresetId: null,
+    // Owner inbox (2026-09-12): "Autosave should be a toggle on the preset
+    // modal" - v0.1.178 made loading a preset then editing the mix (add/
+    // remove a sound, drag a volume) autosave back into it with no way to
+    // opt out. On by default (preserves that existing behavior); the
+    // Presets modal's own checkbox is the only UI for this, not the
+    // Settings menu, per the owner's own request for where it should live.
+    presetAutosaveEnabled: true
   }
 })
 
@@ -213,7 +220,8 @@ export function getSettings() {
     exportImagePath: store.get('exportImagePath'),
     exportImageMotion: store.get('exportImageMotion'),
     globalVolumePosition: store.get('globalVolumePosition'),
-    lastActivePresetId: store.get('lastActivePresetId')
+    lastActivePresetId: store.get('lastActivePresetId'),
+    presetAutosaveEnabled: store.get('presetAutosaveEnabled')
   }
 }
 
@@ -385,5 +393,10 @@ export function setGlobalVolumePosition(position) {
 
 export function setLastActivePresetId(id) {
   store.set('lastActivePresetId', typeof id === 'string' ? id : null)
+  return getSettings()
+}
+
+export function setPresetAutosaveEnabled(enabled) {
+  store.set('presetAutosaveEnabled', Boolean(enabled))
   return getSettings()
 }
