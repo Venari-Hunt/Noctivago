@@ -260,10 +260,27 @@ function groupBadgeColors(groupId) {
   }
 }
 
-export function createSoundRow(entry, { included, loading, error, volume, muted, soloed, groupName = null, groupId = null }, callbacks, allTags = []) {
+export function createSoundRow(entry, { included, loading, error, volume, muted, soloed, groupName = null, groupId = null, selectMode = false, selected = false }, callbacks, allTags = []) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
+
+  // Bulk-select checkbox (Board backlog: bulk-apply an effect preset to
+  // several sounds at once) - only exists in the DOM at all while select
+  // mode is on, so it costs nothing on every other render and can't be
+  // accidentally clicked in the normal one-sound-at-a-time flow.
+  if (selectMode) {
+    li.classList.add('sound-row-selectable')
+    if (selected) li.classList.add('sound-row-selected')
+    const selectLabel = document.createElement('label')
+    selectLabel.className = 'sound-row-select'
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.checked = selected
+    checkbox.addEventListener('change', () => callbacks.onToggleSelect(entry.id))
+    selectLabel.appendChild(checkbox)
+    li.appendChild(selectLabel)
+  }
 
   // Right-click menu - currently just Sound Groups ("Add to group…", see
   // AudioEngine.js's SoundGroupChain), left generic (evt handed through

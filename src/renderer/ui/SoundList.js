@@ -223,7 +223,9 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     const soundGroup = playbackState.groups?.find((g) => g.soundIds.includes(entry.id)) ?? null
     const groupName = soundGroup?.name ?? null
     const groupId = soundGroup?.id ?? null
-    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName, groupId }, draggable, callbacks, allTags))
+    const selectMode = Boolean(viewState.selectMode)
+    const selected = selectMode && Boolean(viewState.selectedIds?.has(entry.id))
+    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName, groupId, selectMode, selected }, draggable, callbacks, allTags))
   }
 
   function appendHeader(label) {

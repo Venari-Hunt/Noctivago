@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.184 — Bulk-apply an effect preset to several sounds at once
+
+- The Mixer's sound list has a new "Select…" button — turns on a checkbox next to each sound so you can select several at once.
+- With sounds selected, a small bar shows the same effect presets Remix has (Muffled, Over the Phone, On the Radio, Distant, Echo, Reverb, Underwater) plus "Reset filters" — click one to apply it to every selected sound in one go, instead of opening each one in Remix individually.
+- Only highpass/lowpass/gain/echo/reverb change (matching what a preset changes on a single sound in Remix); each sound's own EQ is left untouched.
+
 ## v0.1.183 — New-preset options, an Autosave toggle, and a "Save as new preset" bug fixed
 
 - Creating a new preset from the Presets window now offers two clear options: "New blank preset" (starts empty, for building up from scratch) and "Save current mix as new preset" (a renamed, clearer "Save as new preset" — snapshots everything currently in the mix).

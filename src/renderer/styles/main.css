@@ -308,6 +308,31 @@ main {
   font-size: 12px;
 }
 
+.bulk-select-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.bulk-select-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.bulk-select-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
 .tag-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -390,6 +415,30 @@ main {
 
 .sound-row-missing {
   opacity: 0.6;
+}
+
+.sound-row-selectable {
+  position: relative;
+  padding-left: 34px;
+}
+
+.sound-row-select {
+  position: absolute;
+  left: 10px;
+  top: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.sound-row-select input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.sound-row-selected {
+  border-color: var(--accent);
+  background: var(--surface-alt);
 }
 
 .sound-row-info {

@@ -15,12 +15,41 @@ import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeS
 const api = window.noctivago
 const engine = new AudioEngine()
 
+// Bulk-apply an effect preset to several selected sounds at once (Board
+// backlog: Noctívago-shaped echo of Audacity's Macros). Duplicated from
+// plugins/editor/index.js's FILTER_PRESETS - core can't import a plugin's
+// own files, so keep these values in sync if that list ever changes.
+// Mirrors the plugin's own setFilterSliders field-by-field exactly: only
+// highpass/lowpass/gain/echo/reverb are set from the preset (reset to 0/off
+// when a preset doesn't define them), gate/denoise always reset to off
+// (none of these presets touch them), EQ is left completely untouched.
+const BULK_FILTER_PRESETS = {
+  muffled: { highpassHz: 0, lowpassHz: 700, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+  phone: { highpassHz: 300, lowpassHz: 3400, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+  radio: { highpassHz: 150, lowpassHz: 6000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 },
+  distant: { highpassHz: 0, lowpassHz: 2500, gainDb: -8, echoDelayMs: 0, echoDecay: 0 },
+  underwater: { highpassHz: 0, lowpassHz: 250, gainDb: -3, echoDelayMs: 0, echoDecay: 0 },
+  echo: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 350, echoDecay: 0.4 },
+  reverb: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 1500, reverbMix: 0.35 }
+}
+// "Reset filters" for the bulk bar - the same neutral HP/LP/Gain/Echo/
+// Reverb values Remix's own Reset filters button applies, EQ untouched.
+const BULK_NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoDelayMs: 0, echoDecay: 0 }
+
 const state = {
   library: [],
   searchQuery: '',
   sortMode: 'name-asc',
   groupMode: 'none',
   activeTagFilter: null,
+  // Bulk-apply an effect preset to several sounds at once (Board backlog
+  // item, Audacity-Macros-shaped) - a lightweight multi-select layered onto
+  // the existing list, not a new selection model that touches every other
+  // row interaction. selectMode toggles the per-row checkboxes on; leaving
+  // it clears the selection so it can't silently carry over into unrelated
+  // later actions.
+  selectMode: false,
+  selectedIds: new Set(),
   sources: new Map(),
   volumes: new Map(),
   included: new Set(),
@@ -220,7 +249,7 @@ function render() {
     els.emptyState,
     visible,
     state,
-    { sortMode: state.sortMode, groupMode: state.groupMode },
+    { sortMode: state.sortMode, groupMode: state.groupMode, selectMode: state.selectMode, selectedIds: state.selectedIds },
     {
       onToggleIncluded: toggleIncluded,
       onVolumeChange: changeVolume,
@@ -232,11 +261,75 @@ function render() {
       onRename: renameSound,
       onTagsChange: changeTags,
       onReorderDrop: reorderByDrop,
-      onContextMenu: openSoundContextMenu
+      onContextMenu: openSoundContextMenu,
+      onToggleSelect: toggleSelectSound
     },
     allTags
   )
   refreshGlobalButton()
+}
+
+// Bulk-select (Board backlog: bulk-apply an effect preset to several sounds
+// at once) - toggling a row's checkbox re-renders (cheap; the list is
+// already re-rendered on every other row-state change in this file) so the
+// bar's live count and each row's highlight stay in sync immediately.
+function toggleSelectSound(id) {
+  if (state.selectedIds.has(id)) state.selectedIds.delete(id)
+  else state.selectedIds.add(id)
+  updateBulkSelectUI()
+  render()
+}
+
+function updateBulkSelectUI() {
+  els.bulkSelectToggle.textContent = state.selectMode ? 'Cancel select' : 'Select…'
+  els.bulkSelectToggle.classList.toggle('btn-active', state.selectMode)
+  els.bulkSelectBar.classList.toggle('hidden', !state.selectMode)
+  const count = state.selectedIds.size
+  els.bulkSelectCount.textContent = `${count} selected`
+  const hasSelection = count > 0
+  for (const button of els.bulkSelectPresetButtons) button.disabled = !hasSelection
+  els.bulkSelectReset.disabled = !hasSelection
+}
+
+// Applies one effect preset's HP/LP/Gain/Echo/Reverb to every selected
+// sound's own filters, exactly mirroring the Remix plugin's own
+// setFilterSliders field-by-field behavior for a single sound (gate/denoise
+// reset to off, EQ left untouched) - see BULK_FILTER_PRESETS' own comment.
+// `updateFilters` is a whole-object replace (library.js), so each sound's
+// full current filters are read first and only the preset's own fields are
+// overwritten, same as the plugin does via its own currentFilters merge.
+async function applyBulkFilterPreset(preset) {
+  const ids = [...state.selectedIds]
+  if (ids.length === 0) return
+  await Promise.all(
+    ids.map((id) => {
+      const entry = state.library.find((s) => s.id === id)
+      if (!entry) return null
+      const merged = {
+        ...entry.filters,
+        highpassHz: preset.highpassHz ?? 0,
+        lowpassHz: preset.lowpassHz ?? 20000,
+        gainDb: preset.gainDb ?? 0,
+        gateThresholdDb: -80,
+        gateRangeDb: 0,
+        gateAttackMs: 10,
+        gateReleaseMs: 150,
+        denoiseEnabled: false,
+        denoiseStrengthDb: 12,
+        denoiseSampleStartSec: 0,
+        denoiseSampleEndSec: 0,
+        echoDelayMs: preset.echoDelayMs ?? 0,
+        echoDecay: preset.echoDecay ?? 0,
+        reverbSizeMs: preset.reverbSizeMs ?? 0,
+        reverbMix: preset.reverbMix ?? 0
+      }
+      return api.library.updateFilters(id, merged)
+    })
+  )
+  // refreshList() re-fetches every entry and reconciles every live source
+  // against its (now updated) filters - the same path a Remix Save's
+  // library:onChanged already drives, no separate reconcile call needed.
+  await refreshList()
 }
 
 async function changeTags(id, tags) {
@@ -1717,6 +1810,21 @@ export function mount(container) {
     <div class="sound-list-controls">
       <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
       <select id="sound-group" class="sound-group-select" title="Group by"></select>
+      <button id="bulk-select-toggle" class="btn btn-small" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
+    </div>
+    <div id="bulk-select-bar" class="bulk-select-bar hidden">
+      <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
+      <div class="bulk-select-presets">
+        <button class="btn btn-small" type="button" data-bulk-preset="muffled">Muffled</button>
+        <button class="btn btn-small" type="button" data-bulk-preset="phone">Over the Phone</button>
+        <button class="btn btn-small" type="button" data-bulk-preset="radio">On the Radio</button>
+        <button class="btn btn-small" type="button" data-bulk-preset="distant">Distant</button>
+        <button class="btn btn-small" type="button" data-bulk-preset="echo">Echo</button>
+        <button class="btn btn-small" type="button" data-bulk-preset="reverb">Reverb</button>
+        <button class="btn btn-small" type="button" data-bulk-preset="underwater">Underwater</button>
+        <button id="bulk-select-reset" class="btn btn-small" type="button">Reset filters</button>
+      </div>
+      <button id="bulk-select-done" class="btn btn-small" type="button">Done</button>
     </div>
     <div id="tag-filter-bar" class="tag-filter-bar hidden"></div>
     <ul id="sound-list" class="sound-list"></ul>
@@ -1725,6 +1833,12 @@ export function mount(container) {
   els.soundSearch = container.querySelector('#sound-search')
   els.soundSort = container.querySelector('#sound-sort')
   els.soundGroup = container.querySelector('#sound-group')
+  els.bulkSelectToggle = container.querySelector('#bulk-select-toggle')
+  els.bulkSelectBar = container.querySelector('#bulk-select-bar')
+  els.bulkSelectCount = container.querySelector('#bulk-select-count')
+  els.bulkSelectPresetButtons = container.querySelectorAll('[data-bulk-preset]')
+  els.bulkSelectReset = container.querySelector('#bulk-select-reset')
+  els.bulkSelectDone = container.querySelector('#bulk-select-done')
   els.tagFilterBar = container.querySelector('#tag-filter-bar')
   els.soundList = container.querySelector('#sound-list')
   els.emptyState = container.querySelector('#empty-state')
@@ -1750,6 +1864,23 @@ export function mount(container) {
     state.groupMode = els.soundGroup.value
     render()
   })
+  els.bulkSelectToggle.addEventListener('click', () => {
+    state.selectMode = !state.selectMode
+    if (!state.selectMode) state.selectedIds.clear()
+    updateBulkSelectUI()
+    render()
+  })
+  els.bulkSelectDone.addEventListener('click', () => {
+    state.selectMode = false
+    state.selectedIds.clear()
+    updateBulkSelectUI()
+    render()
+  })
+  for (const button of els.bulkSelectPresetButtons) {
+    button.addEventListener('click', () => applyBulkFilterPreset(BULK_FILTER_PRESETS[button.dataset.bulkPreset]))
+  }
+  els.bulkSelectReset.addEventListener('click', () => applyBulkFilterPreset(BULK_NEUTRAL_FILTERS))
+  updateBulkSelectUI()
   // One settings read up front, reused by all three startup steps below
   // instead of each re-fetching its own copy: restore the master volume
   // slider immediately (before anything can play), then restore whichever
