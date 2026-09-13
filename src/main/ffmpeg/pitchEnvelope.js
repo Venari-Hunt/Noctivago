@@ -29,11 +29,43 @@ import { app } from 'electron'
 // Must match Modulator.js's FLUCTUATION_PITCH_RANGE.
 const PITCH_RANGE_SEMITONES = 6
 
-// How often a `rubberband pitch` command is emitted. The drift is slow (a new
-// target every 6-14 s by default, glided over ~8 s), so 100 ms steps are far
-// finer than the signal's own motion; consecutive identical ratios are
-// deduped so long near-bias stretches stay cheap.
+// How often a `rubberband pitch` command is emitted, for a short/typical
+// export. The drift is slow (a new target every 6-14 s by default, glided
+// over ~8 s), so 100 ms steps are far finer than the signal's own motion;
+// consecutive identical ratios are deduped so long near-bias stretches stay
+// cheap. See MAX_COMMAND_FRAMES below - this is only the *finest* step used,
+// not a fixed one.
 const STEP_SECONDS = 0.1
+
+// A real, reproducible bug in the bundled ffmpeg 6.1.1's own `asendcmd` file
+// parser, found from a real crashed 9-hour export (owner-reported,
+// 2026-09-13: "ffmpeg exited with code 4294967274... Missing separator or
+// extraneous data found at the end of interval #1277... arg:(null)") and
+// confirmed directly against the real binary: a command file has nothing
+// wrong with its actual syntax (every line individually well-formed,
+// verified), but past a size somewhere between ~95,000 and ~100,000 lines
+// (~3.2-3.5MB) ffmpeg's own parser corrupts and fails - and, misleadingly,
+// *reports* the failure at a much earlier, essentially arbitrary interval
+// number (bisection showed the same file truncated well before its own
+// reported failure point parses cleanly, and the crash reappears at the same
+// file size regardless of which random walk generated the content). This is
+// ffmpeg's bug, not fixable from here - the fix is keeping the command file
+// well clear of the danger zone regardless of export length. 20,000 frames
+// (~700KB at this format's line width) is a ~4-5x safety margin under the
+// observed threshold, verified directly: a real 9-hour export's worth of
+// fullyRandom (maximum-density, near-zero dedup) pitch drift, generated and
+// fed through the real bundled ffmpeg, completes cleanly at this cap where
+// it reliably crashed before.
+const MAX_COMMAND_FRAMES = 20000
+
+// The actual step used for a given export length - STEP_SECONDS when that
+// already keeps the total frame count under the cap (true for anything up to
+// ~33 minutes), otherwise stretched just enough to hit the cap exactly.
+// samplePitchWalk and renderPitchCommandFile both derive their step from
+// this so they never disagree about timing.
+function resolveStepSeconds(durationSeconds) {
+  return Math.max(STEP_SECONDS, durationSeconds / MAX_COMMAND_FRAMES)
+}
 
 function lerp(a, b, t) {
   return a + (b - a) * Math.max(0, Math.min(1, t))
@@ -93,7 +125,7 @@ export function samplePitchWalk(config, durationSeconds, rng = Math.random) {
     return goUp ? bias + t * upper : bias - t * lower
   }
 
-  const dt = STEP_SECONDS
+  const dt = resolveStepSeconds(durationSeconds)
   const frames = Math.max(1, Math.ceil(durationSeconds / dt) + 1)
   const out = new Float64Array(frames)
 
@@ -129,10 +161,11 @@ function commandTempDir() {
 export function renderPitchCommandFile(fluctuation, durationSeconds, rng = Math.random) {
   if (!hasPitchFluctuation(fluctuation)) return null
   const semis = samplePitchWalk(fluctuation.pitch, durationSeconds, rng)
+  const step = resolveStepSeconds(durationSeconds)
   const lines = []
   let lastRatioStr = null
   for (let i = 0; i < semis.length; i++) {
-    const t = (i * STEP_SECONDS).toFixed(3)
+    const t = (i * step).toFixed(3)
     const ratioStr = Math.pow(2, semis[i] / 12).toFixed(5)
     if (ratioStr === lastRatioStr) continue
     lines.push(`${t} rubberband pitch ${ratioStr};`)
