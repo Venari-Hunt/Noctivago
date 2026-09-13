@@ -10,6 +10,31 @@ const FILTER_SMOOTHING_SECONDS = 0.01
 // tapped off the dry signal, one knob driving both send and feedback gain).
 const MAX_ECHO_DELAY_SECONDS = 2.0
 
+// Linear interpolation between a volume envelope's {position, gain} points
+// (position 0..1, already sorted ascending - LoopEditor's own point-editing
+// keeps them sorted, see its own comment). Mirrors src/main/ffmpeg's
+// volumeEnvelope.js sampler (a completely different runtime, main-process
+// ffmpeg baking vs. this live Web Audio preview) and src/renderer/audio/
+// SoundSource.js's copy for the Mixer's stream-mode fallback - three
+// independent copies for three separate JS realms, this plugin's usual
+// cross-directory-import reason.
+function sampleEnvelopeGain(points, position) {
+  if (points.length === 0) return 1
+  if (position <= points[0].position) return points[0].gain
+  const last = points[points.length - 1]
+  if (position >= last.position) return last.gain
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i]
+    const b = points[i + 1]
+    if (position >= a.position && position <= b.position) {
+      const span = b.position - a.position
+      const t = span > 0 ? (position - a.position) / span : 0
+      return a.gain + (b.gain - a.gain) * t
+    }
+  }
+  return 1
+}
+
 // 'off' is a pseudo-type (not a real BiquadFilterNode type) - mapped to
 // 'allpass' (leaves the amplitude spectrum unchanged, a true no-op for
 // tone-shaping) rather than special-casing it out of the chain entirely.
@@ -303,10 +328,30 @@ export class PreviewSource {
     })
     this._fluctuation.configure(fluctuation ?? {})
 
+    // Volume envelope (per-sound, Loop mode, drag points on the waveform to
+    // shape volume over time - Audacity's classic tool). A dedicated gain
+    // stage, same pattern as fluctuationGain above and placed right after it
+    // (before the sound's own output volume), but driven differently: unlike
+    // Fluctuation's open-ended random walk (its own timer callback),
+    // envelope is a *fixed* timeline the user authored, so it's driven by
+    // actual playback position instead - see setVolumeEnvelope/tickEnvelope,
+    // called once per frame from the same tickPreviewPlayhead() rAF loop
+    // that already drives the waveform playhead (no separate loop). Unlike
+    // Fluctuation, this is never baked live-only forever - it also gets
+    // rendered straight into the loop clip's own WAV on Save
+    // (src/main/ffmpeg/volumeEnvelope.js), so buffer-mode/"Saved audio"
+    // playback never needs this node at all, only the live streaming preview
+    // does (same reason every other filter needs a live Web Audio
+    // equivalent here despite also being bakeable).
+    this.envelopeGain = engine.context.createGain()
+    this.envelopeGain.gain.value = 1
+    this._volumeEnvelope = null
+
     this.outputGainNode = engine.context.createGain()
     this.outputGainNode.gain.value = 0
     for (const voice of this.voices) voice.crossfadeGain.connect(this.fluctuationGain)
-    this.fluctuationGain.connect(this.outputGainNode)
+    this.fluctuationGain.connect(this.envelopeGain)
+    this.envelopeGain.connect(this.outputGainNode)
     this.outputGainNode.connect(engine.masterGain)
 
     // Real-time spectrum analyzer tap for the Remix EQ graph's live backdrop
@@ -381,6 +426,39 @@ export class PreviewSource {
   setFilters(filters) {
     for (const voice of this.voices) applyFiltersToVoice(voice, this.engine.context, filters)
     this._syncGates()
+    this.setVolumeEnvelope(filters.volumeEnvelope)
+  }
+
+  // Only ever called from setFilters (never a separate call site elsewhere)
+  // so every place that already updates preview filters picks this up for
+  // free. `null`/disabled/fewer-than-2-points all collapse to "no envelope" -
+  // resets the gain back to neutral (1) with a short ramp rather than
+  // snapping, so turning it off mid-playback doesn't click.
+  setVolumeEnvelope(envelope) {
+    const active = envelope && envelope.enabled && Array.isArray(envelope.points) && envelope.points.length >= 2
+    this._volumeEnvelope = active ? envelope : null
+    if (!active) this.envelopeGain.gain.setTargetAtTime(1, this.engine.context.currentTime, 0.05)
+  }
+
+  // Called once per frame from index.js's tickPreviewPlayhead() (the same
+  // rAF loop already driving the waveform playhead) - not pre-scheduled
+  // AudioParam automation, because the <audio>-element-driven preview's
+  // currentTime is only approximately known ahead of time (same documented
+  // imprecision every other stream-mode timing in this app has); instead
+  // this re-derives gain(t) from the live position every tick and re-arms a
+  // short setTargetAtTime each time, so it self-corrects rather than relying
+  // on a schedule computed from a clock that might drift. currentTime is
+  // already the *original file's* absolute time (loopStart-relative math
+  // happens here, not in the caller) - matches how setLoopPoints/loopStart
+  // already work throughout this class.
+  tickEnvelope(currentTime) {
+    if (!this._volumeEnvelope) return
+    const loopStart = this.loopStart
+    const loopEnd = this.loopEnd ?? loopStart
+    const span = Math.max(loopEnd - loopStart, 0.0001)
+    const position = Math.min(Math.max((currentTime - loopStart) / span, 0), 1)
+    const gain = sampleEnvelopeGain(this._volumeEnvelope.points, position)
+    this.envelopeGain.gain.setTargetAtTime(gain, this.engine.context.currentTime, 0.05)
   }
 
   // The noise gate's poll loop only runs while previewing and while the gate
@@ -546,6 +624,7 @@ export class PreviewSource {
     this._fluctuation.dispose()
     for (const voice of this.voices) disposeVoice(voice)
     this.fluctuationGain.disconnect()
+    this.envelopeGain.disconnect()
     this.outputGainNode.disconnect()
     this.analyserFeedNode.disconnect()
     this.analyserNode.disconnect()

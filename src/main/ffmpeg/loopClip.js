@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { runFfmpegToFile, runFfmpegPipe } from './runFfmpeg.js'
 import { getOrCreateReverbIR } from './reverbIR.js'
+import { hasVolumeEnvelope, renderVolumeEnvelopeWav } from './volumeEnvelope.js'
 
 const pending = new Map()
 
@@ -712,6 +713,39 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
 // reasoning above). Already bakes in the brick-wall limiter (see this
 // function's own doc comment) - a caller doesn't need to add another one on
 // top of this pass's own output.
+// Bakes the Volume envelope (per-sound, Loop mode, v1 - see
+// volumeEnvelope.js's own doc comment for why this is a WAV+amultiply pass,
+// not an asendcmd one) into the loop clip - same "own isolated pass" shape
+// as applyReverbPass just above (a second ffmpeg input, so it can't join
+// buildFilterChain's plain comma -af fragment), reads its own input's
+// duration rather than trusting a value the caller might have measured
+// against different audio (matches applyReverbPass's own self-contained
+// convention).
+async function applyVolumeEnvelopePass(inputPath, outputPath, volumeEnvelope) {
+  const duration = readWavDuration(inputPath)
+  const envPath = renderVolumeEnvelopeWav(volumeEnvelope, duration)
+  try {
+    await runFfmpegToFile([
+      '-y', '-i', inputPath, '-i', envPath,
+      '-filter_complex',
+      '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env];' +
+        '[0:a]aformat=channel_layouts=stereo:sample_fmts=fltp[sig];' +
+        '[sig][env]amultiply[out]',
+      '-map', '[out]',
+      '-t', duration.toFixed(6),
+      '-vn', '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', outputPath
+    ])
+  } finally {
+    if (fs.existsSync(envPath)) {
+      try {
+        fs.unlinkSync(envPath)
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+}
+
 export async function applyReverbPass(inputPath, outputPath, reverbSizeMs, reverbMix) {
   const irPath = await getOrCreateReverbIR(reverbSizeMs / 1000)
   const mix = Math.max(0, Math.min(1, reverbMix))
@@ -750,8 +784,15 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // reads renderCrossfadedLoop does. Building it measures the noise region
   // (one short decode) so it's resolved once here, before the fast-path check.
   const noiseChain = await buildNoiseReductionChain(inputPath, filters, loopStart, loopEnd)
+  // Volume envelope (v1, Loop mode) also forces the pre-processing pass -
+  // like reverb, amultiply-ing a control-signal WAV against the audio needs
+  // a second ffmpeg input, so it can't join buildFilterChain's plain -af
+  // fragment either. hasVolumeEnvelope already filters out "enabled but
+  // still the flat neutral default" so a freshly-toggled-on-but-untouched
+  // envelope doesn't force the slow path for nothing.
+  const envelopeActive = hasVolumeEnvelope(filters?.volumeEnvelope)
 
-  if (!speedPitchChain && !reverbActive && !noiseChain) {
+  if (!speedPitchChain && !reverbActive && !noiseChain && !envelopeActive) {
     try {
       await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, outputPath })
       return { ok: true }
@@ -788,6 +829,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // as long as it runs *last*.
   const tmpIntermediatePath = `${outputPath}.pre.tmp.wav`
   const tmpReverbPath = `${outputPath}.reverb.tmp.wav`
+  const tmpEnvelopePath = `${outputPath}.envelope.tmp.wav`
   try {
     const filterChain = buildFilterChain(filters)
     // Noise reduction runs first - it should subtract the sampled noise
@@ -813,6 +855,18 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
       await applyReverbPass(tmpIntermediatePath, tmpReverbPath, filters.reverbSizeMs, filters.reverbMix)
       sourceForCrossfade = tmpReverbPath
     }
+    // Runs last among the pre-passes (after reverb, still before rotation) -
+    // shaping the reverb's own wet tail along with the dry signal reads as
+    // the natural, expected result of "this sound gets quieter here" (an
+    // engineer's own volume automation is normally the very last stage
+    // before a render, after everything else already applied). Must still
+    // run before renderCrossfadedLoop's rotation, same reason noise
+    // reduction/speed-pitch do - the envelope's own timeline only lines up
+    // with a single linear read of the trimmed region, not the rotated one.
+    if (envelopeActive) {
+      await applyVolumeEnvelopePass(sourceForCrossfade, tmpEnvelopePath, filters.volumeEnvelope)
+      sourceForCrossfade = tmpEnvelopePath
+    }
     const intermediateDuration = readWavDuration(sourceForCrossfade)
     // filters were already baked into the intermediate above - passing null
     // here avoids applying them a second time.
@@ -833,12 +887,19 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
         // best-effort cleanup
       }
     }
-    console.error('renderLoopClip (speed/pitch/reverse/reverb) failed', id, err)
+    console.error('renderLoopClip (speed/pitch/reverse/reverb/envelope) failed', id, err)
     return { ok: false, error: err.message }
   } finally {
     if (fs.existsSync(tmpReverbPath)) {
       try {
         fs.unlinkSync(tmpReverbPath)
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    if (fs.existsSync(tmpEnvelopePath)) {
+      try {
+        fs.unlinkSync(tmpEnvelopePath)
       } catch {
         // best-effort cleanup
       }

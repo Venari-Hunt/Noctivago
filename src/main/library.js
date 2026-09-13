@@ -78,6 +78,38 @@ function defaultEqBands() {
   return []
 }
 
+// Volume envelope (per-sound, Remix Sound mode, Loop mode only) - drag
+// control points directly on the waveform to shape volume over time instead
+// of one flat level (Audacity's classic envelope tool). Folded into the
+// existing `filters` bag (not a new top-level field, unlike Fluctuation)
+// specifically *because* it's deterministic and bakeable - it gets rendered
+// straight into the loop clip's own WAV (src/main/ffmpeg/volumeEnvelope.js),
+// so it needs the exact same plumbing every other filter already has: the
+// per-preset override system (`filters` is one of OVERRIDABLE_SOUND_KEYS),
+// the loopClipFilters JSON staleness compare (buffer-mode bake eligibility),
+// portable-preset export/import, and the Mixer's bulk-apply-preset flow -
+// all already whole-object-replace `filters`, so nesting here needs zero new
+// schema/IPC/staleness code, same reasoning the EQ/Gate/Denoise additions
+// before it used.
+// `position` is a 0..1 FRACTION of the loop region, not absolute seconds -
+// this means points never need re-normalizing when loopStart/loopEnd change
+// later, the envelope always spans exactly the current loop region
+// proportionally. `gain` is a 0..1 multiplier (attenuation only, never
+// boosts) - same "never distorts" ceiling Fluctuation's own volume axis
+// already uses, since nothing downstream of a per-sound gain node has a
+// limiter (only the whole-mix bus does). The two boundary points (position
+// 0 and 1) always exist at gain 1.0 (neutral) by default - a flat, inert
+// line until the user actually drags something.
+export function defaultVolumeEnvelope() {
+  return {
+    enabled: false,
+    points: [
+      { position: 0, gain: 1 },
+      { position: 1, gain: 1 }
+    ]
+  }
+}
+
 // The Remix "Fluctuation" feature (v0.1.164) - slow, organic drift of a
 // looping sound's volume and/or pitch (wind gusts, rain swelling and
 // fading). Its own top-level entry field rather than folded into `filters`,
@@ -330,7 +362,7 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     included: false,
     loopStart: 0,
     loopEnd: null,
-    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() },
+    filters: { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands(), volumeEnvelope: defaultVolumeEnvelope() },
     crossfadeSeconds: null,
     fluctuation: defaultFluctuation(),
     // dopplerEnabled: a simulated vehicle/siren pass-by - pitch bends

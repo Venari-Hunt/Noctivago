@@ -107,7 +107,22 @@ function defaultEqBands() {
   return []
 }
 
-const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands() }
+// Mirrors library.js's defaultVolumeEnvelope() exactly - same cross-directory
+// duplication reason as defaultEqBands() above. A fresh function call each
+// time (never a shared array/object), since callers mutate what they get
+// back - LoopEditor's own setEnvelope()/getEnvelope() clone on load too,
+// same defensive-copy convention as the EQ editor's bands array.
+function defaultVolumeEnvelope() {
+  return {
+    enabled: false,
+    points: [
+      { position: 0, gain: 1 },
+      { position: 1, gain: 1 }
+    ]
+  }
+}
+
+const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands(), volumeEnvelope: defaultVolumeEnvelope() }
 
 // Mirrors library.js's defaultFluctuation() - same cross-directory
 // duplication reason as MAX_BUFFER_CLIP_SECONDS. volume rides 0..1
@@ -1005,6 +1020,15 @@ ${mixFluctuationMarkup('group')}
               <span id="editor-crossfade-value" class="editor-filter-value">200 ms</span>
             </label>
             <p class="editor-crossfade-hint">Blends the seam so the loop isn't audible. Longer helps busy, textured audio (rain, crowds) — 0 disables blending. Automatically capped for very short loops.</p>
+            <label class="editor-reverse-toggle">
+              <input id="editor-envelope-enabled" type="checkbox" />
+              Volume envelope
+            </label>
+            <button id="editor-envelope-reset" class="btn btn-small btn-icon-text" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              Reset envelope
+            </button>
+            <p class="editor-crossfade-hint">Drag points directly on the waveform above to shape this sound's volume over time instead of one flat level (double-click empty space on the line to add a point, double-click a point to reset it to full, right-click a point to remove it). Attenuates only — never boosts above the sound's own level.</p>
           </div>
           <div id="editor-scatter-section" class="editor-scatter-controls hidden">
             <label>
@@ -1386,6 +1410,8 @@ ${mixFluctuationMarkup('group')}
       crossfadeSection: container.querySelector('#editor-crossfade-section'),
       crossfade: container.querySelector('#editor-crossfade'),
       crossfadeValue: container.querySelector('#editor-crossfade-value'),
+      envelopeEnabled: container.querySelector('#editor-envelope-enabled'),
+      envelopeReset: container.querySelector('#editor-envelope-reset'),
       scatterSection: container.querySelector('#editor-scatter-section'),
       scatterGapMin: container.querySelector('#editor-scatter-gap-min'),
       scatterGapMax: container.querySelector('#editor-scatter-gap-max'),
@@ -1658,6 +1684,11 @@ ${mixFluctuationMarkup('group')}
       }
       this.updateSaveButtonState()
     })
+    // Dragging/adding/removing/resetting an envelope point - volumeEnvelope
+    // lives inside `filters` (see currentFilters()), so this goes through
+    // the exact same live-preview + dirty-check path every other filter
+    // control already uses, not a bespoke one like fades above.
+    this.loopEditorController.onEnvelopeChange(() => this.applyFilterControls())
 
     this.eqEditorController = createEqEditorController(this.els.eqCanvas)
     this.eqEditorController.onChange(() => this.applyEqControls())
@@ -1885,6 +1916,15 @@ ${mixFluctuationMarkup('group')}
     this.els.scheduleFadeOut.addEventListener('input', () => this.applyScheduleControls())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
+
+    this.els.envelopeEnabled.addEventListener('change', () => {
+      this.loopEditorController.setEnvelope(this.els.envelopeEnabled.checked, this.loopEditorController.getEnvelope().points)
+      this.applyFilterControls()
+    })
+    this.els.envelopeReset.addEventListener('click', () => {
+      this.loopEditorController.setEnvelope(this.els.envelopeEnabled.checked, defaultVolumeEnvelope().points)
+      this.applyFilterControls()
+    })
 
     this.els.speed.addEventListener('input', () => this.applySpeedPitchControls())
     this.els.pitch.addEventListener('input', () => this.applySpeedPitchControls())
@@ -2557,6 +2597,10 @@ ${mixFluctuationMarkup('group')}
       this.eqEditorController.load(filters.eq)
       this.updateEqFieldsFromSelection()
     }
+    if (filters.volumeEnvelope) {
+      this.loopEditorController.setEnvelope(filters.volumeEnvelope.enabled, filters.volumeEnvelope.points)
+      this.els.envelopeEnabled.checked = Boolean(filters.volumeEnvelope.enabled)
+    }
   }
 
   currentFilters() {
@@ -2576,7 +2620,8 @@ ${mixFluctuationMarkup('group')}
       echoDecay: Number(this.els.echoDecay.value),
       reverbSizeMs: Number(this.els.reverbSize.value),
       reverbMix: Number(this.els.reverbMix.value),
-      eq: this.eqEditorController.getBands()
+      eq: this.eqEditorController.getBands(),
+      volumeEnvelope: this.loopEditorController.getEnvelope()
     }
   }
 
@@ -2990,6 +3035,12 @@ ${mixFluctuationMarkup('group')}
     this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
     this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
+    // Volume envelope is Loop-mode-only (v1) - scatter/scheduled shots have
+    // their own per-shot randomization instead, same reasoning Fluctuation's
+    // own Loop-mode-first scoping used. This only gates drawing/hit-testing
+    // on the canvas, not the underlying data - switching back to Loop mode
+    // shows whatever was already drawn.
+    this.loopEditorController?.setEnvelopeUiVisible(playMode === 'loop')
     this.updateFadeVisual()
     this.updateSaveButtonState()
   }
@@ -3202,7 +3253,14 @@ ${mixFluctuationMarkup('group')}
           type: b.type ?? 'peaking',
           slope: b.slope ?? 'gentle',
           muted: b.muted ?? false
-        }))
+        })),
+        volumeEnvelope: {
+          enabled: Boolean(filters.volumeEnvelope?.enabled),
+          points: (filters.volumeEnvelope?.points ?? defaultVolumeEnvelope().points).map((p) => ({
+            position: p.position,
+            gain: p.gain
+          }))
+        }
       },
       crossfadeMs,
       speedPitch: {
@@ -3514,6 +3572,11 @@ ${mixFluctuationMarkup('group')}
       const currentTime = active.audioEl.currentTime
       this.loopEditorController.setPlayhead(currentTime)
       this.updateStickyProgress(currentTime)
+      // Volume envelope: only the *live* preview needs this (previewMode
+      // 'live' means `active` here is always this.previewSource) - the
+      // 'saved' branch above plays the baked clip, which already has the
+      // envelope rendered in.
+      this.previewSource?.tickEnvelope(currentTime)
     }
     // BakedClipPreview (the 'saved' engine) gained its own analyserNode
     // specifically so this can stay a single unconditional call rather than
@@ -3806,6 +3869,25 @@ ${mixFluctuationMarkup('group')}
     this.previewSource.setFluctuation(this.fluctuation)
     this.previewSource.audioEl.currentTime = loopStart
     this.loopEditorController.load(duration, loopStart, loopEnd)
+    // load() resets its own volume-envelope state to neutral, same reason
+    // it resets Doppler (a fresh sound shouldn't inherit the previous one's
+    // drawn points) - re-applied here after load(), same ordering fix
+    // Doppler already needed (see the comment on its own re-apply just
+    // below).
+    this.loopEditorController.setEnvelope(filters.volumeEnvelope?.enabled ?? false, filters.volumeEnvelope?.points)
+    // BUG FIX (caught live testing this feature, not by review): loadSound()
+    // only calls setPlayModeControls() (sets the radio buttons' checked
+    // state), never applyPlayModeControl() itself - that only runs off the
+    // radio buttons' own 'change' listeners, or the one other place it's
+    // wired (undo/redo's applyEditorState). Loading a fresh sound therefore
+    // never actually recomputed anything playMode-gated, including this new
+    // envelope-visibility flag - it silently stayed at whatever the
+    // previously-open sound left it as. Setting it directly here, matching
+    // the same "explicit re-apply after load()'s own reset" pattern already
+    // needed for setEnvelope/Doppler above, rather than trying to route
+    // through applyPlayModeControl() (which also touches fade visuals/save
+    // state this function handles separately already).
+    this.loopEditorController.setEnvelopeUiVisible(playMode === 'loop')
     this.loopEditorController.setDopplerEnabled(speedPitch.dopplerEnabled ?? false)
     this.loopEditorController.setDopplerClosestFraction(speedPitch.dopplerClosestFraction ?? 0.5)
     this.loopEditorController.setDopplerReversed(speedPitch.dopplerReversed ?? false)

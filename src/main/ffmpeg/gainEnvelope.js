@@ -27,7 +27,7 @@ import { app } from 'electron'
 // a gain automation curve, and exportMix.js `aresample`s it up to 44100
 // before the multiply. Keeps the file tiny even for a multi-hour export
 // (~7 MB/hour stereo 16-bit).
-const GEN_RATE = 1000
+export const GEN_RATE = 1000
 
 function lerp(a, b, t) {
   return a + (b - a) * Math.max(0, Math.min(1, t))
@@ -117,7 +117,11 @@ function envelopeTempDir() {
 // Writes `values` (0..1) as a 2-channel 16-bit PCM WAV at GEN_RATE - stereo
 // so the downstream `amultiply` never hits a channel-count mismatch with the
 // (always stereo) audio track. Returns the file path; caller cleans it up.
-function writeWav(values) {
+// Exported for src/main/ffmpeg/volumeEnvelope.js (the user-authored envelope
+// bake) to reuse verbatim - both live in the same main-process runtime, so
+// this is an ordinary shared import, not one of this codebase's
+// cross-plugin/cross-process duplications.
+export function writeWav(values) {
   const numFrames = values.length
   const bytesPerSample = 2
   const numChannels = 2

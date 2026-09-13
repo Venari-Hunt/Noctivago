@@ -3,6 +3,18 @@ import { drawWaveform } from '../audio/waveform.js'
 const HANDLE_HIT_PX = 8
 const SNAP_PX = 12
 const MIN_LOOP_SECONDS = 0.05
+// Volume envelope points (drawn/hit-tested across the full waveform height,
+// gain 1 = top/y0, gain 0 = bottom - unlike every other draggable here,
+// which is purely horizontal/time-based) need real 2D (x AND y) distance for
+// hit-testing, not just x - see pointerDown's own comment on why this can
+// coincide with the trim handles' x position at the two boundary points.
+const ENVELOPE_HIT_PX = 10
+// The minimum position gap a middle envelope point is kept away from its
+// immediate neighbors while being dragged (the neighbor positions are
+// captured once at drag-start as fixed bounds, see pointerDown) - purely to
+// avoid two points landing on the exact same position, which would make
+// interpolation between them meaningless.
+const ENVELOPE_MIN_GAP = 0.002
 // Fade-in/out handles (see waveform.js's diagonal ramp + corner pin) are only
 // grabbable in a band along the very top of the canvas - the same x-position
 // a fade handle sits at can coincide with the full-height start/end trim
@@ -81,6 +93,30 @@ export function createLoopEditorController(canvas) {
   let fadesEnabled = false
   let fadeInSec = 0
   let fadeOutSec = 0
+  // Volume envelope (Loop mode only, v1) - drag control points directly on
+  // the waveform to shape volume over time (Audacity's classic envelope
+  // tool). `position` is a 0..1 fraction of the loop region (never absolute
+  // seconds), so points never need re-normalizing when loopStart/loopEnd
+  // change later - envelopePointTime() below converts to an absolute time
+  // only at draw/hit-test time. Always at least the two boundary points
+  // (position 0 and 1), which never move in x, only in gain (y) - see
+  // pointerDown/updateDragValue's own handling of index 0/last.
+  // envelopeUiVisible is a separate gate from envelopeEnabled - set by
+  // index.js's applyPlayModeControl() (true only for Loop mode, since
+  // scatter/scheduled shots have their own per-shot randomization instead),
+  // independent of whether the user has actually turned the envelope on for
+  // this sound.
+  let envelopeEnabled = false
+  let envelopeUiVisible = false
+  let envelopePoints = [
+    { position: 0, gain: 1 },
+    { position: 1, gain: 1 }
+  ]
+  let draggingEnvelopePoint = null
+  let draggingEnvelopeIsBoundary = false
+  let draggingEnvelopeLeftBound = 0
+  let draggingEnvelopeRightBound = 1
+  let onEnvelopeChange = () => {}
   // A single finer-grained peaks fetch for whatever narrow window the caller
   // last requested (see plugins/editor/index.js's maybeFetchDetailPeaks) -
   // just one slot, not a cache of every window ever visited, so re-zooming
@@ -109,6 +145,7 @@ export function createLoopEditorController(canvas) {
   let dragFadeInAnchor = null
   let dragFadeOutAnchor = null
   let lastPointerClientX = 0
+  let lastPointerClientY = 0
   let edgeScrollDirection = 0
   let edgeScrollRafId = null
   let holdZoomTimeoutId = null
@@ -182,12 +219,53 @@ export function createLoopEditorController(canvas) {
       dopplerReversed,
       fadesEnabled,
       fadeInSec: fadeIn,
-      fadeOutSec: fadeOut
+      fadeOutSec: fadeOut,
+      envelopeEnabled: envelopeEnabled && envelopeUiVisible,
+      envelopePoints: envelopePoints.map((p) => ({ time: envelopePointTime(p), gain: p.gain }))
     })
   }
 
   function dopplerMarkerTime() {
     return loopStart + dopplerClosestFraction * (loopEnd - loopStart)
+  }
+
+  function envelopePointTime(point) {
+    return loopStart + point.position * (loopEnd - loopStart)
+  }
+
+  function sortEnvelopePoints() {
+    envelopePoints.sort((a, b) => a.position - b.position)
+  }
+
+  // gain 1 -> y 0 (canvas top, "full level"), gain 0 -> y rect.height (canvas
+  // bottom, "silent") - a plain linear map across the whole waveform height,
+  // matching waveform.js's own drawing (see its comment for why this is a
+  // simplified, non-mirrored line rather than a literal Audacity-style
+  // symmetric envelope).
+  function envelopeYForGain(gain, rect) {
+    return (1 - gain) * rect.height
+  }
+
+  function envelopeGainForY(y, rect) {
+    return 1 - Math.min(Math.max(y / rect.height, 0), 1)
+  }
+
+  // Closest envelope point within ENVELOPE_HIT_PX of (x, y), or -1. Real 2D
+  // Euclidean distance (mirrors EqEditor.js's own nearestBandIndex), not the
+  // x-only distance every other draggable on this canvas uses.
+  function findEnvelopePointHit(x, y, rect) {
+    let closestIdx = -1
+    let closestDist = Infinity
+    for (let i = 0; i < envelopePoints.length; i++) {
+      const px = timeToX(envelopePointTime(envelopePoints[i]), rect.width)
+      const py = envelopeYForGain(envelopePoints[i].gain, rect)
+      const dist = Math.hypot(x - px, y - py)
+      if (dist < closestDist) {
+        closestDist = dist
+        closestIdx = i
+      }
+    }
+    return closestDist <= ENVELOPE_HIT_PX ? closestIdx : -1
   }
 
   // Single place that actually commits a new viewport - clamps to
@@ -286,6 +364,21 @@ export function createLoopEditorController(canvas) {
     // 'contextmenu' listener, which also always suppresses it - mousedown
     // alone isn't enough since the menu itself opens on mouseup).
     if (evt.button === 2) {
+      // Right-click a middle envelope point (not a boundary one - those
+      // can't be removed) deletes it, checked first so it takes priority
+      // over the region-move drag right-click normally starts anywhere
+      // inside the trimmed region.
+      if (envelopeEnabled && envelopeUiVisible && envelopePoints.length > 2) {
+        const y = evt.clientY - rect.top
+        const hitIdx = findEnvelopePointHit(x, y, rect)
+        if (hitIdx > 0 && hitIdx < envelopePoints.length - 1) {
+          evt.preventDefault()
+          envelopePoints.splice(hitIdx, 1)
+          redraw()
+          onEnvelopeChange()
+          return
+        }
+      }
       const startX = timeToX(loopStart, rect.width)
       const endX = timeToX(loopEnd, rect.width)
       if (x >= startX && x <= endX) {
@@ -299,6 +392,26 @@ export function createLoopEditorController(canvas) {
         scheduleHoldZoom(evt.clientX)
       }
       return
+    }
+
+    // Volume envelope points, checked before everything else below - a real
+    // 2D (x AND y) hit test with a tight radius (ENVELOPE_HIT_PX), unlike
+    // every other draggable here which is x-only, since a point's y encodes
+    // its gain and the two boundary points sit at the same x as the trim
+    // handles. The tight radius means this rarely intercepts a click meant
+    // for the trim line/playhead/doppler marker elsewhere along their length.
+    if (envelopeEnabled && envelopeUiVisible && loopEnd > loopStart) {
+      const y = evt.clientY - rect.top
+      const hitIdx = findEnvelopePointHit(x, y, rect)
+      if (hitIdx !== -1) {
+        dragging = 'envelopePoint'
+        draggingEnvelopePoint = envelopePoints[hitIdx]
+        draggingEnvelopeIsBoundary = hitIdx === 0 || hitIdx === envelopePoints.length - 1
+        draggingEnvelopeLeftBound = hitIdx > 0 ? envelopePoints[hitIdx - 1].position + ENVELOPE_MIN_GAP : 0
+        draggingEnvelopeRightBound =
+          hitIdx < envelopePoints.length - 1 ? envelopePoints[hitIdx + 1].position - ENVELOPE_MIN_GAP : 1
+        return
+      }
     }
 
     // Fade handles live in a thin band along the top edge (see waveform.js's
@@ -348,9 +461,40 @@ export function createLoopEditorController(canvas) {
   // app-wide elsewhere (sliders, EQ nodes), applied to this canvas-drawn
   // marker the same way EqEditor.js's own nodes already do it.
   function pointerDoubleClick(evt) {
-    if (!dopplerEnabled || loopEnd <= loopStart) return
+    if (loopEnd <= loopStart) return
     const rect = canvas.getBoundingClientRect()
     const x = evt.clientX - rect.left
+
+    // Volume envelope: double-clicking an existing point resets its gain to
+    // 1.0 (neutral) - same "double-click resets a control" convention as the
+    // Doppler marker below and the EQ nodes elsewhere in this plugin.
+    // Double-clicking empty space (envelope enabled, nothing hit) adds a new
+    // point at that exact position/gain instead - the actual "shape the
+    // volume" gesture. Checked before Doppler so an envelope point sitting
+    // near the Doppler marker's x still resets correctly (2D hit test wins).
+    if (envelopeEnabled && envelopeUiVisible) {
+      const y = evt.clientY - rect.top
+      const hitIdx = findEnvelopePointHit(x, y, rect)
+      if (hitIdx !== -1) {
+        envelopePoints[hitIdx].gain = 1
+        redraw()
+        onEnvelopeChange()
+        return
+      }
+      const t = xToTime(evt.clientX - rect.left, rect.width)
+      if (t > loopStart && t < loopEnd) {
+        const span = loopEnd - loopStart
+        const position = Math.min(Math.max((t - loopStart) / span, 0), 1)
+        const gain = envelopeGainForY(y, rect)
+        envelopePoints.push({ position, gain })
+        sortEnvelopePoints()
+        redraw()
+        onEnvelopeChange()
+        return
+      }
+    }
+
+    if (!dopplerEnabled) return
     if (Math.abs(x - timeToX(dopplerMarkerTime(), rect.width)) > HANDLE_HIT_PX) return
     dopplerClosestFraction = 0.5
     redraw()
@@ -362,7 +506,7 @@ export function createLoopEditorController(canvas) {
   // dragged handle/playhead's time from the same on-screen clientX, just
   // against whatever the current viewport mapping happens to be at the
   // moment.
-  function updateDragValue(clientX) {
+  function updateDragValue(clientX, clientY = lastPointerClientY) {
     const rect = canvas.getBoundingClientRect()
     const t = xToTime(clientX - rect.left, rect.width)
 
@@ -438,6 +582,18 @@ export function createLoopEditorController(canvas) {
       loopEnd = newEnd
       redraw()
       onChange({ loopStart, loopEnd })
+    } else if (dragging === 'envelopePoint' && draggingEnvelopePoint) {
+      draggingEnvelopePoint.gain = envelopeGainForY(clientY - rect.top, rect)
+      // Boundary points (position 0/1) never move in time, only in gain -
+      // matches the loop region's own start/end, which an envelope point
+      // can't be dragged past anyway (see the clamp below for middle points).
+      if (!draggingEnvelopeIsBoundary) {
+        const span = loopEnd - loopStart
+        const rawPosition = span > 0 ? (t - loopStart) / span : draggingEnvelopePoint.position
+        draggingEnvelopePoint.position = Math.min(Math.max(rawPosition, draggingEnvelopeLeftBound), draggingEnvelopeRightBound)
+      }
+      redraw()
+      onEnvelopeChange()
     }
   }
 
@@ -553,7 +709,8 @@ export function createLoopEditorController(canvas) {
     }
 
     lastPointerClientX = evt.clientX
-    updateDragValue(evt.clientX)
+    lastPointerClientY = evt.clientY
+    updateDragValue(evt.clientX, evt.clientY)
     if (dragging === 'start' || dragging === 'end' || dragging === 'playhead' || dragging === 'moveRegion') {
       updateEdgeScroll(evt.clientX)
     }
@@ -574,6 +731,7 @@ export function createLoopEditorController(canvas) {
   function pointerUp() {
     const wasZoomable = dragging === 'start' || dragging === 'end' || dragging === 'moveRegion'
     dragging = null
+    draggingEnvelopePoint = null
     edgeScrollDirection = 0
     clearHoldZoom()
 
@@ -649,6 +807,11 @@ export function createLoopEditorController(canvas) {
       fadesEnabled = false
       fadeInSec = 0
       fadeOutSec = 0
+      envelopeEnabled = false
+      envelopePoints = [
+        { position: 0, gain: 1 },
+        { position: 1, gain: 1 }
+      ]
       viewStart = 0
       viewEnd = totalDuration
       redraw()
@@ -724,6 +887,33 @@ export function createLoopEditorController(canvas) {
       const { fadeIn, fadeOut } = clampedFades()
       return { fadeInSec: fadeIn, fadeOutSec: fadeOut }
     },
+    // points defaults to the neutral 2-boundary-point shape when missing/
+    // invalid (fewer than 2 points, or no boundary at 0/1) - defensive
+    // copy-in, same convention as EqEditor's load()/getBands(), so the
+    // caller's own array is never mutated by drag/add/remove here.
+    setEnvelope(enabled, points) {
+      envelopeEnabled = Boolean(enabled)
+      const valid = Array.isArray(points) && points.length >= 2
+      envelopePoints = valid
+        ? points.map((p) => ({ position: p.position, gain: p.gain }))
+        : [
+            { position: 0, gain: 1 },
+            { position: 1, gain: 1 }
+          ]
+      sortEnvelopePoints()
+      redraw()
+    },
+    getEnvelope() {
+      return { enabled: envelopeEnabled, points: envelopePoints.map((p) => ({ ...p })) }
+    },
+    // Loop-mode-only gate (see index.js's applyPlayModeControl) - separate
+    // from envelopeEnabled (the user's own on/off choice for this sound),
+    // purely visual/hit-test, doesn't touch the underlying data so switching
+    // playMode back to Loop shows whatever was already drawn.
+    setEnvelopeUiVisible(visible) {
+      envelopeUiVisible = Boolean(visible)
+      redraw()
+    },
     onLoopChange(fn) {
       onChange = fn
     },
@@ -732,6 +922,9 @@ export function createLoopEditorController(canvas) {
     },
     onFadesChange(fn) {
       onFadesChange = fn
+    },
+    onEnvelopeChange(fn) {
+      onEnvelopeChange = fn
     },
     onScrub(fn) {
       onScrub = fn

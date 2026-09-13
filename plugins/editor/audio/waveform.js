@@ -66,7 +66,7 @@ function resizeCanvasForDisplay(canvas) {
 // fetch (see waveformPeaks.js) covers just a narrow zoomed window instead,
 // so the caller passes that window's own bounds here rather than this
 // function assuming peaks always covers the whole file.
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5, dopplerReversed = false, fadesEnabled = false, fadeInSec = 0, fadeOutSec = 0 }) {
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5, dopplerReversed = false, fadesEnabled = false, fadeInSec = 0, fadeOutSec = 0, envelopeEnabled = false, envelopePoints = [] }) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -246,6 +246,42 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
     for (const x of [fadeInEndX, fadeOutStartX]) {
       ctx.beginPath()
       ctx.arc(x, 8, 5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+  }
+
+  // Volume envelope (per-sound, Loop mode) - a simplified straight-line-
+  // segments overlay, not a literal mirrored/symmetric Audacity-style
+  // envelope: gain 1 maps to the very top of the canvas ("full level"), gain
+  // 0 to the very bottom ("silent"), one continuous line across the whole
+  // waveform height. Same simplification precedent as the EQ graph's own
+  // "straight polyline, not a true response curve." Points already arrive
+  // pre-converted to absolute time by LoopEditor's redraw() (envelopePoints
+  // here is [{time, gain}], not the raw {position, gain} data model) so this
+  // function only needs timeToX, matching every other marker below.
+  if (envelopeEnabled && loopEnd > loopStart && envelopePoints.length > 0) {
+    const envelopeColor = '#7dcfff'
+    ctx.strokeStyle = envelopeColor
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    envelopePoints.forEach((p, i) => {
+      const x = timeToX(p.time)
+      const y = (1 - p.gain) * height
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    })
+    ctx.stroke()
+    // Draggable - same white-outline convention as the Doppler marker/fade
+    // pins above.
+    ctx.fillStyle = envelopeColor
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.5
+    for (const p of envelopePoints) {
+      const x = timeToX(p.time)
+      const y = (1 - p.gain) * height
+      ctx.beginPath()
+      ctx.arc(x, y, 5, 0, Math.PI * 2)
       ctx.fill()
       ctx.stroke()
     }

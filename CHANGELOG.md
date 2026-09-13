@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.189 — Volume envelope: shape a sound's volume over time
+
+- Remix's Sound mode (Loop mode only) now has a Volume envelope — drag control points directly on the waveform to shape a sound's volume over time instead of one flat level, the same way Audacity's classic envelope tool works.
+- Double-click empty space on the waveform to add a point, double-click a point to reset it to full volume, right-click a point to remove it, and drag any point to change how loud that moment is. The two ends of the loop are always there and can't be removed.
+- Works live while previewing in Remix, and bakes into the sound so it plays correctly everywhere, including exports.
+
 ## v0.1.188 — Copy a Sound Group into another preset
 
 - In Remix's Group mode, a group you have selected now has a "Copy to preset…" picker — pick another preset and that group's name, filters/EQ, and members are copied into it as a brand-new group there, ready to tweak independently (e.g. reusing a "crowd speaking" ambience group across a shopping-center preset and a town-square preset).
