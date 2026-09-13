@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.188 — Copy a Sound Group into another preset
+
+- In Remix's Group mode, a group you have selected now has a "Copy to preset…" picker — pick another preset and that group's name, filters/EQ, and members are copied into it as a brand-new group there, ready to tweak independently (e.g. reusing a "crowd speaking" ambience group across a shopping-center preset and a town-square preset).
+
 ## v0.1.187 — Export tab: elapsed time/ETA, a copy-log button, and a collapsible log
 
 - The Export tab now shows a live "elapsed / ~time left" readout next to the Export button while an export is running, instead of that only being visible after the fact.

@@ -2104,6 +2104,9 @@ ${mixFluctuationMarkup('group')}
         <button id="editor-mix-play-pause" class="btn btn-svg-icon" type="button" title="Play">${PLAY_ICON_SVG}</button>
         <button id="editor-mix-solo-group" class="editor-sticky-solo hidden" type="button">Solo group</button>
         <span id="editor-mix-status" class="editor-sticky-time"></span>
+        <select id="editor-mix-copy-group-to" class="hidden" title="Copy this group's name, filters/EQ and members into another preset - it's governed entirely by whichever preset it ends up in from then on">
+          <option value="" selected disabled>Copy to preset…</option>
+        </select>
         <button id="editor-mix-delete-group" class="btn btn-danger btn-icon-text hidden" type="button">Delete group</button>
         <button id="editor-mix-save" class="btn btn-primary btn-icon-text editor-sticky-save" type="button">Save</button>
       </div>
@@ -2189,6 +2192,7 @@ ${mixFluctuationMarkup('group')}
     this.els.mixStatus = container.querySelector('#editor-mix-status')
     this.els.mixSave = container.querySelector('#editor-mix-save')
     this.els.mixDeleteGroup = container.querySelector('#editor-mix-delete-group')
+    this.els.mixCopyGroupTo = container.querySelector('#editor-mix-copy-group-to')
     this.els.mixPlayPause.addEventListener('click', () => this.onMixPlayPauseClick())
     this.els.mixSoloGroup.addEventListener('click', () => this.onMixSoloGroupClick())
     this.els.mixSave.addEventListener('click', () => {
@@ -2196,6 +2200,10 @@ ${mixFluctuationMarkup('group')}
       else if (this.mode === 'group') this.saveGroup().catch((err) => console.error('Editor: group save failed', err))
     })
     this.els.mixDeleteGroup.addEventListener('click', () => this.deleteGroup().catch((err) => console.error('Editor: group delete failed', err)))
+    this.els.mixCopyGroupTo.addEventListener('change', () => {
+      const targetPresetId = this.els.mixCopyGroupTo.value
+      this.copyGroupToPreset(targetPresetId).catch((err) => console.error('Editor: group copy failed', err))
+    })
   }
 
   effectivePreviewVolume() {
@@ -4334,6 +4342,7 @@ ${mixFluctuationMarkup('group')}
     this.els.stickySoundControls.classList.toggle('hidden', mode !== 'sound')
     this.els.stickyMixControls.classList.toggle('hidden', mode === 'sound')
     this.els.mixDeleteGroup.classList.toggle('hidden', mode !== 'group' || !this.selectedGroupId)
+    this.els.mixCopyGroupTo.classList.toggle('hidden', mode !== 'group' || !this.selectedGroupId)
     if (mode === 'preset') {
       this.els.mixSave.disabled = !this.selectedPresetId || wholeMixEqual(this.wholeMixCurrent, this.wholeMixSaved)
       this.els.mixStatus.textContent = this.selectedPresetId ? '' : 'Pick a preset above.'
@@ -4516,6 +4525,7 @@ ${mixFluctuationMarkup('group')}
 
     this.groups = preset?.groups ?? []
     this.renderGroupSelectOptions()
+    this.renderCopyGroupTargetOptions()
     if (presetChanged) {
       this.selectedGroupId = null
       this.els.mixGroupSelect.value = ''
@@ -4807,6 +4817,59 @@ ${mixFluctuationMarkup('group')}
     this.els.mixGroupSelect.innerHTML = this.groups.length
       ? this.groups.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)} (${g.soundIds.length})</option>`).join('')
       : '<option value="">No groups yet</option>'
+  }
+
+  // "Copy to preset…" (owner inbox, 2026-09-13: a "crowd speaking" ambience
+  // group reused across a shopping-center preset and a town-square preset) -
+  // every OTHER preset (the currently open one has nothing to copy into
+  // itself), refreshed alongside the group <select> in selectMixPreset() so
+  // switching presets keeps this list correct without a separate refresh
+  // path. A plain <select> that fires the copy on pick, rather than a
+  // separate button + target picker - matches this app's existing
+  // pick-triggers-action convention (e.g. the sort/group-by dropdowns)
+  // and needs no extra chrome in an already-packed sticky bar.
+  renderCopyGroupTargetOptions() {
+    const placeholder = '<option value="" selected disabled>Copy to preset…</option>'
+    const others = this.presets.filter((p) => p.id !== this.selectedPresetId)
+    this.els.mixCopyGroupTo.innerHTML =
+      placeholder + others.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')
+  }
+
+  // Duplicates the selected group's name/filters/EQ/members into a brand-new
+  // group (a fresh id, assigned by presets.js's normalizeGroup) on a
+  // *different* preset - once there, it's governed entirely by that other
+  // preset (its own Save/Delete/EQ edits), matching how a group already
+  // works: presets.js has no cross-preset group concept, this is purely "add
+  // one more group, built from a copy of this data" on the target's own
+  // groups[]. soundIds carry over unfiltered - group membership was already
+  // independent of a preset's own sounds[] list before this feature existed
+  // (renderGroupMembers's own union of the two proves it), so a copied
+  // member sound not yet in the target preset's mix just sits inert there,
+  // exactly like any other group member does today.
+  async copyGroupToPreset(targetPresetId) {
+    this.els.mixCopyGroupTo.value = ''
+    if (!targetPresetId || !this.selectedGroupId || !this.selectedPresetId) return
+    const sourceGroup = this.groups.find((g) => g.id === this.selectedGroupId)
+    if (!sourceGroup) return
+    // Reads presets fresh right before the write rather than trusting
+    // this.presets (which could be stale if the target preset's own groups
+    // changed elsewhere, e.g. the Mixer's right-click menu, while this tab
+    // sat open) - a whole-array replace write is exactly the case that
+    // matters for, per this file's own established "read fresh before a
+    // whole-array replace" precedent (see toggleGroupMember's comment).
+    const freshPresets = await this.api.presets.list()
+    const targetPreset = freshPresets.find((p) => p.id === targetPresetId)
+    if (!targetPreset) return
+    const newGroup = { name: sourceGroup.name, soundIds: [...sourceGroup.soundIds], filters: cloneGroupFilters(sourceGroup.filters) }
+    const updatedGroups = [...(targetPreset.groups ?? []), newGroup]
+    const saved = await this.api.presets.updateGroups(targetPresetId, updatedGroups)
+    this.presets = freshPresets.map((p) => (p.id === targetPresetId ? (saved ?? { ...p, groups: updatedGroups }) : p))
+    if (targetPresetId === this.selectedPresetId) {
+      this.groups = saved?.groups ?? updatedGroups
+      this.renderGroupSelectOptions()
+    }
+    window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId: targetPresetId } }))
+    this.els.mixStatus.textContent = `Copied "${sourceGroup.name}" to "${targetPreset.name}".`
   }
 
   selectGroup(id) {

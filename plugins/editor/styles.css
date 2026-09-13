@@ -649,6 +649,24 @@
   border-color: var(--accent);
 }
 
+/* "Copy to preset…" (v0.1.188) - matches .editor-sticky-solo's own sizing so
+   it sits at ease among the sticky bar's other compact controls, not the
+   wider .editor-mix-picker-row select styling meant for a full-width row. */
+.editor-sticky-mode-group select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 160px;
+}
+
+.editor-sticky-mode-group select:hover {
+  color: var(--text);
+}
+
 /* "Live edit" (the editable Web Audio preview) vs "Saved audio" (the actual
    baked clip file) - see EditorPlugin.togglePreviewMode()'s own doc comment.
    Active (auditioning the real saved file) reuses the same "positive" green
