@@ -69,3 +69,32 @@ jobs:
           # electron-updater can check this private repo's releases from an
           # installed user's machine.
           NOCTIVAGO_UPDATE_TOKEN: ${{ secrets.NOCTIVAGO_UPDATE_TOKEN }}
+
+      # Keeps the itch.io page's download current on every release. This is
+      # unrelated to in-app auto-update (electron-updater has no itch.io
+      # provider - it only ever checks GitHub Releases, see above) - Butler
+      # just re-uploads the installer itch already serves as a direct
+      # download. Skips itself entirely (rather than failing the whole run)
+      # until ITCH_BUTLER_API_KEY is added as a repo secret - the GitHub
+      # Releases publish above is what update-checking actually depends on
+      # and must keep working regardless of whether this step is set up yet.
+      - name: Push build to itch.io
+        if: ${{ secrets.ITCH_BUTLER_API_KEY != '' }}
+        shell: pwsh
+        env:
+          # Butler reads this env var directly, no `butler login` needed -
+          # the documented approach for CI. Account-wide, not scoped to this
+          # one itch project (itch.io API keys can't be scoped narrower than
+          # that) - unlike NOCTIVAGO_UPDATE_TOKEN, it never ships inside the
+          # app itself, only ever used here to push a file.
+          BUTLER_API_KEY: ${{ secrets.ITCH_BUTLER_API_KEY }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $installer = Get-ChildItem "dist" -Filter "*.exe" | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $installer) {
+            Write-Error "No .exe found in dist/ to push to itch.io"
+            exit 1
+          }
+          Invoke-WebRequest -Uri "https://broth.itch.zone/butler/windows-amd64/LATEST/archive/default" -OutFile "$env:RUNNER_TEMP\butler.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\butler.zip" -DestinationPath "$env:RUNNER_TEMP\butler"
+          & "$env:RUNNER_TEMP\butler\butler.exe" push $installer.FullName venar1/noctivago:win --userversion $version
