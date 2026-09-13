@@ -49,3 +49,33 @@ export function applyOcclusionToFilters(filters) {
     reverbMix: Math.max(f.reverbMix ?? 0, OCCLUSION_REVERB_MIX_MAX * occlusion)
   }
 }
+
+// Per-preset sound overrides ("presets as primary context", planned
+// 2026-09-12): a sound's own Remix-editable settings - trim, filters/EQ,
+// Speed/Pitch/Doppler/Reverse, Play mode, Scatter/Schedule config, Loop
+// crossfade - can now diverge per preset instead of being one single value
+// shared by every preset that includes that sound. `library.js`'s per-sound
+// fields stay the "baseline" (what a sound sounds like when it isn't a
+// member of the active preset, or the active preset has never touched it -
+// lazy inheritance, not an eager snapshot); a preset's own `sounds[].overrides`
+// (null, or a bag of these same 8 keys) takes precedence over baseline for
+// whichever fields it sets. Deliberately does NOT include `fluctuation` -
+// that stays global-per-sound, same as always (it's already architecturally
+// separate: its own debounce, excluded from Remix's undo/snapshot system).
+// Exported as one shared function so the renderer's Mixer resolution layer
+// and main's bake-eligibility check can't drift apart the way a
+// hand-duplicated field list has bitten this codebase before (see
+// applyOcclusionToFilters's own comment above, and plugins/editor/index.js's
+// "flattened field list, edit by hand" comment). plugins/editor/index.js and
+// plugins/export/index.js each keep their own duplicated copy - the plugin
+// sandbox can't import this file.
+export const OVERRIDABLE_SOUND_KEYS = ['loopStart', 'loopEnd', 'filters', 'crossfadeSeconds', 'speedPitch', 'playMode', 'scatter', 'schedule']
+
+export function applySoundOverride(entry, override) {
+  if (!override) return entry
+  const patch = {}
+  for (const key of OVERRIDABLE_SOUND_KEYS) {
+    if (override[key] !== undefined) patch[key] = override[key]
+  }
+  return { ...entry, ...patch }
+}

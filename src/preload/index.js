@@ -136,6 +136,7 @@ const api = {
     updateWholeMix: (id, wholeMix) => ipcRenderer.invoke('presets:updateWholeMix', id, wholeMix),
     updateSounds: (id, sounds) => ipcRenderer.invoke('presets:updateSounds', id, sounds),
     updateGroups: (id, groups) => ipcRenderer.invoke('presets:updateGroups', id, groups),
+    updateSoundOverride: (presetId, soundId, overridePatch) => ipcRenderer.invoke('presets:updateSoundOverride', presetId, soundId, overridePatch),
     export: (presetId) => ipcRenderer.invoke('presets:export', presetId),
     pickImport: () => ipcRenderer.invoke('presets:pickImport'),
     resolveImportedSound: (portableSound) => ipcRenderer.invoke('presets:resolveImportedSound', portableSound),

@@ -9,7 +9,7 @@ import { resolveFfmpegPath } from './ffmpeg/ffmpegPath.js'
 import { runYtDlp } from './ytdlp/runYtDlp.js'
 import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
 import { getSettings } from './settings.js'
-import { MAX_BUFFER_CLIP_SECONDS, DEFAULT_SOUND_VOLUME } from '../shared/constants.js'
+import { MAX_BUFFER_CLIP_SECONDS, DEFAULT_SOUND_VOLUME, applySoundOverride } from '../shared/constants.js'
 
 const store = new Store({
   name: 'library',
@@ -945,10 +945,22 @@ function effectiveCrossfadeSeconds(entry) {
   return entry.crossfadeSeconds
 }
 
-export function getLoopClipPathForId(id) {
+// `effectiveOverride` (planned 2026-09-12, "presets as primary context"):
+// the active preset's own override for this sound, if any (see
+// presets.js's getSoundOverride) - the baked-clip cache/staleness fields
+// below live on this one global baseline row (there's still only one
+// cached clip per sound id, never one per (preset, sound) - a deliberate
+// Phase-1 trade-off), so eligibility must be checked against the
+// *effective* (possibly preset-overridden) settings, not raw baseline, or a
+// bake made under one preset's context would immediately register as stale
+// the moment a different preset (or no preset) is the one asking. Every
+// existing caller that omits the second argument keeps today's exact
+// baseline-only behavior.
+export function getLoopClipPathForId(id, effectiveOverride = null) {
   const sounds = store.get('sounds')
-  const entry = sounds.find((s) => s.id === id)
-  if (!entry) return null
+  const baseline = sounds.find((s) => s.id === id)
+  if (!baseline) return null
+  const entry = applySoundOverride(baseline, effectiveOverride)
   const eligible =
     entry.loopClipReady &&
     entry.loopClipStart === entry.loopStart &&

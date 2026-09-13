@@ -148,6 +148,9 @@ export function registerIpcHandlers() {
   ipcMain.handle('presets:updateWholeMix', (_event, id, wholeMix) => presets.updatePresetWholeMix(id, wholeMix))
   ipcMain.handle('presets:updateSounds', (_event, id, sounds) => presets.updatePresetSounds(id, sounds))
   ipcMain.handle('presets:updateGroups', (_event, id, groups) => presets.updatePresetGroups(id, groups))
+  ipcMain.handle('presets:updateSoundOverride', (_event, presetId, soundId, overridePatch) =>
+    presets.updatePresetSoundOverride(presetId, soundId, overridePatch)
+  )
 
   // Portable preset export/import (src/main/presetPortable.js) - a .ncvpreset
   // file (a zip) carrying the preset, every sound's settings, and the audio
@@ -424,8 +427,13 @@ export function registerIpcHandlers() {
         inputPath: library.getPlaybackPathForId(s.soundId),
         // a loop sound whose already-baked clip still matches its current
         // trim/filters/crossfade/speed can be reused as-is (exportMix skips
-        // re-baking it) - null when stale or never baked
-        cachedClipPath: library.getLoopClipPathForId(s.soundId)
+        // re-baking it) - null when stale or never baked. `s` itself is
+        // already the plugin's fully-resolved effective sound (baseline
+        // merged with this preset's own override, if any - see
+        // plugins/export/index.js), so passing it straight through as the
+        // override argument checks eligibility against the right settings
+        // for per-preset overrides (planned 2026-09-12).
+        cachedClipPath: library.getLoopClipPathForId(s.soundId, s)
       }))
       .filter((s) => s.inputPath)
     if (resolvedSounds.length === 0) return { ok: false, error: 'No exportable sounds in this preset' }

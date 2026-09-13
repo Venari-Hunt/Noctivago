@@ -6,7 +6,8 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import log from 'electron-log/main'
 import { registerIpcHandlers } from './ipc.js'
-import { getPlaybackPathForId, getLoopClipPathForId } from './library.js'
+import { getPlaybackPathForId, getLoopClipPathForId, listSounds } from './library.js'
+import { ensureDefaultPreset, getSoundOverride } from './presets.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
 import { getSettings } from './settings.js'
@@ -54,7 +55,13 @@ function registerSoundProtocol() {
     const url = new URL(request.url)
     const id = url.hostname
     const variant = url.searchParams.get('variant')
-    const filePath = variant === 'clip' ? getLoopClipPathForId(id) : getPlaybackPathForId(id)
+    // presetId (planned 2026-09-12, "presets as primary context"): resolves
+    // loop-clip bake-eligibility against that preset's effective view of the
+    // sound - see library.js's getLoopClipPathForId for why this can't just
+    // check the sound's raw baseline fields once per-preset overrides exist.
+    const presetId = url.searchParams.get('presetId') || null
+    const filePath =
+      variant === 'clip' ? getLoopClipPathForId(id, getSoundOverride(presetId, id)) : getPlaybackPathForId(id)
     if (!filePath) return new Response('Not found', { status: 404 })
 
     const stat = await fs.promises.stat(filePath)
@@ -203,11 +210,29 @@ function createWindow() {
   return win
 }
 
+// "Always a preset loaded" (planned 2026-09-12, "presets as primary
+// context"): force-creates a "Default" preset if the user has none yet -
+// a fresh install, or an existing install upgrading from before presets
+// could hold per-sound overrides. Seeds it from whatever's currently
+// `included` (pre-migration, that flag lived only on the library entry
+// itself, independent of any preset - see library.js) so an existing
+// user's in-progress mix becomes the seed of a real preset instead of
+// being silently orphaned the moment this invariant starts being enforced.
+// A no-op once any preset exists, so this is cheap to call unconditionally
+// on every single startup rather than needing a one-time migration flag.
+function bootstrapDefaultPreset() {
+  const fallbackSounds = listSounds()
+    .filter((s) => s.included && s.status !== 'missing')
+    .map((s) => ({ soundId: s.id, volume: s.volume, overrides: null }))
+  ensureDefaultPreset(fallbackSounds)
+}
+
 app.whenReady().then(() => {
   registerSoundProtocol()
   registerPluginProtocol()
   grantMicrophonePermission()
   registerIpcHandlers()
+  bootstrapDefaultPreset()
   const win = createWindow()
   initAutoUpdate(win)
   initTray(win)

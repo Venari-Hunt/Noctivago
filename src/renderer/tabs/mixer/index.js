@@ -9,7 +9,7 @@ import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
 import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
 import { openContextMenu } from '../../core/ContextMenu.js'
-import { MAX_BUFFER_CLIP_SECONDS } from '../../../shared/constants.js'
+import { MAX_BUFFER_CLIP_SECONDS, applySoundOverride } from '../../../shared/constants.js'
 import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
 
 const api = window.noctivago
@@ -90,7 +90,18 @@ const state = {
   // context menu can list them without an extra IPC round-trip on every
   // open; the source of truth is always presets.list(), re-fetched whenever
   // this could be stale (loadPreset, the sound-groups-changed bridge below).
-  groups: []
+  groups: [],
+  // Per-preset sound overrides (planned 2026-09-12, "presets as primary
+  // context"): the active preset's own sounds[] array (soundId, volume,
+  // overrides), the single source of truth for both currentMixSounds()'s
+  // override-preserving writes and recomputeEffectiveLibrary()'s merge.
+  // baselineById is the raw, un-overridden library - only
+  // applyBulkFilterPreset (a multi-select macro with no natural per-preset
+  // meaning) reads from this directly; every other read site keeps reading
+  // state.library, which recomputeEffectiveLibrary() keeps pointed at the
+  // *effective* (baseline + active preset's override) view.
+  activePresetSounds: [],
+  baselineById: new Map()
 }
 
 const els = {
@@ -303,7 +314,13 @@ async function applyBulkFilterPreset(preset) {
   if (ids.length === 0) return
   await Promise.all(
     ids.map((id) => {
-      const entry = state.library.find((s) => s.id === id)
+      // Reads baseline, not the (possibly preset-overridden) effective
+      // state.library - a multi-select macro has no natural single "which
+      // preset" meaning, and it must keep writing pure baseline
+      // unconditionally (same as before per-preset overrides existed) so it
+      // can't silently corrupt the baseline/override split by merging an
+      // override's filters into what gets written back as baseline.
+      const entry = state.baselineById.get(id)
       if (!entry) return null
       const merged = {
         ...entry.filters,
@@ -618,8 +635,28 @@ function swapSource(entry) {
 // hasn't landed yet clobbering an in-session change.
 let includedSeeded = false
 
+// Per-preset sound overrides (planned 2026-09-12, "presets as primary
+// context"): merges the active preset's own per-sound overrides on top of
+// each sound's baseline into state.library, so every existing read site
+// below (reconcileSource, desiredSourceKind, getOrCreateSource,
+// loopClipEligible, bufferBakeSnapshot, maybeAutoBake, tryCreateBufferSource,
+// testFireOneShot, propagateSync, and loadPresetInner's own per-item lookup)
+// can keep reading entry.filters/entry.loopStart/etc. exactly as before -
+// they're all now transparently reading the *effective* view instead of raw
+// baseline, with zero changes needed to any of their bodies. Only
+// applyBulkFilterPreset reads state.baselineById directly instead (see its
+// own comment for why). Recomputed on refreshList() and whenever the active
+// preset (or its sounds/overrides) changes.
+function recomputeEffectiveLibrary() {
+  const overridesById = new Map(
+    state.activePresetSounds.filter((s) => s.overrides).map((s) => [s.soundId, s.overrides])
+  )
+  state.library = [...state.baselineById.values()].map((entry) => applySoundOverride(entry, overridesById.get(entry.id)))
+}
+
 async function refreshList() {
-  state.library = await api.library.list()
+  const baseline = await api.library.list()
+  state.baselineById = new Map(baseline.map((entry) => [entry.id, entry]))
   // BUG FIX (reported: "opened the app after an update and no preset was
   // playing nor loaded - hit play and nothing played"). "In mix" membership
   // is persisted per-sound (persistIncluded), but state.included - the Set
@@ -632,19 +669,20 @@ async function refreshList() {
   // once, on the first load (missing sounds excluded, matching
   // maybeResumeOnLaunch).
   if (!includedSeeded) {
-    for (const entry of state.library) {
+    for (const entry of baseline) {
       if (entry.included && entry.status !== 'missing') state.included.add(entry.id)
     }
     includedSeeded = true
   }
-  for (const entry of state.library) {
+  for (const entry of baseline) {
     // Seeds state.volumes from the persisted value the first time this
     // entry is seen in a session (e.g. right after app startup, when
     // state.volumes is empty) - never overwrites a value already set this
     // session, so it doesn't fight an in-progress slider drag.
     if (!state.volumes.has(entry.id)) state.volumes.set(entry.id, entry.volume ?? DEFAULT_VOLUME)
-    reconcileSource(entry)
   }
+  recomputeEffectiveLibrary()
+  for (const entry of state.library) reconcileSource(entry)
   render()
 }
 
@@ -706,7 +744,11 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
   const isScatter = entry.playMode === 'scatter'
   const isScheduled = entry.playMode === 'scheduled'
   try {
-    const response = await fetch(`sound://${entry.id}?variant=clip`)
+    // presetId (planned 2026-09-12, "presets as primary context"): lets the
+    // main process check bake-eligibility against this preset's effective
+    // (possibly overridden) view of the sound, not just its raw baseline -
+    // see library.js's getLoopClipPathForId.
+    const response = await fetch(`sound://${entry.id}?variant=clip&presetId=${state.activePresetId ?? ''}`)
     if (!response.ok) return null
     const arrayBuffer = await response.arrayBuffer()
     const audioBuffer = await engine.context.decodeAudioData(arrayBuffer)
@@ -1427,10 +1469,21 @@ els.presetsClose.addEventListener('click', () => hideModal(els.presetsModal))
 // preset" (always creates) buttons - the currently-included sounds/volumes,
 // in the exact shape both api.presets.save and api.presets.updateSounds
 // expect.
+//
+// BUG FIX RISK, avoided here (planned 2026-09-12, "presets as primary
+// context"): this function feeds autosave, which fires on nearly every mix
+// edit (a volume drag, add/remove) via a 600ms debounce - if it didn't carry
+// each sound's existing `overrides` forward, the very next volume drag after
+// a Remix per-preset override save would silently erase that override. Look
+// it up from state.activePresetSounds (the active preset's own sounds[],
+// kept current by loadPresetInner/restoreLastActivePreset/the
+// sound-override-changed listener) rather than dropping it.
 function currentMixSounds() {
+  const existingById = new Map(state.activePresetSounds.map((s) => [s.soundId, s]))
   return [...state.included].map((id) => ({
     soundId: id,
-    volume: state.volumes.get(id) ?? DEFAULT_VOLUME
+    volume: state.volumes.get(id) ?? DEFAULT_VOLUME,
+    overrides: existingById.get(id)?.overrides ?? null
   }))
 }
 
@@ -1608,6 +1661,22 @@ async function loadPresetInner(preset) {
 
   await engine.resume()
 
+  // Per-preset sound overrides (planned 2026-09-12, "presets as primary
+  // context"): activePresetId/activePresetSounds must be current, and
+  // state.library re-merged, BEFORE the per-item startPlayback loop below -
+  // otherwise a sound would start playing under the *previous* preset's (or
+  // no) overrides for one tick. Moved up from where this used to sit (after
+  // the loop) for exactly this reason.
+  state.activePresetId = preset.id
+  state.activePresetSounds = preset.sounds ?? []
+  recomputeEffectiveLibrary()
+  // BUG FIX (reported directly, "actively harmful"): which preset was
+  // loaded was never persisted, so a restart/autoupdate silently dropped
+  // whatever Sound Group EQ/whole-mix processing was shaping the mix - see
+  // restoreLastActivePreset(), called on next launch.
+  api.settings.setLastActivePresetId(preset.id)
+  setActivePresetIndicator(preset.name)
+
   for (const item of preset.sounds) {
     const entry = state.library.find((s) => s.id === item.soundId)
     if (!entry || entry.status === 'missing') continue
@@ -1622,13 +1691,6 @@ async function loadPresetInner(preset) {
   // Whole-mix processing (Preset Remix plugin). Installed on the shared
   // engine chain here, with the preset's fade-in only on an actual load;
   // swapped out / reset to neutral whenever another preset is loaded.
-  state.activePresetId = preset.id
-  // BUG FIX (reported directly, "actively harmful"): which preset was
-  // loaded was never persisted, so a restart/autoupdate silently dropped
-  // whatever Sound Group EQ/whole-mix processing was shaping the mix - see
-  // restoreLastActivePreset(), called on next launch.
-  api.settings.setLastActivePresetId(preset.id)
-  setActivePresetIndicator(preset.name)
   engine.wholeMix.set(preset.wholeMix ?? null, { fadeInSeconds: preset.wholeMix?.fadeInSeconds ?? 0 })
 
   // Sound Groups (see AudioEngine.js's SoundGroupChain) - install this
@@ -1639,27 +1701,53 @@ async function loadPresetInner(preset) {
   engine.setSoundGroups(state.groups)
   for (const [id, source] of state.sources) engine.routeSound(id, source)
 
+  // Lets the Remix plugin's Sound mode (a separate, sandboxed JS realm) know
+  // the active preset changed, so a sound it has open can offer to reload
+  // under the new editing context - see plugins/editor/index.js's own
+  // listener.
+  window.dispatchEvent(new CustomEvent('noctivago:active-preset-changed', { detail: { presetId: state.activePresetId } }))
+
   hideModal(els.presetsModal)
   render()
 }
 
+// "Always a preset loaded" (planned 2026-09-12, "presets as primary
+// context"): deleting a preset can no longer leave the app with nothing
+// active. presets.js's deletePreset already force-creates a replacement
+// "Default" (carrying the deleted preset's own per-sound overrides forward)
+// whenever the deletion empties the list entirely; this picks that up (or,
+// if other presets remain, auto-selects one of them) rather than leaving
+// state.activePresetId null the way it used to.
 async function deletePreset(id) {
-  await api.presets.delete(id)
+  const replacement = await api.presets.delete(id)
   // If the deleted preset was the active one, its groups no longer exist
   // anywhere - clear the cache the context menu reads (state.groups) and
   // re-route every live source back to masterGain, the same reset loadPreset
-  // already does when switching to a preset with no groups. activePresetId
-  // itself is deliberately still cleared here too (unlike a plain mix edit,
-  // which never clears it) since the preset it names is genuinely gone, not
-  // just deviated-from.
+  // already does when switching to a preset with no groups.
   if (id === state.activePresetId) {
     if (state.soloedGroupId) releaseGroupSolo()
     state.activePresetId = null
-    api.settings.setLastActivePresetId(null)
-    setActivePresetIndicator(null)
     state.groups = []
     engine.setSoundGroups([])
     for (const [sourceId, source] of state.sources) engine.routeSound(sourceId, source)
+
+    if (replacement) {
+      // The deletion emptied the list - the main process already force-
+      // created a fresh Default. Load it immediately rather than waiting for
+      // the next restart to notice.
+      await loadPreset(replacement)
+    } else {
+      // Other presets still exist - auto-select one instead of leaving
+      // nothing active.
+      const remaining = await api.presets.list()
+      if (remaining[0]) {
+        await loadPreset(remaining[0])
+      } else {
+        api.settings.setLastActivePresetId(null)
+        setActivePresetIndicator(null)
+        window.dispatchEvent(new CustomEvent('noctivago:active-preset-changed', { detail: { presetId: null } }))
+      }
+    }
   }
   await refreshPresetList()
 }
@@ -1779,24 +1867,34 @@ async function maybeResumeOnLaunch(settings) {
 // with every sound reverting to its raw, unprocessed settings. Runs before
 // maybeResumeOnLaunch so a resumed sound is already correctly routed/
 // filtered from its very first frame, not just eventually reconciled.
-// Silently gives up (leaves the mix neutral) if the remembered preset was
-// deleted since - same as loadPreset()'s own "preset gone" handling.
+// Falls back to the first available preset if the remembered one is gone
+// (deleted from another machine/session since) or was never set (a fresh
+// install, or the very first launch after "presets as primary context"
+// bootstraps a Default preset) - "always a preset loaded" is an invariant
+// now (planned 2026-09-12), not just a zero-presets special case, so this
+// no longer ever leaves the mix with nothing active as long as at least one
+// preset exists (which main's bootstrapDefaultPreset guarantees on startup).
 async function restoreLastActivePreset(settings) {
-  if (!settings.lastActivePresetId) return
   const presets = await api.presets.list()
-  const preset = presets.find((p) => p.id === settings.lastActivePresetId)
+  let preset = presets.find((p) => p.id === settings.lastActivePresetId)
+  if (!preset && presets.length > 0) preset = presets[0]
   if (!preset) {
-    // Deleted from another machine/session since - nothing to restore, and
-    // no point re-checking on every future launch.
+    // Only reachable if presets.list() is somehow still empty - shouldn't
+    // happen given main's startup bootstrap, but leaves the mix neutral
+    // rather than throwing if it ever does.
     api.settings.setLastActivePresetId(null)
     return
   }
 
   state.activePresetId = preset.id
+  state.activePresetSounds = preset.sounds ?? []
+  recomputeEffectiveLibrary()
+  api.settings.setLastActivePresetId(preset.id)
   setActivePresetIndicator(preset.name)
   engine.wholeMix.set(preset.wholeMix ?? null)
   state.groups = preset.groups ?? []
   engine.setSoundGroups(state.groups)
+  window.dispatchEvent(new CustomEvent('noctivago:active-preset-changed', { detail: { presetId: preset.id } }))
   // No live sources exist yet at this point in mount()'s startup sequence -
   // future ones (from maybeResumeOnLaunch just after, or the user pressing
   // play by hand) pick up the right routing automatically via
@@ -1938,6 +2036,22 @@ document.addEventListener('library:linked', refreshList)
     if (!entry) return
     entry.fluctuation = fluctuation
     reconcileSource(entry)
+  })
+  // Per-preset sound overrides (planned 2026-09-12, "presets as primary
+  // context") - the Remix plugin's Sound mode dispatches this after a
+  // successful override save (see plugins/editor/index.js's performSave),
+  // having already persisted it via presets:updateSoundOverride. Same
+  // "patch the cache, reconcile just that source" pattern as the
+  // fluctuation listener above, scoped to the active preset the same way
+  // the whole-mix/group preview bridges already are.
+  window.addEventListener('noctivago:sound-override-changed', (e) => {
+    const { presetId, soundId, overrides } = e.detail ?? {}
+    if (!soundId || presetId !== state.activePresetId) return
+    const item = state.activePresetSounds.find((s) => s.soundId === soundId)
+    if (item) item.overrides = overrides
+    recomputeEffectiveLibrary()
+    const entry = state.library.find((s) => s.id === soundId)
+    if (entry) reconcileSource(entry)
   })
   // The Remix plugin's Preset mode (plugins/editor/) dispatches this on
   // every control change while editing a preset, and once more with the

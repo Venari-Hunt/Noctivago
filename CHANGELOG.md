@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.185 — Presets as primary context: per-preset sound overrides
+
+- A sound's trim, filters/EQ, Speed/Pitch/Doppler/Reverse, Play mode, Scatter/Schedule config, and Loop crossfade can now be different per preset. Edit a shared sound while one preset is loaded, and only that preset's own copy changes — switch to a different preset that also has the sound, and it still sounds like whatever that preset last saved (or its plain default, if that preset never touched it).
+- The app now always has a preset loaded. If you ever end up with none (a fresh install, or deleting every preset you have), a "Default" preset is created automatically — carrying forward whatever the deleted preset's own per-sound settings were, so deleting a preset never suddenly changes how your sounds are set up.
+- If you edit a sound in Remix that isn't part of the currently loaded preset's mix, it changes that sound's shared defaults instead (same as before this feature existed) — a status line says so when it happens.
+- Exporting a preset now correctly bakes in that preset's own per-sound overrides.
+
 ## v0.1.184 — Bulk-apply an effect preset to several sounds at once
 
 - The Mixer's sound list has a new "Select…" button — turns on a checkbox next to each sound so you can select several at once.

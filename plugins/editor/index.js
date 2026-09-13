@@ -14,6 +14,22 @@ import { formatDuration, parseDuration } from './util/time.js'
 // core if that value ever changes.
 const MAX_BUFFER_CLIP_SECONDS = 600
 
+// Per-preset sound overrides (planned 2026-09-12, "presets as primary
+// context"): mirrors src/shared/constants.js's OVERRIDABLE_SOUND_KEYS/
+// applySoundOverride exactly - same cross-directory duplication reason as
+// MAX_BUFFER_CLIP_SECONDS above. Keep in sync with core if that set ever
+// changes.
+const OVERRIDABLE_SOUND_KEYS = ['loopStart', 'loopEnd', 'filters', 'crossfadeSeconds', 'speedPitch', 'playMode', 'scatter', 'schedule']
+
+function applySoundOverride(entry, override) {
+  if (!override) return entry
+  const patch = {}
+  for (const key of OVERRIDABLE_SOUND_KEYS) {
+    if (override[key] !== undefined) patch[key] = override[key]
+  }
+  return { ...entry, ...patch }
+}
+
 // Mirrors src/main/ffmpeg/loopClip.js's DEFAULT_CROSSFADE_SECONDS (0.2s),
 // in ms since the slider works in ms - same cross-directory duplication
 // reason as MAX_BUFFER_CLIP_SECONDS above. Shown on the crossfade slider for
@@ -405,6 +421,15 @@ export default class EditorPlugin {
 
     this.library = []
     this.currentEntry = null
+    // Per-preset sound overrides (planned 2026-09-12, "presets as primary
+    // context"): activePresetId mirrors whatever's actually loaded in the
+    // Mixer right now (kept current by refreshLibrary()'s poll and the
+    // noctivago:active-preset-changed push event); editingPresetId is
+    // pinned once per editing session in loadSound() - the preset Save
+    // actually targets, so a switch mid-edit can't silently redirect an
+    // in-flight save to the wrong preset.
+    this.activePresetId = null
+    this.editingPresetId = null
     this.pickerQuery = ''
     this.pickerHighlightIndex = -1
     this.previewSource = null
@@ -539,6 +564,41 @@ export default class EditorPlugin {
     }
     document.addEventListener('keydown', this._onKeyDown)
 
+    // Per-preset sound overrides (planned 2026-09-12, "presets as primary
+    // context"): the Mixer dispatches this whenever the active preset
+    // changes (loadPreset, restoreLastActivePreset, deletePreset). If Sound
+    // mode has a sound open that was pinned to a different preset
+    // (editingPresetId), offer to reload it under the new context, reusing
+    // the exact same leave-with-unsaved-changes confirmation already used
+    // for switching sounds/tabs - declining keeps editing under the pinned
+    // preset, so an in-flight Save still targets the right place.
+    this._onActivePresetChanged = async () => {
+      // mount() hasn't run yet (the Remix tab has never been opened this
+      // session) - this.els is still empty, and refreshLibrary() touches
+      // DOM elements that don't exist yet. Nothing to reconcile in that
+      // case: there's no open sound, and the next real mount()/onShow will
+      // do its own fresh refreshLibrary() anyway. Same guard onShow already
+      // uses for its own refreshLibrary() call.
+      if (!this.els.soundSearch) return
+      await this.refreshLibrary().catch((err) => console.error('Editor: failed to refresh library after preset switch', err))
+      if (this.mode !== 'sound' || !this.currentEntry) return
+      if (this.editingPresetId === this.activePresetId) return
+      // confirmLeaveIfDirty() shares one _resolveLeaveConfirm slot with
+      // TabHost's own onBeforeHide call (leaving the Remix tab entirely) -
+      // a second concurrent call would silently overwrite that resolver and
+      // orphan whichever check got there first. Rare in practice (it needs
+      // a tab switch and a preset switch in the same instant), but cheap to
+      // guard: if a leave-confirm is already showing, don't start a second
+      // one - just stay pinned to the current editing preset, same as the
+      // user clicking "No" would.
+      if (this.els.leaveConfirmDialog && !this.els.leaveConfirmDialog.classList.contains('hidden')) return
+      const proceed = await this.confirmLeaveIfDirty()
+      if (proceed) {
+        this.loadSound(this.currentEntry.id).catch((err) => console.error('Editor: failed to reload sound after preset switch', err))
+      }
+    }
+    window.addEventListener('noctivago:active-preset-changed', this._onActivePresetChanged)
+
     this.unregister = this.app.tabs.register({
       id: 'remix',
       title: 'Remix',
@@ -592,6 +652,7 @@ export default class EditorPlugin {
 
   async onunload() {
     if (this._onKeyDown) document.removeEventListener('keydown', this._onKeyDown)
+    if (this._onActivePresetChanged) window.removeEventListener('noctivago:active-preset-changed', this._onActivePresetChanged)
     this.disposePreview()
     this.stopWholeMixSpectrumTicking()
     this.presetEq?.destroy()
@@ -2263,8 +2324,22 @@ ${mixFluctuationMarkup('group')}
     this.els.playPause.title = playing ? 'Pause' : 'Play'
   }
 
+  // Per-preset sound overrides (planned 2026-09-12): also fetches
+  // this.presets here (not just when Preset/Group mode is opened, via
+  // refreshMixPanel) so Sound mode's override merge has fresh data on its
+  // very first load too - a plain, cheap, side-effect-free list fetch,
+  // unlike refreshMixPanel's own heavier UI wiring. this.activePresetId is
+  // re-read from the Mixer on every call via requestMixerStatus() - the
+  // same synchronous bridge Preset/Group mode's Play button already uses.
   async refreshLibrary() {
-    this.library = await this.api.library.list()
+    this.activePresetId = requestMixerStatus().activePresetId
+    const [library, presets] = await Promise.all([this.api.library.list(), this.api.presets.list()])
+    this.presets = presets
+    const activePreset = this.presets.find((p) => p.id === this.activePresetId)
+    this.library = library.map((entry) => {
+      const override = activePreset?.sounds.find((s) => s.soundId === entry.id)?.overrides
+      return applySoundOverride(entry, override)
+    })
     if (this.currentEntry) {
       const updated = this.editableSounds().find((s) => s.id === this.currentEntry.id)
       // Don't stomp on text the user is actively typing to search.
@@ -3592,6 +3667,11 @@ ${mixFluctuationMarkup('group')}
     // the EQ graph's own per-band Solo already uses.
     this.setSolo(false)
     this.currentEntry = entry
+    // Per-preset sound overrides (planned 2026-09-12): pins which preset
+    // this editing session's Save targets. `entry` (from this.library) is
+    // already the *effective* view (baseline merged with this preset's own
+    // override, if any) as of refreshLibrary()'s last call - see its comment.
+    this.editingPresetId = this.activePresetId
     this.disposePreview()
 
     this.els.empty.classList.add('hidden')
@@ -3693,7 +3773,7 @@ ${mixFluctuationMarkup('group')}
     // clip URL) even if no bake exists yet; savedPreviewEligible() is what
     // actually gates whether the toggle can be used, checked fresh on every
     // edit via updateSaveButtonState() -> updatePreviewModeToggle() below.
-    this.bakedPreview = new BakedClipPreview(this.engine, entry.id, this.effectivePreviewVolume())
+    this.bakedPreview = new BakedClipPreview(this.engine, entry.id, this.effectivePreviewVolume(), this.editingPresetId)
     // Only fires when Loop preview is off and playback runs off the end on
     // its own - the button/playhead-tracking RAF otherwise only stop via
     // the explicit Play/Pause click handler below.
@@ -3808,13 +3888,38 @@ ${mixFluctuationMarkup('group')}
     const effectiveCrossfadeSeconds =
       playMode === 'scatter' || playMode === 'scheduled' || speedPitch.dopplerEnabled ? 0 : crossfadeSeconds
 
-    await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
-    await this.api.library.updateFilters(id, filters)
-    await this.api.library.updateCrossfade(id, crossfadeSeconds)
-    await this.api.library.updateSpeedPitch(id, speedPitch)
-    await this.api.library.updatePlayMode(id, playMode)
-    await this.api.library.updateScatterConfig(id, scatter)
-    await this.api.library.updateSchedule(id, schedule)
+    // Per-preset sound overrides (planned 2026-09-12, "presets as primary
+    // context"): if this sound is a member of the preset this editing
+    // session is pinned to (editingPresetId, captured once in loadSound so
+    // a live preset switch mid-edit can't silently redirect an in-flight
+    // save), the edit only ever affects that preset's own copy. Otherwise
+    // (the sound isn't in that preset's mix, or there's no preset context)
+    // fall back to exactly today's global write - identical to every
+    // sound's behavior before this feature existed.
+    const overridePatch = { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, playMode, scatter, schedule }
+    const editingPreset = this.editingPresetId ? this.presets.find((p) => p.id === this.editingPresetId) : null
+    const presetSoundItem = editingPreset?.sounds.find((s) => s.soundId === id)
+    const overrideHint = !presetSoundItem && this.editingPresetId
+      ? " This sound isn't in the current preset, so this changed its shared defaults."
+      : ''
+    if (presetSoundItem) {
+      const updated = await this.api.presets.updateSoundOverride(this.editingPresetId, id, overridePatch)
+      const updatedItem = updated?.sounds.find((s) => s.soundId === id)
+      presetSoundItem.overrides = updatedItem?.overrides ?? overridePatch
+      window.dispatchEvent(
+        new CustomEvent('noctivago:sound-override-changed', {
+          detail: { presetId: this.editingPresetId, soundId: id, overrides: presetSoundItem.overrides }
+        })
+      )
+    } else {
+      await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
+      await this.api.library.updateFilters(id, filters)
+      await this.api.library.updateCrossfade(id, crossfadeSeconds)
+      await this.api.library.updateSpeedPitch(id, speedPitch)
+      await this.api.library.updatePlayMode(id, playMode)
+      await this.api.library.updateScatterConfig(id, scatter)
+      await this.api.library.updateSchedule(id, schedule)
+    }
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd
     this.currentEntry.filters = filters
@@ -3842,7 +3947,7 @@ ${mixFluctuationMarkup('group')}
     // Only fluctuation (or nothing) changed - the existing bake, if any, is
     // still valid. Skip the ffmpeg re-render.
     if (!bakeRelevantDirty) {
-      this.els.saveStatus.textContent = `${savedWord} — original file untouched.`
+      this.els.saveStatus.textContent = `${savedWord} — original file untouched.${overrideHint}`
       this.updateSaveButtonState()
       return
     }
@@ -3876,11 +3981,11 @@ ${mixFluctuationMarkup('group')}
         this.currentEntry.loopClipCrossfadeSeconds = effectiveCrossfadeSeconds
         this.currentEntry.loopClipSpeedPitch = speedPitch
         this.els.saveStatus.textContent =
-          playMode === 'scatter'
+          (playMode === 'scatter'
             ? `${savedWord} — original file untouched. Rendered a clip for random-interval playback.`
             : playMode === 'scheduled'
               ? `${savedWord} — original file untouched. Rendered a clip for scheduled playback.`
-              : `${savedWord} — original file untouched. Rendered a gapless clip for seamless looping.`
+              : `${savedWord} — original file untouched. Rendered a gapless clip for seamless looping.`) + overrideHint
       } else {
         this.currentEntry.loopClipReady = false
         this.currentEntry.loopClipStart = null
@@ -3889,11 +3994,11 @@ ${mixFluctuationMarkup('group')}
         this.currentEntry.loopClipCrossfadeSeconds = null
         this.currentEntry.loopClipSpeedPitch = null
         this.els.saveStatus.textContent =
-          playMode === 'scatter'
+          (playMode === 'scatter'
             ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for random-interval playback.`
             : playMode === 'scheduled'
               ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for scheduled playback.`
-              : `${savedWord} — original file untouched. Gapless clip render failed, so this will loop with a small seam.`
+              : `${savedWord} — original file untouched. Gapless clip render failed, so this will loop with a small seam.`) + overrideHint
       }
       // The bake just rewrote the file at this same sound://<id>?variant=clip
       // URL - recreate bakedPreview so its <audio> element actually re-fetches
@@ -3911,7 +4016,7 @@ ${mixFluctuationMarkup('group')}
       const resumeTime = resumingSaved ? this.bakedPreview?.audioEl.currentTime ?? 0 : 0
       const resumePlaying = resumingSaved && Boolean(this.bakedPreview?.playing)
       this.bakedPreview?.dispose()
-      this.bakedPreview = new BakedClipPreview(this.engine, id, this.effectivePreviewVolume())
+      this.bakedPreview = new BakedClipPreview(this.engine, id, this.effectivePreviewVolume(), this.editingPresetId)
       if (resumingSaved) {
         this.bakedPreview.scrubTo(resumeTime)
         if (resumePlaying) {
@@ -3937,11 +4042,11 @@ ${mixFluctuationMarkup('group')}
       this.currentEntry.loopClipCrossfadeSeconds = null
       this.currentEntry.loopClipSpeedPitch = null
       this.els.saveStatus.textContent =
-        playMode === 'scatter'
+        (playMode === 'scatter'
           ? `${savedWord} — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.`
           : playMode === 'scheduled'
             ? `${savedWord} — original file untouched. This trim is over 10 minutes, so scheduled playback will stream directly.`
-            : `${savedWord} — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.`
+            : `${savedWord} — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.`) + overrideHint
       this.updateSaveButtonState()
     }
   }

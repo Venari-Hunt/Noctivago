@@ -18,7 +18,7 @@ const RAMP_SECONDS = 0.15
 // filter chain (already baked in), just one <audio> element playing the
 // clip file directly (native loop=true) through a single volume GainNode.
 export class BakedClipPreview {
-  constructor(engine, soundId, volume) {
+  constructor(engine, soundId, volume, presetId = null) {
     this.engine = engine
     this.volume = volume
     this.playing = false
@@ -38,8 +38,11 @@ export class BakedClipPreview {
     // fetched it - a fresh timestamp per construction (index.js recreates
     // this class right after a successful bake) guarantees the new bytes are
     // actually requested rather than risking a browser-cached response for a
-    // URL whose underlying file just changed.
-    this.audioEl.src = `sound://${soundId}?variant=clip&v=${Date.now()}`
+    // URL whose underlying file just changed. `presetId` (planned
+    // 2026-09-12, "presets as primary context") lets the main process
+    // resolve bake-eligibility against this editing session's own preset
+    // context - see library.js's getLoopClipPathForId.
+    this.audioEl.src = `sound://${soundId}?variant=clip&v=${Date.now()}&presetId=${presetId ?? ''}`
 
     this.sourceNode = engine.context.createMediaElementSource(this.audioEl)
     this.outputGainNode = engine.context.createGain()

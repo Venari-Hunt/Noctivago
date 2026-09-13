@@ -14,6 +14,24 @@ function parseDuration(text) {
   return nums[0] * 3600 + nums[1] * 60 + nums[2]
 }
 
+// Per-preset sound overrides (planned 2026-09-12, "presets as primary
+// context"): mirrors src/shared/constants.js's OVERRIDABLE_SOUND_KEYS/
+// applySoundOverride exactly - same cross-directory duplication reason as
+// parseDuration above. Keep in sync with core if that set ever changes.
+// Without this, exporting a preset with per-sound overrides would silently
+// bake the sound's shared baseline instead of what the Mixer actually
+// plays for that preset - a correctness bug, not a cosmetic gap.
+const OVERRIDABLE_SOUND_KEYS = ['loopStart', 'loopEnd', 'filters', 'crossfadeSeconds', 'speedPitch', 'playMode', 'scatter', 'schedule']
+
+function applySoundOverride(entry, override) {
+  if (!override) return entry
+  const patch = {}
+  for (const key of OVERRIDABLE_SOUND_KEYS) {
+    if (override[key] !== undefined) patch[key] = override[key]
+  }
+  return { ...entry, ...patch }
+}
+
 // Inbox request: "When export finishes it should beep or make a sound or
 // something" - an export can run for minutes to hours (see exportMix.js's
 // own benchmarks), long enough that the owner isn't necessarily watching the
@@ -630,8 +648,13 @@ export default class ExportPlugin {
     // straight to exportMix.js and tags mean nothing to the render pipeline.
     const soundInfoList = []
     for (const presetSound of preset.sounds) {
-      const entry = this.library.find((e) => e.id === presetSound.soundId)
-      if (!entry || entry.status !== 'ok') continue
+      const baseline = this.library.find((e) => e.id === presetSound.soundId)
+      if (!baseline || baseline.status !== 'ok') continue
+      // Per-preset sound overrides (planned 2026-09-12): export must reflect
+      // this preset's own effective view of the sound, not its raw baseline,
+      // or an overridden sound would silently export sounding like every
+      // other preset instead of the one actually being exported.
+      const entry = applySoundOverride(baseline, presetSound.overrides)
       const playMode = entry.playMode ?? 'loop'
       sounds.push({
         soundId: entry.id,

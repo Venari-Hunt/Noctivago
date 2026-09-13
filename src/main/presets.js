@@ -165,6 +165,19 @@ export function normalizeGroups(input) {
   return Array.isArray(input) ? input.map(normalizeGroup).filter(Boolean) : []
 }
 
+// Per-preset sound overrides (planned 2026-09-12): the same 8 keys
+// src/shared/constants.js's OVERRIDABLE_SOUND_KEYS names (loopStart,
+// loopEnd, filters, crossfadeSeconds, speedPitch, playMode, scatter,
+// schedule) - null means "inherit everything from the sound's own baseline
+// in library.js", the lazy-inheritance default. No field clamping here,
+// same as the library.js update* functions this data ultimately feeds -
+// those have always been pure passthroughs (Remix's own controls are the
+// trusted source), so this stays consistent rather than re-validating a
+// shape that's already validated at the point of entry.
+function normalizeSoundOverride(input) {
+  return input && typeof input === 'object' ? { ...input } : null
+}
+
 export function listPresets() {
   return store.get('presets')
 }
@@ -179,9 +192,8 @@ export function savePreset({ name, sounds, wholeMix, groups }) {
     groups: normalizeGroups(groups),
     sounds: sounds.map((s) => ({
       soundId: s.soundId,
-      type: 'local',
       volume: s.volume,
-      effects: []
+      overrides: normalizeSoundOverride(s.overrides)
     }))
   }
   const presets = store.get('presets')
@@ -234,16 +246,69 @@ export function updatePresetSounds(id, sounds) {
     ...presets[idx],
     sounds: sounds.map((s) => ({
       soundId: s.soundId,
-      type: 'local',
       volume: s.volume,
-      effects: []
+      overrides: normalizeSoundOverride(s.overrides)
     }))
   }
   store.set('presets', presets)
   return presets[idx]
 }
 
+// The Remix plugin's Sound-mode Save, when the open sound is a member of
+// the preset currently active in the Mixer (see plugins/editor/index.js's
+// performSave) - writes just that one sound's overrides, leaving the rest
+// of the preset (name/wholeMix/groups/every other sound) untouched. `null`
+// clears any existing override, reverting that sound back to pure
+// inheritance from its own baseline. No-ops (returns null) if the preset or
+// the sound isn't found - there's nothing to attach an override to (a sound
+// not already a member of this preset's own `sounds[]` has no override slot;
+// the caller is expected to fall back to writing baseline in that case).
+export function updatePresetSoundOverride(presetId, soundId, overridePatch) {
+  const presets = store.get('presets')
+  const idx = presets.findIndex((p) => p.id === presetId)
+  if (idx === -1) return null
+  const soundIdx = presets[idx].sounds.findIndex((s) => s.soundId === soundId)
+  if (soundIdx === -1) return null
+  const sounds = [...presets[idx].sounds]
+  sounds[soundIdx] = { ...sounds[soundIdx], overrides: normalizeSoundOverride(overridePatch) }
+  presets[idx] = { ...presets[idx], sounds }
+  store.set('presets', presets)
+  return presets[idx]
+}
+
+// Main-process-only helper (no IPC channel of its own) - used by the
+// sound:// protocol handler (src/main/index.js) to resolve loop-clip
+// bake-eligibility against a specific preset's effective view of a sound,
+// since the baked-clip cache/staleness fields live on the one global
+// baseline row and must be compared against effective (possibly
+// preset-overridden), not raw baseline, settings.
+export function getSoundOverride(presetId, soundId) {
+  if (!presetId) return null
+  const preset = store.get('presets').find((p) => p.id === presetId)
+  return preset?.sounds.find((s) => s.soundId === soundId)?.overrides ?? null
+}
+
+// "Always a preset loaded" (planned 2026-09-12): a no-op if any preset
+// already exists, otherwise force-creates one named "Default" so the app
+// never runs with zero presets. `fallbackSounds` lets the two callers seed
+// it appropriately instead of always starting empty - src/main/index.js's
+// startup bootstrap passes whatever's currently `included` pre-migration
+// (so an existing user's in-progress mix isn't orphaned the moment "always
+// a preset loaded" becomes real), and deletePreset below passes the
+// just-deleted preset's own sounds[] (overrides included) so deleting your
+// last preset doesn't jarringly snap every sound back to pure baseline.
+export function ensureDefaultPreset(fallbackSounds = []) {
+  if (store.get('presets').length > 0) return null
+  return savePreset({ name: 'Default', sounds: fallbackSounds, wholeMix: null, groups: [] })
+}
+
+// Returns the auto-created replacement Default preset when this deletion
+// empties the list (see ensureDefaultPreset), or null when other presets
+// remain (the renderer decides what to do in that case - see
+// tabs/mixer/index.js's deletePreset).
 export function deletePreset(id) {
   const presets = store.get('presets')
+  const deleted = presets.find((p) => p.id === id)
   store.set('presets', presets.filter((p) => p.id !== id))
+  return ensureDefaultPreset(deleted?.sounds ?? [])
 }
