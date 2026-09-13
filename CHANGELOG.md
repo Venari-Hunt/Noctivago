@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.187 — Export tab: elapsed time/ETA, a copy-log button, and a collapsible log
+
+- The Export tab now shows a live "elapsed / ~time left" readout next to the Export button while an export is running, instead of that only being visible after the fact.
+- The log box has a "Copy log" button, so you don't have to select the whole thing by hand.
+- The log can be collapsed to a single header line if you don't want it taking up space, without losing anything already logged.
+
 ## v0.1.186 — Fixed a real export crash on very long exports with pitch drift
 
 - BUG FIX: exporting a long mix (multiple hours) with a looping sound's pitch Fluctuation turned on could fail partway through with an ffmpeg error. Root cause: a real bug in the bundled ffmpeg's own handling of very large timing-command files, which pitch-drift baking could produce on a long export. Fixed by keeping that file well under the size where it misbehaves, regardless of export length — a 9+ hour export with pitch drift on now completes reliably.

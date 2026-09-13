@@ -151,6 +151,7 @@ export default class ExportPlugin {
     this.library = []
     this.els = {}
     this.exporting = false
+    this.logCollapsed = false
   }
 
   async onload() {
@@ -163,6 +164,7 @@ export default class ExportPlugin {
   }
 
   async onunload() {
+    this.stopElapsedTicker()
     this.unsubscribeProgress?.()
     this.unregister?.()
   }
@@ -182,6 +184,10 @@ export default class ExportPlugin {
     const pct = Math.round((payload.fraction ?? 0) * 100)
     this.els.progressBar.style.width = `${pct}%`
     this.els.progressPct.textContent = `${pct}%`
+    // Feeds the elapsed/ETA ticker below - the only other thing ffmpeg's
+    // progress stream gives us is the same 0..1 fraction the bar already
+    // shows, so an ETA is just elapsed * (remaining/done), no new plumbing.
+    this.lastFraction = payload.fraction ?? this.lastFraction
     if (payload.type === 'step' && payload.label) {
       this.els.status.textContent = payload.label
       // Per-phase wall-clock timing (2026-09-02, Export Part B investigation):
@@ -370,12 +376,19 @@ export default class ExportPlugin {
         </label>
 
         <button id="export-run" class="btn btn-icon-text" type="button">Export</button>
+        <span id="export-elapsed" class="export-elapsed"></span>
         <p id="export-status" class="export-status"></p>
         <div id="export-progress-wrap" class="export-progress-wrap hidden">
           <div class="export-progress-track"><div id="export-progress-bar" class="export-progress-bar"></div></div>
           <span id="export-progress-pct" class="export-progress-pct">0%</span>
         </div>
-        <div id="export-log" class="export-log hidden"></div>
+        <div id="export-log-wrap" class="export-log-wrap hidden">
+          <div class="export-log-header">
+            <button id="export-log-toggle" class="export-log-toggle" type="button" aria-expanded="true">▾ Log</button>
+            <button id="export-log-copy" class="btn export-log-copy" type="button">Copy log</button>
+          </div>
+          <div id="export-log" class="export-log"></div>
+        </div>
       </div>
     `
 
@@ -410,10 +423,14 @@ export default class ExportPlugin {
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
+      elapsed: container.querySelector('#export-elapsed'),
       status: container.querySelector('#export-status'),
       progressWrap: container.querySelector('#export-progress-wrap'),
       progressBar: container.querySelector('#export-progress-bar'),
       progressPct: container.querySelector('#export-progress-pct'),
+      logWrap: container.querySelector('#export-log-wrap'),
+      logToggle: container.querySelector('#export-log-toggle'),
+      logCopy: container.querySelector('#export-log-copy'),
       log: container.querySelector('#export-log')
     }
 
@@ -425,6 +442,12 @@ export default class ExportPlugin {
       if (evt.key === 'Enter') this.els.length.blur()
     })
     this.els.run.addEventListener('click', () => this.runExport())
+    // Collapse/expand only hides the scrolling line list - the header (with
+    // Copy log) stays visible so you can still grab the log without
+    // re-expanding it first. State is per-session only, not persisted; a new
+    // export leaves it as you last set it rather than forcing it back open.
+    this.els.logToggle.addEventListener('click', () => this.toggleLogCollapsed())
+    this.els.logCopy.addEventListener('click', () => this.copyLogToClipboard())
 
     // "Faster export" is a per-machine resource choice made right before an
     // export, so it lives here rather than in the global Settings modal - but
@@ -583,6 +606,59 @@ export default class ExportPlugin {
     this.els.vizPaletteRow.classList.toggle('hidden', !isSpectrum)
   }
 
+  toggleLogCollapsed() {
+    this.logCollapsed = !this.logCollapsed
+    this.els.log.classList.toggle('hidden', this.logCollapsed)
+    this.els.logToggle.textContent = this.logCollapsed ? '▸ Log' : '▾ Log'
+    this.els.logToggle.setAttribute('aria-expanded', String(!this.logCollapsed))
+  }
+
+  async copyLogToClipboard() {
+    const text = Array.from(this.els.log.children)
+      .map((line) => line.textContent)
+      .join('\n')
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      const original = this.els.logCopy.textContent
+      this.els.logCopy.textContent = 'Copied!'
+      setTimeout(() => {
+        this.els.logCopy.textContent = original
+      }, 1200)
+    } catch (err) {
+      console.error('Export: failed to copy log', err)
+    }
+  }
+
+  // Elapsed/ETA next to the Export button itself (inbox: "show elapsed time
+  // and, if cheap, an estimated time remaining next to the Export button, not
+  // just buried in the log") - the log already has per-step timing, but
+  // that's easy to miss on a long unattended export. ETA is a simple
+  // extrapolation from the same 0..1 progress fraction the bar already
+  // tracks (elapsed * remaining/done) - unreliable in the first moment or two
+  // of a run, so it's withheld until the fraction is far enough along to mean
+  // anything.
+  startElapsedTicker(renderStartedAt) {
+    this.stopElapsedTicker()
+    this.lastFraction = 0
+    const tick = () => {
+      const elapsedSeconds = (Date.now() - renderStartedAt) / 1000
+      let text = `${formatDuration(elapsedSeconds)} elapsed`
+      if (this.lastFraction > 0.02 && this.lastFraction < 1) {
+        const etaSeconds = (elapsedSeconds * (1 - this.lastFraction)) / this.lastFraction
+        text += ` · ~${formatDuration(etaSeconds)} left`
+      }
+      this.els.elapsed.textContent = text
+    }
+    tick()
+    this.elapsedTimer = setInterval(tick, 1000)
+  }
+
+  stopElapsedTicker() {
+    if (this.elapsedTimer) clearInterval(this.elapsedTimer)
+    this.elapsedTimer = null
+  }
+
   async refresh() {
     const [presets, library] = await Promise.all([this.api.presets.list(), this.api.library.list()])
     this.presets = presets
@@ -709,7 +785,7 @@ export default class ExportPlugin {
     this.els.status.className = 'export-status'
     this.els.status.textContent = `Exporting "${preset.name}" (${sounds.length} sound${sounds.length === 1 ? '' : 's'}, ${formatDuration(durationSeconds)})…`
     this.els.log.innerHTML = ''
-    this.els.log.classList.remove('hidden')
+    this.els.logWrap.classList.remove('hidden')
     this.els.progressWrap.classList.remove('hidden')
     this.els.progressBar.style.width = '0%'
     this.els.progressPct.textContent = '0%'
@@ -720,6 +796,7 @@ export default class ExportPlugin {
     // own pace otherwise.
     const renderStartedAt = Date.now()
     this.lastStepAt = renderStartedAt
+    this.startElapsedTicker(renderStartedAt)
     const fadeInSeconds = Number(this.els.fadeIn.value) || 0
     const fadeOutSeconds = Number(this.els.fadeOut.value) || 0
 
@@ -810,6 +887,8 @@ export default class ExportPlugin {
           console.error('Export: failed to write log file', err)
         }
       }
+      this.stopElapsedTicker()
+      this.els.elapsed.textContent = ''
       this.exporting = false
       this.els.run.disabled = false
     }

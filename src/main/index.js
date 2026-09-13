@@ -113,20 +113,25 @@ function registerSoundProtocol() {
 // Electron blocks getUserMedia (microphone/camera) by default unless the
 // main process explicitly grants it - a real, documented gotcha (see
 // library.js's addRecordedSound for the feature this exists for). Grants
-// only 'media' (what an audio-only getUserMedia call actually requests),
-// unconditionally: this is trusted first-party renderer code, not arbitrary
-// web content, matching the same trust reasoning already applied to
-// autoplayPolicy above. Registered on defaultSession before the window
-// loads, so it's in place before the renderer could ever call
-// getUserMedia. Doesn't (and can't) bypass the OS's own privacy toggle -
+// only 'media' (what an audio-only getUserMedia call actually requests) and
+// 'clipboard-sanitized-write' (what navigator.clipboard.writeText() requests
+// - the Export tab's "Copy log" button, v0.1.187), unconditionally: this is
+// trusted first-party renderer code, not arbitrary web content, matching the
+// same trust reasoning already applied to autoplayPolicy above. Caught by
+// live CDP testing, not by reading the clipboard API docs - writeText()
+// resolved to a silently-swallowed rejection with no visible symptom besides
+// the button never flipping to "Copied!". Registered on defaultSession
+// before the window loads, so it's in place before the renderer could ever
+// call either API. Doesn't (and can't) bypass the OS's own privacy toggle -
 // if Windows itself has microphone access disabled, getUserMedia still
 // rejects; nothing to grant in-app for that case beyond a clear error
 // message where the recording is actually started.
 function grantMicrophonePermission() {
+  const ALLOWED = new Set(['media', 'clipboard-sanitized-write'])
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === 'media')
+    callback(ALLOWED.has(permission))
   })
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === 'media')
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => ALLOWED.has(permission))
 }
 
 const WINDOW_WIDTH = 480
