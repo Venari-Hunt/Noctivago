@@ -869,6 +869,81 @@ main {
   word-break: break-word;
 }
 
+.freesound-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.freesound-search-row input {
+  flex: 1;
+}
+
+.freesound-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.freesound-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+.freesound-preview-btn {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.freesound-preview-btn:hover {
+  filter: brightness(1.2);
+}
+
+.freesound-result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.freesound-result-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.freesound-result-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.freesound-result-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-height: 14px;
+  margin-top: 2px;
+}
+
+.freesound-import-btn {
+  flex: 0 0 auto;
+}
+
 .record-controls {
   display: flex;
   align-items: center;

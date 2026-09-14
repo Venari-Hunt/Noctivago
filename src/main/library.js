@@ -8,6 +8,7 @@ import { runFfmpegToFile } from './ffmpeg/runFfmpeg.js'
 import { resolveFfmpegPath } from './ffmpeg/ffmpegPath.js'
 import { runYtDlp } from './ytdlp/runYtDlp.js'
 import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
+import { downloadPreviewToWav } from './freesound/download.js'
 import { getSettings } from './settings.js'
 import { MAX_BUFFER_CLIP_SECONDS, DEFAULT_SOUND_VOLUME, applySoundOverride } from '../shared/constants.js'
 
@@ -337,7 +338,7 @@ async function maybeEagerBakeOnImport(entry) {
   }
 }
 
-export function addSound({ path: sourcePath, name, keepCopy }) {
+export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
   const id = crypto.randomUUID()
   const stats = fs.statSync(sourcePath)
   const now = Date.now()
@@ -486,6 +487,12 @@ export function addSound({ path: sourcePath, name, keepCopy }) {
     // - starts at insertion order (now), reassigned to clean sequential
     // integers across the whole library whenever the user actually drags to
     // reorder (see reorderSounds below).
+    // Attribution metadata for an import that isn't just a local file - only
+    // Freesound sets this today (see addSoundFromFreesound below), null for
+    // every other import path. Shown as a badge in the Mixer (SoundRow.js)
+    // since a CC-BY sound legally needs its author/license kept visible, not
+    // just imported silently.
+    source,
     tags: [],
     dateAdded: now,
     dateCreated: stats.birthtimeMs || now,
@@ -658,6 +665,34 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
       if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
     } catch {
       // best-effort cleanup, same as addRecordedSound's own
+    }
+  }
+}
+
+// Freesound import (2026-09-14 backlog item, unblocked once the auth
+// question was actually looked up - see CLAUDE.md's own entry). Downloads
+// the search result's preview (128kbps mp3, not the full original - see
+// src/main/freesound/client.js for why) via the same ffmpeg-to-scratch-wav
+// shape addSoundFromUrl above already uses, then funnels through the exact
+// same addSound(keepCopy: true) path every other import does. The only new
+// thing is `source`, carrying the attribution a CC-BY (or similar) sound
+// needs - see SoundRow.js for where it's surfaced.
+export async function addSoundFromFreesound({ freesoundId, name, username, license, pageUrl, previewUrl }, onProgress) {
+  onProgress?.({ type: 'step', message: 'Downloading preview from Freesound…' })
+  const wavPath = await downloadPreviewToWav(previewUrl)
+  try {
+    onProgress?.({ type: 'step', message: 'Adding it to your library…' })
+    return addSound({
+      path: wavPath,
+      name: name || 'Freesound sound',
+      keepCopy: true,
+      source: { type: 'freesound', freesoundId, username, license, pageUrl, importedAt: Date.now() }
+    })
+  } finally {
+    try {
+      if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+    } catch {
+      // best-effort cleanup, same as addSoundFromUrl's own
     }
   }
 }

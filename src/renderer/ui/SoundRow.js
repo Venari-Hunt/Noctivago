@@ -354,6 +354,18 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     nameRow.appendChild(badge)
   }
 
+  // Freesound import (see library.js's addSoundFromFreesound) - a plain
+  // display marker, same reasoning as the Composite badge above, but also
+  // the one place a CC-BY (or similar) sound's required attribution is kept
+  // visible rather than silently dropped once it's in the library.
+  if (entry.source?.type === 'freesound') {
+    const badge = document.createElement('span')
+    badge.className = 'sound-row-composite-badge'
+    badge.textContent = 'Freesound'
+    badge.title = `From Freesound.org, by ${entry.source.username || 'unknown'}${entry.source.license ? ` (${entry.source.license})` : ''}`
+    nameRow.appendChild(badge)
+  }
+
   // Sound Groups (see AudioEngine.js's SoundGroupChain) - membership used to
   // be invisible unless you right-clicked the sound and checked the menu for
   // a checkmark (reported directly as "actual garbage" UX). This badge makes

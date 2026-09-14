@@ -9,6 +9,7 @@ import { registerIpcHandlers } from './ipc.js'
 import { getPlaybackPathForId, getLoopClipPathForId, listSounds } from './library.js'
 import { ensureDefaultPreset, getSoundOverride } from './presets.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
+import { registerFreesoundPreviewProtocol } from './freesound/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
 import { getSettings } from './settings.js'
 import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
@@ -47,6 +48,10 @@ protocol.registerSchemesAsPrivileged([
   {
     scheme: 'plugin',
     privileges: { standard: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true }
+  },
+  {
+    scheme: 'freesound-preview',
+    privileges: { standard: true, stream: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true }
   }
 ])
 
@@ -235,6 +240,7 @@ function bootstrapDefaultPreset() {
 app.whenReady().then(() => {
   registerSoundProtocol()
   registerPluginProtocol()
+  registerFreesoundPreviewProtocol()
   grantMicrophonePermission()
   registerIpcHandlers()
   bootstrapDefaultPreset()

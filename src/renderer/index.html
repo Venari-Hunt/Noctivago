@@ -49,6 +49,7 @@
             <button id="add-sound-watch-folder" class="dropdown-item" type="button">Watch a folder…</button>
             <button id="add-sound-record" class="dropdown-item" type="button">Record audio…</button>
             <button id="add-sound-link" class="dropdown-item" type="button">Add from link…</button>
+            <button id="add-sound-freesound" class="dropdown-item" type="button">Search Freesound…</button>
           </div>
         </div>
       </header>
@@ -161,6 +162,27 @@
           <button id="add-link-confirm" class="btn btn-primary btn-icon-text" type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             Download &amp; Add
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="freesound-dialog" class="modal hidden">
+      <div class="modal-card modal-card-wide">
+        <h2>Search Freesound</h2>
+        <p id="freesound-unavailable" class="modal-hint hidden">Freesound import isn't available in this build (no API key baked in).</p>
+        <p class="modal-hint">Previews (compressed audio, not the original file) are imported directly — attribution is kept on the sound for licenses that require it.</p>
+        <div class="freesound-search-row">
+          <input id="freesound-query" type="text" placeholder="rain, wind, birds…" autocomplete="off" />
+          <button id="freesound-search-btn" class="btn btn-primary" type="button">Search</button>
+        </div>
+        <p id="freesound-status" class="add-folder-preset-status"></p>
+        <div id="freesound-results" class="freesound-results"></div>
+        <button id="freesound-load-more" class="btn btn-icon-text hidden" type="button">Load more</button>
+        <div class="modal-actions">
+          <button id="freesound-close" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Close
           </button>
         </div>
       </div>
