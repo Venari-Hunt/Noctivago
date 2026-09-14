@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.191 — Two bug fixes: Freesound error messages, and a stalled-looking export
+
+- BUG FIX: a Freesound search that failed with a server error (502/503/etc.) used to dump the raw HTML error page into the dialog's status line. It now shows a plain, readable message instead.
+- BUG FIX: exporting a preset with a Sound Group (or any export dense enough to need combining many pre-rendered tracks together) could sit on "Merging N track groups…" for a long time with the progress bar completely frozen, looking like the export had failed or hung. That step now reports live progress like every other phase of the export.
+
 ## v0.1.190 — Search and import sounds from Freesound.org
 
 - New "Search Freesound…" option in the add-sound menu — search Freesound.org's library, preview results before deciding, and import one straight into your library with one click.

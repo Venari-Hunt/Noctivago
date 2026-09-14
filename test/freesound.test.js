@@ -64,4 +64,26 @@ describe('searchSounds', () => {
     assert.equal(result.ok, false)
     globalThis.__FREESOUND_API_KEY__ = 'test-token'
   })
+
+  // Reported directly (inbox 2026-09-14): a Freesound 502 came back as a
+  // full HTML error page, which got dumped verbatim (truncated to 200 chars
+  // of raw <!doctype html>...) straight into the Search Freesound dialog's
+  // status line - a real bug, not a display-cosmetics nitpick, since it left
+  // the user staring at markup instead of a readable message.
+  test('a 5xx HTML error page never leaks raw markup into the error message', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async () =>
+      new Response('<!doctype html><html><head><title>Server Error</title></head></html>', {
+        status: 502,
+        headers: { 'content-type': 'text/html' }
+      })
+    try {
+      const result = await searchSounds({ query: 'rain' })
+      assert.equal(result.ok, false)
+      assert.ok(!result.error.includes('<'), `error should not contain raw markup: ${result.error}`)
+      assert.match(result.error, /502/)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })
