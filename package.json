@@ -16,7 +16,8 @@
     "build": "electron-vite build",
     "build:win": "electron-vite build && electron-builder --win",
     "release:win": "electron-vite build && electron-builder --win --publish always",
-    "build:itch:win": "electron-vite build && electron-builder --win --publish never"
+    "build:itch:win": "electron-vite build && electron-builder --win --publish never",
+    "test": "node --test"
   },
   "dependencies": {
     "electron-log": "^5.4.4",
