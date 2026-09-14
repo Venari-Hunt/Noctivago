@@ -1,6 +1,7 @@
 import log from 'electron-log/renderer'
 import { randomPitchSemitones, randomVolumeScale, randomSpeedFactor, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
 import { pitchShiftBuffer } from './pitchStretch.js'
+import { createStreamFilterChain, updateStreamFilterChain, disposeStreamFilterChain } from './StreamFilterChain.js'
 
 const RAMP_SECONDS = 0.15
 
@@ -303,18 +304,6 @@ export class StreamScheduledSource {
 
     this.sourceNode = engine.context.createMediaElementSource(this.audioEl)
 
-    this.filters = filters ?? {}
-    this.highpassNode = engine.context.createBiquadFilter()
-    this.highpassNode.type = 'highpass'
-    this.highpassNode.frequency.value = this.filters.highpassHz ?? 0
-
-    this.lowpassNode = engine.context.createBiquadFilter()
-    this.lowpassNode.type = 'lowpass'
-    this.lowpassNode.frequency.value = this.filters.lowpassHz ?? 20000
-
-    this.filterGainNode = engine.context.createGain()
-    this.filterGainNode.gain.value = this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1
-
     // Per-shot fade in/out + volume-randomization envelope, separate from
     // gainNode's own play/pause envelope below - same split
     // StreamScatterSource already has, and for the same reason: this one
@@ -325,10 +314,14 @@ export class StreamScheduledSource {
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
-    this.sourceNode.connect(this.highpassNode)
-    this.highpassNode.connect(this.lowpassNode)
-    this.lowpassNode.connect(this.filterGainNode)
-    this.filterGainNode.connect(this.shotGainNode)
+    // highpass -> lowpass -> EQ -> gain -> [echo tap] -> [reverb tap], same
+    // shape LocalFileSoundSource uses live - see StreamFilterChain.js for why
+    // this needs to be explicit here (this class is the stream fallback, so
+    // nothing is pre-baked the way BufferScheduledSource's clip is).
+    this._filterChain = createStreamFilterChain(engine.context, filters, this.shotGainNode)
+    this.filters = this._filterChain.filters
+
+    this.sourceNode.connect(this._filterChain.highpassNode)
     this.shotGainNode.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
@@ -350,11 +343,8 @@ export class StreamScheduledSource {
   }
 
   setFilters(filters) {
-    this.filters = filters ?? {}
-    const now = this.engine.context.currentTime
-    this.highpassNode.frequency.setTargetAtTime(this.filters.highpassHz ?? 0, now, 0.01)
-    this.lowpassNode.frequency.setTargetAtTime(this.filters.lowpassHz ?? 20000, now, 0.01)
-    this.filterGainNode.gain.setTargetAtTime(this.filters.gainDb ? Math.pow(10, this.filters.gainDb / 20) : 1, now, 0.01)
+    updateStreamFilterChain(this._filterChain, filters)
+    this.filters = this._filterChain.filters
   }
 
   hasFilters(filters) {
@@ -500,9 +490,7 @@ export class StreamScheduledSource {
     this.audioEl.removeAttribute('src')
     this.audioEl.load()
     this.sourceNode.disconnect()
-    this.highpassNode.disconnect()
-    this.lowpassNode.disconnect()
-    this.filterGainNode.disconnect()
+    disposeStreamFilterChain(this._filterChain)
     this.shotGainNode.disconnect()
     this.gainNode.disconnect()
   }
