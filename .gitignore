@@ -1,0 +1,8 @@
+node_modules/
+out/
+dist/
+.claude/settings.local.json
+# Downloaded by scripts/download-ytdlp.mjs (repo "postinstall") rather than
+# checked in - same reasoning ffmpeg-static's own binary isn't checked in
+# either, just fetched on install.
+resources/bin/

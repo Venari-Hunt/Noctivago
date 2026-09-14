@@ -1,0 +1,10 @@
+{
+  "id": "export",
+  "name": "Export",
+  "version": "0.1.0",
+  "minAppVersion": "0.2.0",
+  "description": "Bake a whole preset down to a single audio file of a chosen length and format.",
+  "author": "Noctívago",
+  "main": "index.js",
+  "styles": "styles.css"
+}

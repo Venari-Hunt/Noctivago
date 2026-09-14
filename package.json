@@ -1,0 +1,39 @@
+{
+  "name": "noctivago",
+  "version": "0.1.189",
+  "description": "Offline ambient sound mixer",
+  "main": "./out/main/index.js",
+  "author": "jltmdesign",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Venari-Hunt/Noctivago.git"
+  },
+  "private": true,
+  "scripts": {
+    "postinstall": "node scripts/download-ytdlp.mjs",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "build:win": "electron-vite build && electron-builder --win",
+    "release:win": "electron-vite build && electron-builder --win --publish always",
+    "build:itch:win": "electron-vite build && electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "electron-log": "^5.4.4",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
+    "ffmpeg-static": "^5.3.0"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "vite": "^7.3.6"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true,
+    "ffmpeg-static@5.3.0": true
+  }
+}

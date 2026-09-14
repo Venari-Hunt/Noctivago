@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Noctívago</title>
+    <link rel="stylesheet" href="./styles/main.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="toolbar">
+        <span id="dev-badge" class="dev-badge hidden" title="This is a development build - separate data from any installed copy">DEV</span>
+        <span id="active-preset-indicator" class="active-preset-indicator" title="No preset loaded">
+          <svg class="active-preset-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <span id="active-preset-name" class="active-preset-name">No preset</span>
+        </span>
+        <button id="global-play-pause" class="btn btn-primary btn-svg-icon" type="button" title="Play all">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <label class="global-volume-label">
+          Volume
+          <span class="volume-slider-wrap">
+            <input id="global-volume" type="range" min="0" max="100" value="50" class="global-volume" />
+          </span>
+        </label>
+        <button id="global-mute" class="btn btn-svg-icon" type="button" title="Mute">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/>
+            <path d="M16 8a5 5 0 0 1 0 8"/>
+          </svg>
+        </button>
+        <div class="sleep-timer-wrapper">
+          <button id="open-sleep-timer" class="btn btn-svg-icon" type="button" title="Sleep timer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <span id="sleep-timer-remaining" class="sleep-timer-remaining hidden"></span>
+        </div>
+        <span class="spacer"></span>
+        <button id="open-presets" class="btn btn-icon-text" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          Presets
+        </button>
+        <button id="open-settings" class="btn btn-icon" type="button" title="Settings">⚙</button>
+        <div class="add-sound-menu-wrapper">
+          <button id="add-sound" class="btn btn-icon" type="button" title="Add sound" aria-haspopup="true" aria-expanded="false">+</button>
+          <div id="add-sound-menu" class="dropdown-menu hidden">
+            <button id="add-sound-file" class="dropdown-item" type="button">Add file…</button>
+            <button id="add-sound-folder-preset" class="dropdown-item" type="button">Add folder as preset…</button>
+            <button id="add-sound-folder-tag" class="dropdown-item" type="button">Add folder as tag…</button>
+            <button id="add-sound-watch-folder" class="dropdown-item" type="button">Watch a folder…</button>
+            <button id="add-sound-record" class="dropdown-item" type="button">Record audio…</button>
+            <button id="add-sound-link" class="dropdown-item" type="button">Add from link…</button>
+          </div>
+        </div>
+      </header>
+      <nav id="tab-bar" class="tab-bar"></nav>
+      <div id="tab-sticky-bar" class="tab-sticky-bar hidden"></div>
+      <main id="tab-content"></main>
+    </div>
+
+    <div id="add-sound-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Add sound</h2>
+        <label class="field-label">Name
+          <input id="add-sound-name" type="text" />
+        </label>
+        <label class="checkbox-row">
+          <input id="add-sound-keep-copy" type="checkbox" />
+          Keep a copy in the app (safe if you move/delete the original — uses extra disk space)
+        </label>
+        <div class="modal-actions">
+          <button id="add-sound-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="add-sound-confirm" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-folder-preset-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Add folder as preset</h2>
+        <p class="modal-hint">Every audio file directly inside this folder will be added to your library and included together in a new preset.</p>
+        <label class="field-label">Preset name
+          <input id="add-folder-preset-name" type="text" />
+        </label>
+        <label class="checkbox-row">
+          <input id="add-folder-preset-keep-copy" type="checkbox" />
+          Keep copies in the app (safe if you move/delete the originals — uses extra disk space)
+        </label>
+        <label class="checkbox-row">
+          <input id="add-folder-preset-tag" type="checkbox" />
+          Also tag these sounds with the folder's name (<span id="add-folder-preset-tag-name"></span>)
+        </label>
+        <p id="add-folder-preset-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="add-folder-preset-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="add-folder-preset-confirm" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-folder-tag-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Add folder as tag</h2>
+        <p class="modal-hint">Every audio file directly inside this folder will be added to your library and tagged with the name below — no preset is created.</p>
+        <label class="field-label">Tag
+          <input id="add-folder-tag-name" type="text" />
+        </label>
+        <label class="checkbox-row">
+          <input id="add-folder-tag-keep-copy" type="checkbox" />
+          Keep copies in the app (safe if you move/delete the originals — uses extra disk space)
+        </label>
+        <p id="add-folder-tag-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="add-folder-tag-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="add-folder-tag-confirm" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-link-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Add from link</h2>
+        <p class="modal-hint">Downloads a direct audio link, or a YouTube/video page (via yt-dlp), and adds it to your library. YouTube currently needs a browser picked under Settings → "YouTube/video downloads" first.</p>
+        <label class="field-label">URL
+          <input id="add-link-url" type="text" inputmode="url" placeholder="https://…" autocomplete="off" />
+        </label>
+        <label class="field-label">Name
+          <input id="add-link-name" type="text" placeholder="(from the URL)" />
+        </label>
+        <label class="field-label">Max length to download (minutes)
+          <input id="add-link-maxlen" type="number" min="0" step="1" value="10" />
+        </label>
+        <p class="modal-hint add-link-maxlen-hint">A safety cap — you can loop and crossfade a short clip in the app, so there's rarely a reason to pull a multi-hour stream in full. Set to 0 to download the whole thing.</p>
+        <p id="add-link-status" class="add-folder-preset-status"></p>
+        <div id="add-link-progress" class="add-link-progress hidden">
+          <div class="add-link-progress-track"><div id="add-link-progress-fill" class="add-link-progress-fill"></div></div>
+          <pre id="add-link-log" class="add-link-log" aria-live="polite"></pre>
+        </div>
+        <div class="modal-actions">
+          <button id="add-link-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="add-link-confirm" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Download &amp; Add
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="record-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Record audio</h2>
+        <p class="modal-hint">Records from your default microphone. Start, then Stop when you're done, then Save to add it to your library.</p>
+        <div class="record-controls">
+          <button id="record-start" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+            Start
+          </button>
+          <button id="record-stop" class="btn btn-icon-text hidden" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+            Stop
+          </button>
+          <span id="record-indicator" class="record-indicator hidden"></span>
+          <span id="record-timer" class="record-timer">0:00</span>
+        </div>
+        <label class="field-label">Name
+          <input id="record-name" type="text" placeholder="Recording" />
+        </label>
+        <p id="record-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="record-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="record-save" class="btn btn-primary btn-icon-text" type="button" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="presets-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Presets</h2>
+        <button id="update-active-preset" class="btn btn-primary btn-icon-text hidden" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <span id="update-active-preset-label">Save changes</span>
+        </button>
+        <label class="settings-row preset-autosave-toggle-row">
+          <input id="preset-autosave-toggle" type="checkbox" />
+          Autosave changes to the loaded preset
+        </label>
+        <p id="preset-autosave-note" class="preset-save-hint hidden">Changes to the loaded preset save automatically as you edit the mix.</p>
+        <div class="preset-save-row">
+          <input id="new-preset-name" type="text" placeholder="Preset name" />
+          <button id="new-preset-blank" class="btn btn-icon-text" type="button" title="Start a new, empty preset with this name">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New blank preset
+          </button>
+          <button id="save-preset" class="btn btn-icon-text" type="button" title="Save everything currently in the mix (sounds, whole-mix filters, Sound Groups) as a new preset with this name">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save current mix as new preset
+          </button>
+        </div>
+        <p id="preset-save-hint" class="preset-save-hint"></p>
+        <ul id="preset-list" class="preset-list"></ul>
+        <div class="modal-actions">
+          <button id="import-preset" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Import preset…
+          </button>
+          <button id="presets-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="preset-import-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Import preset</h2>
+        <p class="modal-hint">Preset file: <span id="preset-import-name"></span>. Sounds already in your library are used as-is; others come from the preset file, or you can locate them.</p>
+        <ul id="preset-import-list" class="preset-import-list"></ul>
+        <p id="preset-import-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="preset-import-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="preset-import-confirm" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Create preset
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="group-create-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>New Sound Group</h2>
+        <p class="modal-hint">Groups let you EQ several sounds together as one, non-destructively - manage membership and filters for a preset's groups in the Remix tab's Group mode.</p>
+        <label class="field-label">Group name
+          <input id="group-create-name" type="text" placeholder="Group" />
+        </label>
+        <div class="modal-actions">
+          <button id="group-create-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="group-create-confirm" class="btn btn-primary btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Settings</h2>
+        <label class="checkbox-row">
+          <input id="settings-auto-update-enabled" type="checkbox" />
+          Automatically check for updates
+        </label>
+        <div class="settings-row">
+          <button id="settings-check-now" class="btn" type="button">Check for updates…</button>
+          <button id="settings-whats-new" class="btn" type="button">What's new</button>
+          <span id="settings-check-status" class="settings-check-status"></span>
+        </div>
+        <label class="settings-row">
+          Check for updates every
+          <input id="settings-auto-update-interval" type="text" inputmode="numeric" placeholder="hh:mm:ss" class="settings-interval-input" />
+        </label>
+        <label class="checkbox-row">
+          <input id="settings-auto-install-updates" type="checkbox" />
+          Automatically download, install, and restart when an update is found (shows a 5-second countdown you can cancel, instead of the "Download?" prompt)
+        </label>
+        <label class="checkbox-row">
+          <input id="settings-minimize-to-tray-enabled" type="checkbox" />
+          Keep playing in the background when closed (minimizes to the system tray instead of quitting — click the tray icon to bring the window back, right-click it for play/pause and quit)
+        </label>
+        <label class="checkbox-row">
+          <input id="settings-eagerly-bake-on-import" type="checkbox" />
+          Prepare seamless looping right when a sound is added (instead of waiting until it's first played)
+        </label>
+        <label>
+          <span>YouTube/video downloads — sign in as</span>
+          <select id="settings-ytdlp-cookies-browser">
+            <option value="none">Don't sign in (works for most sites, not YouTube)</option>
+            <option value="chrome">Chrome</option>
+            <option value="edge">Edge</option>
+            <option value="firefox">Firefox</option>
+            <option value="brave">Brave</option>
+          </select>
+        </label>
+        <p class="modal-hint">YouTube currently blocks anonymous downloads. Picking a browser here lets "Add from link" read that browser's YouTube sign-in to get past it — reads cookies only, never your password. Requires being signed in to YouTube in that browser already.</p>
+        <h3 class="settings-section-heading">Watched folders</h3>
+        <p class="modal-hint">Audio files added to these folders later are automatically imported into your library.</p>
+        <ul id="watched-folder-list" class="preset-list"></ul>
+        <div class="settings-row">
+          <button id="add-watched-folder" class="btn" type="button">Add watched folder…</button>
+        </div>
+        <div class="modal-actions">
+          <button id="settings-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="update-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2 id="update-modal-title">Check for updates</h2>
+        <p id="update-modal-message" class="modal-hint"></p>
+        <div id="update-version-row" class="update-version-row hidden">
+          <span id="update-version-current" class="update-version-current"></span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          <span id="update-version-new" class="update-version-new"></span>
+        </div>
+        <div id="update-notes-wrapper" class="update-notes-wrapper hidden">
+          <h3 class="settings-section-heading">Release notes</h3>
+          <div id="update-notes" class="update-notes"></div>
+        </div>
+        <div id="update-progress-wrapper" class="update-progress-wrapper hidden">
+          <div class="update-progress-track"><div id="update-progress-bar" class="update-progress-bar"></div></div>
+          <span id="update-progress-label" class="update-progress-label"></span>
+        </div>
+        <div class="modal-actions">
+          <button id="update-retry" class="btn hidden" type="button">Try again</button>
+          <button id="update-download" class="btn btn-primary btn-icon-text hidden" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download &amp; install
+          </button>
+          <button id="update-close" class="btn" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sleep-timer-modal" class="modal hidden">
+      <div class="modal-card">
+        <h2>Sleep timer</h2>
+        <div id="sleep-timer-setup">
+          <p class="modal-hint">When the time is up, Noctívago does the action you pick.</p>
+          <fieldset class="sleep-timer-mode">
+            <legend>Set the timer</legend>
+            <label><input type="radio" name="sleep-timer-mode" value="in" checked /> In a number of minutes</label>
+            <label><input type="radio" name="sleep-timer-mode" value="at" /> At a set time</label>
+          </fieldset>
+          <label class="field-label" id="sleep-timer-minutes-field">Minutes
+            <input id="sleep-timer-minutes" type="number" min="1" max="1440" step="1" value="30" />
+          </label>
+          <div class="sleep-timer-presets" id="sleep-timer-presets">
+            <button class="btn btn-small" type="button" data-min="15">15m</button>
+            <button class="btn btn-small" type="button" data-min="30">30m</button>
+            <button class="btn btn-small" type="button" data-min="45">45m</button>
+            <button class="btn btn-small" type="button" data-min="60">1h</button>
+            <button class="btn btn-small" type="button" data-min="90">1h 30m</button>
+            <button class="btn btn-small" type="button" data-min="120">2h</button>
+          </div>
+          <label class="field-label hidden" id="sleep-timer-at-field">Time of day
+            <input id="sleep-timer-at" type="time" />
+          </label>
+          <p class="modal-hint hidden" id="sleep-timer-at-hint"></p>
+          <fieldset class="sleep-timer-action">
+            <legend>When the time is up</legend>
+            <label><input type="radio" name="sleep-timer-action" value="stop" checked /> Stop all sounds</label>
+            <label><input type="radio" name="sleep-timer-action" value="displays" /> Turn off the displays, keep the sound playing</label>
+            <label><input type="radio" name="sleep-timer-action" value="sleep" /> Put the computer to sleep</label>
+            <label><input type="radio" name="sleep-timer-action" value="shutdown" /> Shut down the computer</label>
+          </fieldset>
+        </div>
+        <div id="sleep-timer-active" class="hidden">
+          <p class="sleep-timer-countdown"><span id="sleep-timer-countdown-value">--:--</span></p>
+          <p id="sleep-timer-active-action" class="modal-hint"></p>
+        </div>
+        <div class="modal-actions">
+          <button id="sleep-timer-close" class="btn" type="button">Close</button>
+          <button id="sleep-timer-cancel" class="btn btn-danger hidden" type="button">Cancel timer</button>
+          <button id="sleep-timer-start" class="btn btn-primary" type="button">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sleep-timer-warning" class="modal hidden">
+      <div class="modal-card">
+        <h2 id="sleep-timer-warning-title">Shutting down</h2>
+        <p id="sleep-timer-warning-message" class="modal-hint"></p>
+        <div class="modal-actions">
+          <button id="sleep-timer-warning-now" class="btn" type="button">Do it now</button>
+          <button id="sleep-timer-warning-cancel" class="btn btn-primary" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="add-watched-folder-dialog" class="modal hidden">
+      <div class="modal-card">
+        <h2>Watch folder</h2>
+        <p class="modal-hint" id="add-watched-folder-path"></p>
+        <label class="checkbox-row">
+          <input id="add-watched-folder-keep-copy" type="checkbox" />
+          Keep copies in the app for files found here (safe if the originals move or are deleted — uses extra disk space)
+        </label>
+        <p id="add-watched-folder-status" class="add-folder-preset-status"></p>
+        <div class="modal-actions">
+          <button id="add-watched-folder-cancel" class="btn btn-icon-text" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+          <button id="add-watched-folder-confirm" class="btn btn-primary" type="button">Watch this folder</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

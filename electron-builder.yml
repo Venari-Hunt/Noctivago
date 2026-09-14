@@ -1,0 +1,61 @@
+appId: com.jltmdesign.noctivago
+productName: Noctívago
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+asarUnpack:
+  - node_modules/ffmpeg-static/**
+extraResources:
+  - from: plugins
+    to: plugins
+  # yt-dlp.exe (scripts/download-ytdlp.mjs's postinstall download) - a plain
+  # standalone .exe, never inside node_modules/asar to begin with, so
+  # extraResources (not asarUnpack) is the right mechanism, same as the
+  # plugins/ folder above.
+  - from: resources/bin/yt-dlp.exe
+    to: bin/yt-dlp.exe
+  # directories.buildResources (above) only feeds build-time assets like the
+  # installer icon - it isn't copied into the shipped app for runtime use on
+  # its own, so the system tray icon needs its own explicit entry here (see
+  # src/main/tray.js for how it's read back via process.resourcesPath).
+  - from: resources/tray-icon.png
+    to: tray-icon.png
+  - from: resources/icon.ico
+    to: icon.ico
+  # Same reason as tray-icon.png above - the Windows taskbar thumbnail
+  # preview toolbar buttons (src/main/thumbar.js) need their own icon files
+  # at runtime, not just at build time.
+  - from: resources/thumbar-play.png
+    to: thumbar-play.png
+  - from: resources/thumbar-pause.png
+    to: thumbar-pause.png
+win:
+  target: nsis
+  # A hand-built .ico, not a plain PNG - electron-builder's own PNG->ICO
+  # auto-conversion (via its bundled icon-gen tool) PNG-compresses every
+  # size in the icon, but Windows only honors PNG compression for the
+  # 256px entry; sizes below that (16/24/32/48/64, exactly what the
+  # taskbar and Windows Search use) silently fall back to a generic icon
+  # if they're PNG-compressed instead of classic uncompressed bitmap data.
+  # This .ico was generated with real BMP/DIB data for every size below
+  # 256 and verified by loading it back through .NET's System.Drawing.Icon
+  # (Windows' own icon parser) before use - see CLAUDE.md for how it was
+  # built and how to regenerate it if the design ever changes.
+  icon: resources/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+publish:
+  provider: github
+  owner: Venari-Hunt
+  repo: Noctivago
+  private: false
+  # electron-builder defaults to leaving published releases as GitHub
+  # drafts, which GitHub's own /releases/latest API (what electron-updater
+  # calls to check for updates) silently excludes - the release and its
+  # assets are visible on the web UI to the owner, but the update check
+  # gets back a 404 as if nothing existed at all. releaseType: release
+  # auto-publishes instead of drafting, so update checks can actually see it.
+  releaseType: release

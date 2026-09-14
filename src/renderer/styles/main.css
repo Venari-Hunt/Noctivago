@@ -1,0 +1,1233 @@
+:root {
+  color-scheme: dark;
+  --bg: #1a1b26;
+  --surface: #24273a;
+  --surface-alt: #2b2f45;
+  --border: #3b3f58;
+  --text: #c0caf5;
+  --text-dim: #8892b0;
+  --accent: #7aa2f7;
+  --accent-strong: #5d7ce0;
+  --danger: #f7768e;
+  --danger-strong: #d95c74;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* App-wide scrollbar styling, requested directly: "The app is really
+   crowded with scrolling bars... making them disappear when not hovered or
+   just removing them or maybe using a low opacity for it is better." Thin,
+   low-opacity-by-default, brighter on hover - purely visual (::-webkit-
+   scrollbar is Chromium-only, which is all Electron ever renders with, so
+   no fallback is needed), doesn't touch scroll behavior at all. Unscoped
+   (no element prefix) so it applies to every scrollable element in the
+   document - the shared #tab-content main container every tab's panel
+   scrolls inside, any modal's own overflow, canvas-adjacent scroll areas -
+   without needing a separate copy in any plugin's own stylesheet. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(136, 146, 176, 0.15);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(136, 146, 176, 0.45);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.dev-badge {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--danger-strong);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tab-button {
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.tab-button:hover {
+  color: var(--text);
+}
+
+.tab-button-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.tab-sticky-bar {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tab-sticky-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+
+main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.tab-panel {
+  height: 100%;
+}
+
+.btn {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--accent);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn:disabled:hover {
+  border-color: var(--border);
+}
+
+.btn-primary:disabled:hover {
+  background: var(--accent-strong);
+}
+
+// Distinct from the pre-existing .btn-icon below (a text-glyph/emoji button
+// - the gear and + buttons) - this is for a real inline SVG icon, which
+// needs a fixed square box and zero padding to center cleanly rather than
+// sizing off font-size like a glyph does.
+.btn-svg-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.btn-svg-icon-active {
+  color: var(--danger);
+  border-color: var(--danger-strong);
+}
+
+.sound-row-solo {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.btn-svg-icon-solo-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Icon+text pairing for action buttons where a bare icon alone might
+   confuse (per direct feedback: "if you feel like it's gonna be confusing
+   use icon+text") - distinct from .btn-svg-icon above, which is for
+   icon-ONLY toggle controls (Play/Pause, Mute) where the action is a
+   universally-recognized binary state. */
+.btn-icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Save current mix specifically needs to hold its own width rather than
+   wrapping to two lines in the Presets modal's name-input row - other
+   icon+text buttons (e.g. Remix's Save, which can read "Nothing to save")
+   sit in tighter rows and need to stay free to shrink instead. */
+#save-preset {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.btn-icon-text svg {
+  flex-shrink: 0;
+}
+
+.btn-danger {
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  border-color: var(--danger-strong);
+}
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.btn-icon {
+  padding: 8px 12px;
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.add-sound-menu-wrapper {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.dropdown-item {
+  padding: 8px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  background: var(--surface-alt);
+}
+
+.btn-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sound-search {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.sound-list-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sound-sort-select,
+.sound-group-select {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.bulk-select-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.bulk-select-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.bulk-select-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.tag-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tag-filter-chip {
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.tag-filter-chip.tag-filter-chip-active {
+  border-color: var(--accent-strong);
+  color: #fff;
+  background: var(--accent-strong);
+}
+
+.sound-list,
+.preset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sound-group-header {
+  margin-top: 4px;
+  padding: 4px 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+/* Two stacked sections: the name gets its own full-width top row so it
+   never has to shrink to make room for the button row below it (requested
+   directly - the name used to share a row with every button/slider and lost
+   the space contest as more buttons were added). See .sound-row-name-row and
+   .sound-row-controls. */
+.sound-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.sound-row-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sound-row-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.sound-row:hover {
+  background: var(--surface-alt);
+  border-color: var(--accent);
+}
+
+.sound-row-draggable {
+  cursor: grab;
+}
+
+.sound-row-draggable.dragging {
+  opacity: 0.4;
+}
+
+.sound-row-missing {
+  opacity: 0.6;
+}
+
+.sound-row-selectable {
+  position: relative;
+  padding-left: 34px;
+}
+
+.sound-row-select {
+  position: absolute;
+  left: 10px;
+  top: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.sound-row-select input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.sound-row-selected {
+  border-color: var(--accent);
+  background: var(--surface-alt);
+}
+
+.sound-row-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.sound-row-name {
+  /* Was flex: 1, which force-filled all remaining space in .sound-row-name-row
+     regardless of the name's own length - fine for a lone name, but it pushed
+     a following badge (composite/group) all the way to the row's right edge
+     even for a short name, reported directly as "the tag should be closer to
+     the name". flex: 0 1 auto keeps the existing shrink-and-ellipsize
+     behavior for a name too long to fit (min-width: 0 below is what allows
+     that), it just no longer grows past its own content when there's room
+     not to. */
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.sound-row-name-marquee {
+  text-overflow: clip;
+  animation: sound-row-name-marquee var(--marquee-duration, 3s) ease-in-out infinite;
+}
+
+@keyframes sound-row-name-marquee {
+  0%, 8% {
+    transform: translateX(0);
+  }
+  45%, 55% {
+    transform: translateX(var(--marquee-distance));
+  }
+  92%, 100% {
+    transform: translateX(0);
+  }
+}
+
+.sound-row-name-input {
+  font: inherit;
+  font-weight: 600;
+  width: 100%;
+  max-width: 260px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.sound-row-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.sound-row-composite-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(224, 175, 104, 0.18);
+  color: #e0af68;
+  border: 1px solid rgba(224, 175, 104, 0.4);
+  margin-left: 6px;
+}
+
+.sound-row-group-badge {
+  display: inline-block;
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  /* Background/border/text color are set inline per-group (SoundRow.js's
+     groupBadgeColors) so each Sound Group gets its own stable, distinct
+     color - these are just a fallback in case that's ever skipped. */
+  background: rgba(187, 154, 247, 0.18);
+  color: #bb9af7;
+  border: 1px solid rgba(187, 154, 247, 0.4);
+  margin-left: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  filter: brightness(1);
+  transition: filter 0.1s ease;
+}
+
+.sound-row-group-badge:hover {
+  filter: brightness(1.35);
+}
+
+.sound-row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 11px;
+  border: none;
+}
+
+.tag-chip-remove {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tag-chip-add {
+  cursor: pointer;
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
+}
+
+.tag-chip-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tag-input-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.tag-input {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--surface-alt);
+  color: var(--text);
+  width: 120px;
+}
+
+/* Obsidian-style autocomplete dropdown for the tag input, matching the
+   Remix sound picker's own dropdown shape (position/z-index/max-height). */
+.tag-autocomplete-options {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 140px;
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.tag-autocomplete-option {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tag-autocomplete-option:hover,
+.tag-autocomplete-option-highlighted {
+  background: var(--surface-alt);
+  color: var(--accent);
+}
+
+.sound-row-missing-label {
+  font-size: 11px;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.sound-row-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+/* Volume sliders (global + per-sound) are bipolar - centre is unity gain,
+   drag left to attenuate, right to boost (see core/volumeScale.js). Wider
+   than a plain slider so there's real drag resolution, and wrapped in
+   .volume-slider-wrap which draws a faint centre tick behind the thumb. */
+.volume-slider-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.volume-slider-wrap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  transform: translateY(-50%);
+  background: var(--text-dim);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.sound-row-volume {
+  width: 140px;
+}
+
+/* Always-visible reminder of which preset the Mixer / Remix tab is editing
+   (owner: "there should always be a preset loaded... and a preset-name
+   indicator in the top bar", placed here per their choice — left of the
+   Play-all / master-volume controls). Dim "No preset" until one is loaded;
+   an accent-outlined pill with the name once one is. Truncates with an
+   ellipsis so a long preset name can't push the toolbar around; full name
+   on hover via the title attribute. */
+.active-preset-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 200px;
+  padding: 0 9px;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.active-preset-indicator:hover {
+  border-color: var(--accent);
+}
+
+.active-preset-indicator .active-preset-icon {
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.active-preset-indicator .active-preset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-preset-indicator.has-preset {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.active-preset-indicator.has-preset .active-preset-icon {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.global-volume-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.global-volume {
+  width: 170px;
+}
+
+.empty-state {
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 40px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  /* Grows with the window instead of a fixed 360px that squeezed content
+     (preset names especially) into unreadable ellipsis on the default
+     480px-wide window. Capped so a wide monitor doesn't stretch a short
+     dialog across the screen. */
+  width: min(440px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.modal-card-wide {
+  width: min(680px, 94vw);
+}
+
+.modal-card h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+/* Generic right-click menu (core/ContextMenu.js) - first used by a sound
+   row's "Add to group…" menu (Sound Groups). Positioned inline via
+   style.left/top at open time. */
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 180px;
+  max-width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 2px;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: var(--surface-alt);
+}
+
+.context-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.modal-hint {
+  margin: -8px 0 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.add-folder-preset-status {
+  margin: -10px 0 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  min-height: 14px;
+}
+
+.add-link-maxlen-hint {
+  margin: -12px 0 14px;
+}
+
+.add-link-progress {
+  margin-bottom: 14px;
+}
+
+.add-link-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.add-link-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.add-link-progress-fill.indeterminate {
+  width: 35%;
+  animation: update-progress-slide 1.2s ease-in-out infinite;
+}
+
+.add-link-log {
+  margin: 8px 0 0;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.record-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.record-timer {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.record-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f7768e;
+  animation: record-pulse 1s ease-in-out infinite;
+}
+
+@keyframes record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.field-label input[type='text'],
+.field-label input[type='number'] {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.field-label input[type='number'] {
+  width: 100px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+#update-active-preset {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.preset-save-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.preset-autosave-toggle-row {
+  margin-bottom: 8px;
+}
+
+.preset-save-row input[type='text'] {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.preset-save-hint {
+  margin: -10px 0 12px;
+  font-size: 12px;
+  color: var(--danger);
+  min-height: 14px;
+}
+
+/* Same line, reused for a neutral confirmation (export done / preset
+   imported) rather than only errors. */
+.preset-save-hint.ok {
+  color: var(--text-dim);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-check-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.sleep-timer-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sleep-timer-remaining {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.sleep-timer-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 16px;
+}
+
+.sleep-timer-mode,
+.sleep-timer-action {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px 4px;
+  margin: 0 0 8px;
+}
+
+.sleep-timer-mode {
+  margin-bottom: 14px;
+}
+
+.sleep-timer-mode legend,
+.sleep-timer-action legend {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 0 4px;
+}
+
+.sleep-timer-mode label,
+.sleep-timer-action label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.sleep-timer-countdown {
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  margin: 8px 0 4px;
+  color: var(--accent);
+}
+
+.update-version-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.update-version-new {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.update-notes-wrapper {
+  margin-bottom: 16px;
+}
+
+.update-notes {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+.update-progress-wrapper {
+  margin-bottom: 8px;
+}
+
+.update-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.update-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.update-progress-bar.indeterminate {
+  width: 40%;
+  animation: update-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes update-progress-slide {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+
+.update-progress-label {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-interval-input {
+  width: 80px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-section-heading {
+  margin: 20px 0 4px;
+  font-size: 13px;
+}
+
+.watched-folder-missing {
+  color: var(--danger);
+}
+
+#watched-folder-list {
+  margin-bottom: 10px;
+}
+
+/* The presets list can hold long names and three action buttons per row;
+   let the modal grow with the window instead of squeezing the name into an
+   ellipsis, and stack name-over-buttons so the name always gets full width. */
+#presets-modal .modal-card,
+#preset-import-dialog .modal-card {
+  width: min(520px, 92vw);
+}
+
+#preset-list {
+  max-height: min(52vh, 440px);
+  overflow-y: auto;
+}
+
+.preset-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface-alt);
+  border-radius: 6px;
+}
+
+.preset-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.preset-row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.preset-row-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.preset-list-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  list-style: none;
+  padding: 8px 0;
+}
+
+.preset-import-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.preset-import-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface-alt);
+  border-radius: 6px;
+}
+
+.preset-import-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preset-import-sound-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-import-sound-status {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-import-sound-status.resolved {
+  color: var(--text-dim);
+}
+
+.preset-import-sound-status.missing {
+  color: var(--danger);
+}
+
