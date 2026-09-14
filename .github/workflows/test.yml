@@ -1,0 +1,23 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # --ignore-scripts: the tests here are pure logic (no ffmpeg/yt-dlp
+      # binary needed), so skip those downloads entirely for a faster, less
+      # network-flaky run.
+      - run: npm ci --ignore-scripts
+
+      - run: npm test
