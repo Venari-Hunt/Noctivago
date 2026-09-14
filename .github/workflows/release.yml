@@ -61,54 +61,38 @@ jobs:
         env:
           # Auto-provided by GitHub Actions, scoped to this repo only via the
           # `permissions` block above - used solely to create the release and
-          # upload the installer. Never embedded in the shipped app; that's a
-          # separate token (NOCTIVAGO_UPDATE_TOKEN, see electron.vite.config.js).
+          # upload the installer.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Repo secret the user creates once (see CLAUDE.md) - a narrowly
-          # scoped, read-only PAT baked into the app at build time so
-          # electron-updater can check this private repo's releases from an
-          # installed user's machine.
-          NOCTIVAGO_UPDATE_TOKEN: ${{ secrets.NOCTIVAGO_UPDATE_TOKEN }}
           # Freesound import (src/main/freesound/) - a single app-wide,
           # read-only API key requested once at freesound.org/apiv2/apply.
-          # Unlike NOCTIVAGO_UPDATE_TOKEN this is deliberately baked into
-          # BOTH builds below (this one and the itch.io one) - it's a free,
-          # re-issuable key rather than a real credential, so the owner
-          # accepted it being extractable from a public binary rather than
-          # losing the feature on itch.io.
+          # Baked into the one build below, which now goes to both GitHub and
+          # itch.io - it's a free, re-issuable key rather than a real
+          # credential, so being in a public binary was already accepted.
           FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+      # NOTE: there used to be a NOCTIVAGO_UPDATE_TOKEN baked in here too (a
+      # narrowly-scoped PAT so electron-updater could read releases from what
+      # was then a private repo) and a whole SECOND build below, made
+      # deliberately without that token, solely so the itch.io copy wouldn't
+      # carry a working repo-clone credential. Now that this repo is public
+      # (2026-09-14), electron-updater's GitHub provider reads releases with
+      # no auth at all (see CLAUDE.md's "Releasing and auto-update"), so the
+      # token is unnecessary and the whole second build existed only to work
+      # around it - discarded per the owner's own call once open-source made
+      # it moot. One build now serves both destinations unmodified. The
+      # NOCTIVAGO_UPDATE_TOKEN repo secret itself was left in place (harmless
+      # unused) rather than deleted, in case this project is ever forked back
+      # to a private repo.
 
-      # Builds a SECOND, separate copy for itch.io - deliberately without
-      # NOCTIVAGO_UPDATE_TOKEN set, so __UPDATE_TOKEN__ bakes in as an empty
-      # string (electron.vite.config.js's own behavior for any build that
-      # doesn't have the token in its env - the same as a plain local build).
-      # This is not optional/paranoia: the GitHub-published build above HAS
-      # that token baked in (a narrowly-scoped but still real read-access PAT
-      # for this private repo), and itch.io is a public download page -
-      # pushing the same token-bearing file there would let anyone who
-      # downloads it extract a working credential and clone the private repo.
-      # `--publish never` guarantees this pass can't touch GitHub at all, even
-      # by accident (electron-builder.yml's own `publish:` block would
-      # otherwise apply its default policy). Costs a few extra minutes of
-      # build time per release; that's the trade for keeping the itch copy
-      # genuinely secret-free (of NOCTIVAGO_UPDATE_TOKEN) rather than just
-      # "the same file, hope nobody extracts it." FREESOUND_API_KEY IS set
-      # here though - see its own comment above for why that one's different.
-      - run: npm run build:itch:win
-        env:
-          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
-
-      # Keeps the itch.io page's download current on every release. Pushes
-      # ONLY the token-free rebuild from the step above, never the
-      # GitHub-published artifact. Unrelated to in-app auto-update
-      # (electron-updater has no itch.io provider - it only ever checks
-      # GitHub Releases, see above); this just refreshes the direct-download
-      # copy itch already serves. Skips itself entirely (rather than failing
-      # the whole run) until ITCH_BUTLER_API_KEY is added as a repo secret -
-      # the GitHub Releases publish above is what update-checking actually
-      # depends on and must keep working regardless of whether this is set
-      # up yet.
-      - name: Push token-free build to itch.io
+      # Keeps the itch.io page's download current on every release, pushing
+      # the exact same installer the GitHub release above just published.
+      # Unrelated to in-app auto-update (electron-updater has no itch.io
+      # provider - it only ever checks GitHub Releases, see above); this just
+      # refreshes the direct-download copy itch already serves. Skips itself
+      # entirely (rather than failing the whole run) until ITCH_BUTLER_API_KEY
+      # is added as a repo secret - the GitHub Releases publish above is what
+      # update-checking actually depends on and must keep working regardless
+      # of whether this is set up yet.
+      - name: Push installer to itch.io
         shell: pwsh
         env:
           # Butler reads this env var directly, no `butler login` needed -
