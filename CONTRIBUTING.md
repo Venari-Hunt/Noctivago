@@ -7,10 +7,11 @@ the full architecture writeup.
 
 ## Before you open a pull request
 
-**A CLA is required before any PR can be merged.** [Details on the CLA
-process will be linked here once it's set up — until then, please open an
-issue first if you're interested in contributing code, and we'll sort out
-the CLA together.]
+**A CLA is required before any PR can be merged.** Read [CLA.md](CLA.md).
+When you open your first pull request, a bot will comment asking you to
+sign it by replying with the exact phrase it gives you — no external
+account or sign-up needed, your signature is just recorded in this repo.
+You only need to do this once; it's remembered for future PRs.
 
 ## Building and running locally
 
