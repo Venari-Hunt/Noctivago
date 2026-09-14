@@ -34,8 +34,14 @@ export async function searchSounds({ query, page = 1, pageSize = 15, sort = 'sco
     const res = await fetch(url)
     if (!res.ok) {
       if (res.status === 429) return { ok: false, error: "Freesound's rate limit was hit - try again in a minute." }
-      const body = await res.text().catch(() => '')
-      return { ok: false, error: `Freesound search failed (${res.status}): ${body.slice(0, 200) || res.statusText}` }
+      if (res.status >= 500) return { ok: false, error: `Freesound is temporarily unavailable (${res.status}) - try again shortly.` }
+      const contentType = res.headers.get('content-type') || ''
+      let detail = ''
+      if (contentType.includes('json')) {
+        const data = await res.json().catch(() => null)
+        detail = data?.detail || ''
+      }
+      return { ok: false, error: `Freesound search failed (${res.status}): ${detail || res.statusText}` }
     }
     const data = await res.json()
     return {

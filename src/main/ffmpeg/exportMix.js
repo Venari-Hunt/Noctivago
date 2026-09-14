@@ -376,7 +376,17 @@ async function renderSlicedBatch({ shotPath, batch, volume, speedMode, reporter 
 // normalize=0 - matching the rest of the pipeline). One ffmpeg pass, graph
 // via -filter_complex_script so the graph itself never touches the command
 // line. Returns one track, now absolute-positioned (offset 0).
-async function combineTracks(tracks) {
+// BUG FIX (inbox 2026-09-14: a "fail log" pasted after an export sat on
+// "Merging 243 track groups…" for 37 real minutes with the progress bar
+// frozen solid): this amix pass runs real, potentially very long ffmpeg work
+// - exactly the class of bug already fixed twice elsewhere in this file for
+// the video re-encode and Sound Group passes (see their own "Percentage is
+// stuck" comments) - but never had onProgress wired at all, so the reporter
+// heard nothing until the whole pass was done. durationSeconds is a rough
+// upper bound (every track combined here is bounded by the export length,
+// same spirit as groupWorkSeconds' own estimate below), just enough to keep
+// the bar visibly moving instead of stalling.
+async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
   const outPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
   const graph = []
@@ -391,13 +401,16 @@ async function combineTracks(tracks) {
   )
   fs.writeFileSync(scriptPath, graph.join(';'))
   try {
-    await runFfmpegToFile([
-      '-y',
-      ...tracks.flatMap((t) => ['-i', t.path]),
-      '-filter_complex_script', scriptPath,
-      '-map', '[out]',
-      ...INTERMEDIATE_CODEC, outPath
-    ])
+    await runFfmpegToFile(
+      [
+        '-y',
+        ...tracks.flatMap((t) => ['-i', t.path]),
+        '-filter_complex_script', scriptPath,
+        '-map', '[out]',
+        ...INTERMEDIATE_CODEC, outPath
+      ],
+      durationSeconds ? { onProgress: (sec) => reporter?.tick(sec, durationSeconds) } : undefined
+    )
     return { path: outPath, offset: 0 }
   } finally {
     await cleanupFiles([scriptPath])
@@ -416,7 +429,7 @@ async function combineTracks(tracks) {
 // (v0.1.136), and it was the one place still walking its passes one by one
 // while every other phase already parallelized under Faster export /
 // Parallel mixdown. concurrency 1 keeps the old exact sequential behavior.
-async function reduceTrackCount(tracks, target, ownPaths, reporter, concurrency = 1) {
+async function reduceTrackCount(tracks, target, ownPaths, reporter, concurrency = 1, durationSeconds = null) {
   let current = tracks
   while (current.length > target) {
     reporter?.step(`Merging ${current.length} track groups…`)
@@ -430,7 +443,7 @@ async function reduceTrackCount(tracks, target, ownPaths, reporter, concurrency 
         nextRound[idx] = chunk[0]
         return
       }
-      const combined = await combineTracks(chunk)
+      const combined = await combineTracks(chunk, { durationSeconds, reporter })
       ownPaths.push(combined.path)
       nextRound[idx] = combined
     })
@@ -725,7 +738,7 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       const memberTracks = [...tiledLoops, ...memberBatchTracks]
       const bounded =
         memberTracks.length > MAX_INPUTS_PER_PASS
-          ? await reduceTrackCount(memberTracks, MAX_INPUTS_PER_PASS, ownPaths, reporter, concurrency)
+          ? await reduceTrackCount(memberTracks, MAX_INPUTS_PER_PASS, ownPaths, reporter, concurrency, durationSeconds)
           : memberTracks
       // combineTracks always adelays every track to its real offset and
       // normalizes the result to offset 0 - needed even for a single
@@ -735,8 +748,17 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       // offset-0 group bus. Skipped only when there's genuinely nothing left
       // to combine (a single track that's already offset 0).
       const combined =
-        bounded.length === 1 && bounded[0].offset === 0 ? bounded[0] : await combineTracks(bounded)
+        bounded.length === 1 && bounded[0].offset === 0
+          ? bounded[0]
+          : await combineTracks(bounded, { durationSeconds, reporter })
       if (combined !== bounded[0]) ownPaths.push(combined.path)
+      // groupWorkSeconds (exportMix's own progress budget) already reserves
+      // one durationSeconds' worth of work per group for exactly this combine
+      // step - mark it spent here (flat, same as the budget itself is flat)
+      // so the bar actually reflects that reserved chunk instead of leaving
+      // it permanently un-banked while combineTracks's own ticks (above) do
+      // the moment-to-moment moving.
+      reporter?.completePhase(durationSeconds)
 
       const groupFilters = groupsById.get(groupId)?.filters
       let bus = await applyGroupFilters(combined, groupFilters, durationSeconds, reporter)
@@ -1416,7 +1438,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     const batchTrackBudget = Math.max(4, MAX_INPUTS_PER_PASS - plainLoopShots.length)
     const finalBatchTracks =
       finalMixTracks.length > batchTrackBudget
-        ? await reduceTrackCount(finalMixTracks, batchTrackBudget, groupBusPaths, reporter, mergeConcurrency)
+        ? await reduceTrackCount(finalMixTracks, batchTrackBudget, groupBusPaths, reporter, mergeConcurrency, durationSeconds)
         : finalMixTracks
 
     if (parallelMixdown && plainLoopShots.length > 0) {
@@ -1435,7 +1457,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       const combinedTracks = [...tiledLoopTracks, ...finalBatchTracks]
       const mergedTracks =
         combinedTracks.length > MAX_INPUTS_PER_PASS
-          ? await reduceTrackCount(combinedTracks, MAX_INPUTS_PER_PASS, groupBusPaths, reporter, mergeConcurrency)
+          ? await reduceTrackCount(combinedTracks, MAX_INPUTS_PER_PASS, groupBusPaths, reporter, mergeConcurrency, durationSeconds)
           : combinedTracks
 
       reporter.step('Final mixdown + whole-mix processing…')
