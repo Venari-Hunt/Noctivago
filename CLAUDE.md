@@ -59,7 +59,7 @@ Both the loop-seam click and the waveform-for-long-files problems trace back to 
 
 **Packaging note:** `electron-builder.yml` has `asarUnpack: [node_modules/ffmpeg-static/**]` — required because binaries can't execute from inside an asar archive.
 
-**ffmpeg binary license note**: `ffmpeg-static`'s npm package metadata claims BSD-3-Clause but actually distributes a compiled ffmpeg binary, which is LGPLv2.1+ (or GPLv2+ if built with `--enable-gpl`) depending on how that specific binary was compiled — check the actual build flavor before shipping a build wider than local testing, and include the appropriate LGPL/GPL notices alongside the app if required.
+**ffmpeg binary license note**: the bundled ffmpeg binary (fetched via `ffmpeg-static`) is GPLv3, not the more permissive LGPL — confirmed via the binary's own accompanying license file (`node_modules/ffmpeg-static/ffmpeg.exe.LICENSE`/`.README`, which `ffmpeg-static` itself started shipping after [eugeneware/ffmpeg-static#8](https://github.com/eugeneware/ffmpeg-static/issues/8)). See `THIRD_PARTY_NOTICES.md` for the full attribution, exact version/source-commit link, and why bundling a GPLv3 binary doesn't require Noctívago's own Apache-2.0 code to relicense (it's always invoked as a separate subprocess via `runFfmpeg.js`, never linked).
 
 ### App icon
 
