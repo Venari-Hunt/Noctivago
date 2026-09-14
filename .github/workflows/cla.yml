@@ -34,4 +34,8 @@ jobs:
           path-to-signatures: "signatures/cla.json"
           path-to-document: "https://github.com/Venari-Hunt/Noctivago/blob/master/CLA.md"
           branch: "master"
-          allowlist: Venari-Hunt,dependabot[bot]
+          # 'claude' is the account behind the "Co-Authored-By: Claude
+          # Sonnet 5" trailer this project's commits carry - an attribution
+          # line, not an independent outside contributor, so it doesn't need
+          # its own CLA signature.
+          allowlist: Venari-Hunt,dependabot[bot],claude
