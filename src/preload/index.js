@@ -99,6 +99,12 @@ const api = {
       return () => ipcRenderer.removeListener('library:addSoundFromUrlProgress', listener)
     },
     addFolderSounds: (folderPath, options) => ipcRenderer.invoke('library:addFolderSounds', folderPath, options),
+    addSoundFromFreesound: (payload) => ipcRenderer.invoke('library:addSoundFromFreesound', payload),
+    onAddSoundFromFreesoundProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('library:addSoundFromFreesoundProgress', listener)
+      return () => ipcRenderer.removeListener('library:addSoundFromFreesoundProgress', listener)
+    },
     updateMeta: (id, meta) => ipcRenderer.invoke('library:updateMeta', id, meta),
     updateLoopPoints: (id, points) => ipcRenderer.invoke('library:updateLoopPoints', id, points),
     updateFilters: (id, filters) => ipcRenderer.invoke('library:updateFilters', id, filters),
@@ -172,6 +178,10 @@ const api = {
   composite: {
     create: (payload) => ipcRenderer.invoke('composite:create', payload),
     rebake: (payload) => ipcRenderer.invoke('composite:rebake', payload)
+  },
+  freesound: {
+    isAvailable: () => ipcRenderer.invoke('freesound:isAvailable'),
+    search: (params) => ipcRenderer.invoke('freesound:search', params)
   }
 }
 

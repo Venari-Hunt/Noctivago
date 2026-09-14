@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.190 — Search and import sounds from Freesound.org
+
+- New "Search Freesound…" option in the add-sound menu — search Freesound.org's library, preview results before deciding, and import one straight into your library with one click.
+- Imported sounds keep their Freesound attribution (author, license, source page) and show a small "Freesound" badge in the Mixer — hover it to see the details.
+- Imports the compressed preview audio, not the original file — plenty for a looping ambient sound.
+
 ## v0.1.189 — Volume envelope: shape a sound's volume over time
 
 - Remix's Sound mode (Loop mode only) now has a Volume envelope — drag control points directly on the waveform to shape a sound's volume over time instead of one flat level, the same way Audacity's classic envelope tool works.

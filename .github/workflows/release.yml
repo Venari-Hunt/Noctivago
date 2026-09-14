@@ -69,6 +69,14 @@ jobs:
           # electron-updater can check this private repo's releases from an
           # installed user's machine.
           NOCTIVAGO_UPDATE_TOKEN: ${{ secrets.NOCTIVAGO_UPDATE_TOKEN }}
+          # Freesound import (src/main/freesound/) - a single app-wide,
+          # read-only API key requested once at freesound.org/apiv2/apply.
+          # Unlike NOCTIVAGO_UPDATE_TOKEN this is deliberately baked into
+          # BOTH builds below (this one and the itch.io one) - it's a free,
+          # re-issuable key rather than a real credential, so the owner
+          # accepted it being extractable from a public binary rather than
+          # losing the feature on itch.io.
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
 
       # Builds a SECOND, separate copy for itch.io - deliberately without
       # NOCTIVAGO_UPDATE_TOKEN set, so __UPDATE_TOKEN__ bakes in as an empty
@@ -83,9 +91,12 @@ jobs:
       # by accident (electron-builder.yml's own `publish:` block would
       # otherwise apply its default policy). Costs a few extra minutes of
       # build time per release; that's the trade for keeping the itch copy
-      # genuinely secret-free rather than just "the same file, hope nobody
-      # extracts it."
+      # genuinely secret-free (of NOCTIVAGO_UPDATE_TOKEN) rather than just
+      # "the same file, hope nobody extracts it." FREESOUND_API_KEY IS set
+      # here though - see its own comment above for why that one's different.
       - run: npm run build:itch:win
+        env:
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
 
       # Keeps the itch.io page's download current on every release. Pushes
       # ONLY the token-free rebuild from the step above, never the
