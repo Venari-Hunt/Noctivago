@@ -4009,6 +4009,20 @@ ${mixFluctuationMarkup('group')}
       await this.api.library.updatePlayMode(id, playMode)
       await this.api.library.updateScatterConfig(id, scatter)
       await this.api.library.updateSchedule(id, schedule)
+      // BUG FIX: unlike the override branch above (which dispatches
+      // sound-override-changed so an already-mounted Mixer reconciles the
+      // live source immediately), this baseline write had no bridge back to
+      // the Mixer at all - library:changed only fires from watch-folder
+      // imports, not from any of these IPC calls. A sound already playing
+      // kept its old in-memory settings until the next tab switch happened
+      // to rerun the Mixer's own refreshList(). Mirrors the override event's
+      // shape so tabs/mixer/index.js can patch its raw baseline cache the
+      // same way.
+      window.dispatchEvent(
+        new CustomEvent('noctivago:sound-baseline-changed', {
+          detail: { soundId: id, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, playMode, scatter, schedule }
+        })
+      )
     }
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd

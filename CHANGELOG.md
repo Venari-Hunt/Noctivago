@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.193 — Fixed a Remix edit not reaching a sound already playing
+
+- BUG FIX: saving a change in Remix (Sound mode) for a sound that isn't part of the currently loaded preset's mix wrote the change to disk correctly, but a copy of that sound already playing in the Mixer never found out — it kept its old trim/filters/crossfade/Speed-Pitch/play mode/scatter/schedule until something else happened to refresh it (like switching away from Remix and back). Reported directly: disabling a Random Interval sound's pitch and speed variation "still kept pitch randomized and also speed" even after saving. Now the change reaches an already-playing sound immediately.
+
 ## v0.1.192 — Fixed missing Echo/Reverb/EQ on some Random Interval/Scheduled sounds, and richer export filenames
 
 - BUG FIX: a Random Interval or Scheduled sound's Echo, Reverb, and parametric EQ could go silent in the Mixer (highpass/lowpass/gain still worked) whenever that sound fell back to streaming instead of playing from its baked clip — most often right after an edit, before the next play re-baked it. An exported file always had the full effect baked in regardless, so the two could sound noticeably different for the same sound (reported: a thunderclap's export had "a really strong reverb that isn't audible on the mixer tab").
