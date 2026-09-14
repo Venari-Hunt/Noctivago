@@ -2060,6 +2060,32 @@ document.addEventListener('library:linked', refreshList)
     const entry = state.library.find((s) => s.id === soundId)
     if (entry) reconcileSource(entry)
   })
+  // BUG FIX (reported directly): a Remix Sound-mode Save whose sound isn't a
+  // member of the pinned preset writes straight to the shared baseline (see
+  // plugins/editor/index.js's performSave, the `else` branch) instead of a
+  // preset override - and unlike the override path above, that write had no
+  // push channel back to an already-mounted Mixer at all. `library:changed`
+  // (window.noctivago.library.onChanged, wired above) is watch-folder-only,
+  // so a sound already playing kept using its old in-memory trim/filters/
+  // crossfade/Speed-Pitch/play-mode/scatter/schedule until the next tab
+  // switch happened to rerun refreshList(). Reported case: disabling a
+  // scatter sound's pitch/speed range "still kept pitch randomized and also
+  // speed" - the edit was saved correctly, it just never reached the sound
+  // actually playing. Same "patch the cache, recompute, reconcile just that
+  // source" shape as the override listener above, but patching
+  // state.baselineById (the raw cache recomputeEffectiveLibrary rebuilds
+  // state.library from) rather than an override, since there's no override
+  // involved here.
+  window.addEventListener('noctivago:sound-baseline-changed', (e) => {
+    const { soundId, ...patch } = e.detail ?? {}
+    if (!soundId) return
+    const baseline = state.baselineById.get(soundId)
+    if (!baseline) return
+    state.baselineById.set(soundId, { ...baseline, ...patch })
+    recomputeEffectiveLibrary()
+    const entry = state.library.find((s) => s.id === soundId)
+    if (entry) reconcileSource(entry)
+  })
   // The Remix plugin's Preset mode (plugins/editor/) dispatches this on
   // every control change while editing a preset, and once more with the
   // saved values when leaving that mode (so an unsaved preview reverts). Same
