@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.192 — Fixed missing Echo/Reverb/EQ on some Random Interval/Scheduled sounds, and richer export filenames
+
+- BUG FIX: a Random Interval or Scheduled sound's Echo, Reverb, and parametric EQ could go silent in the Mixer (highpass/lowpass/gain still worked) whenever that sound fell back to streaming instead of playing from its baked clip — most often right after an edit, before the next play re-baked it. An exported file always had the full effect baked in regardless, so the two could sound noticeably different for the same sound (reported: a thunderclap's export had "a really strong reverb that isn't audible on the mixer tab").
+- Exporting a preset to audio now names the file with a bit more than just the preset's name — the video kind (if you're also exporting video) and the export length, e.g. "Rainy Night - Black screen - 9h.wav". The destination folder still uses just the preset's own name, so re-exporting the same preset lands in the same place.
+
 ## v0.1.191 — Two bug fixes: Freesound error messages, and a stalled-looking export
 
 - BUG FIX: a Freesound search that failed with a server error (502/503/etc.) used to dump the raw HTML error page into the dialog's status line. It now shows a plain, readable message instead.

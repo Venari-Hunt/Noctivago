@@ -311,7 +311,16 @@ export function registerIpcHandlers() {
   // than needing the exact filename re-typed. exportMix.js already
   // mkdirSync(..., {recursive:true}) on the returned path's directory, so
   // the subfolder needs no separate creation step here.
-  ipcMain.handle('export:pickDestination', async (_event, { defaultName, format }) => {
+  //
+  // `fileName` (the file's own basename, separate from `defaultName`'s
+  // folder) carries a bit more than the bare preset name - inbox request:
+  // "the filename when exporting presets as audios should carry some of the
+  // characteristics of the export, e.g. {preset name} {video kind} {export
+  // length}" - built by the Export plugin (plugins/export/index.js, which
+  // already knows the video mode/duration) and just sanitized here, same as
+  // the folder name. Falls back to `defaultName` for any older caller that
+  // doesn't pass it.
+  ipcMain.handle('export:pickDestination', async (_event, { defaultName, fileName, format }) => {
     const settings = getSettings()
     const defaultFolder = settings.lastExportFolder && fs.existsSync(settings.lastExportFolder)
       ? settings.lastExportFolder
@@ -325,7 +334,8 @@ export function registerIpcHandlers() {
     const destDir = result.filePaths[0]
     setLastExportFolder(destDir)
     const folderName = sanitizeExportName(defaultName)
-    return path.join(destDir, folderName, `${folderName}.${format}`)
+    const baseFileName = sanitizeExportName(fileName || defaultName)
+    return path.join(destDir, folderName, `${baseFileName}.${format}`)
   })
 
   // The Export tab's "info file" toggle (v0.1.140) - the renderer already has

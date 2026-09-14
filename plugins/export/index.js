@@ -80,6 +80,37 @@ function formatDuration(totalSeconds) {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+// Compact duration for filenames ("9h", "1h30m", "45s") - formatDuration's
+// hh:mm:ss reads fine on-screen but ":" is an illegal Windows filename
+// character, and "9:00:00" is a noisier label than the plain "9h" the inbox
+// request itself used as an example. Omits zero components instead of
+// padding them, so the common round-number case stays short.
+function formatDurationCompact(totalSeconds) {
+  const total = Math.max(0, Math.round(totalSeconds))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const parts = []
+  if (h > 0) parts.push(`${h}h`)
+  if (m > 0) parts.push(`${m}m`)
+  if (s > 0 || parts.length === 0) parts.push(`${s}s`)
+  return parts.join('')
+}
+
+// Short filename-friendly video-kind label, alongside buildInfoFileText's
+// longer prose version of the same choice - same source data
+// (videoBackground + visualization type), different destination (a file
+// basename component vs. a sentence in info.txt).
+function videoKindFileLabel(videoBackground, visualizationType) {
+  if (videoBackground === 'file') return 'Looped video'
+  if (videoBackground === 'image') return 'Looped image'
+  if (videoBackground === 'visualization') {
+    const type = String(visualizationType ?? 'waveform')
+    return `${type.charAt(0).toUpperCase()}${type.slice(1)} viz`
+  }
+  return 'Black screen'
+}
+
 const VIDEO_MODE_LABELS = {
   'audio-only': 'Audio only',
   'video-only': 'Video only (for YouTube) - a .mkv with the audio muxed inside',
@@ -777,7 +808,19 @@ export default class ExportPlugin {
     }
 
     const format = this.els.format.value
-    const outputPath = await this.api.export.pickDestination({ defaultName: preset.name, format })
+    // Filename carries a bit more than the bare preset name (inbox request:
+    // "{preset name} {video kind (if it is just black screen or
+    // visualization or whatever)} {export set length (eg: 9h)}") - the
+    // folder itself (defaultName) stays just the preset name so re-exporting
+    // the same preset keeps landing in the same folder.
+    const fileName = [
+      preset.name,
+      needsVideo ? videoKindFileLabel(this.els.videoBackground.value, this.els.vizType.value) : null,
+      formatDurationCompact(durationSeconds)
+    ]
+      .filter(Boolean)
+      .join(' - ')
+    const outputPath = await this.api.export.pickDestination({ defaultName: preset.name, fileName, format })
     if (!outputPath) return
 
     this.exporting = true
