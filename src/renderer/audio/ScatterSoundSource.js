@@ -1,6 +1,7 @@
 import log from 'electron-log/renderer'
 import { pitchShiftBuffer } from './pitchStretch.js'
 import { createStreamFilterChain, updateStreamFilterChain, disposeStreamFilterChain } from './StreamFilterChain.js'
+import { pickBiasedValue } from './Modulator.js'
 
 const RAMP_SECONDS = 0.15
 // Matches the Remix plugin's Pitch slider range (plugins/editor/index.js) -
@@ -29,6 +30,17 @@ function randomGapSeconds(scatter) {
   }
   const min = Math.max(0, scatter?.minGapSeconds ?? DEFAULT_MIN_GAP_SECONDS)
   const max = Math.max(min, scatter?.maxGapSeconds ?? DEFAULT_MAX_GAP_SECONDS)
+  // "Bias" (Board backlog, owner inbox 2026-09-14): min/max stay the hard
+  // range, but a bias value wins more often than a plain uniform pick -
+  // reuses Fluctuation's own bias-skewed target math (Modulator.js) rather
+  // than inventing a second distribution. Off by default (gapBiasEnabled),
+  // so an existing sound's gap timing is untouched unless explicitly turned
+  // on - same "explicit opt-in, not inferred from field values" precedent
+  // gapFullyRandom itself already established.
+  if (scatter?.gapBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.gapBiasSeconds ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
   return min + Math.random() * (max - min)
 }
 
@@ -48,6 +60,12 @@ export function randomPitchSemitones(scatter) {
   let min = scatter?.minPitchSemitones ?? 0
   let max = scatter?.maxPitchSemitones ?? 0
   if (max < min) max = min
+  // "Bias" - see randomGapSeconds's own comment above; same mechanism,
+  // shared by scatter's own pitch and (via this same function) Scheduled's.
+  if (scatter?.pitchBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.pitchBiasSemitones ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
   return min + Math.random() * (max - min)
 }
 
@@ -115,9 +133,13 @@ function normalizeScatter(scatter) {
     minGapSeconds: scatter?.minGapSeconds ?? DEFAULT_MIN_GAP_SECONDS,
     maxGapSeconds: scatter?.maxGapSeconds ?? DEFAULT_MAX_GAP_SECONDS,
     gapFullyRandom: Boolean(scatter?.gapFullyRandom),
+    gapBiasEnabled: Boolean(scatter?.gapBiasEnabled),
+    gapBiasSeconds: scatter?.gapBiasSeconds ?? null,
     minPitchSemitones: scatter?.minPitchSemitones ?? 0,
     maxPitchSemitones: scatter?.maxPitchSemitones ?? 0,
     pitchFullyRandom: Boolean(scatter?.pitchFullyRandom),
+    pitchBiasEnabled: Boolean(scatter?.pitchBiasEnabled),
+    pitchBiasSemitones: scatter?.pitchBiasSemitones ?? null,
     minVolume: scatter?.minVolume ?? 1,
     maxVolume: scatter?.maxVolume ?? 1,
     minSpeed: scatter?.minSpeed ?? 1,

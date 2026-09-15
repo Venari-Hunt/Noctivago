@@ -1045,6 +1045,15 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-scatter-gap-fully-random" type="checkbox" />
               <span>Fully random gap — a new random wait (0–2&nbsp;min) before every replay; ignores the min/max above</span>
             </label>
+            <label class="editor-scatter-check">
+              <input id="editor-scatter-gap-bias-enabled" type="checkbox" />
+              <span>Bias toward a value — this gap wins more often than a plain random pick within the min/max above</span>
+            </label>
+            <label>
+              <span>Gap bias</span>
+              <input id="editor-scatter-gap-bias" type="number" min="0" max="3600" step="1" value="20" />
+              <span class="editor-filter-value">s</span>
+            </label>
             <label>
               <span>Pitch (min)</span>
               <input id="editor-scatter-pitch-min" type="range" min="-12" max="12" value="0" step="1" />
@@ -1058,6 +1067,15 @@ ${mixFluctuationMarkup('group')}
             <label class="editor-scatter-check">
               <input id="editor-scatter-pitch-fully-random" type="checkbox" />
               <span>Fully random pitch — a new random shift across the whole ±12&nbsp;st range every replay; ignores the min/max above</span>
+            </label>
+            <label class="editor-scatter-check">
+              <input id="editor-scatter-pitch-bias-enabled" type="checkbox" />
+              <span>Bias toward a value — this pitch wins more often than a plain random pick within the min/max above</span>
+            </label>
+            <label>
+              <span>Pitch bias</span>
+              <input id="editor-scatter-pitch-bias" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="editor-scatter-pitch-bias-value" class="editor-filter-value">0 st</span>
             </label>
             <label>
               <span>Volume (min)</span>
@@ -1093,7 +1111,7 @@ ${mixFluctuationMarkup('group')}
               <span>Sync group</span>
               <input id="editor-scatter-sync-group" type="text" placeholder="e.g. door-effects" />
             </label>
-            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
+            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Check "Bias toward a value" on gap or pitch to make one value inside the range win more often than a plain random pick, instead of every value being equally likely. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
           </div>
           <div id="editor-schedule-section" class="editor-scatter-controls hidden">
             <label class="editor-playmode-option">
@@ -1127,6 +1145,15 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-schedule-pitch-fully-random" type="checkbox" />
               <span>Fully random pitch — a new random shift across the whole ±12&nbsp;st range every trigger; ignores the min/max above</span>
             </label>
+            <label class="editor-scatter-check">
+              <input id="editor-schedule-pitch-bias-enabled" type="checkbox" />
+              <span>Bias toward a value — this pitch wins more often than a plain random pick within the min/max above</span>
+            </label>
+            <label>
+              <span>Pitch bias</span>
+              <input id="editor-schedule-pitch-bias" type="range" min="-12" max="12" value="0" step="1" />
+              <span id="editor-schedule-pitch-bias-value" class="editor-filter-value">0 st</span>
+            </label>
             <label>
               <span>Volume (min)</span>
               <input id="editor-schedule-volume-min" type="range" min="0" max="100" value="100" step="1" />
@@ -1157,7 +1184,7 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-schedule-fade-out" type="number" min="0" max="10000" step="50" value="0" />
               <span class="editor-filter-value">ms</span>
             </label>
-            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, and speed within these ranges, same as Random Interval — or check "Fully random pitch" to roll the whole ±12 st range regardless of the min/max. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
+            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, and speed within these ranges, same as Random Interval — or check "Fully random pitch" to roll the whole ±12 st range regardless of the min/max. Check "Bias toward a value" to make one pitch inside the range win more often than a plain random pick. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -1416,11 +1443,16 @@ ${mixFluctuationMarkup('group')}
       scatterGapMin: container.querySelector('#editor-scatter-gap-min'),
       scatterGapMax: container.querySelector('#editor-scatter-gap-max'),
       scatterGapFullyRandom: container.querySelector('#editor-scatter-gap-fully-random'),
+      scatterGapBiasEnabled: container.querySelector('#editor-scatter-gap-bias-enabled'),
+      scatterGapBias: container.querySelector('#editor-scatter-gap-bias'),
       scatterPitchMin: container.querySelector('#editor-scatter-pitch-min'),
       scatterPitchMinValue: container.querySelector('#editor-scatter-pitch-min-value'),
       scatterPitchMax: container.querySelector('#editor-scatter-pitch-max'),
       scatterPitchMaxValue: container.querySelector('#editor-scatter-pitch-max-value'),
       scatterPitchFullyRandom: container.querySelector('#editor-scatter-pitch-fully-random'),
+      scatterPitchBiasEnabled: container.querySelector('#editor-scatter-pitch-bias-enabled'),
+      scatterPitchBias: container.querySelector('#editor-scatter-pitch-bias'),
+      scatterPitchBiasValue: container.querySelector('#editor-scatter-pitch-bias-value'),
       scatterVolumeMin: container.querySelector('#editor-scatter-volume-min'),
       scatterVolumeMinValue: container.querySelector('#editor-scatter-volume-min-value'),
       scatterVolumeMax: container.querySelector('#editor-scatter-volume-max'),
@@ -1444,6 +1476,9 @@ ${mixFluctuationMarkup('group')}
       schedulePitchMax: container.querySelector('#editor-schedule-pitch-max'),
       schedulePitchMaxValue: container.querySelector('#editor-schedule-pitch-max-value'),
       schedulePitchFullyRandom: container.querySelector('#editor-schedule-pitch-fully-random'),
+      schedulePitchBiasEnabled: container.querySelector('#editor-schedule-pitch-bias-enabled'),
+      schedulePitchBias: container.querySelector('#editor-schedule-pitch-bias'),
+      schedulePitchBiasValue: container.querySelector('#editor-schedule-pitch-bias-value'),
       scheduleVolumeMin: container.querySelector('#editor-schedule-volume-min'),
       scheduleVolumeMinValue: container.querySelector('#editor-schedule-volume-min-value'),
       scheduleVolumeMax: container.querySelector('#editor-schedule-volume-max'),
@@ -1890,9 +1925,13 @@ ${mixFluctuationMarkup('group')}
     this.els.scatterGapMin.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterGapMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterGapFullyRandom.addEventListener('change', () => this.applyScatterControls())
+    this.els.scatterGapBiasEnabled.addEventListener('change', () => this.applyScatterControls())
+    this.els.scatterGapBias.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterPitchMin.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterPitchMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterPitchFullyRandom.addEventListener('change', () => this.applyScatterControls())
+    this.els.scatterPitchBiasEnabled.addEventListener('change', () => this.applyScatterControls())
+    this.els.scatterPitchBias.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterVolumeMin.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterVolumeMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterSpeedMin.addEventListener('input', () => this.applyScatterControls())
@@ -1908,6 +1947,8 @@ ${mixFluctuationMarkup('group')}
     this.els.schedulePitchMin.addEventListener('input', () => this.applyScheduleControls())
     this.els.schedulePitchMax.addEventListener('input', () => this.applyScheduleControls())
     this.els.schedulePitchFullyRandom.addEventListener('change', () => this.applyScheduleControls())
+    this.els.schedulePitchBiasEnabled.addEventListener('change', () => this.applyScheduleControls())
+    this.els.schedulePitchBias.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleVolumeMin.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleVolumeMax.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleSpeedMin.addEventListener('input', () => this.applyScheduleControls())
@@ -2977,9 +3018,13 @@ ${mixFluctuationMarkup('group')}
       minGapSeconds: Number(this.els.scatterGapMin.value),
       maxGapSeconds: Number(this.els.scatterGapMax.value),
       gapFullyRandom: this.els.scatterGapFullyRandom.checked,
+      gapBiasEnabled: this.els.scatterGapBiasEnabled.checked,
+      gapBiasSeconds: Number(this.els.scatterGapBias.value),
       minPitchSemitones: Number(this.els.scatterPitchMin.value),
       maxPitchSemitones: Number(this.els.scatterPitchMax.value),
       pitchFullyRandom: this.els.scatterPitchFullyRandom.checked,
+      pitchBiasEnabled: this.els.scatterPitchBiasEnabled.checked,
+      pitchBiasSemitones: Number(this.els.scatterPitchBias.value),
       minVolume: Number(this.els.scatterVolumeMin.value) / 100,
       maxVolume: Number(this.els.scatterVolumeMax.value) / 100,
       minSpeed: Number(this.els.scatterSpeedMin.value) / 100,
@@ -2994,9 +3039,13 @@ ${mixFluctuationMarkup('group')}
     minGapSeconds = 5,
     maxGapSeconds = 35,
     gapFullyRandom = false,
+    gapBiasEnabled = false,
+    gapBiasSeconds = 20,
     minPitchSemitones = 0,
     maxPitchSemitones = 0,
     pitchFullyRandom = false,
+    pitchBiasEnabled = false,
+    pitchBiasSemitones = 0,
     minVolume = 1,
     maxVolume = 1,
     minSpeed = 1,
@@ -3008,9 +3057,13 @@ ${mixFluctuationMarkup('group')}
     this.els.scatterGapMin.value = String(minGapSeconds)
     this.els.scatterGapMax.value = String(maxGapSeconds)
     this.els.scatterGapFullyRandom.checked = Boolean(gapFullyRandom)
+    this.els.scatterGapBiasEnabled.checked = Boolean(gapBiasEnabled)
+    this.els.scatterGapBias.value = String(gapBiasSeconds)
     this.els.scatterPitchMin.value = String(minPitchSemitones)
     this.els.scatterPitchMax.value = String(maxPitchSemitones)
     this.els.scatterPitchFullyRandom.checked = Boolean(pitchFullyRandom)
+    this.els.scatterPitchBiasEnabled.checked = Boolean(pitchBiasEnabled)
+    this.els.scatterPitchBias.value = String(pitchBiasSemitones)
     this.els.scatterVolumeMin.value = String(Math.round(minVolume * 100))
     this.els.scatterVolumeMax.value = String(Math.round(maxVolume * 100))
     this.els.scatterSpeedMin.value = String(Math.round(minSpeed * 100))
@@ -3021,9 +3074,18 @@ ${mixFluctuationMarkup('group')}
     this.updateScatterRangeDisabled()
   }
 
-  updateScatterLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1, minSpeed = 1, maxSpeed = 1 }) {
+  updateScatterLabels({
+    minPitchSemitones = 0,
+    maxPitchSemitones = 0,
+    pitchBiasSemitones = 0,
+    minVolume = 1,
+    maxVolume = 1,
+    minSpeed = 1,
+    maxSpeed = 1
+  }) {
     this.els.scatterPitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
     this.els.scatterPitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
+    this.els.scatterPitchBiasValue.textContent = `${pitchBiasSemitones > 0 ? '+' : ''}${pitchBiasSemitones} st`
     this.els.scatterVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
     this.els.scatterVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
     this.els.scatterSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
@@ -3069,15 +3131,22 @@ ${mixFluctuationMarkup('group')}
     this.updateSaveButtonState()
   }
 
-  // When a "Fully random" toggle is on, its own min/max inputs no longer do
-  // anything - grey them out so that's visible rather than a silent no-op.
+  // When a "Fully random" toggle is on, its own min/max (and Bias) inputs no
+  // longer do anything - grey them out so that's visible rather than a
+  // silent no-op. The Bias number field is further gated on its own "Bias
+  // toward a value" checkbox, which is itself moot (and greyed out) whenever
+  // Fully random already overrides it.
   updateScatterRangeDisabled() {
     const gapRandom = this.els.scatterGapFullyRandom.checked
     this.els.scatterGapMin.disabled = gapRandom
     this.els.scatterGapMax.disabled = gapRandom
+    this.els.scatterGapBiasEnabled.disabled = gapRandom
+    this.els.scatterGapBias.disabled = gapRandom || !this.els.scatterGapBiasEnabled.checked
     const pitchRandom = this.els.scatterPitchFullyRandom.checked
     this.els.scatterPitchMin.disabled = pitchRandom
     this.els.scatterPitchMax.disabled = pitchRandom
+    this.els.scatterPitchBiasEnabled.disabled = pitchRandom
+    this.els.scatterPitchBias.disabled = pitchRandom || !this.els.scatterPitchBiasEnabled.checked
   }
 
   currentScheduleConfig() {
@@ -3093,6 +3162,8 @@ ${mixFluctuationMarkup('group')}
       minPitchSemitones: Number(this.els.schedulePitchMin.value),
       maxPitchSemitones: Number(this.els.schedulePitchMax.value),
       pitchFullyRandom: this.els.schedulePitchFullyRandom.checked,
+      pitchBiasEnabled: this.els.schedulePitchBiasEnabled.checked,
+      pitchBiasSemitones: Number(this.els.schedulePitchBias.value),
       minVolume: Number(this.els.scheduleVolumeMin.value) / 100,
       maxVolume: Number(this.els.scheduleVolumeMax.value) / 100,
       minSpeed: Number(this.els.scheduleSpeedMin.value) / 100,
@@ -3109,6 +3180,8 @@ ${mixFluctuationMarkup('group')}
     minPitchSemitones = 0,
     maxPitchSemitones = 0,
     pitchFullyRandom = false,
+    pitchBiasEnabled = false,
+    pitchBiasSemitones = 0,
     minVolume = 1,
     maxVolume = 1,
     minSpeed = 1,
@@ -3125,19 +3198,30 @@ ${mixFluctuationMarkup('group')}
     this.els.schedulePitchMin.value = String(minPitchSemitones)
     this.els.schedulePitchMax.value = String(maxPitchSemitones)
     this.els.schedulePitchFullyRandom.checked = Boolean(pitchFullyRandom)
+    this.els.schedulePitchBiasEnabled.checked = Boolean(pitchBiasEnabled)
+    this.els.schedulePitchBias.value = String(pitchBiasSemitones)
     this.els.scheduleVolumeMin.value = String(Math.round(minVolume * 100))
     this.els.scheduleVolumeMax.value = String(Math.round(maxVolume * 100))
     this.els.scheduleSpeedMin.value = String(Math.round(minSpeed * 100))
     this.els.scheduleSpeedMax.value = String(Math.round(maxSpeed * 100))
     this.els.scheduleFadeIn.value = String(fadeInMs)
     this.els.scheduleFadeOut.value = String(fadeOutMs)
-    this.updateScheduleLabels({ minPitchSemitones, maxPitchSemitones, minVolume, maxVolume, minSpeed, maxSpeed })
+    this.updateScheduleLabels({ minPitchSemitones, maxPitchSemitones, pitchBiasSemitones, minVolume, maxVolume, minSpeed, maxSpeed })
     this.updateSchedulePitchDisabled()
   }
 
-  updateScheduleLabels({ minPitchSemitones = 0, maxPitchSemitones = 0, minVolume = 1, maxVolume = 1, minSpeed = 1, maxSpeed = 1 }) {
+  updateScheduleLabels({
+    minPitchSemitones = 0,
+    maxPitchSemitones = 0,
+    pitchBiasSemitones = 0,
+    minVolume = 1,
+    maxVolume = 1,
+    minSpeed = 1,
+    maxSpeed = 1
+  }) {
     this.els.schedulePitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
     this.els.schedulePitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
+    this.els.schedulePitchBiasValue.textContent = `${pitchBiasSemitones > 0 ? '+' : ''}${pitchBiasSemitones} st`
     this.els.scheduleVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
     this.els.scheduleVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
     this.els.scheduleSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
@@ -3148,6 +3232,8 @@ ${mixFluctuationMarkup('group')}
     const pitchRandom = this.els.schedulePitchFullyRandom.checked
     this.els.schedulePitchMin.disabled = pitchRandom
     this.els.schedulePitchMax.disabled = pitchRandom
+    this.els.schedulePitchBiasEnabled.disabled = pitchRandom
+    this.els.schedulePitchBias.disabled = pitchRandom || !this.els.schedulePitchBiasEnabled.checked
   }
 
   applyScheduleControls() {
@@ -3278,9 +3364,13 @@ ${mixFluctuationMarkup('group')}
         minGapSeconds: scatter.minGapSeconds ?? 5,
         maxGapSeconds: scatter.maxGapSeconds ?? 35,
         gapFullyRandom: Boolean(scatter.gapFullyRandom),
+        gapBiasEnabled: Boolean(scatter.gapBiasEnabled),
+        gapBiasSeconds: scatter.gapBiasSeconds ?? 20,
         minPitchSemitones: scatter.minPitchSemitones ?? 0,
         maxPitchSemitones: scatter.maxPitchSemitones ?? 0,
         pitchFullyRandom: Boolean(scatter.pitchFullyRandom),
+        pitchBiasEnabled: Boolean(scatter.pitchBiasEnabled),
+        pitchBiasSemitones: scatter.pitchBiasSemitones ?? 0,
         minVolume: scatter.minVolume ?? 1,
         maxVolume: scatter.maxVolume ?? 1,
         minSpeed: scatter.minSpeed ?? 1,
@@ -3296,6 +3386,8 @@ ${mixFluctuationMarkup('group')}
         minPitchSemitones: schedule?.minPitchSemitones ?? 0,
         maxPitchSemitones: schedule?.maxPitchSemitones ?? 0,
         pitchFullyRandom: Boolean(schedule?.pitchFullyRandom),
+        pitchBiasEnabled: Boolean(schedule?.pitchBiasEnabled),
+        pitchBiasSemitones: schedule?.pitchBiasSemitones ?? 0,
         minVolume: schedule?.minVolume ?? 1,
         maxVolume: schedule?.maxVolume ?? 1,
         minSpeed: schedule?.minSpeed ?? 1,
@@ -3795,9 +3887,13 @@ ${mixFluctuationMarkup('group')}
       minGapSeconds: 5,
       maxGapSeconds: 35,
       gapFullyRandom: false,
+      gapBiasEnabled: false,
+      gapBiasSeconds: 20,
       minPitchSemitones: 0,
       maxPitchSemitones: 0,
       pitchFullyRandom: false,
+      pitchBiasEnabled: false,
+      pitchBiasSemitones: 0,
       minVolume: 1,
       maxVolume: 1,
       minSpeed: 1,
@@ -3813,6 +3909,8 @@ ${mixFluctuationMarkup('group')}
       minPitchSemitones: 0,
       maxPitchSemitones: 0,
       pitchFullyRandom: false,
+      pitchBiasEnabled: false,
+      pitchBiasSemitones: 0,
       minVolume: 1,
       maxVolume: 1,
       minSpeed: 1,
