@@ -47,7 +47,7 @@ function resolveTiming(axis) {
     return {
       changeMinSeconds: Math.max(0.1, Math.min(lo, hi)),
       changeMaxSeconds: Math.max(Math.max(0.1, Math.min(lo, hi)), hi),
-      transitionSeconds: Math.max(0.2, num(axis.transitionSeconds, 8))
+      transitionSeconds: Math.max(0, num(axis.transitionSeconds, 8))
     }
   }
   if (Number.isFinite(axis?.changeRate) || Number.isFinite(axis?.transition)) {
@@ -76,7 +76,7 @@ export function sampleVolumeWalk(config, durationSeconds, rng = Math.random) {
   const timing = resolveTiming(config)
   const changeMin = timing.changeMinSeconds
   const changeSpan = timing.changeMaxSeconds - timing.changeMinSeconds
-  const tau = Math.max(0.05, timing.transitionSeconds / 3)
+  const tau = Math.max(0, timing.transitionSeconds / 3)
 
   const jitteredInterval = () => changeMin + rng() * changeSpan
   const pickTarget = () => {

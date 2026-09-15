@@ -62,7 +62,7 @@ export function resolveFluctuationTiming(axis) {
     return {
       changeMinSeconds: Math.min(lo, hi),
       changeMaxSeconds: Math.max(lo, hi),
-      transitionSeconds: clampNum(axis.transitionSeconds, 0.2, 120, 8)
+      transitionSeconds: clampNum(axis.transitionSeconds, 0, 120, 8)
     }
   }
   if (Number.isFinite(axis?.changeRate) || Number.isFinite(axis?.transition)) {
@@ -117,7 +117,9 @@ export class Modulator {
     }
     this.changeMinSeconds = Math.max(0.1, Math.min(changeMinSeconds, changeMaxSeconds))
     this.changeMaxSeconds = Math.max(this.changeMinSeconds, changeMinSeconds, changeMaxSeconds)
-    this.tau = Math.max(0.05, transitionSeconds / 3)
+    // 0 means instant (no glide) - see _tick(), which special-cases tau <= 0
+    // as a direct snap rather than flooring it to a fast-but-not-zero glide.
+    this.tau = Math.max(0, transitionSeconds / 3)
     // Keep an in-flight target inside any freshly narrowed bounds.
     this.target = Math.min(this.max, Math.max(this.min, this.target))
   }
@@ -164,7 +166,7 @@ export class Modulator {
       this.target = this._pickTarget()
       this._nextChangeAt = now + this._nextIntervalMs()
     }
-    const k = 1 - Math.exp(-dt / this.tau)
+    const k = this.tau > 0 ? 1 - Math.exp(-dt / this.tau) : 1
     this.value += (this.target - this.value) * k
     this.onValue(this.value)
   }

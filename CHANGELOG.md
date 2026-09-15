@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.199 — Fluctuation's "Transition" can now be set to 0 for an instant change
+
+- BUG FIX: Fluctuation's "Transition" field (how long volume/pitch takes to glide to a new random value) couldn't actually be set to 0 — the field silently floored it to a small-but-not-zero glide, so "instant" was never really instant. 0 now means exactly that: the value jumps straight to the new target with no glide at all. Applies to live Mixer playback and to exports.
+
 ## v0.1.198 — Watch folders now watch subfolders too, as tags
 
 - A watched folder now looks inside its subfolders too, not just files dropped directly into it — and each subfolder's name is automatically added as a tag to whatever's inside it. A file in `Rain/Heavy/thunder.wav` gets tagged both "Rain" and "Heavy"; a file dropped straight into the watched folder itself still gets no tag, same as before. Works both for files already there when you add the folder and for anything dropped in later while the app is running.
