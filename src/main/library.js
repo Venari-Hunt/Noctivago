@@ -10,6 +10,7 @@ import { runYtDlp } from './ytdlp/runYtDlp.js'
 import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
 import { downloadPreviewToWav } from './freesound/download.js'
 import { getSettings } from './settings.js'
+import { tagsForWatchedFile } from './watchFolderTags.js'
 import { MAX_BUFFER_CLIP_SECONDS, DEFAULT_SOUND_VOLUME, applySoundOverride } from '../shared/constants.js'
 
 const store = new Store({
@@ -223,26 +224,41 @@ function hasSoundForPath(filePath) {
   return store.get('sounds').some((s) => normalizePath(s.originalPath) === normalized)
 }
 
-export function importIfNew(filePath, keepCopy) {
+// `tags` (v0.1.198, "watch-folder subfolders as tags"): applied after the
+// import itself, mirroring the existing manual "Add folder as tag" dialog's
+// own two-step shape (import, then a separate updateTags call) rather than
+// threading tags through addSound - the only caller that ever has tags to
+// apply at import time is a watched folder's own subfolder structure (see
+// scanWatchedFolder/watchFolders.js below); every other import path already
+// passes nothing and is unaffected.
+export function importIfNew(filePath, keepCopy, tags = []) {
   if (!AUDIO_EXTENSIONS.includes(path.extname(filePath).slice(1).toLowerCase())) return null
   if (hasSoundForPath(filePath)) return null
-  return addSound({ path: filePath, name: path.parse(filePath).name, keepCopy })
+  const sound = addSound({ path: filePath, name: path.parse(filePath).name, keepCopy })
+  return tags.length > 0 ? updateTags(sound.id, tags) : sound
 }
 
-// Non-recursive, matching addFolderSounds' existing convention. Used both
-// for the initial scan when a folder starts being watched and, via
-// watchFolders.js's startWatching(), as a scan-on-startup so files dropped
-// in while the app was closed are still picked up (fs.watch only reports
-// changes while it's actively running).
+// Recursive (v0.1.198 - was non-recursive, matching addFolderSounds' own
+// flat convention, until the owner asked for watched folders specifically
+// to walk subfolders too and use them as tags). `recursive: true` on
+// readdirSync (Node 20.12+) walks the whole subtree in one call; each
+// Dirent's own `parentPath` (the absolute directory actually containing it,
+// however deep) is what tagsForWatchedFile compares back against the watch
+// root - readdirSync itself doesn't expose depth any other way once results
+// come back flattened like this. Used both for the initial scan when a
+// folder starts being watched and, via watchFolders.js's startWatching(),
+// as a scan-on-startup so files dropped in while the app was closed (at any
+// depth) are still picked up (fs.watch only reports changes while it's
+// actively running).
 export function scanWatchedFolder(entry) {
   if (!fs.existsSync(entry.path)) return []
-  const files = fs
-    .readdirSync(entry.path, { withFileTypes: true })
-    .map((e) => (e.isFile() ? path.join(entry.path, e.name) : null))
-    .filter(Boolean)
+  const dirents = fs.readdirSync(entry.path, { withFileTypes: true, recursive: true })
   const added = []
-  for (const filePath of files) {
-    const sound = importIfNew(filePath, entry.keepCopy)
+  for (const dirent of dirents) {
+    if (!dirent.isFile()) continue
+    const containingDir = dirent.parentPath
+    const filePath = path.join(containingDir, dirent.name)
+    const sound = importIfNew(filePath, entry.keepCopy, tagsForWatchedFile(entry.path, containingDir))
     if (sound) added.push(sound)
   }
   return added
