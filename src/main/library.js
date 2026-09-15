@@ -1034,18 +1034,55 @@ function effectiveCrossfadeSeconds(entry) {
 // the moment a different preset (or no preset) is the one asking. Every
 // existing caller that omits the second argument keeps today's exact
 // baseline-only behavior.
-export function getLoopClipPathForId(id, effectiveOverride = null) {
+//
+// `requireFresh` (BUG FIX, v0.1.197): this function serves two genuinely
+// different questions that got conflated. (1) "Is the cached clip still
+// valid to silently *substitute* for the real thing" - true for the
+// Mixer's own buffer-mode decision and for export deciding whether it can
+// skip re-baking (src/main/ipc.js's export:run) - a stale clip must never
+// be reused there, since it would silently play/export the wrong audio.
+// (2) "Does *a* baked clip exist on disk to literally play, stale or not" -
+// what the Remix plugin's "Saved audio" toggle needs (BakedClipPreview.js -
+// its own doc comment: "switching to Saved is always 100% truthful to what
+// the Mixer will really play" *once fresh*, but v0.1.142 deliberately made
+// the toggle sticky/staleness-tolerant so the tool keeps working through an
+// edit, showing a "stale" indicator instead of going dead). Both questions
+// used to share this one strict check, reached from the exact same
+// sound://<id>?variant=clip URL both the Mixer and Remix request - so the
+// instant any field diverged from the last bake (essentially any edit,
+// unsaved or not yet re-baked), the URL 404'd and the audio element failed
+// with a demuxer error, even though the Remix UI still showed the toggle as
+// enabled (its own client-side savedPreviewEligible() only checks
+// loopClipReady, by design - staleness is meant to be tolerated, not
+// disqualifying). Reported directly: "never works as it should... happens
+// on every sound, essentially always"; a small edit + re-save "worked"
+// only because re-saving re-synced the two sides, not because anything was
+// actually fixed. Reproduced live via CDP: loading an already-saved sound
+// whose baseline filters had drifted from its last real bake (no edit made
+// in this session at all) showed the toggle enabled but its <audio>
+// element in DEMUXER_ERROR_COULD_NOT_OPEN / NETWORK_NO_SOURCE, tracing back
+// to this exact function returning null. Fixed by splitting the two
+// questions apart: `requireFresh: false` (the sound:// protocol handler's
+// own call, serving both the Mixer's and Remix's requests) only requires
+// the clip to exist; export's direct call (ipc.js) keeps the strict,
+// staleness-checked default so a stale clip is still never silently reused
+// there. Safe for the Mixer too - it already runs the identical staleness
+// comparison itself, client-side, in loopClipEligible() before ever
+// choosing to fetch this URL, so relaxing the server-side gate never lets
+// the Mixer receive a clip it wouldn't otherwise have asked for.
+export function getLoopClipPathForId(id, effectiveOverride = null, { requireFresh = true } = {}) {
   const sounds = store.get('sounds')
   const baseline = sounds.find((s) => s.id === id)
   if (!baseline) return null
   const entry = applySoundOverride(baseline, effectiveOverride)
   const eligible =
     entry.loopClipReady &&
-    entry.loopClipStart === entry.loopStart &&
-    entry.loopClipEnd === entry.loopEnd &&
-    JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
-    entry.loopClipCrossfadeSeconds === effectiveCrossfadeSeconds(entry) &&
-    normalizeSpeedPitch(entry.loopClipSpeedPitch) === normalizeSpeedPitch(entry.speedPitch)
+    (!requireFresh ||
+      (entry.loopClipStart === entry.loopStart &&
+        entry.loopClipEnd === entry.loopEnd &&
+        JSON.stringify(entry.loopClipFilters) === JSON.stringify(entry.filters) &&
+        entry.loopClipCrossfadeSeconds === effectiveCrossfadeSeconds(entry) &&
+        normalizeSpeedPitch(entry.loopClipSpeedPitch) === normalizeSpeedPitch(entry.speedPitch)))
   if (!eligible) return null
   const clipPath = getLoopClipPath(id)
   return fs.existsSync(clipPath) ? clipPath : null

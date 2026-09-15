@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.197 — Fixed the "Saved audio" preview in Remix
+
+- BUG FIX: the Live edit / Saved audio toggle in Remix looked available but the Saved audio side often failed to actually play — reported directly as "never works as it should," happening on almost every sound, with the only workaround being a small edit and re-save. Root cause: Saved audio's file request used the same strict check the app uses to decide whether the Mixer can trust a cached clip, so it silently refused to serve the file the moment anything (even an unrelated field) no longer matched exactly what was last baked — which is nearly always true while you're actively editing. Saved audio is supposed to keep working through that (it's meant to show you the last real save, marked as a bit behind if it is) — now it does.
+
 ## v0.1.196 — Self-review: two data-integrity bugs in the last two releases
 
 - BUG FIX: switching to a different sound in Remix right after saving/autosaving one could, in rare timing, corrupt the newly-opened sound's in-memory state with the previous sound's save results. Fixed so a save always finishes correctly for the sound it actually started on, no matter what you switch to while it's in flight.
