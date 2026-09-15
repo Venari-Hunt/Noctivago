@@ -279,19 +279,41 @@ export function removeWatchedFolder(id) {
   store.set('watchedFolders', folders.filter((f) => f.id !== id))
 }
 
-// Adds every audio file directly inside folderPath (non-recursive) to the
-// library via the same addSound() every single-file add goes through.
-// Returns the added entries so the caller can build a preset from them -
-// this function only touches the library, never presets.js, so it stays
-// reusable for a plain "add several files at once" case too if that's ever
-// wanted without the preset step.
-export function addFolderSounds(folderPath, { keepCopy }) {
-  const files = fs
-    .readdirSync(folderPath, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && AUDIO_EXTENSIONS.includes(path.extname(entry.name).slice(1).toLowerCase()))
-    .map((entry) => path.join(folderPath, entry.name))
-
-  return files.map((filePath) => addSound({ path: filePath, name: path.parse(filePath).name, keepCopy }))
+// Adds every audio file inside folderPath to the library via the same
+// addSound() every single-file add goes through. Returns the added entries
+// so the caller can build a preset from them - this function only touches
+// the library, never presets.js, so it stays reusable for a plain "add
+// several files at once" case too if that's ever wanted without the preset
+// step.
+//
+// Recursive + auto-tags by subfolder (v0.1.203 - was flat/non-recursive
+// with no tag derivation at all, until the owner asked the two manual
+// "Add folder as tag/preset" dialogs to match watch-folder import's own
+// v0.1.198 behavior). Reuses the same hardened walkFilesRecursive (cycle
+// protection, chunked/async - see folderWalk.js) and tagsForWatchedFile
+// derivation scanWatchedFolder already uses, rather than a second copy;
+// tags are applied the same additive way importIfNew already applies a
+// watched folder's own tags (updateTags after addSound), so a file found
+// directly in folderPath itself (no subfolder) still gets no tag, same as
+// before. Resolved open design question from the Board: the dialogs' own
+// explicit typed tag (applied separately by the caller, tabs/mixer/
+// index.js) stays exactly as it was and layers on *top* of these
+// auto-derived ones, never replacing them - both call sites already apply
+// their tag additively (`updateTags(id, [...entry.tags, tag])`), so a
+// folder named "Rain" containing "Heavy"/"Light" subfolders now sensibly
+// ends up tagged "Rain" *and* "Heavy"/"Light" rather than forcing a choice
+// between the manual tag and the derived ones.
+export async function addFolderSounds(folderPath, { keepCopy }) {
+  const added = []
+  await walkFilesRecursive(folderPath, (dirent, containingDir) => {
+    if (!AUDIO_EXTENSIONS.includes(path.extname(dirent.name).slice(1).toLowerCase())) return
+    const filePath = path.join(containingDir, dirent.name)
+    const tags = tagsForWatchedFile(folderPath, containingDir)
+    let sound = addSound({ path: filePath, name: path.parse(filePath).name, keepCopy })
+    if (tags.length > 0) sound = updateTags(sound.id, tags)
+    added.push(sound)
+  })
+  return added
 }
 
 // Opt-in background bake for the eagerlyBakeOnImport setting - kicked off
