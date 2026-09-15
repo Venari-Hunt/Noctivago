@@ -2066,26 +2066,49 @@ document.addEventListener('library:linked', refreshList)
   // listeners now funnel the event's `loopClip` payload through this same
   // helper so the shared baseline record - which every path's eligibility
   // check reads from - always reflects the bake that actually just happened.
-  const patchBaselineLoopClip = (soundId, loopClip) => {
-    if (!loopClip) return
-    const baseline = state.baselineById.get(soundId)
-    if (!baseline) return
-    state.baselineById.set(soundId, {
-      ...baseline,
-      loopClipReady: loopClip.ready,
-      loopClipStart: loopClip.start,
-      loopClipEnd: loopClip.end,
-      loopClipFilters: loopClip.filters,
-      loopClipCrossfadeSeconds: loopClip.crossfadeSeconds,
-      loopClipSpeedPitch: loopClip.speedPitch
-    })
-  }
+  //
+  // A pure field-mapper rather than a get-spread-set itself (self-review,
+  // v0.1.196: the original shape did its own get+set here, then the
+  // sound-baseline-changed listener below did a *second* get+set of the
+  // same entry for its own `patch` fields - two full object clones and two
+  // Map writes per event where one merged spread does) - each call site
+  // folds this into its own single state.baselineById.set().
+  const loopClipPatchFields = (loopClip) =>
+    loopClip
+      ? {
+          loopClipReady: loopClip.ready,
+          loopClipStart: loopClip.start,
+          loopClipEnd: loopClip.end,
+          loopClipFilters: loopClip.filters,
+          loopClipCrossfadeSeconds: loopClip.crossfadeSeconds,
+          loopClipSpeedPitch: loopClip.speedPitch
+        }
+      : {}
   window.addEventListener('noctivago:sound-override-changed', (e) => {
     const { presetId, soundId, overrides, loopClip } = e.detail ?? {}
-    if (!soundId || presetId !== state.activePresetId) return
+    if (!soundId) return
+    // BUG FIX (self-review, v0.1.196): this used to sit behind the
+    // presetId !== state.activePresetId check below, so saving an override
+    // for a preset that *isn't* the one currently loaded in the Mixer never
+    // patched the baseline's own loopClip* bookkeeping - even though the
+    // bake it describes always lands on the one shared clip file every
+    // preset's override reads from (see patchBaselineLoopClip's own comment
+    // above). Left unpatched, the baseline's stale loopClipSpeedPitch/
+    // Filters could coincidentally still match whatever preset *is* active,
+    // making loopClipEligible wrongly report the bake valid - so buffer mode
+    // would play a clip that now actually contains a *different* preset's
+    // baked settings, with no staleness indicator to catch it. The physical
+    // file was overwritten regardless of which preset is active, so this
+    // must run unconditionally; only the live-reconcile below (which only
+    // matters for whatever's actually audible right now) stays gated on the
+    // active preset.
+    if (loopClip) {
+      const overrideBaseline = state.baselineById.get(soundId)
+      if (overrideBaseline) state.baselineById.set(soundId, { ...overrideBaseline, ...loopClipPatchFields(loopClip) })
+    }
+    if (presetId !== state.activePresetId) return
     const item = state.activePresetSounds.find((s) => s.soundId === soundId)
     if (item) item.overrides = overrides
-    patchBaselineLoopClip(soundId, loopClip)
     recomputeEffectiveLibrary()
     const entry = state.library.find((s) => s.id === soundId)
     if (entry) reconcileSource(entry)
@@ -2111,8 +2134,7 @@ document.addEventListener('library:linked', refreshList)
     if (!soundId) return
     const baseline = state.baselineById.get(soundId)
     if (!baseline) return
-    state.baselineById.set(soundId, { ...baseline, ...patch })
-    patchBaselineLoopClip(soundId, loopClip)
+    state.baselineById.set(soundId, { ...baseline, ...patch, ...loopClipPatchFields(loopClip) })
     recomputeEffectiveLibrary()
     const entry = state.library.find((s) => s.id === soundId)
     if (entry) reconcileSource(entry)

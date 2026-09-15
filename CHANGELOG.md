@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.196 — Self-review: two data-integrity bugs in the last two releases
+
+- BUG FIX: switching to a different sound in Remix right after saving/autosaving one could, in rare timing, corrupt the newly-opened sound's in-memory state with the previous sound's save results. Fixed so a save always finishes correctly for the sound it actually started on, no matter what you switch to while it's in flight.
+- BUG FIX: editing a sound's settings under a preset that isn't the one currently loaded in the Mixer could leave a stale bookkeeping record behind, which in rare cases could make the Mixer play back the wrong preset's baked audio for that sound. Fixed so this always stays in sync regardless of which preset is loaded.
+- Neither was reported — both were caught in a self-review of the last two releases before anyone hit them.
+
 ## v0.1.195 — Random Interval/Scheduled: bias a random pick toward a value
 
 - Random Interval sounds' gap and pitch ranges, and Scheduled sounds' pitch range, now have an optional "Bias toward a value" checkbox — when on, one value inside your min/max range wins noticeably more often than a plain random pick, instead of every value in the range being equally likely. Off by default, so nothing changes unless you turn it on.
