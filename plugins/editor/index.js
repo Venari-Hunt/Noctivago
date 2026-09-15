@@ -232,9 +232,12 @@ function cloneMixFilters(obj, neutral) {
 // controls are <idp>-changemin / -changemax / -transition (number inputs, in
 // seconds) and <idp>-fullrandom (checkbox).
 // A fluctuation seconds field - positive finite, else the fallback.
-function flucSeconds(raw, fallback) {
+// `allowZero` is for Transition only, where 0 is a valid, meaningful value
+// (instant/no glide) rather than an invalid one to fall back away from.
+function flucSeconds(raw, fallback, allowZero = false) {
   const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? n : fallback
+  if (!Number.isFinite(n)) return fallback
+  return (allowZero ? n >= 0 : n > 0) ? n : fallback
 }
 
 function fluctuationTimingMarkup(idp) {
@@ -247,7 +250,7 @@ function fluctuationTimingMarkup(idp) {
                   <span class="editor-filter-value">s</span>
                 </label>
                 <label><span>Transition</span>
-                  <input id="${idp}-transition" class="editor-fluctuation-num" type="number" min="0.2" max="120" step="0.5" value="8" />
+                  <input id="${idp}-transition" class="editor-fluctuation-num" type="number" min="0" max="120" step="0.5" value="8" />
                   <span class="editor-filter-value">s</span>
                 </label>
                 <label class="editor-fluctuation-fullrandom">
@@ -2923,7 +2926,7 @@ ${mixFluctuationMarkup('group')}
       bias: v.bias,
       changeMinSeconds: flucSeconds(this.els[`${key}ChangeMin`].value, 6),
       changeMaxSeconds: flucSeconds(this.els[`${key}ChangeMax`].value, 14),
-      transitionSeconds: flucSeconds(this.els[`${key}Transition`].value, 8)
+      transitionSeconds: flucSeconds(this.els[`${key}Transition`].value, 8, true)
     }
   }
 
@@ -4994,7 +4997,7 @@ ${mixFluctuationMarkup('group')}
         bias: v.bias,
         changeMinSeconds: flucSeconds(els.changeMinEl.value, 6),
         changeMaxSeconds: flucSeconds(els.changeMaxEl.value, 14),
-        transitionSeconds: flucSeconds(els.transEl.value, 8)
+        transitionSeconds: flucSeconds(els.transEl.value, 8, true)
       }
     }
   }

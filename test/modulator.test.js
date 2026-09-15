@@ -147,6 +147,19 @@ describe('Modulator', () => {
     }
   })
 
+  test('transitionSeconds: 0 snaps to a new target on the very next tick, no glide', () => {
+    const { mod, samples } = makeModulator({ transitionSeconds: 0 })
+    mod.running = true
+    mod.value = mod.min
+    mod.target = mod.min
+    mod._nextChangeAt = Infinity
+    mod._lastTick = performance.now() - 16 // one ordinary rAF-ish tick
+    mod.target = mod.max // simulate a new target having just been picked
+    mod._tick()
+    assert.ok(samples.length === 1)
+    assert.ok(Math.abs(samples[0] - mod.max) < 1e-9, `expected an exact snap to ${mod.max}, got ${samples[0]}`)
+  })
+
   test('configure keeps an in-flight target inside freshly narrowed bounds', () => {
     const { mod } = makeModulator({ min: 0, max: 2, bias: 1 })
     mod.target = 1.9

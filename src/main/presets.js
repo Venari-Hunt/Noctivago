@@ -56,7 +56,7 @@ function normalizeMixFluctuation(input) {
     const cHi = clamp(vol.changeMaxSeconds, 0.2, 300, 14)
     changeMinSeconds = Math.min(cLo, cHi)
     changeMaxSeconds = Math.max(cLo, cHi)
-    transitionSeconds = clamp(vol.transitionSeconds, 0.2, 120, 8)
+    transitionSeconds = clamp(vol.transitionSeconds, 0, 120, 8)
   } else {
     const r = clamp(vol.changeRate, 0, 1, 0.5)
     const t = clamp(vol.transition, 0, 1, 0.5)
