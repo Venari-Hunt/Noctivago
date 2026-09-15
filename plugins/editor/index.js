@@ -233,8 +233,11 @@ function cloneMixFilters(obj, neutral) {
 // seconds) and <idp>-fullrandom (checkbox).
 // A fluctuation seconds field - positive finite, else the fallback.
 // `allowZero` is for Transition only, where 0 is a valid, meaningful value
-// (instant/no glide) rather than an invalid one to fall back away from.
+// (instant/no glide) rather than an invalid one to fall back away from. A
+// blank field must still fall back rather than read as 0 - Number('') is 0,
+// so that check comes before the Number() coercion, not after it.
 function flucSeconds(raw, fallback, allowZero = false) {
+  if (typeof raw === 'string' && raw.trim() === '') return fallback
   const n = Number(raw)
   if (!Number.isFinite(n)) return fallback
   return (allowZero ? n >= 0 : n > 0) ? n : fallback

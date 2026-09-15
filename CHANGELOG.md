@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.200 — Self-review: fixed a real edge case in v0.1.199's own fix
+
+- BUG FIX: caught in a self-review of v0.1.199 before anyone hit it — clearing the Fluctuation "Transition" field entirely (instead of typing a new number) could silently save it as instant (0) rather than falling back to the default, because an empty field and a typed 0 were read as the same thing. Now only an actual typed 0 means instant; an empty field falls back correctly.
+
 ## v0.1.199 — Fluctuation's "Transition" can now be set to 0 for an instant change
 
 - BUG FIX: Fluctuation's "Transition" field (how long volume/pitch takes to glide to a new random value) couldn't actually be set to 0 — the field silently floored it to a small-but-not-zero glide, so "instant" was never really instant. 0 now means exactly that: the value jumps straight to the new target with no glide at all. Applies to live Mixer playback and to exports.
