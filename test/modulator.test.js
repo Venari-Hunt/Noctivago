@@ -129,53 +129,6 @@ describe('Modulator', () => {
     assert.ok(sawNearMax, 'fullyRandom never sampled near the maximum in 5000 draws')
   })
 
-  // pickBiasedValue is the standalone extraction _pickTarget itself now
-  // calls (see Modulator.js) - also reused directly by ScatterSoundSource.js/
-  // ScheduledSoundSource.js's per-shot pitch/gap "Bias toward a value"
-  // feature (Board backlog, owner inbox 2026-09-14), so it's tested here on
-  // its own rather than only indirectly through the Modulator class.
-  test('pickBiasedValue always stays within [min, max]', () => {
-    for (let i = 0; i < 2000; i++) {
-      const v = pickBiasedValue(-12, 12, 5)
-      assert.ok(v >= -12 - 1e-9 && v <= 12 + 1e-9, `value ${v} out of [-12, 12]`)
-    }
-  })
-
-  test('pickBiasedValue clusters near bias far more often than a plain uniform pick would', () => {
-    const min = 0
-    const max = 100
-    const bias = 80
-    const windowLo = 70
-    const windowHi = 90 // a 20-wide window centered on bias - 20% of the full span
-    const n = 4000
-    let inWindow = 0
-    for (let i = 0; i < n; i++) {
-      const v = pickBiasedValue(min, max, bias)
-      if (v >= windowLo && v <= windowHi) inWindow++
-    }
-    // A uniform pick would land in this 20-wide window ~20% of the time
-    // regardless of bias; the biased pick should land there much more often
-    // since values are meant to sit near bias most of the time.
-    const fraction = inWindow / n
-    assert.ok(fraction > 0.35, `only ${fraction * 100}% of draws fell in the near-bias window (uniform baseline would be ~20%)`)
-  })
-
-  test('pickBiasedValue handles an off-center bias reaching both edges', () => {
-    let sawNearMin = false
-    let sawNearMax = false
-    for (let i = 0; i < 5000; i++) {
-      const v = pickBiasedValue(0, 10, 8)
-      if (v < 0.5) sawNearMin = true
-      if (v > 9.5) sawNearMax = true
-    }
-    assert.ok(sawNearMin, 'never sampled near the far minimum in 5000 draws')
-    assert.ok(sawNearMax, 'never sampled near the (closer) maximum in 5000 draws')
-  })
-
-  test('pickBiasedValue with min === max === bias returns that value (no degenerate NaN/Infinity)', () => {
-    assert.strictEqual(pickBiasedValue(5, 5, 5), 5)
-  })
-
   test('value glides toward target over repeated ticks and stays in bounds', () => {
     const { mod, samples } = makeModulator()
     mod.running = true // _tick() no-ops unless running (normally set by start())
@@ -204,4 +157,55 @@ describe('Modulator', () => {
 
 test('FLUCTUATION_PITCH_RANGE is the documented +-6 semitones', () => {
   assert.equal(FLUCTUATION_PITCH_RANGE, 6)
+})
+
+// pickBiasedValue is the standalone extraction _pickTarget itself now calls
+// (see Modulator.js) - also reused directly by ScatterSoundSource.js/
+// ScheduledSoundSource.js's per-shot pitch/gap "Bias toward a value" feature
+// (Board backlog, owner inbox 2026-09-14). It's a standalone export like
+// resolveFluctuationTiming/normalizeFluctuationAxis/fluctuationKey above, so
+// it gets its own top-level describe block rather than sitting under
+// Modulator's own (self-review, v0.1.196: it was previously nested there).
+describe('pickBiasedValue', () => {
+  test('always stays within [min, max]', () => {
+    for (let i = 0; i < 2000; i++) {
+      const v = pickBiasedValue(-12, 12, 5)
+      assert.ok(v >= -12 - 1e-9 && v <= 12 + 1e-9, `value ${v} out of [-12, 12]`)
+    }
+  })
+
+  test('clusters near bias far more often than a plain uniform pick would', () => {
+    const min = 0
+    const max = 100
+    const bias = 80
+    const windowLo = 70
+    const windowHi = 90 // a 20-wide window centered on bias - 20% of the full span
+    const n = 4000
+    let inWindow = 0
+    for (let i = 0; i < n; i++) {
+      const v = pickBiasedValue(min, max, bias)
+      if (v >= windowLo && v <= windowHi) inWindow++
+    }
+    // A uniform pick would land in this 20-wide window ~20% of the time
+    // regardless of bias; the biased pick should land there much more often
+    // since values are meant to sit near bias most of the time.
+    const fraction = inWindow / n
+    assert.ok(fraction > 0.35, `only ${fraction * 100}% of draws fell in the near-bias window (uniform baseline would be ~20%)`)
+  })
+
+  test('handles an off-center bias reaching both edges', () => {
+    let sawNearMin = false
+    let sawNearMax = false
+    for (let i = 0; i < 5000; i++) {
+      const v = pickBiasedValue(0, 10, 8)
+      if (v < 0.5) sawNearMin = true
+      if (v > 9.5) sawNearMax = true
+    }
+    assert.ok(sawNearMin, 'never sampled near the far minimum in 5000 draws')
+    assert.ok(sawNearMax, 'never sampled near the (closer) maximum in 5000 draws')
+  })
+
+  test('with min === max === bias returns that value (no degenerate NaN/Infinity)', () => {
+    assert.strictEqual(pickBiasedValue(5, 5, 5), 5)
+  })
 })

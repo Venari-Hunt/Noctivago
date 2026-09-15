@@ -4051,6 +4051,26 @@ ${mixFluctuationMarkup('group')}
   async performSave(trigger) {
     const savedWord = trigger === 'auto' ? 'Auto-saved' : 'Saved'
     const id = this.currentEntry.id
+    // BUG FIX (self-review, v0.1.196): everything this async function reads
+    // off `this` after an `await` - `this.currentEntry`, `this.editingPresetId`,
+    // `this.fluctuation` - can legitimately change mid-save, since nothing
+    // stops the user from clicking a different sound in the Remix picker
+    // (loadSound() reassigns these immediately, with no lock against an
+    // in-flight save/autosave; `_saveInProgress` only guards two overlapping
+    // save() calls, not a save racing a sound switch). Without capturing a
+    // stable reference up front, a bake that resolves after the switch wrote
+    // its results onto the *new* sound's currentEntry (corrupting it with
+    // the old sound's bake data) and dispatched a Mixer event mislabeling
+    // the old sound's id under the new sound's preset context. `entry` below
+    // is the one true target for every mutation/read this save produces,
+    // regardless of what `this.currentEntry` points to by the time it
+    // resolves; `stillEditingThisEntry()` gates anything that should only
+    // happen if the Remix UI is still actually showing this sound (status
+    // text, the Save button, savedSnapshot, the baked-preview swap).
+    const entry = this.currentEntry
+    const savingEditingPresetId = this.editingPresetId
+    const savingFluctuation = this.fluctuation
+    const stillEditingThisEntry = () => this.currentEntry === entry
     // Captured before savedSnapshot is rewritten below. The Save button can
     // now be lit by a fluctuation-only edit (see updateSaveButtonState) - in
     // that case nothing that feeds the ffmpeg render actually changed, so
@@ -4085,13 +4105,13 @@ ${mixFluctuationMarkup('group')}
     // fall back to exactly today's global write - identical to every
     // sound's behavior before this feature existed.
     const overridePatch = { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, playMode, scatter, schedule }
-    const editingPreset = this.editingPresetId ? this.presets.find((p) => p.id === this.editingPresetId) : null
+    const editingPreset = savingEditingPresetId ? this.presets.find((p) => p.id === savingEditingPresetId) : null
     const presetSoundItem = editingPreset?.sounds.find((s) => s.soundId === id)
-    const overrideHint = !presetSoundItem && this.editingPresetId
+    const overrideHint = !presetSoundItem && savingEditingPresetId
       ? " This sound isn't in the current preset, so this changed its shared defaults."
       : ''
     if (presetSoundItem) {
-      const updated = await this.api.presets.updateSoundOverride(this.editingPresetId, id, overridePatch)
+      const updated = await this.api.presets.updateSoundOverride(savingEditingPresetId, id, overridePatch)
       const updatedItem = updated?.sounds.find((s) => s.soundId === id)
       presetSoundItem.overrides = updatedItem?.overrides ?? overridePatch
     } else {
@@ -4132,17 +4152,17 @@ ${mixFluctuationMarkup('group')}
     // baked-clip bookkeeping, not a snapshot mid-flight.
     const notifyLiveReconcile = () => {
       const loopClip = {
-        ready: this.currentEntry.loopClipReady,
-        start: this.currentEntry.loopClipStart,
-        end: this.currentEntry.loopClipEnd,
-        filters: this.currentEntry.loopClipFilters,
-        crossfadeSeconds: this.currentEntry.loopClipCrossfadeSeconds,
-        speedPitch: this.currentEntry.loopClipSpeedPitch
+        ready: entry.loopClipReady,
+        start: entry.loopClipStart,
+        end: entry.loopClipEnd,
+        filters: entry.loopClipFilters,
+        crossfadeSeconds: entry.loopClipCrossfadeSeconds,
+        speedPitch: entry.loopClipSpeedPitch
       }
       if (presetSoundItem) {
         window.dispatchEvent(
           new CustomEvent('noctivago:sound-override-changed', {
-            detail: { presetId: this.editingPresetId, soundId: id, overrides: presetSoundItem.overrides, loopClip }
+            detail: { presetId: savingEditingPresetId, soundId: id, overrides: presetSoundItem.overrides, loopClip }
           })
         )
       } else {
@@ -4153,36 +4173,43 @@ ${mixFluctuationMarkup('group')}
         )
       }
     }
-    this.currentEntry.loopStart = loopStart
-    this.currentEntry.loopEnd = loopEnd
-    this.currentEntry.filters = filters
-    this.currentEntry.crossfadeSeconds = crossfadeSeconds
-    this.currentEntry.speedPitch = speedPitch
-    this.currentEntry.playMode = playMode
-    this.currentEntry.scatter = scatter
-    this.currentEntry.schedule = schedule
-    this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter, schedule)
+    entry.loopStart = loopStart
+    entry.loopEnd = loopEnd
+    entry.filters = filters
+    entry.crossfadeSeconds = crossfadeSeconds
+    entry.speedPitch = speedPitch
+    entry.playMode = playMode
+    entry.scatter = scatter
+    entry.schedule = schedule
+    if (stillEditingThisEntry()) {
+      this.savedSnapshot = this.snapshotOf(loopStart, loopEnd, filters, crossfadeMs, speedPitch, playMode, scatter, schedule)
+    }
 
     // Persist the drift settings in the same Save (their own IPC call, not
     // folded into the bake) and cancel any still-pending debounced write so
-    // it doesn't fire a second, redundant one right after.
+    // it doesn't fire a second, redundant one right after. Uses the
+    // pre-await savingFluctuation capture, not a live this.fluctuation read,
+    // for the same reason `entry` is captured above - this.fluctuation would
+    // already belong to a different sound if the user switched mid-save.
     if (flucDirty) {
       clearTimeout(this._fluctuationSaveTimer)
       this._pendingFluctuation = null
-      await this.api.library.updateFluctuation(id, this.fluctuation)
-      this.currentEntry.fluctuation = this.fluctuation
+      await this.api.library.updateFluctuation(id, savingFluctuation)
+      entry.fluctuation = savingFluctuation
       window.dispatchEvent(
-        new CustomEvent('noctivago:sound-fluctuation-changed', { detail: { soundId: id, fluctuation: this.fluctuation } })
+        new CustomEvent('noctivago:sound-fluctuation-changed', { detail: { soundId: id, fluctuation: savingFluctuation } })
       )
-      this.savedFluctuationSnapshot = this.fluctuationSnapshot()
+      if (stillEditingThisEntry()) this.savedFluctuationSnapshot = this.fluctuationSnapshot()
     }
 
     // Only fluctuation (or nothing) changed - the existing bake, if any, is
     // still valid. Skip the ffmpeg re-render.
     if (!bakeRelevantDirty) {
       notifyLiveReconcile()
-      this.els.saveStatus.textContent = `${savedWord} — original file untouched.${overrideHint}`
-      this.updateSaveButtonState()
+      if (stillEditingThisEntry()) {
+        this.els.saveStatus.textContent = `${savedWord} — original file untouched.${overrideHint}`
+        this.updateSaveButtonState()
+      }
       return
     }
 
@@ -4200,39 +4227,59 @@ ${mixFluctuationMarkup('group')}
     if (loopEnd - loopStart <= MAX_BUFFER_CLIP_SECONDS) {
       this.els.save.disabled = true
       this.els.saveLabel.textContent = trigger === 'auto' ? 'Auto-saving…' : 'Saving…'
-      const result = await this.api.audio.renderLoopClip(id, {
-        loopStart,
-        loopEnd,
-        filters,
-        crossfadeSeconds: effectiveCrossfadeSeconds,
-        speedPitch
-      })
+      // BUG FIX (self-review, v0.1.196): an unhandled rejection here (a real
+      // IPC/main-process failure, not just ffmpeg's own {ok:false} result)
+      // used to skip notifyLiveReconcile() entirely and leave the Save
+      // button stuck disabled on "Saving…" forever - the same class of
+      // "Mixer never hears about this edit" bug v0.1.194 fixed, just via an
+      // exception instead of a timing gap. Normalizing a thrown error into
+      // the same {ok:false} shape the render itself already produces on
+      // failure means the existing branch below (which already calls
+      // notifyLiveReconcile() and resets the button either way) handles it
+      // for free, no separate error path needed.
+      let result
+      try {
+        result = await this.api.audio.renderLoopClip(id, {
+          loopStart,
+          loopEnd,
+          filters,
+          crossfadeSeconds: effectiveCrossfadeSeconds,
+          speedPitch
+        })
+      } catch (err) {
+        console.error('Editor: renderLoopClip rejected', err)
+        result = { ok: false }
+      }
       if (result.ok) {
-        this.currentEntry.loopClipReady = true
-        this.currentEntry.loopClipStart = loopStart
-        this.currentEntry.loopClipEnd = loopEnd
-        this.currentEntry.loopClipFilters = filters
-        this.currentEntry.loopClipCrossfadeSeconds = effectiveCrossfadeSeconds
-        this.currentEntry.loopClipSpeedPitch = speedPitch
-        this.els.saveStatus.textContent =
-          (playMode === 'scatter'
-            ? `${savedWord} — original file untouched. Rendered a clip for random-interval playback.`
-            : playMode === 'scheduled'
-              ? `${savedWord} — original file untouched. Rendered a clip for scheduled playback.`
-              : `${savedWord} — original file untouched. Rendered a gapless clip for seamless looping.`) + overrideHint
+        entry.loopClipReady = true
+        entry.loopClipStart = loopStart
+        entry.loopClipEnd = loopEnd
+        entry.loopClipFilters = filters
+        entry.loopClipCrossfadeSeconds = effectiveCrossfadeSeconds
+        entry.loopClipSpeedPitch = speedPitch
+        if (stillEditingThisEntry()) {
+          this.els.saveStatus.textContent =
+            (playMode === 'scatter'
+              ? `${savedWord} — original file untouched. Rendered a clip for random-interval playback.`
+              : playMode === 'scheduled'
+                ? `${savedWord} — original file untouched. Rendered a clip for scheduled playback.`
+                : `${savedWord} — original file untouched. Rendered a gapless clip for seamless looping.`) + overrideHint
+        }
       } else {
-        this.currentEntry.loopClipReady = false
-        this.currentEntry.loopClipStart = null
-        this.currentEntry.loopClipEnd = null
-        this.currentEntry.loopClipFilters = null
-        this.currentEntry.loopClipCrossfadeSeconds = null
-        this.currentEntry.loopClipSpeedPitch = null
-        this.els.saveStatus.textContent =
-          (playMode === 'scatter'
-            ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for random-interval playback.`
-            : playMode === 'scheduled'
-              ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for scheduled playback.`
-              : `${savedWord} — original file untouched. Gapless clip render failed, so this will loop with a small seam.`) + overrideHint
+        entry.loopClipReady = false
+        entry.loopClipStart = null
+        entry.loopClipEnd = null
+        entry.loopClipFilters = null
+        entry.loopClipCrossfadeSeconds = null
+        entry.loopClipSpeedPitch = null
+        if (stillEditingThisEntry()) {
+          this.els.saveStatus.textContent =
+            (playMode === 'scatter'
+              ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for random-interval playback.`
+              : playMode === 'scheduled'
+                ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for scheduled playback.`
+                : `${savedWord} — original file untouched. Gapless clip render failed, so this will loop with a small seam.`) + overrideHint
+        }
       }
       notifyLiveReconcile()
       // The bake just rewrote the file at this same sound://<id>?variant=clip
@@ -4246,44 +4293,51 @@ ${mixFluctuationMarkup('group')}
       // old assumption here - autosave can now genuinely re-bake while
       // Saved mode is the one actually driving playback. Carry position/
       // play-state across the swap so a re-bake mid-audition doesn't
-      // silently drop the audio out from under the listener.
-      const resumingSaved = this.previewMode === 'saved'
-      const resumeTime = resumingSaved ? this.bakedPreview?.audioEl.currentTime ?? 0 : 0
-      const resumePlaying = resumingSaved && Boolean(this.bakedPreview?.playing)
-      this.bakedPreview?.dispose()
-      this.bakedPreview = new BakedClipPreview(this.engine, id, this.effectivePreviewVolume(), this.editingPresetId)
-      if (resumingSaved) {
-        this.bakedPreview.scrubTo(resumeTime)
-        if (resumePlaying) {
-          this.engine
-            .resume()
-            .then(() => this.bakedPreview?.play())
-            .catch((err) => console.error('Editor: failed to resume saved-audio preview after re-bake', err))
+      // silently drop the audio out from under the listener. Gated on
+      // stillEditingThisEntry() - this.bakedPreview/this.previewMode belong
+      // to whatever sound is currently open in the Remix UI, which may no
+      // longer be this one (see this function's own top-of-function note).
+      if (stillEditingThisEntry()) {
+        const resumingSaved = this.previewMode === 'saved'
+        const resumeTime = resumingSaved ? this.bakedPreview?.audioEl.currentTime ?? 0 : 0
+        const resumePlaying = resumingSaved && Boolean(this.bakedPreview?.playing)
+        this.bakedPreview?.dispose()
+        this.bakedPreview = new BakedClipPreview(this.engine, id, this.effectivePreviewVolume(), savingEditingPresetId)
+        if (resumingSaved) {
+          this.bakedPreview.scrubTo(resumeTime)
+          if (resumePlaying) {
+            this.engine
+              .resume()
+              .then(() => this.bakedPreview?.play())
+              .catch((err) => console.error('Editor: failed to resume saved-audio preview after re-bake', err))
+          }
         }
+        this.updateSaveButtonState()
       }
-      this.updateSaveButtonState()
     } else {
       // A previous save may have left a valid bake (loopClipReady/bakedPreview)
       // from when the trim was still within the cap - since this save's own
       // trim no longer qualifies, that old bake no longer matches anything
-      // this.currentEntry now describes and must be invalidated the same way
-      // a failed render already is above, or "Saved audio" would keep looking
-      // fully valid (savedSnapshot was just updated to match, so no staleness
+      // `entry` now describes and must be invalidated the same way a failed
+      // render already is above, or "Saved audio" would keep looking fully
+      // valid (savedSnapshot was just updated to match, so no staleness
       // indicator would show) while actually playing the stale, unrelated clip.
-      this.currentEntry.loopClipReady = false
-      this.currentEntry.loopClipStart = null
-      this.currentEntry.loopClipEnd = null
-      this.currentEntry.loopClipFilters = null
-      this.currentEntry.loopClipCrossfadeSeconds = null
-      this.currentEntry.loopClipSpeedPitch = null
-      this.els.saveStatus.textContent =
-        (playMode === 'scatter'
-          ? `${savedWord} — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.`
-          : playMode === 'scheduled'
-            ? `${savedWord} — original file untouched. This trim is over 10 minutes, so scheduled playback will stream directly.`
-            : `${savedWord} — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.`) + overrideHint
+      entry.loopClipReady = false
+      entry.loopClipStart = null
+      entry.loopClipEnd = null
+      entry.loopClipFilters = null
+      entry.loopClipCrossfadeSeconds = null
+      entry.loopClipSpeedPitch = null
+      if (stillEditingThisEntry()) {
+        this.els.saveStatus.textContent =
+          (playMode === 'scatter'
+            ? `${savedWord} — original file untouched. This trim is over 10 minutes, so random-interval playback will stream directly.`
+            : playMode === 'scheduled'
+              ? `${savedWord} — original file untouched. This trim is over 10 minutes, so scheduled playback will stream directly.`
+              : `${savedWord} — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.`) + overrideHint
+      }
       notifyLiveReconcile()
-      this.updateSaveButtonState()
+      if (stillEditingThisEntry()) this.updateSaveButtonState()
     }
   }
 
