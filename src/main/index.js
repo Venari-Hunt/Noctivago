@@ -65,8 +65,18 @@ function registerSoundProtocol() {
     // sound - see library.js's getLoopClipPathForId for why this can't just
     // check the sound's raw baseline fields once per-preset overrides exist.
     const presetId = url.searchParams.get('presetId') || null
+    // requireFresh: false (BUG FIX v0.1.197, see getLoopClipPathForId's own
+    // doc comment) - this URL serves both the Mixer's buffer-mode fetch
+    // (already staleness-checked client-side before it ever requests this)
+    // and the Remix plugin's "Saved audio" preview (deliberately staleness-
+    // tolerant since v0.1.142 - it plays whatever's actually baked on disk,
+    // showing a "stale" indicator rather than going dead). The strict,
+    // staleness-checked variant stays the default for export's own direct
+    // call (ipc.js), which must never silently reuse a stale cached clip.
     const filePath =
-      variant === 'clip' ? getLoopClipPathForId(id, getSoundOverride(presetId, id)) : getPlaybackPathForId(id)
+      variant === 'clip'
+        ? getLoopClipPathForId(id, getSoundOverride(presetId, id), { requireFresh: false })
+        : getPlaybackPathForId(id)
     if (!filePath) return new Response('Not found', { status: 404 })
 
     const stat = await fs.promises.stat(filePath)
