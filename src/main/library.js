@@ -429,9 +429,18 @@ export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
       minGapSeconds: 5,
       maxGapSeconds: 35,
       gapFullyRandom: false,
+      // "Bias" (owner inbox 2026-09-14): min/max stay the hard range for the
+      // random pick, but when enabled a bias value wins more often than a
+      // plain uniform draw - off by default, same explicit-opt-in shape as
+      // gapFullyRandom/pitchFullyRandom themselves. See ScatterSoundSource.js's
+      // randomGapSeconds/randomPitchSemitones for the actual pick.
+      gapBiasEnabled: false,
+      gapBiasSeconds: 20,
       minPitchSemitones: 0,
       maxPitchSemitones: 0,
       pitchFullyRandom: false,
+      pitchBiasEnabled: false,
+      pitchBiasSemitones: 0,
       minVolume: 1,
       maxVolume: 1,
       // Per-shot wall-clock playback speed range, as a multiplier (1 = original
@@ -467,6 +476,8 @@ export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
       minPitchSemitones: 0,
       maxPitchSemitones: 0,
       pitchFullyRandom: false,
+      pitchBiasEnabled: false,
+      pitchBiasSemitones: 0,
       minVolume: 1,
       maxVolume: 1,
       minSpeed: 1,

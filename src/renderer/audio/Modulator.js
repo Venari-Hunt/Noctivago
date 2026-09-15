@@ -74,6 +74,23 @@ export function resolveFluctuationTiming(axis) {
   return { changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
 }
 
+// Picks a value in [min, max], skewed toward `bias` - the same "sits near
+// bias most of the time, wanders out toward the extremes only occasionally"
+// shape Fluctuation's own drift target uses (see _pickTarget below), pulled
+// out standalone so ScatterSoundSource.js's per-shot pitch/gap randomization
+// (Board backlog: a "bias" value competing with a plain min/max random pick)
+// can reuse the exact same, already-tuned math instead of a second copy with
+// its own feel to calibrate. `bias` must already be within [min, max].
+export function pickBiasedValue(min, max, bias) {
+  const lower = bias - min
+  const upper = max - bias
+  const span = lower + upper
+  if (span <= 0) return bias
+  const goUp = Math.random() < upper / span
+  const t = Math.pow(Math.random(), 1.7)
+  return goUp ? bias + t * upper : bias - t * lower
+}
+
 export class Modulator {
   constructor({ onValue, neutral = 1, rangeMin = neutral, rangeMax = neutral }) {
     this.onValue = onValue
@@ -130,13 +147,7 @@ export class Modulator {
     if (this.fullyRandom) {
       return this.min + Math.random() * (this.max - this.min)
     }
-    const lower = this.bias - this.min
-    const upper = this.max - this.bias
-    const span = lower + upper
-    if (span <= 0) return this.bias
-    const goUp = Math.random() < upper / span
-    const t = Math.pow(Math.random(), 1.7)
-    return goUp ? this.bias + t * upper : this.bias - t * lower
+    return pickBiasedValue(this.min, this.max, this.bias)
   }
 
   start() {

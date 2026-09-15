@@ -59,6 +59,8 @@ function normalizeSchedule(schedule) {
     minPitchSemitones: schedule?.minPitchSemitones ?? 0,
     maxPitchSemitones: schedule?.maxPitchSemitones ?? 0,
     pitchFullyRandom: Boolean(schedule?.pitchFullyRandom),
+    pitchBiasEnabled: Boolean(schedule?.pitchBiasEnabled),
+    pitchBiasSemitones: schedule?.pitchBiasSemitones ?? null,
     minVolume: schedule?.minVolume ?? 1,
     maxVolume: schedule?.maxVolume ?? 1,
     minSpeed: schedule?.minSpeed ?? 1,

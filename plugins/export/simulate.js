@@ -10,12 +10,30 @@ const DEFAULT_MIN_GAP_SECONDS = 5
 const DEFAULT_MAX_GAP_SECONDS = 35
 const FULLY_RANDOM_MAX_GAP_SECONDS = 120
 
+// Duplicated from src/renderer/audio/Modulator.js's pickBiasedValue (same
+// cross-directory reason as the file-level comment above) - the "bias"
+// value competing with a plain min/max random pick reuses Fluctuation's own
+// already-tuned skewed-target math rather than a second distribution.
+function pickBiasedValue(min, max, bias) {
+  const lower = bias - min
+  const upper = max - bias
+  const span = lower + upper
+  if (span <= 0) return bias
+  const goUp = Math.random() < upper / span
+  const t = Math.pow(Math.random(), 1.7)
+  return goUp ? bias + t * upper : bias - t * lower
+}
+
 function randomGapSeconds(scatter) {
   if (scatter?.gapFullyRandom) {
     return Math.random() * FULLY_RANDOM_MAX_GAP_SECONDS
   }
   const min = Math.max(0, scatter?.minGapSeconds ?? DEFAULT_MIN_GAP_SECONDS)
   const max = Math.max(min, scatter?.maxGapSeconds ?? DEFAULT_MAX_GAP_SECONDS)
+  if (scatter?.gapBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.gapBiasSeconds ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
   return min + Math.random() * (max - min)
 }
 
@@ -26,6 +44,10 @@ function randomPitchSemitones(scatter) {
   let min = scatter?.minPitchSemitones ?? 0
   let max = scatter?.maxPitchSemitones ?? 0
   if (max < min) max = min
+  if (scatter?.pitchBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.pitchBiasSemitones ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
   return min + Math.random() * (max - min)
 }
 
