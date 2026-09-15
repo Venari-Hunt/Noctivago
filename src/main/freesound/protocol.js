@@ -2,8 +2,9 @@ import { protocol } from 'electron'
 import log from 'electron-log/main'
 import { authorizedPreviewUrl } from './client.js'
 
-// Lets the Freesound search dialog (src/renderer/core/FreesoundDialog.js)
-// audition a result before importing it, without the API token ever
+// Lets the Browse Sounds plugin (plugins/browse-sounds/, formerly the
+// core add-sound-menu dialog this moved out of in v0.1.204) audition a
+// result before importing it, without the API token ever
 // reaching the sandboxed renderer - same "everything served
 // through a custom protocol rather than raw access" pattern sound:// and
 // plugin:// already establish (see CLAUDE.md's Plugins section). The
