@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.194 — Fixed pitch/loop-quality edits getting silently dropped after Save
+
+- BUG FIX: v0.1.193's fix for "an edit doesn't reach a sound already playing" had a timing gap of its own — it told the Mixer about a Remix Save *before* the actual re-render finished, so the Mixer correctly noticed its cached copy of the sound no longer matched the freshly re-baked clip and fell back to a lower-quality streaming fallback that has no way to apply Pitch at all. Once that happened it never recovered on its own — Pitch (and anything else that only ever takes effect through the baked clip, like Doppler, Reverse, and Noise reduction) stayed silently ignored in the Mixer until something unrelated forced a refresh, even though the freshly-baked file on disk was already correct (which is also why an export of the same sound could sound noticeably different from the Mixer). Reported directly: "I change audio settings like pitch and speed and it has no results on live playback on mixer tab," alongside noise reduction/EQ seemingly not working and exports sounding different from live playback. Fixed by waiting for the real re-render to finish before telling the Mixer, so it always hears the correct, up-to-date result.
+
 ## v0.1.193 — Fixed a Remix edit not reaching a sound already playing
 
 - BUG FIX: saving a change in Remix (Sound mode) for a sound that isn't part of the currently loaded preset's mix wrote the change to disk correctly, but a copy of that sound already playing in the Mixer never found out — it kept its old trim/filters/crossfade/Speed-Pitch/play mode/scatter/schedule until something else happened to refresh it (like switching away from Remix and back). Reported directly: disabling a Random Interval sound's pitch and speed variation "still kept pitch randomized and also speed" even after saving. Now the change reaches an already-playing sound immediately.

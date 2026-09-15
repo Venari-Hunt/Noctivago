@@ -2051,11 +2051,41 @@ document.addEventListener('library:linked', refreshList)
   // "patch the cache, reconcile just that source" pattern as the
   // fluctuation listener above, scoped to the active preset the same way
   // the whole-mix/group preview bridges already are.
+  // BUG FIX (v0.1.194): the baked loop clip (getUserData()/clips/<id>.wav)
+  // and its loopClipReady/Start/End/Filters/CrossfadeSeconds/SpeedPitch
+  // bookkeeping always live on the *shared* baseline sound record (see
+  // library.js's setLoopClipReady, called from the same audio:renderLoopClip
+  // handler regardless of whether the edit that triggered it came from an
+  // override or a baseline Save) - a per-preset override never gets its own
+  // separate clip file. So patching only the override here (as this listener
+  // used to) left state.baselineById's own loopClip* fields pointing at
+  // whatever they were before the bake, which loopClipEligible then compared
+  // the freshly-changed speedPitch/filters against and correctly found
+  // stale - permanently falling back to stream mode (no live pitch-shift
+  // there) instead of picking up the just-baked, already-correct clip. Both
+  // listeners now funnel the event's `loopClip` payload through this same
+  // helper so the shared baseline record - which every path's eligibility
+  // check reads from - always reflects the bake that actually just happened.
+  const patchBaselineLoopClip = (soundId, loopClip) => {
+    if (!loopClip) return
+    const baseline = state.baselineById.get(soundId)
+    if (!baseline) return
+    state.baselineById.set(soundId, {
+      ...baseline,
+      loopClipReady: loopClip.ready,
+      loopClipStart: loopClip.start,
+      loopClipEnd: loopClip.end,
+      loopClipFilters: loopClip.filters,
+      loopClipCrossfadeSeconds: loopClip.crossfadeSeconds,
+      loopClipSpeedPitch: loopClip.speedPitch
+    })
+  }
   window.addEventListener('noctivago:sound-override-changed', (e) => {
-    const { presetId, soundId, overrides } = e.detail ?? {}
+    const { presetId, soundId, overrides, loopClip } = e.detail ?? {}
     if (!soundId || presetId !== state.activePresetId) return
     const item = state.activePresetSounds.find((s) => s.soundId === soundId)
     if (item) item.overrides = overrides
+    patchBaselineLoopClip(soundId, loopClip)
     recomputeEffectiveLibrary()
     const entry = state.library.find((s) => s.id === soundId)
     if (entry) reconcileSource(entry)
@@ -2077,11 +2107,12 @@ document.addEventListener('library:linked', refreshList)
   // state.library from) rather than an override, since there's no override
   // involved here.
   window.addEventListener('noctivago:sound-baseline-changed', (e) => {
-    const { soundId, ...patch } = e.detail ?? {}
+    const { soundId, loopClip, ...patch } = e.detail ?? {}
     if (!soundId) return
     const baseline = state.baselineById.get(soundId)
     if (!baseline) return
     state.baselineById.set(soundId, { ...baseline, ...patch })
+    patchBaselineLoopClip(soundId, loopClip)
     recomputeEffectiveLibrary()
     const entry = state.library.find((s) => s.id === soundId)
     if (entry) reconcileSource(entry)
