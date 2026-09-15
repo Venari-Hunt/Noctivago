@@ -11,6 +11,7 @@ import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
 import { downloadPreviewToWav } from './freesound/download.js'
 import { getSettings } from './settings.js'
 import { tagsForWatchedFile } from './watchFolderTags.js'
+import { walkFilesRecursive } from './folderWalk.js'
 import { MAX_BUFFER_CLIP_SECONDS, DEFAULT_SOUND_VOLUME, applySoundOverride } from '../shared/constants.js'
 
 const store = new Store({
@@ -240,31 +241,27 @@ export function importIfNew(filePath, keepCopy, tags = []) {
 
 // Recursive (v0.1.198 - was non-recursive, matching addFolderSounds' own
 // flat convention, until the owner asked for watched folders specifically
-// to walk subfolders too and use them as tags). `recursive: true` on
-// readdirSync (Node 20.12+) walks the whole subtree in one call; each
-// Dirent's own `parentPath` (the absolute directory actually containing it,
-// however deep) is what tagsForWatchedFile compares back against the watch
-// root - readdirSync itself doesn't expose depth any other way once results
-// come back flattened like this. Used both for the initial scan when a
-// folder starts being watched and, via watchFolders.js's startWatching(),
-// as a scan-on-startup so files dropped in while the app was closed (at any
-// depth) are still picked up (fs.watch only reports changes while it's
-// actively running).
-export function scanWatchedFolder(entry) {
+// to walk subfolders too and use them as tags). v0.1.201 replaced the
+// original plain `readdirSync(..., { recursive: true })` with the shared,
+// hardened walkFilesRecursive (cycle protection against a Windows junction
+// / OneDrive placeholder loop, and chunked/async so a very large or deep
+// watched folder can't freeze the main process) - see folderWalk.js for the
+// full reasoning. Used both for the initial scan when a folder starts being
+// watched and, via watchFolders.js's startWatching(), as a scan-on-startup
+// so files dropped in while the app was closed (at any depth) are still
+// picked up (fs.watch only reports changes while it's actively running).
+export async function scanWatchedFolder(entry) {
   if (!fs.existsSync(entry.path)) return []
-  const dirents = fs.readdirSync(entry.path, { withFileTypes: true, recursive: true })
   const added = []
-  for (const dirent of dirents) {
-    if (!dirent.isFile()) continue
-    const containingDir = dirent.parentPath
+  await walkFilesRecursive(entry.path, (dirent, containingDir) => {
     const filePath = path.join(containingDir, dirent.name)
     const sound = importIfNew(filePath, entry.keepCopy, tagsForWatchedFile(entry.path, containingDir))
     if (sound) added.push(sound)
-  }
+  })
   return added
 }
 
-export function addWatchedFolder(folderPath, { keepCopy }) {
+export async function addWatchedFolder(folderPath, { keepCopy }) {
   const folders = store.get('watchedFolders')
   const normalized = normalizePath(folderPath)
   const existing = folders.find((f) => normalizePath(f.path) === normalized)
@@ -273,7 +270,7 @@ export function addWatchedFolder(folderPath, { keepCopy }) {
   const entry = { id: crypto.randomUUID(), path: folderPath, keepCopy: Boolean(keepCopy), status: 'ok' }
   folders.push(entry)
   store.set('watchedFolders', folders)
-  const added = scanWatchedFolder(entry)
+  const added = await scanWatchedFolder(entry)
   return { entry, added }
 }
 
