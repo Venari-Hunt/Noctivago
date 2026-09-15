@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.204 — New "Browse Sounds" tab for internet-sourced import
+
+- Freesound search moved out of the add-sound "+" menu's cramped dialog into its own dedicated "Browse Sounds" tab, with a lot more room to browse: a card grid instead of a narrow list, infinite scroll instead of a "Load more" button, and every result now shows its tags, description, and rating — not just a name and duration.
+- New sort options (best match, highest rated, most downloaded, longest, shortest, newest) that the search always supported but the old dialog never exposed.
+- Local file/folder/watch-folder/record imports are unchanged — only internet-sourced search moved. More sources (YouTube search) are planned for this tab later.
+
 ## v0.1.203 — Manual "Add folder as tag/preset" import now recurses and auto-tags too
 
 - The "Add folder as tag" and "Add folder as preset" import dialogs now look inside subfolders too, not just files dropped directly into the picked folder — matching how watch folders already work. Each subfolder's name is automatically added as a tag, on top of whatever tag you type in the dialog itself, not instead of it: a folder named "Rain" containing a "Heavy" subfolder ends up tagged both "Rain" (what you typed) and "Heavy" (auto-derived), never one or the other.

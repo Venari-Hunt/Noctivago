@@ -10,7 +10,7 @@ import log from 'electron-log/main'
 // ambient sound and keeps the whole feature to one token instead of a
 // per-user login flow.
 const API_BASE = 'https://freesound.org/apiv2'
-const SEARCH_FIELDS = 'id,name,username,previews,duration,license,tags,avg_rating,num_ratings'
+const SEARCH_FIELDS = 'id,name,username,previews,duration,license,tags,avg_rating,num_ratings,description'
 const MAX_PAGE_SIZE = 30
 
 export function isFreesoundAvailable() {
@@ -56,6 +56,7 @@ export async function searchSounds({ query, page = 1, pageSize = 15, sort = 'sco
           durationSeconds: r.duration,
           license: r.license,
           tags: r.tags ?? [],
+          description: r.description ?? '',
           avgRating: r.avg_rating ?? null,
           numRatings: r.num_ratings ?? 0,
           previewUrl: r.previews?.['preview-hq-mp3'] || r.previews?.['preview-lq-mp3'] || null,

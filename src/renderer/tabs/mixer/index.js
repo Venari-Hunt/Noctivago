@@ -8,7 +8,6 @@ import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
 import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
-import { openFreesoundDialog } from '../../core/FreesoundDialog.js'
 import { openContextMenu } from '../../core/ContextMenu.js'
 import { MAX_BUFFER_CLIP_SECONDS, applySoundOverride } from '../../../shared/constants.js'
 import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
@@ -121,7 +120,6 @@ const els = {
   addSoundWatchFolderItem: document.getElementById('add-sound-watch-folder'),
   addSoundRecordItem: document.getElementById('add-sound-record'),
   addSoundLinkItem: document.getElementById('add-sound-link'),
-  addSoundFreesoundItem: document.getElementById('add-sound-freesound'),
   openPresetsBtn: document.getElementById('open-presets'),
 
   addSoundDialog: document.getElementById('add-sound-dialog'),
@@ -1293,11 +1291,6 @@ els.addSoundRecordItem.addEventListener('click', () => {
 els.addSoundLinkItem.addEventListener('click', () => {
   closeAddSoundMenu()
   openAddLinkDialog()
-})
-
-els.addSoundFreesoundItem.addEventListener('click', () => {
-  closeAddSoundMenu()
-  openFreesoundDialog()
 })
 
 els.addSoundFolderPresetItem.addEventListener('click', async () => {
