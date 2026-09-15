@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.201 — Hardened the watch-folder subfolder scan
+
+- Watched folders no longer risk freezing the app on a very large or deeply nested folder — the subfolder scan (added in v0.1.198) now scans in smaller chunks instead of one long blocking pass.
+- It's also now safe against a folder that loops back on itself (a Windows directory junction, or certain OneDrive placeholder setups) — that used to be able to scan forever; it's now detected and skipped.
+- Not a reported bug — a self-review flag the owner asked to be hardened preemptively.
+
 ## v0.1.200 — Self-review: fixed a real edge case in v0.1.199's own fix
 
 - BUG FIX: caught in a self-review of v0.1.199 before anyone hit it — clearing the Fluctuation "Transition" field entirely (instead of typing a new number) could silently save it as instant (0) rather than falling back to the default, because an empty field and a typed 0 were read as the same thing. Now only an actual typed 0 means instant; an empty field falls back correctly.

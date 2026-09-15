@@ -90,10 +90,10 @@ function stopWatchingFolder(id) {
 // Called once at app startup: rescans every watched folder (covers files
 // dropped in while the app was closed, since fs.watch only reports changes
 // while actively running) before starting live watching on each.
-export function startWatching() {
+export async function startWatching() {
   let anyAdded = false
   for (const entry of library.listWatchedFolders()) {
-    if (library.scanWatchedFolder(entry).length > 0) anyAdded = true
+    if ((await library.scanWatchedFolder(entry)).length > 0) anyAdded = true
     if (entry.status === 'ok') watchFolder(entry)
   }
   if (anyAdded) notifyLibraryChanged()

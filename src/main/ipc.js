@@ -140,8 +140,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))
   ipcMain.handle('library:listWatchedFolders', () => library.listWatchedFolders())
   ipcMain.handle('library:pickWatchFolder', () => library.pickWatchFolder())
-  ipcMain.handle('library:addWatchedFolder', (_event, folderPath, options) => {
-    const { entry, added } = library.addWatchedFolder(folderPath, options)
+  ipcMain.handle('library:addWatchedFolder', async (_event, folderPath, options) => {
+    const { entry, added } = await library.addWatchedFolder(folderPath, options)
     watchNewFolder(entry)
     return { entry, addedCount: added.length }
   })
