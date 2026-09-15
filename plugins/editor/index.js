@@ -3996,11 +3996,6 @@ ${mixFluctuationMarkup('group')}
       const updated = await this.api.presets.updateSoundOverride(this.editingPresetId, id, overridePatch)
       const updatedItem = updated?.sounds.find((s) => s.soundId === id)
       presetSoundItem.overrides = updatedItem?.overrides ?? overridePatch
-      window.dispatchEvent(
-        new CustomEvent('noctivago:sound-override-changed', {
-          detail: { presetId: this.editingPresetId, soundId: id, overrides: presetSoundItem.overrides }
-        })
-      )
     } else {
       await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
       await this.api.library.updateFilters(id, filters)
@@ -4009,20 +4004,56 @@ ${mixFluctuationMarkup('group')}
       await this.api.library.updatePlayMode(id, playMode)
       await this.api.library.updateScatterConfig(id, scatter)
       await this.api.library.updateSchedule(id, schedule)
-      // BUG FIX: unlike the override branch above (which dispatches
-      // sound-override-changed so an already-mounted Mixer reconciles the
-      // live source immediately), this baseline write had no bridge back to
-      // the Mixer at all - library:changed only fires from watch-folder
-      // imports, not from any of these IPC calls. A sound already playing
-      // kept its old in-memory settings until the next tab switch happened
-      // to rerun the Mixer's own refreshList(). Mirrors the override event's
-      // shape so tabs/mixer/index.js can patch its raw baseline cache the
-      // same way.
-      window.dispatchEvent(
-        new CustomEvent('noctivago:sound-baseline-changed', {
-          detail: { soundId: id, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, playMode, scatter, schedule }
-        })
-      )
+    }
+    // BUG FIX (v0.1.193 dispatched this too early, v0.1.194 moves it here):
+    // an already-mounted Mixer needs to hear about this edit so its live
+    // source reconciles immediately, rather than staying stale until the
+    // next incidental tab switch reruns refreshList(). v0.1.193 dispatched
+    // this bridge event right after the metadata writes above - but the
+    // ffmpeg bake (audio.renderLoopClip, below) hadn't run yet at that
+    // point, so the Mixer's own bufferBakeSnapshot/loopClipEligible checks
+    // (which compare the sound's *live* settings against its *baked clip's*
+    // recorded settings) saw a fresh speedPitch/filters against a now-stale
+    // loopClipSpeedPitch/loopClipFilters and correctly concluded the bake no
+    // longer matched - permanently downgrading a Loop-mode sound from buffer
+    // mode to the stream-mode fallback, which has no live pitch-shift
+    // primitive at all (only Speed and filters apply live in stream mode -
+    // see reconcileSource's 'loop-stream' branch in tabs/mixer/index.js).
+    // Nothing ever re-notified the Mixer once the *real* bake with the new
+    // pitch actually finished a moment later, so the sound was stuck
+    // silently ignoring Pitch (and running a lower-quality loop seam) until
+    // something else forced a full refreshList(). Reported directly:
+    // "I change audio settings like pitch and speed and it has no results
+    // on live playback on mixer tab" - reproduced live via CDP (a sound
+    // playing in loop-buffer mode audibly should have stayed there after a
+    // pitch-only Save; instead it flipped to loop-stream immediately and
+    // never recovered). Fixed by moving the dispatch to notifyLiveReconcile()
+    // below, called only once the bake has fully resolved (success, failure,
+    // over-cap skip, or skipped entirely because nothing bake-relevant
+    // changed) - so its `loopClip` payload always reflects the *current*
+    // baked-clip bookkeeping, not a snapshot mid-flight.
+    const notifyLiveReconcile = () => {
+      const loopClip = {
+        ready: this.currentEntry.loopClipReady,
+        start: this.currentEntry.loopClipStart,
+        end: this.currentEntry.loopClipEnd,
+        filters: this.currentEntry.loopClipFilters,
+        crossfadeSeconds: this.currentEntry.loopClipCrossfadeSeconds,
+        speedPitch: this.currentEntry.loopClipSpeedPitch
+      }
+      if (presetSoundItem) {
+        window.dispatchEvent(
+          new CustomEvent('noctivago:sound-override-changed', {
+            detail: { presetId: this.editingPresetId, soundId: id, overrides: presetSoundItem.overrides, loopClip }
+          })
+        )
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('noctivago:sound-baseline-changed', {
+            detail: { soundId: id, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, playMode, scatter, schedule, loopClip }
+          })
+        )
+      }
     }
     this.currentEntry.loopStart = loopStart
     this.currentEntry.loopEnd = loopEnd
@@ -4051,6 +4082,7 @@ ${mixFluctuationMarkup('group')}
     // Only fluctuation (or nothing) changed - the existing bake, if any, is
     // still valid. Skip the ffmpeg re-render.
     if (!bakeRelevantDirty) {
+      notifyLiveReconcile()
       this.els.saveStatus.textContent = `${savedWord} — original file untouched.${overrideHint}`
       this.updateSaveButtonState()
       return
@@ -4104,6 +4136,7 @@ ${mixFluctuationMarkup('group')}
               ? `${savedWord} — original file untouched. Clip render failed, so this will stream directly for scheduled playback.`
               : `${savedWord} — original file untouched. Gapless clip render failed, so this will loop with a small seam.`) + overrideHint
       }
+      notifyLiveReconcile()
       // The bake just rewrote the file at this same sound://<id>?variant=clip
       // URL - recreate bakedPreview so its <audio> element actually re-fetches
       // instead of risking a browser-cached copy of the *previous* bake (the
@@ -4151,6 +4184,7 @@ ${mixFluctuationMarkup('group')}
           : playMode === 'scheduled'
             ? `${savedWord} — original file untouched. This trim is over 10 minutes, so scheduled playback will stream directly.`
             : `${savedWord} — original file untouched. This trim is over 10 minutes, so it will loop with a small seam instead of a gapless clip.`) + overrideHint
+      notifyLiveReconcile()
       this.updateSaveButtonState()
     }
   }
