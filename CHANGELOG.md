@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.202 — Fixed Live edit/Saved audio playing different loop regions in Remix
+
+- BUG FIX: reported directly, a repeat of an earlier fix — the Live edit / Saved audio toggle "isn't working properly." Root cause this time: typing an exact Start/End value, using the Length field, or clicking "Suggest a loop point" all correctly updated the trim boxes and waveform, but never told the actual live preview engine about the new region — so Live edit kept looping whatever region it was last told about (from when the sound was loaded, or the last time you dragged a waveform handle), while Saved audio (which always plays the freshly baked file) correctly reflected your new trim. The two could sound completely different any time a trim was set by typing or Suggest rather than dragging. Also fixed: the sticky time readout next to Play/Pause could show a stale, wrong duration after any of these edits until you pressed Play, and undoing/redoing a trim change didn't update the Start/End boxes at all.
+
 ## v0.1.201 — Hardened the watch-folder subfolder scan
 
 - Watched folders no longer risk freezing the app on a very large or deeply nested folder — the subfolder scan (added in v0.1.198) now scans in smaller chunks instead of one long blocking pass.
