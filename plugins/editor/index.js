@@ -1688,9 +1688,7 @@ ${mixFluctuationMarkup('group')}
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
     this.loopEditorController.onLoopChange(({ loopStart, loopEnd }) => {
-      this.updateLoopTimeInputs(loopStart, loopEnd)
-      this.previewSource?.setLoopPoints(loopStart, loopEnd)
-      this.updateSaveButtonState()
+      this.commitLoopPoints(loopStart, loopEnd)
     })
     this.loopEditorController.onScrub((t) => {
       if (this.previewMode === 'saved' && this.bakedPreview) {
@@ -2554,15 +2552,38 @@ ${mixFluctuationMarkup('group')}
     this.els.lengthInput.value = formatDuration(loopEnd - loopStart)
   }
 
+  // Single choke point for every way the loop region can actually change -
+  // LoopEditor.setLoopPoints() (dragging the waveform handles, typing
+  // Start/End/Length, "Suggest a loop point", undo/redo) unconditionally
+  // calls this via its own onLoopChange callback (registered once, below)
+  // right after clamping, so no caller needs to invoke this directly - just
+  // call loopEditorController.setLoopPoints() and this runs automatically.
+  // BUG FIX (self-review, not reported): before this existed, only the drag
+  // path told previewSource about a new region at all - typing an exact
+  // Start/End/Length or clicking Suggest updated the displayed numbers and
+  // loopEditorController's own state but left the live preview engine
+  // silently looping whatever region it was last told about (from load time,
+  // or the last drag), so "Saved audio" (which always plays the freshly
+  // baked clip) could sound completely different from "Live edit" for a
+  // sound whose trim was ever set by typing/suggesting rather than dragging.
+  // Separately, none of those paths refreshed the sticky bar's time readout
+  // either - it only ever self-corrected once real playback's own rAF tick
+  // loop happened to run, so editing loop points while paused left a stale,
+  // arbitrarily-wrong span on screen until Play was pressed.
+  commitLoopPoints(loopStart, loopEnd) {
+    this.updateLoopTimeInputs(loopStart, loopEnd)
+    this.previewSource?.setLoopPoints(loopStart, loopEnd)
+    const active = this.activePreview()
+    this.updateStickyProgress(active?.audioEl?.currentTime ?? 0)
+    this.updateSaveButtonState()
+  }
+
   applyManualLoopPoints() {
     if (!this.loopEditorController) return
     const start = parseDuration(this.els.startInput.value)
     const end = parseDuration(this.els.endInput.value)
     if (start == null || end == null) return
-    this.loopEditorController.setLoopPoints(start, end)
-    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
-    this.updateLoopTimeInputs(loopStart, loopEnd)
-    this.updateSaveButtonState()
+    this.loopEditorController.setLoopPoints(start, end) // triggers commitLoopPoints via onLoopChange
   }
 
   // Resizes the region from its current Start (a fixed anchor), rather than
@@ -2575,10 +2596,7 @@ ${mixFluctuationMarkup('group')}
     const length = parseDuration(this.els.lengthInput.value)
     if (length == null || length <= 0) return
     const { loopStart } = this.loopEditorController.getLoopPoints()
-    this.loopEditorController.setLoopPoints(loopStart, loopStart + length)
-    const updated = this.loopEditorController.getLoopPoints()
-    this.updateLoopTimeInputs(updated.loopStart, updated.loopEnd)
-    this.updateSaveButtonState()
+    this.loopEditorController.setLoopPoints(loopStart, loopStart + length) // triggers commitLoopPoints via onLoopChange
   }
 
   // "Suggest a loop point" - a real ffmpeg-backed analysis pass in the main
@@ -2610,10 +2628,8 @@ ${mixFluctuationMarkup('group')}
       return
     }
 
-    this.loopEditorController.setLoopPoints(result.loopStart, result.loopEnd)
+    this.loopEditorController.setLoopPoints(result.loopStart, result.loopEnd) // triggers commitLoopPoints via onLoopChange
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
-    this.updateLoopTimeInputs(loopStart, loopEnd)
-    this.updateSaveButtonState()
     this.els.suggestStatus.textContent = `Suggested ${formatDuration(loopEnd - loopStart)} loop — adjust if needed, then Save.`
   }
 
@@ -3561,7 +3577,7 @@ ${mixFluctuationMarkup('group')}
   applyEditorState(state) {
     this._restoringHistory = true
     try {
-      this.loopEditorController.setLoopPoints(state.loopStart, state.loopEnd)
+      this.loopEditorController.setLoopPoints(state.loopStart, state.loopEnd) // triggers commitLoopPoints via onLoopChange
 
       this.setFilterSliders(state.filters)
       this.applyFilterControls()
