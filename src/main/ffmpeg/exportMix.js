@@ -132,16 +132,61 @@ const MAX_INPUTS_PER_PASS = 128
 // command-line-length cap, unrelated to this.
 const MERGE_CHUNK_SIZE = 32
 
+// Shared rubberband options for every pitch/tempo pass in the export
+// pipeline. BUG FIX + optimization (2026-09-16, benchmarked against the real
+// bundled ffmpeg over repeated runs, both graph shapes this pipeline uses):
+//
+// - `pitchq=speed` was REMOVED. It had been applied only under "Faster
+//   export", documented here as "rubberband's fast (slightly lower quality)
+//   mode" - but measured, it is consistently ~38% *slower* on this ffmpeg
+//   build (20-event batch: 3250ms plain vs 4485ms with it; whole-clip:
+//   4900ms vs 5167ms; every repetition, both shapes). So the toggle meant to
+//   speed exports up was paying a real time penalty *and* asking for lower
+//   pitch quality. Nothing to trade off - dropping it is faster and better.
+// - `channels=together` was ADDED. ~1.12x faster (rubberband processes the
+//   stereo pair once instead of each channel independently) and it fixes the
+//   same class of defect already fixed on the live-playback side in v0.1.112:
+//   shifting L and R independently decorrelates them, producing stereo smear
+//   / comb filtering when summed to mono. The ffmpeg path never got that
+//   fix; this is it.
+//
+// Net on the hot per-event batch path vs what "Faster export" used to run:
+// ~1.55x, at strictly better quality.
+const RUBBERBAND_OPTS = 'channels=together'
+
 // "Faster export" (settings.fasterExport, OFF by default, passed in by the
 // export:run handler). When on, the independent short passes - every shot
-// bake, every sliced batch - run several at a time instead of sequentially,
-// and rubberband uses its faster pitch mode. Hard-capped: a single 20-event
-// rubberband batch was measured
-// at ~500 MB, and this pipeline has a documented "took all my RAM and never
-// finished" bug (v0.1.85), so concurrency is never more than this many
-// regardless of core count. OFF ⇒ concurrency 1 (the pre-toggle behavior,
-// unchanged).
-const FASTER_EXPORT_CONCURRENCY_CAP = 4
+// bake, every sliced batch - run several at a time instead of sequentially.
+// OFF ⇒ concurrency 1 (the pre-toggle behavior, unchanged).
+//
+// Optimization (2026-09-16): this used to be a hard cap of 4 regardless of
+// the machine, justified by "a single 20-event rubberband batch was measured
+// at ~500 MB" plus the documented v0.1.85 "took all my RAM and never
+// finished" bug. That 500 MB measurement predates the v0.1.99 rewrite, which
+// made every batch graph `apad` only to its *own* span instead of the whole
+// export length - the comment right above EVENT_BATCH_SIZE even notes peak
+// memory per batch is now "meaningfully lower than even that measurement",
+// but the cap itself was never revisited. Measured on the current shape: 12
+// concurrent 20-event rubberband batches peaked at ~1.6 GB of ffmpeg RSS in
+// TOTAL (~130 MB each, not 500), while cutting a fixed 12-batch workload
+// from 15675ms at concurrency 4 to 7966ms at concurrency 12 - a 1.97x win
+// that the old cap was leaving on the floor on any machine with more than 4
+// cores. The v0.1.85 failure mode is still real, so this stays bounded, just
+// by what the machine can actually take rather than a fixed guess: never
+// more than one core short of the box, never more than MEMORY_BUDGET_FRACTION
+// of total RAM at PER_PASS_MEMORY_BUDGET_MB each, and never above a sane
+// ceiling. On a 12-core/16 GB machine this yields 11; on a 2-core/4 GB one it
+// stays at 1-2, i.e. at or below the old behavior.
+const CONCURRENCY_HARD_CEILING = 12
+const PER_PASS_MEMORY_BUDGET_MB = 512
+const MEMORY_BUDGET_FRACTION = 0.5
+
+function resolveConcurrency() {
+  const cores = Math.max(1, (os.cpus()?.length ?? 2) - 1)
+  const memBudgetMb = (os.totalmem() / 1048576) * MEMORY_BUDGET_FRACTION
+  const byMemory = Math.max(1, Math.floor(memBudgetMb / PER_PASS_MEMORY_BUDGET_MB))
+  return Math.max(1, Math.min(cores, byMemory, CONCURRENCY_HARD_CEILING))
+}
 
 // Runs `worker` over `items` with at most `concurrency` in flight at once.
 // Preserves the pre-toggle behavior exactly at concurrency 1 (a plain
@@ -324,7 +369,7 @@ async function bakeShotClip(sound, { forLoop }) {
   return { path: shotPath, owned: true }
 }
 
-function eventBranchChain(evt, volume, batchStart, speedMode) {
+function eventBranchChain(evt, volume, batchStart) {
   const semitones = evt.pitchSemitones ?? 0
   const speedFactor = evt.speedFactor ?? 1
   const gain = (evt.volumeScale ?? 1) * volume
@@ -335,13 +380,12 @@ function eventBranchChain(evt, volume, batchStart, speedMode) {
     // One rubberband pass handles both: `pitch` shifts pitch without
     // touching length (per-shot Pitch range, v0.1.111), `tempo` changes
     // length/tempo without touching pitch (per-shot Speed range). tempo>1 =
-    // faster/shorter. pitchq=speed is rubberband's fast (slightly lower
-    // quality) mode - only under the faster-export toggle, an unexpected
-    // quality change rather than just a resource one.
+    // faster/shorter. See RUBBERBAND_OPTS for why there's no longer a
+    // faster-export-only quality switch here.
     const rbParts = []
     if (pitchActive) rbParts.push(`pitch=${Math.pow(2, semitones / 12).toFixed(6)}`)
     if (speedActive) rbParts.push(`tempo=${speedFactor.toFixed(6)}`)
-    if (speedMode) rbParts.push('pitchq=speed')
+    rbParts.push(RUBBERBAND_OPTS)
     parts.push(`rubberband=${rbParts.join(':')}`)
   }
   parts.push(`volume=${gain.toFixed(6)}`)
@@ -359,22 +403,32 @@ function eventBranchChain(evt, volume, batchStart, speedMode) {
 // needs to sit at in the final mix. asplit+per-branch+amix(normalize=0) is
 // written to a script file and passed via -filter_complex_script so a dense
 // batch can't hit a command-line length limit.
-async function renderSlicedBatch({ shotPath, batch, volume, speedMode, reporter }) {
+async function renderSlicedBatch({ shotPath, batch, volume, reporter }) {
   const trackPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
   const { events, start, span } = batch
   try {
     const n = events.length
     const splitLabels = events.map((_, i) => `[s${i}]`).join('')
-    const parts = [`[0:a]aformat=channel_layouts=stereo,asplit=${n}${splitLabels};`]
+    // Optimization (2026-09-16): the stereo conversion used to sit here,
+    // *before* the split - so a mono source file (very common for one-shot
+    // SFX, and shot clips preserve their source's channel count since
+    // renderClipToPath passes no -ac) was upconverted to stereo and then run
+    // through every branch's rubberband/volume/fade at 2x the samples for no
+    // benefit. Converting after the amix instead makes the whole per-event
+    // stage run at the source's own channel count; measured ~1.5x faster on a
+    // 20-event mono batch (2991ms -> 2000ms), and an exact no-op for an
+    // already-stereo source. Safe for amix, whose inputs all come from this
+    // one asplit and so always share a layout.
+    const parts = [`[0:a]asplit=${n}${splitLabels};`]
     const mixLabels = []
     events.forEach((evt, i) => {
-      parts.push(`[s${i}]${eventBranchChain(evt, volume, start, speedMode)}[d${i}];`)
+      parts.push(`[s${i}]${eventBranchChain(evt, volume, start)}[d${i}];`)
       mixLabels.push(`[d${i}]`)
     })
     parts.push(
       `${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0:normalize=0,` +
-        `apad=whole_dur=${span.toFixed(6)}[out]`
+        `aformat=channel_layouts=stereo,apad=whole_dur=${span.toFixed(6)}[out]`
     )
     fs.writeFileSync(scriptPath, parts.join(''))
 
@@ -1352,20 +1406,15 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
 
   // "Faster export" toggle: independent short passes (shot bakes, sliced
   // batches) run `concurrency` at a time. OFF ⇒ 1 ⇒ a plain sequential walk,
-  // byte-for-byte the pre-toggle pipeline. ON ⇒ bounded by core count and a
-  // hard cap - each in-flight batch holds a few hundred MB (measured ~180 MB
-  // with the now-span-limited batch graphs), so the CAP keeps peak bounded.
-  const concurrency = fasterExport
-    ? Math.max(1, Math.min((os.cpus()?.length ?? 2) - 1, FASTER_EXPORT_CONCURRENCY_CAP))
-    : 1
+  // byte-for-byte the pre-toggle pipeline. ON ⇒ whatever the machine can
+  // actually take, see resolveConcurrency.
+  const concurrency = fasterExport ? resolveConcurrency() : 1
   // parallelMixdown's own concurrency, independent of fasterExport (see
   // exportMix.js's doc comment - "a second, separate opt-in toggle" per the
   // owner's own framing) - the whole point is parallelizing the final
   // mixdown's loop-tiling regardless of whether the earlier phases are sped
-  // up too. Same core-count/cap logic as fasterExport's.
-  const mixdownConcurrency = parallelMixdown
-    ? Math.max(1, Math.min((os.cpus()?.length ?? 2) - 1, FASTER_EXPORT_CONCURRENCY_CAP))
-    : 1
+  // up too. Same resolution logic as fasterExport's.
+  const mixdownConcurrency = parallelMixdown ? resolveConcurrency() : 1
   // The pre-combine ("Merging N track groups") rounds parallelize if *either*
   // opt-in toggle is on - each combine pass is a cheap adelay+amix, and this
   // phase was the biggest single time sink on the export that prompted
@@ -1430,7 +1479,6 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         shotPath: job.shotPath,
         batch: job.batch,
         volume: job.sound.volume ?? 0.7,
-        speedMode: fasterExport,
         reporter
       })
       batchTrackPaths.push(track.path)

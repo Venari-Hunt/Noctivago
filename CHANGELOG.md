@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.211 — Exports are faster again, and pitch-shifted sounds sound better
+
+- "Faster export" now actually uses your whole machine. It was capped at 4 things at once no matter how many cores you have — that limit was set years ago against a much heavier version of the pipeline and never revisited. It now scales to your CPU and RAM (11 at once on this machine instead of 4), measured just under 2x faster on the phase that places Random Interval / Scheduled sounds.
+- BUG FIX: "Faster export" was asking for a lower-quality pitch-shifting mode that turned out to be about 38% *slower* than the normal one — so the speed toggle was costing both time and quality. Removed; exports are now faster and higher quality at the same time.
+- Pitch-shifted stereo sounds no longer get their stereo image smeared. The two channels were being shifted independently, which blurs the stereo picture and can hollow out the sound when heard in mono — the same problem that was fixed for live playback a while back, now fixed for exports and baked clips too. Also happens to be a bit faster.
+- Mono sound files are no longer secretly converted to stereo before the heavy pitch/speed work, which was doing double the processing for nothing — roughly 1.5x faster for those.
+
 ## v0.1.210 — Big exports are much faster
 
 - BUG FIX: a real export's "Merging N track groups…" step (the pass that combines all the short pieces of a Random Interval or Scheduled sound before the final mix) could take far longer than everything else in the export combined — one real export spent 33 of its ~49 minutes on this single step. It was accidentally paying the cost of rendering nearly the whole export's length on every merge, over and over, instead of just the small windows of time that actually had audio in them. Fixed at the root — measured roughly 4x less work overall on a synthetic worst case, and much more than that once "Faster export"'s own parallelism is counted in.

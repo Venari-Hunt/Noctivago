@@ -183,10 +183,14 @@ export function renderPitchCommandFile(fluctuation, durationSeconds, rng = Math.
 
 // The `-af` fragment that applies a command file to a track. Path is forced
 // to forward slashes (the bundled ffmpeg accepts them on Windows) and single-
-// quoted, matching loopClip.js's own `asendcmd=c='...'` usage; `pitchq=speed`
-// is rubberband's faster mode, the same trade the per-shot export path
-// already makes.
+// quoted, matching loopClip.js's own `asendcmd=c='...'` usage.
+// 2026-09-16: `pitchq=speed` was dropped here for the same reason it was
+// dropped from the per-shot export path - benchmarked against the real
+// bundled ffmpeg it is consistently ~38% *slower*, not faster, while also
+// asking for lower pitch quality (see exportMix.js's RUBBERBAND_OPTS).
+// `channels=together` replaces it: faster, and no stereo decorrelation.
+// This runs over the whole export duration, so it's not a small saving.
 export function pitchCommandFilter(commandFilePath) {
   const escaped = commandFilePath.replace(/\\/g, '/').replace(/'/g, "\\'")
-  return `asendcmd=f='${escaped}',rubberband=pitch=1:pitchq=speed`
+  return `asendcmd=f='${escaped}',rubberband=pitch=1:channels=together`
 }

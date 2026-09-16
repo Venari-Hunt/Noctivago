@@ -479,7 +479,13 @@ function buildSpeedPitchReverseChain(speedPitch, durationSeconds) {
       const sendCmd = buildDopplerSendCmd(pitchRatio, durationSeconds, dopplerClosestFraction, dopplerIntensitySemitones, dopplerReversed, dopplerSharpness)
       if (sendCmd) parts.push(`asendcmd=c='${sendCmd}'`)
     }
-    parts.push(`rubberband=tempo=${speed}:pitch=${pitchRatio.toFixed(6)}`)
+    // channels=together: ~1.12x faster than rubberband's default of shifting
+    // each channel independently, and it avoids the stereo decorrelation /
+    // smear that independent per-channel shifting causes - the same defect
+    // fixed on the live-playback side in v0.1.112 (see pitchStretch.js).
+    // Benchmarked 2026-09-16 against the real bundled ffmpeg; see
+    // exportMix.js's RUBBERBAND_OPTS for the full measurements.
+    parts.push(`rubberband=tempo=${speed}:pitch=${pitchRatio.toFixed(6)}:channels=together`)
   }
   if (reversed) parts.push('areverse')
   return parts.length > 0 ? parts.join(',') : null
