@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.214 — "Saved audio" toggle no longer greys out after saving
+
+- BUG FIX: saving while on "Saved audio" in Remix greyed out the Live edit / Saved audio toggle and dropped you back to Live edit. Saving now keeps you on Saved audio, keeps playing from the same spot, and you hear the new version.
+- The toggle is never greyed out anymore. On a sound that hasn't been saved yet, clicking it saves and renders the sound first, then switches to Saved audio.
+
 ## v0.1.213 — Pitch drift exports ~20x faster and matches the Mixer; Sound Group timing fix
 
 - BUG FIX: in exports made with v0.1.210–v0.1.212, a Sound Group made only of Random Interval / Scheduled sounds played early — everything in it was shifted by however late the group's first sound was (e.g. thunder meant for 0:30 and 1:00 played at 0:00 and 0:30). Fixed; sounds land exactly when they should again.
