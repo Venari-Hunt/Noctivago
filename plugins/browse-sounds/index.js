@@ -70,6 +70,7 @@ export default class BrowseSoundsPlugin {
     this.previewAudio = null
     this.previewBtn = null
     this.observer = null
+    this.requestId = 0
   }
 
   async onload() {
@@ -149,7 +150,6 @@ export default class BrowseSoundsPlugin {
     this.sort = this.els.sort.value
     this.page = 1
     this.hasMore = false
-    this.els.results.replaceChildren()
     this.runSearch({ append: false })
   }
 
@@ -159,10 +159,18 @@ export default class BrowseSoundsPlugin {
     this.runSearch({ append: true })
   }
 
+  // requestId (BUG FIX, self-review 2026-09-15): loadMore()'s
+  // IntersectionObserver can trigger a page-2 request that's still in
+  // flight when the user starts a brand-new search before it resolves -
+  // without a staleness guard, the stale response would append the old
+  // query's cards onto the new query's freshly-cleared grid. Each call
+  // stamps the request it started with the current counter; a response is
+  // only applied if that counter still matches when it comes back.
   async runSearch({ append }) {
     this.loading = true
     this.els.searchBtn.disabled = true
     if (!append) this.els.status.textContent = 'Searching…'
+    const requestId = ++this.requestId
 
     const result = await this.api.freesound.search({
       query: this.query,
@@ -171,16 +179,22 @@ export default class BrowseSoundsPlugin {
       pageSize: PAGE_SIZE
     })
 
+    if (requestId !== this.requestId) return // superseded by a newer search
     this.loading = false
     this.els.searchBtn.disabled = false
 
     if (!result.ok) {
+      // Preserve whatever results were already showing on a failed search
+      // (matches the old dialog's behavior) - only a fresh, successful
+      // non-append search clears the grid, done just below once we know
+      // there's something to replace it with.
       this.els.status.textContent = result.error || 'Search failed.'
       this.hasMore = false
       this.els.sentinel.classList.add('hidden')
       return
     }
 
+    if (!append) this.els.results.replaceChildren()
     for (const sound of result.results) this.els.results.appendChild(this.renderCard(sound))
 
     if (result.results.length === 0 && !append) {
@@ -272,7 +286,7 @@ export default class BrowseSoundsPlugin {
 
     const meta = document.createElement('div')
     meta.className = 'browse-card-meta'
-    const ratingPart = sound.numRatings > 0 ? ` · ★${sound.avgRating.toFixed(1)} (${sound.numRatings})` : ''
+    const ratingPart = sound.numRatings > 0 && sound.avgRating != null ? ` · ★${sound.avgRating.toFixed(1)} (${sound.numRatings})` : ''
     meta.textContent = `by ${sound.username} · ${formatDuration(sound.durationSeconds)} · ${licenseLabel(sound.license)}${ratingPart}`
 
     card.append(header, meta)
