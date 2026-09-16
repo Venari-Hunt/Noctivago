@@ -109,6 +109,29 @@ const INTERMEDIATE_CODEC = ['-c:a', 'flac', '-ar', '44100', '-ac', '2']
 // usually skips the pre-combine ("Merging N track groups") round entirely.
 const MAX_INPUTS_PER_PASS = 128
 
+// BUG FIX (2026-09-16, root-caused from a real owner-reported "export takes
+// too long" complaint via the per-step export-log.txt this pipeline already
+// writes - see the "Merging N track groups…" comments on combineTracks and
+// reduceTrackCount below for the actual mechanism). A real 245-track merge
+// took 33m35s of a ~49-minute export - the single biggest phase by far.
+// reduceTrackCount used to chunk tracks by raw array position, with no
+// regard for their .offset (absolute position in the export timeline) - and
+// batch tracks land in that array interleaved across every event sound's own
+// full duration (mapPool processes across sound boundaries to keep the pool
+// saturated, so completion order - and therefore array order - has no time
+// locality at all). A ~120-track chunk drawn that way, from a timeline with
+// many sounds' events spread across the whole export, ends up with offsets
+// spanning nearly the *entire* duration, so combineTracks's own amix has to
+// render an output nearly as long as the whole export just to hold a
+// scattering of short real clips - exactly the "N x full duration" cost the
+// v0.1.99 pipeline rewrite was built to eliminate in the first place, just
+// reintroduced one level up. Chunking a *sorted-by-offset* copy into groups
+// this much smaller than MAX_INPUTS_PER_PASS keeps each chunk's own time
+// window narrow (many more, far cheaper chunks instead of few, enormous
+// ones) - MAX_INPUTS_PER_PASS itself stays as the final pass's own hard
+// command-line-length cap, unrelated to this.
+const MERGE_CHUNK_SIZE = 32
+
 // "Faster export" (settings.fasterExport, OFF by default, passed in by the
 // export:run handler). When on, the independent short passes - every shot
 // bake, every sliced batch - run several at a time instead of sequentially,
@@ -372,10 +395,11 @@ async function renderSlicedBatch({ shotPath, batch, volume, speedMode, reporter 
   }
 }
 
-// adelay every track to its absolute offset, then amix (honest sum,
-// normalize=0 - matching the rest of the pipeline). One ffmpeg pass, graph
-// via -filter_complex_script so the graph itself never touches the command
-// line. Returns one track, now absolute-positioned (offset 0).
+// adelay every track relative to the chunk's own earliest offset, then amix
+// (honest sum, normalize=0 - matching the rest of the pipeline). One ffmpeg
+// pass, graph via -filter_complex_script so the graph itself never touches
+// the command line. Returns one track, positioned at the chunk's own
+// earliest offset - NOT always 0 (see the BUG FIX below).
 // BUG FIX (inbox 2026-09-14: a "fail log" pasted after an export sat on
 // "Merging 243 track groups…" for 37 real minutes with the progress bar
 // frozen solid): this amix pass runs real, potentially very long ffmpeg work
@@ -386,13 +410,29 @@ async function renderSlicedBatch({ shotPath, batch, volume, speedMode, reporter 
 // upper bound (every track combined here is bounded by the export length,
 // same spirit as groupWorkSeconds' own estimate below), just enough to keep
 // the bar visibly moving instead of stalling.
+// BUG FIX (2026-09-16, real cost this time, not just the progress bar - see
+// MERGE_CHUNK_SIZE's own comment for the full story): this used to delay
+// every track by its raw absolute .offset and always return offset: 0 -
+// meaning the combined output file literally started at t=0 regardless of
+// how late the chunk's own earliest real content actually began, forcing
+// ffmpeg to render (and this function's caller to then treat as "the whole
+// export span") however much leading silence that implies. Delaying instead
+// by each track's offset *relative to the chunk's own minimum* and
+// returning that minimum as the result's real offset keeps the combined
+// output bounded to just the chunk's own active time window - the same
+// "positioned, not padded from 0" shape renderSlicedBatch's own tracks
+// already have. Every consumer of a track's .offset (the final mixdown,
+// combineTracks itself on a later round, renderGroupBuses) already adelays
+// by whatever .offset says, so a real non-zero value here was already
+// handled correctly - it just never used to reflect reality.
 async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
   const outPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
+  const minOffset = Math.min(...tracks.map((t) => t.offset))
   const graph = []
   const mixLabels = []
   tracks.forEach((t, i) => {
-    const delayMs = Math.max(0, Math.round(t.offset * 1000))
+    const delayMs = Math.max(0, Math.round((t.offset - minOffset) * 1000))
     graph.push(`[${i}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${i}]`)
     mixLabels.push(`[m${i}]`)
   })
@@ -411,7 +451,7 @@ async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
       ],
       durationSeconds ? { onProgress: (sec) => reporter?.tick(sec, durationSeconds) } : undefined
     )
-    return { path: outPath, offset: 0 }
+    return { path: outPath, offset: minOffset }
   } finally {
     await cleanupFiles([scriptPath])
   }
@@ -429,13 +469,23 @@ async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
 // (v0.1.136), and it was the one place still walking its passes one by one
 // while every other phase already parallelized under Faster export /
 // Parallel mixdown. concurrency 1 keeps the old exact sequential behavior.
+//
+// BUG FIX (2026-09-16): chunks now come from a copy of `tracks` sorted by
+// .offset, split into MERGE_CHUNK_SIZE-sized groups rather than
+// MAX_INPUTS_PER_PASS-sized ones - see MERGE_CHUNK_SIZE's own comment for
+// why raw array-position chunking made every combine pass cost nearly a
+// full export's worth of ffmpeg work regardless of how few tracks it held.
+// Sorting is cheap even at a few thousand tracks and the array itself is
+// never mutated (tracks may still be read elsewhere by the caller).
 async function reduceTrackCount(tracks, target, ownPaths, reporter, concurrency = 1, durationSeconds = null) {
   let current = tracks
   while (current.length > target) {
     reporter?.step(`Merging ${current.length} track groups…`)
+    const sorted = [...current].sort((a, b) => a.offset - b.offset)
+    const chunkSize = Math.min(MERGE_CHUNK_SIZE, MAX_INPUTS_PER_PASS)
     const chunks = []
-    for (let i = 0; i < current.length; i += MAX_INPUTS_PER_PASS) {
-      chunks.push(current.slice(i, i + MAX_INPUTS_PER_PASS))
+    for (let i = 0; i < sorted.length; i += chunkSize) {
+      chunks.push(sorted.slice(i, i + chunkSize))
     }
     const nextRound = new Array(chunks.length)
     await mapPool(chunks, concurrency, async (chunk, idx) => {

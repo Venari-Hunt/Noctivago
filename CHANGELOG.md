@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.210 — Big exports are much faster
+
+- BUG FIX: a real export's "Merging N track groups…" step (the pass that combines all the short pieces of a Random Interval or Scheduled sound before the final mix) could take far longer than everything else in the export combined — one real export spent 33 of its ~49 minutes on this single step. It was accidentally paying the cost of rendering nearly the whole export's length on every merge, over and over, instead of just the small windows of time that actually had audio in them. Fixed at the root — measured roughly 4x less work overall on a synthetic worst case, and much more than that once "Faster export"'s own parallelism is counted in.
+
 ## v0.1.209 — Self-review: fixed a toggle-off race in Browse Sounds
 
 - BUG FIX: turning off Freesound or YouTube in Browse Sounds while it was still mid-search could let its results quietly reappear a moment later, un-hiding the "load more" trigger too — most likely with YouTube, whose search takes longer. Not reported — caught by a self-review pass over v0.1.204-208.
