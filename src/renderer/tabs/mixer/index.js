@@ -1324,27 +1324,32 @@ els.addFolderPresetConfirm.addEventListener('click', async () => {
   els.addFolderPresetConfirm.disabled = true
   els.addFolderPresetStatus.textContent = 'Adding sounds…'
 
-  const added = await api.library.addFolderSounds(pickedFolder, { keepCopy: els.addFolderPresetKeepCopy.checked })
-  if (added.length === 0) {
+  try {
+    const added = await api.library.addFolderSounds(pickedFolder, { keepCopy: els.addFolderPresetKeepCopy.checked })
+    if (added.length === 0) {
+      els.addFolderPresetConfirm.disabled = false
+      els.addFolderPresetStatus.textContent = 'No audio files found in that folder (including subfolders).'
+      return
+    }
+
+    await api.presets.save({
+      name,
+      sounds: added.map((entry) => ({ soundId: entry.id, volume: DEFAULT_VOLUME }))
+    })
+
+    if (els.addFolderPresetTag.checked && pickedFolderPresetTagName) {
+      await Promise.all(added.map((entry) => api.library.updateTags(entry.id, [...(entry.tags ?? []), pickedFolderPresetTagName])))
+    }
+
+    pickedFolder = null
+    pickedFolderPresetTagName = null
+    hideModal(els.addFolderPresetDialog)
+    await refreshList()
+  } catch {
+    els.addFolderPresetStatus.textContent = 'Something went wrong adding that folder. Try again.'
+  } finally {
     els.addFolderPresetConfirm.disabled = false
-    els.addFolderPresetStatus.textContent = 'No audio files found directly inside that folder.'
-    return
   }
-
-  await api.presets.save({
-    name,
-    sounds: added.map((entry) => ({ soundId: entry.id, volume: DEFAULT_VOLUME }))
-  })
-
-  if (els.addFolderPresetTag.checked && pickedFolderPresetTagName) {
-    await Promise.all(added.map((entry) => api.library.updateTags(entry.id, [...(entry.tags ?? []), pickedFolderPresetTagName])))
-  }
-
-  els.addFolderPresetConfirm.disabled = false
-  pickedFolder = null
-  pickedFolderPresetTagName = null
-  hideModal(els.addFolderPresetDialog)
-  await refreshList()
 })
 
 els.addSoundFolderTagItem.addEventListener('click', async () => {
@@ -1375,19 +1380,24 @@ els.addFolderTagConfirm.addEventListener('click', async () => {
   els.addFolderTagConfirm.disabled = true
   els.addFolderTagStatus.textContent = 'Adding sounds…'
 
-  const added = await api.library.addFolderSounds(pickedFolderForTag, { keepCopy: els.addFolderTagKeepCopy.checked })
-  if (added.length === 0) {
+  try {
+    const added = await api.library.addFolderSounds(pickedFolderForTag, { keepCopy: els.addFolderTagKeepCopy.checked })
+    if (added.length === 0) {
+      els.addFolderTagConfirm.disabled = false
+      els.addFolderTagStatus.textContent = 'No audio files found in that folder (including subfolders).'
+      return
+    }
+
+    await Promise.all(added.map((entry) => api.library.updateTags(entry.id, [...(entry.tags ?? []), tag])))
+
+    pickedFolderForTag = null
+    hideModal(els.addFolderTagDialog)
+    await refreshList()
+  } catch {
+    els.addFolderTagStatus.textContent = 'Something went wrong adding that folder. Try again.'
+  } finally {
     els.addFolderTagConfirm.disabled = false
-    els.addFolderTagStatus.textContent = 'No audio files found directly inside that folder.'
-    return
   }
-
-  await Promise.all(added.map((entry) => api.library.updateTags(entry.id, [...(entry.tags ?? []), tag])))
-
-  els.addFolderTagConfirm.disabled = false
-  pickedFolderForTag = null
-  hideModal(els.addFolderTagDialog)
-  await refreshList()
 })
 
 async function refreshPresetList() {

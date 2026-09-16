@@ -55,4 +55,16 @@ describe('walkFilesRecursive', () => {
     )
     assert.deepEqual(found, [])
   })
+
+  test('onFile throwing on one file does not abort the rest of the walk', async () => {
+    const found = []
+    await walkFilesRecursive(root, (dirent, parentDir) => {
+      if (dirent.name === 'b.txt') throw new Error('simulated permission error')
+      found.push(path.join(parentDir, dirent.name))
+    })
+    assert.deepEqual(
+      found.map((f) => path.relative(root, f)).sort(),
+      ['Sub1\\Sub2\\c.txt', 'a.txt'].sort()
+    )
+  })
 })

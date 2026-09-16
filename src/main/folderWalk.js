@@ -54,7 +54,17 @@ export async function walkFilesRecursive(rootPath, onFile) {
         await walk(fullPath)
         await new Promise((resolve) => setImmediate(resolve))
       } else if (dirent.isFile()) {
-        onFile(dirent, dirPath)
+        // BUG FIX (self-review, 2026-09-15): onFile can throw synchronously
+        // (e.g. addSound()'s fs.statSync/fs.copyFileSync hitting a
+        // permission error, or a file deleted mid-walk) - previously
+        // unguarded, so one bad file anywhere in the tree aborted the whole
+        // remaining walk, silently dropping every file after it. Caught and
+        // skipped quietly, same as a realpath/readdir failure just above.
+        try {
+          onFile(dirent, dirPath)
+        } catch {
+          // one bad file shouldn't stop the rest of the tree from importing
+        }
       }
     }
   }

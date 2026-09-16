@@ -291,11 +291,16 @@ export function removeWatchedFolder(id) {
 // "Add folder as tag/preset" dialogs to match watch-folder import's own
 // v0.1.198 behavior). Reuses the same hardened walkFilesRecursive (cycle
 // protection, chunked/async - see folderWalk.js) and tagsForWatchedFile
-// derivation scanWatchedFolder already uses, rather than a second copy;
-// tags are applied the same additive way importIfNew already applies a
-// watched folder's own tags (updateTags after addSound), so a file found
-// directly in folderPath itself (no subfolder) still gets no tag, same as
-// before. Resolved open design question from the Board: the dialogs' own
+// derivation scanWatchedFolder already uses. BUG FIX (self-review,
+// 2026-09-15): v0.1.203 originally re-inlined importIfNew's own
+// filter/addSound/updateTags steps instead of calling it, which silently
+// dropped importIfNew's hasSoundForPath dedup check - re-running "Add
+// folder as tag/preset" on an already-imported folder created duplicate
+// library entries for every file. Now calls importIfNew directly, same as
+// scanWatchedFolder already does, so a file found directly in folderPath
+// itself (no subfolder) still gets no tag, same as before, and a re-run
+// over the same folder is a no-op like a watched-folder rescan already is.
+// Resolved open design question from the Board: the dialogs' own
 // explicit typed tag (applied separately by the caller, tabs/mixer/
 // index.js) stays exactly as it was and layers on *top* of these
 // auto-derived ones, never replacing them - both call sites already apply
@@ -306,12 +311,9 @@ export function removeWatchedFolder(id) {
 export async function addFolderSounds(folderPath, { keepCopy }) {
   const added = []
   await walkFilesRecursive(folderPath, (dirent, containingDir) => {
-    if (!AUDIO_EXTENSIONS.includes(path.extname(dirent.name).slice(1).toLowerCase())) return
     const filePath = path.join(containingDir, dirent.name)
-    const tags = tagsForWatchedFile(folderPath, containingDir)
-    let sound = addSound({ path: filePath, name: path.parse(filePath).name, keepCopy })
-    if (tags.length > 0) sound = updateTags(sound.id, tags)
-    added.push(sound)
+    const sound = importIfNew(filePath, keepCopy, tagsForWatchedFile(folderPath, containingDir))
+    if (sound) added.push(sound)
   })
   return added
 }

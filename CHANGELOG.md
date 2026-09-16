@@ -6,6 +6,14 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.205 — Self-review: fixed a duplicate-import bug in "Add folder as tag/preset"
+
+- BUG FIX: re-running "Add folder as tag" or "Add folder as preset" on a folder you'd already imported created duplicate copies of every sound in it, instead of skipping ones already in your library — the recursive scan added in v0.1.203 had lost the existing duplicate check along the way.
+- BUG FIX: a single unreadable or locked file anywhere in a large nested folder could silently stop the rest of that folder (or a watched folder's background scan) from being imported at all.
+- Minor: the "no audio files found" message in those two dialogs no longer says "directly inside" now that the scan checks subfolders too, and the dialogs no longer get stuck on "Adding sounds…" forever if something unexpected goes wrong.
+- Also fixed two smaller issues in the new Browse Sounds tab: a failed search used to clear out whatever results were already on screen instead of leaving them there, and searching again while more results were still loading in the background could occasionally mix results from two different searches together.
+- Not reported — caught by a self-review pass over v0.1.201-204.
+
 ## v0.1.204 — New "Browse Sounds" tab for internet-sourced import
 
 - Freesound search moved out of the add-sound "+" menu's cramped dialog into its own dedicated "Browse Sounds" tab, with a lot more room to browse: a card grid instead of a narrow list, infinite scroll instead of a "Load more" button, and every result now shows its tags, description, and rating — not just a name and duration.
