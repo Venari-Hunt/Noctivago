@@ -182,6 +182,10 @@ const api = {
   freesound: {
     isAvailable: () => ipcRenderer.invoke('freesound:isAvailable'),
     search: (params) => ipcRenderer.invoke('freesound:search', params)
+  },
+  ytdlp: {
+    isSearchAvailable: () => ipcRenderer.invoke('ytdlp:isSearchAvailable'),
+    searchYouTube: (params) => ipcRenderer.invoke('ytdlp:searchYouTube', params)
   }
 }
 
