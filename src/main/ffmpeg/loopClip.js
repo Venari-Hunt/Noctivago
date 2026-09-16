@@ -1,7 +1,10 @@
 import { app } from 'electron'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { runFfmpegToFile, runFfmpegPipe } from './runFfmpeg.js'
+import { resolveFfmpegPath } from './ffmpegPath.js'
+import { buildPanFilter, normalizePan, parseChannelCount } from './panFilter.js'
 import { getOrCreateReverbIR } from './reverbIR.js'
 import { hasVolumeEnvelope, renderVolumeEnvelopeWav } from './volumeEnvelope.js'
 
@@ -97,6 +100,21 @@ async function probeAvailableDuration(inputPath, start, requestedDuration) {
 // probed any other way (see library.js's eager-bake-on-import setting, the
 // one caller of this outside the normal Save/first-play paths, both of which
 // already have a duration from waitForMetadata() by the time they render).
+// Channel count of inputPath's first audio stream, read from ffmpeg's own
+// stream-info line (same stderr technique as bandEnergy.js's
+// probeSourceSampleRate). Only called when a sound is actually panned.
+function probeChannelCount(inputPath) {
+  return new Promise((resolve) => {
+    const child = spawn(resolveFfmpegPath(), ['-i', inputPath, '-t', '0.01', '-f', 'null', '-'], { windowsHide: true })
+    let stderr = ''
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString()
+    })
+    child.on('close', () => resolve(parseChannelCount(stderr) ?? 2))
+    child.on('error', () => resolve(2))
+  })
+}
+
 export async function probeDurationSeconds(inputPath) {
   let byteCount = 0
   await runFfmpegPipe(
@@ -638,8 +656,14 @@ export function renderLoopClip({ id, inputPath, loopStart, loopEnd, filters, cro
 // always has. Split out so doRender can point it at either the original
 // source directly (the common case) or at a pre-processed intermediate (see
 // doRender's speed/pitch/reverse branch) without duplicating this logic.
-async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, outputPath }) {
+// pan (v0.1.216) is applied as the very last stage of this render - after
+// every filter and, on doRender's pre-pass path, after reverb/envelope too,
+// matching the live chain where the StereoPannerNode sits just before the
+// per-sound volume. It's memoryless, so running it after trim/crossfade/
+// rotation is equivalent to running it before them.
+async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, pan = 0, outputPath }) {
   const tmpPath = `${outputPath}.tmp`
+  const panFilter = normalizePan(pan) !== 0 ? buildPanFilter(pan, await probeChannelCount(inputPath)) : null
 
   const duration = loopEnd - loopStart
   const requestedFade = crossfadeSeconds ?? DEFAULT_CROSSFADE_SECONDS
@@ -668,7 +692,7 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
     // Crossfade explicitly disabled (slider at 0ms) - honor that literally
     // rather than silently forcing a minimum: a plain trim with no edit at
     // all, matching every other "0 = Off" control already in this app.
-    const filterChain = buildFilterChain(filters)
+    const filterChain = [buildFilterChain(filters), panFilter].filter(Boolean).join(',')
     args = [
       '-y',
       '-ss', effectiveLoopStart.toFixed(6), '-t', effectiveDuration.toFixed(6), '-i', inputPath,
@@ -683,8 +707,10 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
       '-ss', effectiveLoopStart.toFixed(6), '-t', mainDuration.toFixed(6), '-i', inputPath,
       '-ss', (effectiveLoopEnd - fade).toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
       '-ss', effectiveLoopStart.toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
-      '-filter_complex', buildRotatedFilterComplex(filters, fade.toFixed(6), mainDuration.toFixed(6), effectiveDuration.toFixed(6)),
-      '-map', '[out]',
+      '-filter_complex',
+      buildRotatedFilterComplex(filters, fade.toFixed(6), mainDuration.toFixed(6), effectiveDuration.toFixed(6)) +
+        (panFilter ? `;[out]${panFilter}[panned]` : ''),
+      '-map', panFilter ? '[panned]' : '[out]',
       '-vn',
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath
     ]
@@ -800,7 +826,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
 
   if (!speedPitchChain && !reverbActive && !noiseChain && !envelopeActive) {
     try {
-      await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, outputPath })
+      await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, pan: filters?.pan, outputPath })
       return { ok: true }
     } catch (err) {
       if (fs.existsSync(tmpPath)) {
@@ -882,6 +908,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
       loopEnd: intermediateDuration,
       filters: null,
       crossfadeSeconds,
+      pan: filters?.pan,
       outputPath
     })
     return { ok: true }

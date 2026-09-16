@@ -6,6 +6,14 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.216 — Stereo pan per sound
+
+- New **Pan** slider in Remix (Sound mode, Filters section, under Gain): move a sound anywhere between the left and right speaker. Double-click it to center.
+- You hear it live while editing and in the Mixer, and it's saved into exports exactly the same way.
+- Loudness stays steady while you pan. A mono sound gets at most 3 dB louder in one speaker when panned all the way, instead of jumping.
+- Effect presets (Muffled, Phone…) leave your pan alone; Reset filters re-centers it.
+- Sounds left at center are untouched, and exports don't get any slower.
+
 ## v0.1.215 — Sound Group reverb sliders work again under Occlusion
 
 - BUG FIX: on a Sound Group with Occlusion turned up, the Reverb Mix and Size sliders could do nothing at all. Occlusion set a minimum reverb (at 100%: 40% Mix, 900 ms Size), and any manual setting below that was ignored in both the Mixer and exports. Occlusion now adds its reverb on top of your own setting, so every slider move is audible at any Occlusion level.

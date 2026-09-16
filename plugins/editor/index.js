@@ -122,7 +122,7 @@ function defaultVolumeEnvelope() {
   }
 }
 
-const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands(), volumeEnvelope: defaultVolumeEnvelope() }
+const NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, pan: 0, gateThresholdDb: -80, gateRangeDb: 0, gateAttackMs: 10, gateReleaseMs: 150, denoiseEnabled: false, denoiseStrengthDb: 12, denoiseSampleStartSec: 0, denoiseSampleEndSec: 0, echoDelayMs: 0, echoDecay: 0, reverbSizeMs: 0, reverbMix: 0, eq: defaultEqBands(), volumeEnvelope: defaultVolumeEnvelope() }
 
 // Mirrors library.js's defaultFluctuation() - same cross-directory
 // duplication reason as MAX_BUFFER_CLIP_SECONDS. volume rides 0..1
@@ -1225,6 +1225,11 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-gain" type="range" min="-24" max="24" value="0" step="0.5" />
               <span id="editor-gain-value" class="editor-filter-value">0 dB</span>
             </label>
+            <label title="Stereo pan: move the sound toward the left or right speaker. Double-click to center.">
+              <span>Pan</span>
+              <input id="editor-pan" type="range" min="-1" max="1" value="0" step="0.05" />
+              <span id="editor-pan-value" class="editor-filter-value">Center</span>
+            </label>
             <label title="Noise gate: quiets the sound whenever it drops below this level, to cut a hissy/rumbly noise floor between events. Left edge = off.">
               <span>Gate threshold</span>
               <input id="editor-gate-threshold" type="range" min="-80" max="0" value="-80" step="1" />
@@ -1514,6 +1519,8 @@ ${mixFluctuationMarkup('group')}
       lowpassValue: container.querySelector('#editor-lowpass-value'),
       gain: container.querySelector('#editor-gain'),
       gainValue: container.querySelector('#editor-gain-value'),
+      pan: container.querySelector('#editor-pan'),
+      panValue: container.querySelector('#editor-pan-value'),
       gateThreshold: container.querySelector('#editor-gate-threshold'),
       gateThresholdValue: container.querySelector('#editor-gate-threshold-value'),
       gateRange: container.querySelector('#editor-gate-range'),
@@ -1982,6 +1989,7 @@ ${mixFluctuationMarkup('group')}
     this.els.highpass.addEventListener('input', () => this.applyFilterControls())
     this.els.lowpass.addEventListener('input', () => this.applyFilterControls())
     this.els.gain.addEventListener('input', () => this.applyFilterControls())
+    this.els.pan.addEventListener('input', () => this.applyFilterControls())
     this.els.gateThreshold.addEventListener('input', () => this.applyFilterControls())
     this.els.gateRange.addEventListener('input', () => this.applyFilterControls())
     this.els.gateAttack.addEventListener('input', () => this.applyFilterControls())
@@ -2664,6 +2672,9 @@ ${mixFluctuationMarkup('group')}
     this.els.highpass.value = String(filters.highpassHz)
     this.els.lowpass.value = String(filters.lowpassHz)
     this.els.gain.value = String(filters.gainDb)
+    // Effect presets don't define pan (placement isn't part of a sound's
+    // character), so a preset click leaves it where it is.
+    if (filters.pan !== undefined) this.els.pan.value = String(filters.pan)
     this.els.gateThreshold.value = String(filters.gateThresholdDb ?? -80)
     this.els.gateRange.value = String(filters.gateRangeDb ?? 0)
     this.els.gateAttack.value = String(filters.gateAttackMs ?? 10)
@@ -2691,6 +2702,7 @@ ${mixFluctuationMarkup('group')}
       highpassHz: Number(this.els.highpass.value),
       lowpassHz: Number(this.els.lowpass.value),
       gainDb: Number(this.els.gain.value),
+      pan: Number(this.els.pan.value),
       gateThresholdDb: Number(this.els.gateThreshold.value),
       gateRangeDb: Number(this.els.gateRange.value),
       gateAttackMs: Number(this.els.gateAttack.value),
@@ -2872,6 +2884,8 @@ ${mixFluctuationMarkup('group')}
     this.els.highpassValue.textContent = filters.highpassHz > 0 ? `${filters.highpassHz} Hz` : 'Off'
     this.els.lowpassValue.textContent = filters.lowpassHz < 20000 ? `${filters.lowpassHz} Hz` : 'Off'
     this.els.gainValue.textContent = `${filters.gainDb > 0 ? '+' : ''}${filters.gainDb} dB`
+    const pan = filters.pan ?? 0
+    this.els.panValue.textContent = pan === 0 ? 'Center' : `${pan < 0 ? 'L' : 'R'} ${Math.round(Math.abs(pan) * 100)}%`
     const gateOn = filters.gateThresholdDb > -80 && filters.gateRangeDb > 0
     this.els.gateThresholdValue.textContent = filters.gateThresholdDb > -80 ? `${filters.gateThresholdDb} dB` : 'Off'
     this.els.gateRangeValue.textContent = filters.gateRangeDb > 0 ? `-${filters.gateRangeDb} dB` : 'Off'
@@ -3362,6 +3376,7 @@ ${mixFluctuationMarkup('group')}
         highpassHz: filters.highpassHz ?? 0,
         lowpassHz: filters.lowpassHz ?? 20000,
         gainDb: filters.gainDb ?? 0,
+        pan: filters.pan ?? 0,
         gateThresholdDb: filters.gateThresholdDb ?? -80,
         gateRangeDb: filters.gateRangeDb ?? 0,
         gateAttackMs: filters.gateAttackMs ?? 10,
