@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.208 — Browse Sounds: Freesound links, a seekable preview bar
+
+- A Freesound card's name is now a real link to that sound's page on freesound.org, with a small link icon.
+- Previewing a Freesound result now shows a playback bar under the tab bar with a draggable progress bar/time readout and a volume slider, so you can jump around a preview instead of only playing it start-to-end.
+
 ## v0.1.207 — Freesound/YouTube are now toggleable in Browse Sounds
 
 - Two checkboxes next to the search bar let you turn Freesound and/or YouTube off — both on by default. Results from both still combine into one grid when both are on; a toggle just controls whether a source is searched at all.
