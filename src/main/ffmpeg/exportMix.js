@@ -4,14 +4,15 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { runFfmpegToFile } from './runFfmpeg.js'
+import { runFfmpegToFile, runFfmpegPipe, runFfmpegWithStdin } from './runFfmpeg.js'
+import { createVarispeedLooper } from './varispeedCore.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass } from './loopClip.js'
 import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
-import { renderPitchCommandFile, pitchCommandFilter, hasPitchFluctuation } from './pitchEnvelope.js'
+import { renderPitchCommandFile, pitchCommandFilter, hasPitchFluctuation, samplePitchRatios } from './pitchEnvelope.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
-import { applyOcclusionToFilters } from '../../shared/constants.js'
+import { applyOcclusionToFilters, MAX_BUFFER_CLIP_SECONDS } from '../../shared/constants.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -664,51 +665,148 @@ function hasLoopFluctuation(fluctuation) {
 // intermediates per drifting sound, which on a multi-hour export is real
 // temp-disk and write-bandwidth savings. The bigger win is that callers can
 // now run this per-sound work through mapPool instead of a sequential for.
-// Signal order matches applyLoopFluctuation's (pitch then volume), which in
-// turn matches the live chain (detune ahead of fluctuationGain).
-// Returns the same { track, newPaths } shape the old two-step pair did.
+// Signal order matches the live chain (detune ahead of fluctuationGain).
+// Returns { track, newPaths }.
+//
+// Pitch drift is baked tape-style (varispeed) whenever the loop clip is short
+// enough to hold in memory - see varispeedCore.js for why that's both what
+// the live Mixer actually does and ~22x cheaper than the rubberband pass
+// (measured on a 1-hour bake: 180.1s -> 8.2s, identical length). A clip
+// longer than MAX_BUFFER_CLIP_SECONDS - which live playback can't hold in a
+// buffer either - falls back to the fused rubberband pass below.
 async function tileAndDriftLoopShot({ shot, durationSeconds, reporter }) {
   const fluctuation = shot.fluctuation
-  const cmdPath = hasPitchFluctuation(fluctuation) ? renderPitchCommandFile(fluctuation, durationSeconds) : null
+  const wantsPitch = hasPitchFluctuation(fluctuation)
   const envPath = hasVolumeFluctuation(fluctuation) ? renderGainEnvelopeWav(fluctuation, durationSeconds) : null
-  // No drift (or a config that generated nothing): plain tile, and
-  // tileLoopShotFull does its own completePhase for the one pass it is.
-  if (!cmdPath && !envPath) {
-    const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
-    return { track: tile, newPaths: [tile.path] }
-  }
-
+  const toCleanup = envPath ? [envPath] : []
   const outPath = tempPath(INTERMEDIATE_EXT)
-  const sig = [`volume=${shot.volume.toFixed(6)}`]
-  if (cmdPath) sig.push(pitchCommandFilter(cmdPath))
+  // This one pass stands in for what the reporter budgeted as a tile plus
+  // one pass per active axis (see fluctuationWorkSeconds / the tile counted
+  // in groupedLoopSoundCount) - bank all of it so the bar still reaches 100%.
+  const replacedPasses = 1 + (wantsPitch ? 1 : 0) + (envPath ? 1 : 0)
+  try {
+    if (wantsPitch) {
+      const samples = await decodeClipToFloat32(shot.path, MAX_BUFFER_CLIP_SECONDS)
+      if (samples) {
+        await renderVarispeedDrift({ shot, samples, durationSeconds, envPath, outPath, reporter })
+        reporter?.completePhase(durationSeconds * replacedPasses)
+        return { track: { path: outPath, offset: 0 }, newPaths: [outPath] }
+      }
+    }
 
-  const args = ['-y', '-stream_loop', '-1', '-i', shot.path]
+    const cmdPath = wantsPitch ? renderPitchCommandFile(fluctuation, durationSeconds) : null
+    if (cmdPath) toCleanup.push(cmdPath)
+    // No drift (or a config that generated nothing): plain tile, and
+    // tileLoopShotFull does its own completePhase for the one pass it is.
+    if (!cmdPath && !envPath) {
+      const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
+      return { track: tile, newPaths: [tile.path] }
+    }
+
+    const sig = [`volume=${shot.volume.toFixed(6)}`]
+    if (cmdPath) sig.push(pitchCommandFilter(cmdPath))
+    const args = ['-y', '-stream_loop', '-1', '-i', shot.path]
+    if (envPath) {
+      args.push(
+        '-i', envPath,
+        '-filter_complex',
+        `${ENVELOPE_INPUT_CHAIN};` +
+          `[0:a]${sig.join(',')},aformat=channel_layouts=stereo:sample_fmts=fltp[sig];` +
+          '[sig][env]amultiply[out]',
+        '-map', '[out]'
+      )
+    } else {
+      args.push('-af', sig.join(','))
+    }
+    args.push('-t', durationSeconds.toFixed(6), ...INTERMEDIATE_CODEC, outPath)
+    await runFfmpegToFile(args, { onProgress: (sec) => reporter?.tick(sec, durationSeconds) })
+    reporter?.completePhase(durationSeconds * replacedPasses)
+    return { track: { path: outPath, offset: 0 }, newPaths: [outPath] }
+  } catch (err) {
+    // A failed render leaves a partial file nothing else would clean up.
+    await cleanupFiles([outPath])
+    throw err
+  } finally {
+    await cleanupFiles(toCleanup)
+  }
+}
+
+const VARISPEED_SAMPLE_RATE = 44100
+const ENVELOPE_INPUT_CHAIN = '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env]'
+const CLIP_TOO_LONG = new Error('loop clip too long to hold in memory')
+
+// Decodes a whole clip to interleaved stereo Float32 at VARISPEED_SAMPLE_RATE,
+// or returns null if it's longer than maxSeconds (checked while streaming, so
+// an unexpectedly huge clip is abandoned early instead of buffered).
+async function decodeClipToFloat32(clipPath, maxSeconds) {
+  const maxBytes = Math.ceil(maxSeconds * VARISPEED_SAMPLE_RATE) * 2 * 4
+  const chunks = []
+  let total = 0
+  try {
+    await runFfmpegPipe(
+      ['-i', clipPath, '-vn', '-ac', '2', '-ar', String(VARISPEED_SAMPLE_RATE), '-f', 'f32le', 'pipe:1'],
+      (chunk) => {
+        total += chunk.length
+        if (total > maxBytes) throw CLIP_TOO_LONG
+        chunks.push(chunk)
+      }
+    )
+  } catch (err) {
+    if (err === CLIP_TOO_LONG) return null
+    throw err
+  }
+  const samples = new Float32Array(Math.floor(total / 4))
+  const bytes = new Uint8Array(samples.buffer)
+  let offset = 0
+  for (const chunk of chunks) {
+    const n = Math.min(chunk.length, bytes.length - offset)
+    bytes.set(chunk.subarray(0, n), offset)
+    offset += n
+  }
+  return samples
+}
+
+// Generates the drifting loop in JS (varispeedCore.js) and pipes it straight
+// into ffmpeg, which applies the volume envelope (if any) and encodes -
+// replacing both the full-duration tile pass and the rubberband pass.
+async function renderVarispeedDrift({ shot, samples, durationSeconds, envPath, outPath, reporter }) {
+  const { ratios, stepSeconds } = samplePitchRatios(shot.fluctuation.pitch, durationSeconds)
+  const looper = createVarispeedLooper({
+    shot: samples,
+    channels: 2,
+    ratios,
+    stepSeconds,
+    sampleRate: VARISPEED_SAMPLE_RATE,
+    gain: shot.volume
+  })
+  const args = ['-y', '-f', 'f32le', '-ar', String(VARISPEED_SAMPLE_RATE), '-ac', '2', '-i', 'pipe:0']
   if (envPath) {
     args.push(
       '-i', envPath,
       '-filter_complex',
-      '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env];' +
-        `[0:a]${sig.join(',')},aformat=channel_layouts=stereo:sample_fmts=fltp[sig];` +
-        '[sig][env]amultiply[out]',
+      `${ENVELOPE_INPUT_CHAIN};[0:a]aformat=channel_layouts=stereo:sample_fmts=fltp[sig];[sig][env]amultiply[out]`,
       '-map', '[out]'
     )
-  } else {
-    args.push('-af', sig.join(','))
   }
   args.push('-t', durationSeconds.toFixed(6), ...INTERMEDIATE_CODEC, outPath)
 
-  try {
-    await runFfmpegToFile(args, { onProgress: (sec) => reporter?.tick(sec, durationSeconds) })
-    // This one pass stands in for what the reporter budgeted as a tile plus
-    // one pass per active axis (see fluctuationWorkSeconds / the tile counted
-    // in groupedLoopSoundCount) - bank all of it so the bar still reaches
-    // 100% now that the passes are fused.
-    const replacedPasses = 1 + (cmdPath ? 1 : 0) + (envPath ? 1 : 0)
-    reporter?.completePhase(durationSeconds * replacedPasses)
-    return { track: { path: outPath, offset: 0 }, newPaths: [outPath] }
-  } finally {
-    await cleanupFiles([cmdPath, envPath].filter(Boolean))
-  }
+  const totalFrames = Math.ceil(durationSeconds * VARISPEED_SAMPLE_RATE)
+  await runFfmpegWithStdin(
+    args,
+    async (write) => {
+      for (let done = 0; done < totalFrames; ) {
+        const count = Math.min(VARISPEED_SAMPLE_RATE, totalFrames - done)
+        const block = looper.next(count)
+        await write(Buffer.from(block.buffer, block.byteOffset, block.byteLength))
+        done += count
+        // Generation is synchronous JS on the main process - yield between
+        // one-second blocks so IPC (progress updates, the rest of the app)
+        // stays responsive, and so several drifting sounds interleave.
+        await new Promise((resolve) => setImmediate(resolve))
+      }
+    },
+    { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+  )
 }
 
 // Sound Groups (see AudioEngine.js's SoundGroupChain, and the Remix tab's
@@ -766,12 +864,21 @@ async function applyGroupFilters(track, filters, durationSeconds, reporter) {
   // helper) - see src/shared/constants.js's applyOcclusionToFilters.
   const f = applyOcclusionToFilters(filters)
   const hasReverb = (f.reverbSizeMs ?? 0) > 0 && (f.reverbMix ?? 0) > 0
+  // BUG FIX (v0.1.213): since v0.1.210, combineTracks returns a track
+  // positioned at its chunk's earliest real offset rather than always 0, but
+  // this function kept treating its input as starting at 0 and returning
+  // offset 0 - so a group made only of Random Interval / Scheduled sounds was
+  // pulled earlier by its first event's time (verified: shots meant for 30s
+  // and 60s landed at 0s and 30s). Every output here is already a full-length,
+  // offset-0 render, so the input's offset is folded in as leading silence in
+  // this same pass - no extra ffmpeg work.
+  const leadIn = track.offset > 0 ? [`adelay=delays=${Math.round(track.offset * 1000)}:all=1`] : []
   if (!hasReverb) {
     const outPath = tempPath(INTERMEDIATE_EXT)
     await runFfmpegToFile(
       [
         '-y', '-i', track.path,
-        '-af', buildGroupFilterChain(f).join(','),
+        '-af', [...leadIn, ...buildGroupFilterChain(f)].join(','),
         '-t', durationSeconds.toFixed(6),
         ...INTERMEDIATE_CODEC, outPath
       ],
@@ -788,7 +895,7 @@ async function applyGroupFilters(track, filters, durationSeconds, reporter) {
   // otherwise always be there) - '-af' with an empty filter string is an
   // invalid ffmpeg argument ("No filters specified in the graph
   // description"), so it's omitted entirely rather than passed empty.
-  const preReverbChain = buildGroupFilterChain(f, { skipLimiter: true })
+  const preReverbChain = [...leadIn, ...buildGroupFilterChain(f, { skipLimiter: true })]
   try {
     await runFfmpegToFile([
       '-y', '-i', track.path,
@@ -874,17 +981,13 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
         memberTracks.length > MAX_INPUTS_PER_PASS
           ? await reduceTrackCount(memberTracks, MAX_INPUTS_PER_PASS, ownPaths, reporter, concurrency, durationSeconds)
           : memberTracks
-      // combineTracks always adelays every track to its real offset and
-      // normalizes the result to offset 0 - needed even for a single
-      // already-offset-0 track's worth of member, since a lone batch track
-      // (offset = its own batch start, not 0) would otherwise silently keep
-      // playing from the wrong position once treated as a pre-mixed,
-      // offset-0 group bus. Skipped only when there's genuinely nothing left
-      // to combine (a single track that's already offset 0).
+      // combineTracks mixes the members into one track positioned at their
+      // earliest offset (not necessarily 0, since v0.1.210); applyGroupFilters
+      // below then folds that offset back in as leading silence so the group
+      // bus comes out offset 0 like every other bus. A lone member needs no
+      // combine at all - applyGroupFilters honors its offset directly.
       const combined =
-        bounded.length === 1 && bounded[0].offset === 0
-          ? bounded[0]
-          : await combineTracks(bounded, { durationSeconds, reporter })
+        bounded.length === 1 ? bounded[0] : await combineTracks(bounded, { durationSeconds, reporter })
       if (combined !== bounded[0]) ownPaths.push(combined.path)
       // groupWorkSeconds (exportMix's own progress budget) already reserves
       // one durationSeconds' worth of work per group for exactly this combine

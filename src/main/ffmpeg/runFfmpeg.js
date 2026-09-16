@@ -83,6 +83,78 @@ export function runFfmpegToFile(args, { onProgress } = {}) {
   })
 }
 
+// Runs ffmpeg with raw input written to its stdin by `feed(write)`, where
+// `write(buffer)` resolves once ffmpeg has room for more (honoring
+// backpressure) and rejects if ffmpeg has already exited. Used where the
+// audio is generated in JS rather than read from a file (exportMix.js's
+// varispeed drift). `onProgress` works the same as runFfmpegToFile's.
+export function runFfmpegWithStdin(args, feed, { onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(resolveFfmpegPath(), args, { windowsHide: true })
+    const getStderrTail = captureStderrTail(child.stderr)
+    let exited = false
+    let exitError = null
+
+    if (onProgress) {
+      child.stderr.on('data', (chunk) => {
+        const seconds = latestProgressSeconds(chunk.toString())
+        if (seconds != null) {
+          try {
+            onProgress(seconds)
+          } catch {
+            // a progress-callback throw must never break the render
+          }
+        }
+      })
+    }
+
+    const exitWaiters = new Set()
+    // An early ffmpeg exit makes further stdin writes fail with EPIPE - the
+    // real error is the exit code/stderr, reported from 'close' below.
+    child.stdin.on('error', () => {})
+    child.on('error', (err) => {
+      exitError = err
+      exited = true
+      for (const w of exitWaiters) w()
+    })
+    child.on('close', (code) => {
+      exited = true
+      if (code !== 0 && !exitError) exitError = ffmpegError(code, getStderrTail())
+      for (const w of exitWaiters) w()
+      if (exitError) reject(exitError)
+      else resolve()
+    })
+
+    const write = (buf) =>
+      new Promise((res, rej) => {
+        if (exited) return rej(exitError ?? new Error('ffmpeg exited before its input was fully written'))
+        if (child.stdin.write(buf)) return res()
+        const onDrain = () => {
+          exitWaiters.delete(onExit)
+          res()
+        }
+        const onExit = () => {
+          child.stdin.off('drain', onDrain)
+          rej(exitError ?? new Error('ffmpeg exited before its input was fully written'))
+        }
+        child.stdin.once('drain', onDrain)
+        exitWaiters.add(onExit)
+      })
+
+    Promise.resolve()
+      .then(() => feed(write))
+      .then(() => child.stdin.end())
+      .catch((err) => {
+        // Generation failed (or ffmpeg died mid-feed): stop ffmpeg, surface
+        // whichever error is more informative.
+        if (!exited) {
+          exitError = err
+          child.kill()
+        }
+      })
+  })
+}
+
 // Runs ffmpeg and streams stdout chunk-by-chunk via onChunk, never buffering
 // the whole output — used for piping raw PCM out for waveform extraction.
 export function runFfmpegPipe(args, onChunk) {

@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.213 — Pitch drift exports ~20x faster and matches the Mixer; Sound Group timing fix
+
+- BUG FIX: in exports made with v0.1.210–v0.1.212, a Sound Group made only of Random Interval / Scheduled sounds played early — everything in it was shifted by however late the group's first sound was (e.g. thunder meant for 0:30 and 1:00 played at 0:00 and 0:30). Fixed; sounds land exactly when they should again.
+- Pitch Fluctuation (slow pitch drift on a looping sound) now exports the same way the Mixer plays it: tape-style, where a higher pitch also plays a touch faster. Exports used to use a heavier method that kept speed fixed, so they didn't quite match what you heard — and it was by far the slowest part of the export. Measured on a one-hour bake: 3 minutes → 8 seconds per drifting sound. On sounds like rain the speed change isn't audible.
+- This also covers drifting sounds inside a Sound Group, which was most of the time the "Applying Sound Group processing" step used to take.
+- Loop sounds longer than 10 minutes keep the old method (too long to process this way in memory).
+
 ## v0.1.212 — Fluctuation baking is much faster, and export logs name their version
 
 - Baking Fluctuation (slow volume/pitch drift) into an export was doing three full-length passes per sound — building the looped track, then re-reading it for the pitch drift, then re-reading that for the volume drift. It's now one pass. It also used to bake one sound at a time even though each is completely independent; several now bake at once. On a real export where this was 57% of the total time (two sounds, 8 minutes between them), this should be the single biggest remaining saving.
