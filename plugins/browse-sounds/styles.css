@@ -127,6 +127,31 @@
   white-space: nowrap;
 }
 
+.browse-card-name-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.browse-card-name-link:hover {
+  text-decoration: underline;
+}
+
+.browse-card-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browse-link-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
 /* Same amber used by the Mixer's Composite/Freesound source badges
    (.sound-row-composite-badge in main.css) - a source badge means the same
    thing here, so it should look the same. */
@@ -196,4 +221,71 @@
 
 .browse-import-btn {
   flex: 0 0 auto;
+}
+
+.browse-sticky-name {
+  flex: 1 1 120px;
+  min-width: 80px;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Taller than the visual 6px track so there's a comfortable drag/click
+   target for seeking - mirrors the Remix plugin's own sticky progress bar
+   (plugins/editor/styles.css), duplicated per this plugin's self-contained
+   convention rather than shared. */
+.browse-sticky-progress {
+  position: relative;
+  flex: 1 1 90px;
+  min-width: 90px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.browse-sticky-progress-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: var(--surface-alt);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.browse-sticky-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+}
+
+.browse-sticky-progress-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+
+.browse-sticky-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.browse-sticky-volume {
+  flex-shrink: 0;
+  width: 90px;
 }

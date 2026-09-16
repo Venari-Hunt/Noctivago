@@ -62,6 +62,15 @@ const MAX_TAGS_SHOWN = 6
 // loop and crossfade it on the app").
 const YOUTUBE_DEFAULT_MAX_SECONDS = 10 * 60
 
+const PLAY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+const PAUSE_ICON_SVG =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
+// Feather's "external-link" glyph - the little icon next to a Freesound
+// card's name, marking it as a link out to the sound's real page rather
+// than plain label text (owner inbox, 2026-09-16).
+const LINK_ICON_SVG =
+  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>'
+
 const LICENSE_LABELS = [
   [/publicdomain\/zero/i, 'CC0'],
   [/licenses\/by-nc-sa/i, 'CC BY-NC-SA'],
@@ -101,6 +110,10 @@ export default class BrowseSoundsPlugin {
     this.sources = { freesound: freshSourceState(), youtube: freshSourceState() }
     this.previewAudio = null
     this.previewBtn = null
+    this.previewSound = null
+    // Session-only, like the Remix plugin's own previewVolume - a listening
+    // preference, not saved settings.
+    this.previewVolume = 1
     this.observer = null
     this.requestId = 0
     // YouTube-only (Freesound's API gives a stable cursor): each page is a
@@ -119,6 +132,7 @@ export default class BrowseSoundsPlugin {
       id: 'browse-sounds',
       title: 'Browse Sounds',
       mount: (container) => this.mount(container),
+      mountSticky: (container) => this.mountSticky(container),
       onHide: () => this.stopPreview()
     })
   }
@@ -182,6 +196,107 @@ export default class BrowseSoundsPlugin {
     this.observer.observe(this.els.sentinel)
 
     this.checkAvailability()
+  }
+
+  // A stripped-down echo of the Remix plugin's own sticky playback bar -
+  // Play/Pause, a draggable progress bar, a volume slider - with none of
+  // Remix's editing modules, per the owner's own 2026-09-16 inbox request:
+  // "a topbar similar to the one on the remix tab but without the audio
+  // editing modules, just the ones that control playback and volume."
+  // YouTube results have no in-app preview (see the file-header comment),
+  // so this bar only ever drives a Freesound preview.
+  mountSticky(container) {
+    container.innerHTML = `
+      <span id="browse-sticky-name" class="browse-sticky-name">No preview playing</span>
+      <button id="browse-sticky-play" class="btn btn-svg-icon" type="button" title="Play" disabled>${PLAY_ICON_SVG}</button>
+      <div id="browse-sticky-progress" class="browse-sticky-progress" title="Drag to seek">
+        <div class="browse-sticky-progress-track">
+          <div id="browse-sticky-progress-fill" class="browse-sticky-progress-fill"></div>
+        </div>
+        <div id="browse-sticky-progress-thumb" class="browse-sticky-progress-thumb"></div>
+      </div>
+      <span id="browse-sticky-time" class="browse-sticky-time">0:00 / 0:00</span>
+      <input id="browse-sticky-volume" type="range" min="0" max="100" value="100" class="browse-sticky-volume" title="Preview volume" />
+    `
+
+    this.els.stickyName = container.querySelector('#browse-sticky-name')
+    this.els.stickyPlay = container.querySelector('#browse-sticky-play')
+    this.els.stickyProgress = container.querySelector('#browse-sticky-progress')
+    this.els.stickyProgressFill = container.querySelector('#browse-sticky-progress-fill')
+    this.els.stickyProgressThumb = container.querySelector('#browse-sticky-progress-thumb')
+    this.els.stickyTime = container.querySelector('#browse-sticky-time')
+    this.els.stickyVolume = container.querySelector('#browse-sticky-volume')
+
+    this.els.stickyPlay.addEventListener('click', () => {
+      if (!this.previewAudio) return
+      if (this.previewAudio.paused) {
+        this.previewAudio.play().then(() => this.applyPreviewPlayState(true)).catch(() => this.stopPreview())
+      } else {
+        this.previewAudio.pause()
+        this.applyPreviewPlayState(false)
+      }
+    })
+
+    this.els.stickyVolume.addEventListener('input', () => {
+      this.previewVolume = Number(this.els.stickyVolume.value) / 100
+      if (this.previewAudio) this.previewAudio.volume = this.previewVolume
+    })
+
+    this.wireStickyProgressDrag()
+  }
+
+  // Click-or-drag-to-seek on the sticky progress bar (owner inbox,
+  // 2026-09-16: "a progress bar with the little circle... so the user can
+  // go back or move forward") - same mousedown/mousemove/mouseup shape the
+  // Remix plugin's own wireStickyProgressDrag() uses, simplified since a
+  // preview here has no loop region to stay within, just 0..duration.
+  wireStickyProgressDrag() {
+    let dragging = false
+
+    const seekFromClientX = (clientX) => {
+      const audio = this.previewAudio
+      if (!audio || !Number.isFinite(audio.duration)) return
+      const rect = this.els.stickyProgress.getBoundingClientRect()
+      const fraction = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1)
+      audio.currentTime = fraction * audio.duration
+      this.updateStickyProgress()
+    }
+
+    this.els.stickyProgress.addEventListener('mousedown', (evt) => {
+      if (!this.previewAudio) return
+      dragging = true
+      seekFromClientX(evt.clientX)
+    })
+    window.addEventListener('mousemove', (evt) => {
+      if (!dragging) return
+      seekFromClientX(evt.clientX)
+    })
+    window.addEventListener('mouseup', () => {
+      dragging = false
+    })
+  }
+
+  // Guarded on stickyProgressFill existing since this can theoretically be
+  // called before mountSticky() has run.
+  updateStickyProgress() {
+    if (!this.els.stickyProgressFill) return
+    const audio = this.previewAudio
+    const span = audio && Number.isFinite(audio.duration) ? audio.duration : 0
+    const elapsed = audio ? Math.min(Math.max(audio.currentTime, 0), span) : 0
+    const pct = span > 0 ? (elapsed / span) * 100 : 0
+    this.els.stickyProgressFill.style.width = `${pct}%`
+    this.els.stickyProgressThumb.style.left = `${pct}%`
+    this.els.stickyTime.textContent = `${formatDuration(elapsed)} / ${formatDuration(span)}`
+  }
+
+  applyPreviewPlayState(playing) {
+    if (this.previewBtn) {
+      this.previewBtn.textContent = playing ? '⏸' : '▶'
+      this.previewBtn.title = playing ? 'Stop preview' : 'Preview'
+    }
+    if (!this.els.stickyPlay) return
+    this.els.stickyPlay.innerHTML = playing ? PAUSE_ICON_SVG : PLAY_ICON_SVG
+    this.els.stickyPlay.title = playing ? 'Pause' : 'Play'
   }
 
   // Owner's own follow-up direction (2026-09-16, inbox): "Youtube search as
@@ -379,6 +494,11 @@ export default class BrowseSoundsPlugin {
       this.previewBtn.title = 'Preview'
       this.previewBtn = null
     }
+    this.previewSound = null
+    if (this.els.stickyPlay) this.els.stickyPlay.disabled = true
+    if (this.els.stickyName) this.els.stickyName.textContent = 'No preview playing'
+    this.applyPreviewPlayState(false)
+    this.updateStickyProgress()
   }
 
   togglePreview(sound, btn) {
@@ -388,13 +508,18 @@ export default class BrowseSoundsPlugin {
     }
     this.stopPreview()
     const audio = new Audio(`freesound-preview://p/${encodeURIComponent(sound.previewUrl)}`)
+    audio.volume = this.previewVolume
+    audio.addEventListener('loadedmetadata', () => this.updateStickyProgress())
+    audio.addEventListener('timeupdate', () => this.updateStickyProgress())
     audio.addEventListener('ended', () => this.stopPreview())
     audio.addEventListener('error', () => this.stopPreview())
     audio.play().catch(() => this.stopPreview())
     this.previewAudio = audio
     this.previewBtn = btn
-    btn.textContent = '⏸'
-    btn.title = 'Stop preview'
+    this.previewSound = sound
+    this.applyPreviewPlayState(true)
+    if (this.els.stickyPlay) this.els.stickyPlay.disabled = false
+    if (this.els.stickyName) this.els.stickyName.textContent = sound.name
   }
 
   async importResult(sound, card) {
@@ -502,10 +627,28 @@ export default class BrowseSoundsPlugin {
       header.appendChild(watchLink)
     }
 
-    const name = document.createElement('span')
+    // Freesound's name links out to the sound's real Freesound page (owner
+    // inbox, 2026-09-16); YouTube's own external link already lives in the
+    // "Watch ↗" button in the header above, so its name stays plain text.
+    const name = document.createElement(source === 'freesound' ? 'a' : 'span')
     name.className = 'browse-card-name'
-    name.textContent = source === 'freesound' ? sound.name : sound.title
-    name.title = name.textContent
+    if (source === 'freesound') {
+      name.classList.add('browse-card-name-link')
+      name.href = sound.pageUrl
+      name.target = '_blank'
+      name.rel = 'noopener noreferrer'
+      name.title = sound.name
+      const label = document.createElement('span')
+      label.className = 'browse-card-name-text'
+      label.textContent = sound.name
+      const icon = document.createElement('span')
+      icon.className = 'browse-link-icon'
+      icon.innerHTML = LINK_ICON_SVG
+      name.append(label, icon)
+    } else {
+      name.textContent = sound.title
+      name.title = sound.title
+    }
 
     const badge = document.createElement('span')
     badge.className = 'browse-card-badge'
