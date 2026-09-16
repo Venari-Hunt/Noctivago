@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.206 — YouTube search added to Browse Sounds
+
+- The Browse Sounds tab now searches YouTube alongside Freesound, combined into one grid and tagged by source — no separate toggle, matching how you asked for it to work.
+- YouTube results show a thumbnail, channel, and duration, with a "Watch ↗" link to check a sound before importing (no in-app preview player for these, unlike Freesound's instant preview). Import reuses the same download tool "Add from link" already uses, capped at 10 minutes.
+- The two sources are fully independent — if one fails or isn't available, the other keeps working on its own.
+
 ## v0.1.205 — Self-review: fixed a duplicate-import bug in "Add folder as tag/preset"
 
 - BUG FIX: re-running "Add folder as tag" or "Add folder as preset" on a folder you'd already imported created duplicate copies of every sound in it, instead of skipping ones already in your library — the recursive scan added in v0.1.203 had lost the existing duplicate check along the way.

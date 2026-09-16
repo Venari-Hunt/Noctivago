@@ -39,6 +39,7 @@ import { setTrayEnabled } from './tray.js'
 import { setThumbarPlaying } from './thumbar.js'
 import { watchNewFolder, unwatchFolder } from './watchFolders.js'
 import { isFreesoundAvailable, searchSounds } from './freesound/client.js'
+import { isYouTubeSearchAvailable, searchYouTube } from './ytdlp/search.js'
 
 // Turns a preset name into a valid Windows folder/file name for
 // export:pickDestination's auto-created per-run subfolder - strips
@@ -116,6 +117,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:addFolderSounds', (_event, folderPath, options) => library.addFolderSounds(folderPath, options))
   ipcMain.handle('freesound:isAvailable', () => isFreesoundAvailable())
   ipcMain.handle('freesound:search', (_event, params) => searchSounds(params))
+  ipcMain.handle('ytdlp:isSearchAvailable', () => isYouTubeSearchAvailable())
+  ipcMain.handle('ytdlp:searchYouTube', (_event, params) => searchYouTube(params))
   ipcMain.handle('library:addSoundFromFreesound', (event, payload) =>
     library.addSoundFromFreesound(payload, (update) => {
       if (!event.sender.isDestroyed()) event.sender.send('library:addSoundFromFreesoundProgress', update)

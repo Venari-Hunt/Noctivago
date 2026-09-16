@@ -69,6 +69,9 @@
 }
 
 .browse-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 26px;
   height: 26px;
@@ -79,10 +82,20 @@
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
+  text-decoration: none;
 }
 
 .browse-preview-btn:hover {
   filter: brightness(1.2);
+}
+
+/* YouTube cards only - a thumbnail (Freesound results have no image). */
+.browse-card-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--surface);
 }
 
 .browse-card-name {
