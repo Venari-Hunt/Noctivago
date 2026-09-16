@@ -634,58 +634,81 @@ async function applyEnvelopeToTrack(track, fluctuation, durationSeconds, reporte
   }
 }
 
-// Pitch Fluctuation baking (v0.1.179): the companion to applyEnvelopeToTrack
-// for the pitch axis. Renders one realization of the sound's pitch drift to
-// an `asendcmd` command file (see pitchEnvelope.js) and runs the already-
-// materialized, full-duration, offset-0 track through `rubberband` with that
-// file stepping the pitch scale factor over time - length-preserving, so the
-// result drops back into the mix like any other offset-0 track. Per-sound
-// only (a bus has nothing single to detune). A no-op returning the same track
-// when the config isn't active.
-async function applyPitchEnvelopeToTrack(track, fluctuation, durationSeconds, reporter) {
-  const cmdPath = renderPitchCommandFile(fluctuation, durationSeconds)
-  if (!cmdPath) return track
-  const outPath = tempPath(INTERMEDIATE_EXT)
-  try {
-    await runFfmpegToFile(
-      [
-        '-y', '-i', track.path,
-        '-af', pitchCommandFilter(cmdPath),
-        '-t', durationSeconds.toFixed(6),
-        ...INTERMEDIATE_CODEC, outPath
-      ],
-      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
-    )
-    reporter?.completePhase(durationSeconds)
-    return { path: outPath, offset: 0 }
-  } finally {
-    await cleanupFiles([cmdPath])
-  }
-}
-
-// A loop sound's own per-sound Fluctuation, applied to its full-duration
-// tiled track in the same order the live signal chain uses: pitch (detune,
-// ahead of everything) then volume (fluctuationGain). Either axis may be
-// inactive; returns the (possibly unchanged) track plus any new intermediate
-// paths for the caller to clean up.
-async function applyLoopFluctuation(tile, fluctuation, durationSeconds, reporter) {
-  const newPaths = []
-  let track = tile
-  if (hasPitchFluctuation(fluctuation)) {
-    track = await applyPitchEnvelopeToTrack(track, fluctuation, durationSeconds, reporter)
-    newPaths.push(track.path)
-  }
-  if (hasVolumeFluctuation(fluctuation)) {
-    track = await applyEnvelopeToTrack(track, fluctuation, durationSeconds, reporter)
-    newPaths.push(track.path)
-  }
-  return { track, newPaths }
-}
+// (Pitch Fluctuation baking, v0.1.179, used to live here as
+// applyPitchEnvelopeToTrack alongside an applyLoopFluctuation that chained it
+// with applyEnvelopeToTrack. Both were folded into tileAndDriftLoopShot below
+// in 2026-09-16's optimization pass, which does the tile and both drift axes
+// in one ffmpeg invocation instead of three sequential full-duration ones.
+// applyEnvelopeToTrack above is still live - a Sound Group's own bus drift
+// genuinely is a separate pass over an already-combined submix.)
 
 // True when a loop sound needs pulling off renderFinalMixdown's cheap
 // -stream_loop path onto a materialized full-duration track (either drift axis).
 function hasLoopFluctuation(fluctuation) {
   return hasVolumeFluctuation(fluctuation) || hasPitchFluctuation(fluctuation)
+}
+
+// Optimization (2026-09-16). Baking a drifting loop sound used to cost THREE
+// sequential full-duration ffmpeg passes, each reading back the previous
+// one's multi-GB intermediate: tileLoopShotFull (tile the short shot out to
+// the export length) -> applyPitchEnvelopeToTrack (asendcmd+rubberband) ->
+// applyEnvelopeToTrack (amultiply the volume envelope). On a real owner
+// export this phase was 57% of the entire run (two sounds, 4m17s + 3m46s).
+// All three are one linear chain over the same stream, so they fuse into a
+// single invocation: -stream_loop feeds volume -> [pitch asendcmd/rubberband]
+// -> [amultiply envelope] in one graph. Verified against the real bundled
+// ffmpeg to be output-identical to the three-pass version (same length, same
+// level at the same moment, pitch genuinely stepping, volume genuinely
+// drifting) at 1.12x the speed - modest, because rubberband dominates the
+// cost rather than the I/O, but it also stops writing two full-duration
+// intermediates per drifting sound, which on a multi-hour export is real
+// temp-disk and write-bandwidth savings. The bigger win is that callers can
+// now run this per-sound work through mapPool instead of a sequential for.
+// Signal order matches applyLoopFluctuation's (pitch then volume), which in
+// turn matches the live chain (detune ahead of fluctuationGain).
+// Returns the same { track, newPaths } shape the old two-step pair did.
+async function tileAndDriftLoopShot({ shot, durationSeconds, reporter }) {
+  const fluctuation = shot.fluctuation
+  const cmdPath = hasPitchFluctuation(fluctuation) ? renderPitchCommandFile(fluctuation, durationSeconds) : null
+  const envPath = hasVolumeFluctuation(fluctuation) ? renderGainEnvelopeWav(fluctuation, durationSeconds) : null
+  // No drift (or a config that generated nothing): plain tile, and
+  // tileLoopShotFull does its own completePhase for the one pass it is.
+  if (!cmdPath && !envPath) {
+    const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
+    return { track: tile, newPaths: [tile.path] }
+  }
+
+  const outPath = tempPath(INTERMEDIATE_EXT)
+  const sig = [`volume=${shot.volume.toFixed(6)}`]
+  if (cmdPath) sig.push(pitchCommandFilter(cmdPath))
+
+  const args = ['-y', '-stream_loop', '-1', '-i', shot.path]
+  if (envPath) {
+    args.push(
+      '-i', envPath,
+      '-filter_complex',
+      '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env];' +
+        `[0:a]${sig.join(',')},aformat=channel_layouts=stereo:sample_fmts=fltp[sig];` +
+        '[sig][env]amultiply[out]',
+      '-map', '[out]'
+    )
+  } else {
+    args.push('-af', sig.join(','))
+  }
+  args.push('-t', durationSeconds.toFixed(6), ...INTERMEDIATE_CODEC, outPath)
+
+  try {
+    await runFfmpegToFile(args, { onProgress: (sec) => reporter?.tick(sec, durationSeconds) })
+    // This one pass stands in for what the reporter budgeted as a tile plus
+    // one pass per active axis (see fluctuationWorkSeconds / the tile counted
+    // in groupedLoopSoundCount) - bank all of it so the bar still reaches
+    // 100% now that the passes are fused.
+    const replacedPasses = 1 + (cmdPath ? 1 : 0) + (envPath ? 1 : 0)
+    reporter?.completePhase(durationSeconds * replacedPasses)
+    return { track: { path: outPath, offset: 0 }, newPaths: [outPath] }
+  } finally {
+    await cleanupFiles([cmdPath, envPath].filter(Boolean))
+  }
 }
 
 // Sound Groups (see AudioEngine.js's SoundGroupChain, and the Remix tab's
@@ -820,24 +843,31 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
   const groupBusTracks = []
   if (groupIds.length > 0) {
     reporter?.step(`Applying Sound Group processing (${groupIds.length} group${groupIds.length === 1 ? '' : 's'})…`)
+    // Groups already run concurrently here, so the per-member tiling inside
+    // each one gets a *share* of the budget rather than the full amount -
+    // otherwise nesting two mapPools would allow concurrency^2 ffmpeg
+    // processes at once (121 on an 11-wide machine), exactly the unbounded
+    // fan-out FASTER_EXPORT_CONCURRENCY_CAP existed to prevent.
+    const perGroupConcurrency = Math.max(1, Math.ceil(concurrency / Math.max(1, groupIds.length)))
     await mapPool(groupIds, concurrency, async (groupId) => {
       const memberLoopShots = loopShotsByGroup.get(groupId) ?? []
       const memberBatchTracks = batchTracksByGroup.get(groupId) ?? []
 
-      const tiledLoops = []
-      for (const shot of memberLoopShots) {
-        const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
-        ownPaths.push(tile.path)
-        // Per-sound Fluctuation on a grouped loop sound: apply the sound's own
-        // pitch + volume drift to its tiled track *before* it's combined into
-        // the group submix, matching the live signal order (a sound's own
-        // detune / fluctuationGain sit ahead of its Sound Group routing).
-        const { track: drifted, newPaths } = await applyLoopFluctuation(
-          tile, shot.fluctuation, durationSeconds, reporter
-        )
+      // Optimization (2026-09-16): was a sequential `for`, so a group's member
+      // loop sounds tiled strictly one after another. Each is independent, and
+      // tileAndDriftLoopShot now also fuses what used to be up to three
+      // full-duration passes per sound into one. Per-sound Fluctuation on a
+      // grouped loop sound is applied to its tiled track *before* it's
+      // combined into the group submix, matching the live signal order (a
+      // sound's own detune / fluctuationGain sit ahead of its Sound Group
+      // routing) - tileAndDriftLoopShot preserves that order internally.
+      // Written by index so the submix's input order stays deterministic.
+      const tiledLoops = new Array(memberLoopShots.length)
+      await mapPool(memberLoopShots, perGroupConcurrency, async (shot, i) => {
+        const { track, newPaths } = await tileAndDriftLoopShot({ shot, durationSeconds, reporter })
         ownPaths.push(...newPaths)
-        tiledLoops.push(drifted)
-      }
+        tiledLoops[i] = track
+      })
 
       const memberTracks = [...tiledLoops, ...memberBatchTracks]
       const bounded =
@@ -1510,21 +1540,26 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     // renderGroupBuses). Tile + apply the drift here, then it joins the final
     // mix as a plain offset-0 track. Loop sounds with no drift stay on the
     // fast path untouched.
-    const plainLoopShots = []
-    const fluctuatingLoopTracks = []
-    for (const shot of ungroupedLoopShots) {
-      if (!hasLoopFluctuation(shot.fluctuation)) {
-        plainLoopShots.push(shot)
-        continue
-      }
-      reporter.step('Baking drift into a loop sound…')
-      const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
-      tiledLoopTrackPaths.push(tile.path)
-      const { track: drifted, newPaths } = await applyLoopFluctuation(
-        tile, shot.fluctuation, durationSeconds, reporter
+    // Optimization (2026-09-16): this was a plain sequential `for`, so two
+    // drifting loop sounds baked strictly one after the other (measured on a
+    // real owner export: 4m17s then 3m46s, 57% of the whole run) even though
+    // each is a wholly independent full-duration render. Every other phase in
+    // this pipeline already goes through mapPool; this one never did. Now it
+    // does, and each sound's three passes are fused into one
+    // (tileAndDriftLoopShot). Results are written by index rather than pushed
+    // so the mix order stays deterministic regardless of completion order.
+    const plainLoopShots = ungroupedLoopShots.filter((s) => !hasLoopFluctuation(s.fluctuation))
+    const driftingLoopShots = ungroupedLoopShots.filter((s) => hasLoopFluctuation(s.fluctuation))
+    const fluctuatingLoopTracks = new Array(driftingLoopShots.length)
+    if (driftingLoopShots.length > 0) {
+      reporter.step(
+        `Baking drift into ${driftingLoopShots.length} loop sound${driftingLoopShots.length === 1 ? '' : 's'}…`
       )
-      tiledLoopTrackPaths.push(...newPaths)
-      fluctuatingLoopTracks.push(drifted)
+      await mapPool(driftingLoopShots, mergeConcurrency, async (shot, i) => {
+        const { track, newPaths } = await tileAndDriftLoopShot({ shot, durationSeconds, reporter })
+        tiledLoopTrackPaths.push(...newPaths)
+        fluctuatingLoopTracks[i] = track
+      })
     }
     const finalMixTracks = [...tracksForFinalMix, ...fluctuatingLoopTracks]
 
