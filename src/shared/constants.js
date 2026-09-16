@@ -22,9 +22,9 @@ export const DEFAULT_SOUND_VOLUME = 1
 // Researched from general audio-occlusion technique writeups plus Ambiance
 // Architect's own zone-occlusion feature before picking this direction (see
 // CLAUDE.md / noctivago_audacity_research memory). Combines with a group's
-// own manual lowpass/reverb sliders by taking whichever is MORE occluded
-// (min lowpass cutoff, max reverb size/mix), so this only ever adds
-// muffling on top of a deliberate manual setting, never undoes one.
+// own manual lowpass slider by taking whichever is MORE occluded (min
+// cutoff), so this only ever adds muffling on top of a deliberate manual
+// setting, never undoes one. Reverb blends differently, see below.
 // Exported as one function so the renderer's live SoundGroupChain and
 // main's export bake (exportMix.js) can't drift apart the way a
 // hand-duplicated field list has bitten this codebase before (see the
@@ -32,6 +32,13 @@ export const DEFAULT_SOUND_VOLUME = 1
 export const OCCLUSION_LOWPASS_HZ = 700
 export const OCCLUSION_REVERB_SIZE_MS = 900
 export const OCCLUSION_REVERB_MIX_MAX = 0.4
+// Top of the Remix reverb Size slider (plugins/editor/index.js, max="4000").
+export const REVERB_SIZE_MAX_MS = 4000
+
+function pushToward(value, max, amount) {
+  const v = Math.min(max, Math.max(0, value))
+  return v + (max - v) * amount
+}
 
 export function applyOcclusionToFilters(filters) {
   const f = filters ?? {}
@@ -45,8 +52,16 @@ export function applyOcclusionToFilters(filters) {
   return {
     ...f,
     lowpassHz: Math.min(baseLowpassHz, occludedLowpassHz),
-    reverbSizeMs: Math.max(f.reverbSizeMs ?? 0, OCCLUSION_REVERB_SIZE_MS * occlusion),
-    reverbMix: Math.max(f.reverbMix ?? 0, OCCLUSION_REVERB_MIX_MAX * occlusion)
+    // BUG FIX (v0.1.215): reverb used to take max(manual, occlusion), so any
+    // manual Mix/Size below occlusion's own amount was silently ignored -
+    // reported as "reverb controls ain't working properly" on a group at
+    // Occlusion 100% with Mix 25% (below the 40% floor, so dragging Mix
+    // anywhere from 0 to 40% changed nothing in the Mixer or the export).
+    // Occlusion now pushes the manual value part of the way toward the
+    // slider's top instead: identical to before when the manual value is 0,
+    // and every manual change stays audible at any occlusion.
+    reverbSizeMs: pushToward(f.reverbSizeMs ?? 0, REVERB_SIZE_MAX_MS, (OCCLUSION_REVERB_SIZE_MS / REVERB_SIZE_MAX_MS) * occlusion),
+    reverbMix: pushToward(f.reverbMix ?? 0, 1, OCCLUSION_REVERB_MIX_MAX * occlusion)
   }
 }
 

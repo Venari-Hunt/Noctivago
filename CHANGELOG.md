@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.215 — Sound Group reverb sliders work again under Occlusion
+
+- BUG FIX: on a Sound Group with Occlusion turned up, the Reverb Mix and Size sliders could do nothing at all. Occlusion set a minimum reverb (at 100%: 40% Mix, 900 ms Size), and any manual setting below that was ignored in both the Mixer and exports. Occlusion now adds its reverb on top of your own setting, so every slider move is audible at any Occlusion level.
+- Heads-up: groups that combine Occlusion with a manual reverb setting will sound a little wetter than before (e.g. Occlusion 100% + Mix 25% now plays at 55% instead of 40%). Pull Mix down if it's too much.
+
 ## v0.1.214 — "Saved audio" toggle no longer greys out after saving
 
 - BUG FIX: saving while on "Saved audio" in Remix greyed out the Live edit / Saved audio toggle and dropped you back to Live edit. Saving now keeps you on Saved audio, keeps playing from the same spot, and you hear the new version.
