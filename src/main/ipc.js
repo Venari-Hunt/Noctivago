@@ -376,7 +376,15 @@ export function registerIpcHandlers() {
   ipcMain.handle('export:writeLogFile', async (_event, { outputPath, content }) => {
     try {
       const logPath = path.join(path.dirname(outputPath), 'export-log.txt')
-      fs.writeFileSync(logPath, content, 'utf8')
+      // Owner request (2026-09-16), after two export logs from different
+      // builds were compared by hand to measure a speed fix: a log is only
+      // useful as a before/after datapoint if you can tell which build
+      // produced it. Stamped here rather than in the renderer's own log text
+      // so it reflects the real running build (app.getVersion()) and can't
+      // drift from it, and so it lands in the file even though the on-screen
+      // log - which is per-step progress, not a header - never shows it.
+      const header = `Noctívago v${app.getVersion()} — export log — ${new Date().toISOString()}\n\n`
+      fs.writeFileSync(logPath, header + content, 'utf8')
       return { ok: true, logPath }
     } catch (err) {
       console.error('export:writeLogFile failed', err)

@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.212 — Fluctuation baking is much faster, and export logs name their version
+
+- Baking Fluctuation (slow volume/pitch drift) into an export was doing three full-length passes per sound — building the looped track, then re-reading it for the pitch drift, then re-reading that for the volume drift. It's now one pass. It also used to bake one sound at a time even though each is completely independent; several now bake at once. On a real export where this was 57% of the total time (two sounds, 8 minutes between them), this should be the single biggest remaining saving.
+- Sound Group processing got the same treatment — a group's member sounds are no longer prepared strictly one after another.
+- `export-log.txt` now starts with the app version and date it was made with, so two logs can actually be compared.
+
 ## v0.1.211 — Exports are faster again, and pitch-shifted sounds sound better
 
 - "Faster export" now actually uses your whole machine. It was capped at 4 things at once no matter how many cores you have — that limit was set years ago against a much heavier version of the pipeline and never revisited. It now scales to your CPU and RAM (11 at once on this machine instead of 4), measured just under 2x faster on the phase that places Random Interval / Scheduled sounds.
