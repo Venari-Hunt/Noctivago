@@ -1,5 +1,6 @@
 import { createReverbImpulse } from './reverbIR.js'
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
+import { PanStage } from './PanStage.js'
 
 // Shared EQ/Echo/Reverb chain builder for the two scatter/scheduled *stream*
 // fallbacks (StreamScatterSource/StreamScheduledSource, both same directory -
@@ -76,6 +77,10 @@ export function createStreamFilterChain(context, filters, outputNode) {
   reverbConvolver.normalize = true
   const reverbSizeMs = f.reverbSizeMs ?? 0
 
+  // Stereo pan (v0.1.216) - after the echo/reverb taps, same position as
+  // LocalFileSoundSource's own panStage.
+  const panStage = new PanStage(context, f.pan ?? 0)
+
   const chain = {
     context,
     filters: f,
@@ -87,6 +92,7 @@ export function createStreamFilterChain(context, filters, outputNode) {
     echoFeedbackGain,
     reverbSendGain,
     reverbConvolver,
+    panStage,
     _reverbSizeMs: reverbSizeMs,
     eqNodes: [],
     eqNodeGroups: [],
@@ -97,17 +103,19 @@ export function createStreamFilterChain(context, filters, outputNode) {
   highpassNode.connect(lowpassNode)
   rebuildEqChain(chain, f.eq ?? [])
 
-  filterGainNode.connect(outputNode)
+  filterGainNode.connect(panStage.input)
 
   filterGainNode.connect(echoSendGain)
   echoSendGain.connect(echoDelayNode)
   echoDelayNode.connect(echoFeedbackGain)
   echoFeedbackGain.connect(echoDelayNode)
-  echoDelayNode.connect(outputNode)
+  echoDelayNode.connect(panStage.input)
 
   filterGainNode.connect(reverbSendGain)
   reverbSendGain.connect(reverbConvolver)
-  reverbConvolver.connect(outputNode)
+  reverbConvolver.connect(panStage.input)
+
+  panStage.output.connect(outputNode)
 
   return chain
 }
@@ -127,6 +135,7 @@ export function updateStreamFilterChain(chain, filters) {
   chain.echoSendGain.gain.setTargetAtTime(chain.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
   chain.echoFeedbackGain.gain.setTargetAtTime(chain.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
   chain.reverbSendGain.gain.setTargetAtTime(chain.filters.reverbMix ?? 0, now, FILTER_SMOOTHING_SECONDS)
+  if (!chain.panStage.hasPan(chain.filters.pan ?? 0)) chain.panStage.setPan(chain.filters.pan ?? 0)
   const reverbSizeMs = chain.filters.reverbSizeMs ?? 0
   if (reverbSizeMs !== chain._reverbSizeMs) {
     chain._reverbSizeMs = reverbSizeMs
@@ -160,4 +169,5 @@ export function disposeStreamFilterChain(chain) {
   chain.echoFeedbackGain.disconnect()
   chain.reverbSendGain.disconnect()
   chain.reverbConvolver.disconnect()
+  chain.panStage.dispose()
 }

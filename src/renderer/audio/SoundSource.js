@@ -1,5 +1,6 @@
 import log from 'electron-log/renderer'
 import { createReverbImpulse } from './reverbIR.js'
+import { PanStage } from './PanStage.js'
 import { SoundFluctuation, fluctuationKey } from './Modulator.js'
 import { NoiseGate } from './NoiseGate.js'
 
@@ -247,6 +248,11 @@ export class LocalFileSoundSource {
     })
     this._fluctuation.configure(fluctuation ?? {})
 
+    // Stereo pan (v0.1.216): after the whole filter/echo/reverb/fluctuation
+    // chain, right before the per-sound volume - the same spot the ffmpeg
+    // bake applies it (loopClip.js's renderCrossfadedLoop, last stage).
+    this.panStage = new PanStage(engine.context, this.filters.pan ?? 0)
+
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
@@ -267,7 +273,8 @@ export class LocalFileSoundSource {
     this.reverbSendGain.connect(this.reverbConvolver)
     this.reverbConvolver.connect(this.fluctuationGain)
 
-    this.fluctuationGain.connect(this.gainNode)
+    this.fluctuationGain.connect(this.panStage.input)
+    this.panStage.output.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -403,6 +410,7 @@ export class LocalFileSoundSource {
     this.echoSendGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.echoFeedbackGain.gain.setTargetAtTime(this.filters.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.reverbSendGain.gain.setTargetAtTime(this.filters.reverbMix ?? 0, now, FILTER_SMOOTHING_SECONDS)
+    if (!this.panStage.hasPan(this.filters.pan ?? 0)) this.panStage.setPan(this.filters.pan ?? 0)
     // Regenerating the impulse response is real work (fills a whole buffer of
     // noise samples) and would also restart the convolver's own internal
     // history - only do it when the size actually changed, same "topology
@@ -721,6 +729,7 @@ export class LocalFileSoundSource {
     this.reverbSendGain.disconnect()
     this.reverbConvolver.disconnect()
     this.fluctuationGain.disconnect()
+    this.panStage.dispose()
     this.gainNode.disconnect()
   }
 }

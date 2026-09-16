@@ -1,4 +1,5 @@
 import { createReverbImpulse } from './reverbIR.js'
+import { PanStage } from './PanStage.js'
 import { SoundFluctuation } from './Modulator.js'
 import { NoiseGate } from './NoiseGate.js'
 
@@ -347,11 +348,16 @@ export class PreviewSource {
     this.envelopeGain.gain.value = 1
     this._volumeEnvelope = null
 
+    // Stereo pan (v0.1.216) - last stage before the preview volume, matching
+    // core's LocalFileSoundSource and the ffmpeg bake.
+    this.panStage = new PanStage(engine.context, 0)
+
     this.outputGainNode = engine.context.createGain()
     this.outputGainNode.gain.value = 0
     for (const voice of this.voices) voice.crossfadeGain.connect(this.fluctuationGain)
     this.fluctuationGain.connect(this.envelopeGain)
-    this.envelopeGain.connect(this.outputGainNode)
+    this.envelopeGain.connect(this.panStage.input)
+    this.panStage.output.connect(this.outputGainNode)
     this.outputGainNode.connect(engine.masterGain)
 
     // Real-time spectrum analyzer tap for the Remix EQ graph's live backdrop
@@ -427,6 +433,7 @@ export class PreviewSource {
     for (const voice of this.voices) applyFiltersToVoice(voice, this.engine.context, filters)
     this._syncGates()
     this.setVolumeEnvelope(filters.volumeEnvelope)
+    if (!this.panStage.hasPan(filters.pan ?? 0)) this.panStage.setPan(filters.pan ?? 0)
   }
 
   // Only ever called from setFilters (never a separate call site elsewhere)
@@ -625,6 +632,7 @@ export class PreviewSource {
     for (const voice of this.voices) disposeVoice(voice)
     this.fluctuationGain.disconnect()
     this.envelopeGain.disconnect()
+    this.panStage.dispose()
     this.outputGainNode.disconnect()
     this.analyserFeedNode.disconnect()
     this.analyserNode.disconnect()
