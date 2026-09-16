@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.207 — Freesound/YouTube are now toggleable in Browse Sounds
+
+- Two checkboxes next to the search bar let you turn Freesound and/or YouTube off — both on by default. Results from both still combine into one grid when both are on; a toggle just controls whether a source is searched at all.
+
 ## v0.1.206 — YouTube search added to Browse Sounds
 
 - The Browse Sounds tab now searches YouTube alongside Freesound, combined into one grid and tagged by source — no separate toggle, matching how you asked for it to work.

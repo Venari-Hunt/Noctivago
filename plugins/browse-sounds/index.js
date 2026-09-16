@@ -88,7 +88,7 @@ function cleanErrorMessage(err, fallback) {
 }
 
 function freshSourceState() {
-  return { available: false, page: 0, hasMore: false, loading: false, error: null }
+  return { available: false, enabled: true, page: 0, hasMore: false, loading: false, error: null }
 }
 
 export default class BrowseSoundsPlugin {
@@ -142,6 +142,11 @@ export default class BrowseSoundsPlugin {
           <button id="browse-search-btn" class="btn btn-primary" type="button">Search</button>
         </div>
 
+        <div class="browse-source-toggles">
+          <label><input type="checkbox" id="browse-source-freesound" checked> Freesound</label>
+          <label><input type="checkbox" id="browse-source-youtube" checked> YouTube</label>
+        </div>
+
         <p id="browse-unavailable" class="modal-hint hidden"></p>
         <p id="browse-status" class="browse-status"></p>
         <div id="browse-results" class="browse-results"></div>
@@ -153,6 +158,7 @@ export default class BrowseSoundsPlugin {
       query: container.querySelector('#browse-query'),
       sort: container.querySelector('#browse-sort'),
       searchBtn: container.querySelector('#browse-search-btn'),
+      sourceToggles: { freesound: container.querySelector('#browse-source-freesound'), youtube: container.querySelector('#browse-source-youtube') },
       unavailable: container.querySelector('#browse-unavailable'),
       status: container.querySelector('#browse-status'),
       results: container.querySelector('#browse-results'),
@@ -166,6 +172,9 @@ export default class BrowseSoundsPlugin {
     this.els.sort.addEventListener('change', () => {
       if (this.query) this.search()
     })
+    for (const key of Object.keys(this.els.sourceToggles)) {
+      this.els.sourceToggles[key].addEventListener('change', (evt) => this.toggleSource(key, evt.target.checked))
+    }
 
     this.observer = new IntersectionObserver((entries) => {
       if (entries[0]?.isIntersecting) this.loadMore()
@@ -173,6 +182,35 @@ export default class BrowseSoundsPlugin {
     this.observer.observe(this.els.sentinel)
 
     this.checkAvailability()
+  }
+
+  // Owner's own follow-up direction (2026-09-16, inbox): "Youtube search as
+  // well as freesound search should be toggles" - unlike the earlier
+  // "combined, tagged by source, not a toggle" decision (which is still
+  // honored: both sources still render into one shared grid, this is only
+  // about whether a source is searched at all). Unchecking a source removes
+  // its cards from the grid immediately; re-checking it with an active
+  // query fetches it fresh into the existing grid rather than requiring a
+  // whole new search.
+  toggleSource(key, enabled) {
+    const s = this.sources[key]
+    s.enabled = enabled
+    // Its cards are gone from the grid either way (removed now, or never
+    // added yet) - the dedup set must match that, or re-enabling filters
+    // out every result as a false "already shown" duplicate.
+    if (key === 'youtube') this.seenYoutubeIds.clear()
+    if (!enabled) {
+      for (const el of this.els.results.querySelectorAll(`[data-source="${key}"]`)) el.remove()
+      s.hasMore = false
+      this.updateStatus()
+      this.els.sentinel.classList.toggle('hidden', !(this.sources.freesound.hasMore || this.sources.youtube.hasMore))
+      return
+    }
+    if (s.available && this.query) {
+      s.page = 0
+      s.hasMore = true
+      this.fetchSource(key, { append: false })
+    }
   }
 
   // Each source's own availability check is independent - a throwing
@@ -200,6 +238,14 @@ export default class BrowseSoundsPlugin {
     }
     this.els.query.disabled = !anyAvailable
     this.els.searchBtn.disabled = !anyAvailable
+    for (const key of Object.keys(this.sources)) {
+      const toggle = this.els.sourceToggles[key]
+      toggle.disabled = !this.sources[key].available
+      if (!this.sources[key].available) {
+        toggle.checked = false
+        this.sources[key].enabled = false
+      }
+    }
     if (anyAvailable) this.els.query.focus()
   }
 
@@ -213,7 +259,7 @@ export default class BrowseSoundsPlugin {
     for (const key of Object.keys(this.sources)) {
       const s = this.sources[key]
       s.page = 0
-      s.hasMore = s.available
+      s.hasMore = s.available && s.enabled
       s.error = null
     }
     this.els.results.replaceChildren()
@@ -221,8 +267,13 @@ export default class BrowseSoundsPlugin {
     this.els.status.textContent = 'Searching…'
     this.seenYoutubeIds.clear()
 
+    const anySourceQueried = Object.keys(this.sources).some((key) => this.sources[key].available && this.sources[key].enabled)
+    if (!anySourceQueried) {
+      this.updateStatus()
+      return
+    }
     for (const key of Object.keys(this.sources)) {
-      if (this.sources[key].available) this.fetchSource(key, { append: false })
+      if (this.sources[key].available && this.sources[key].enabled) this.fetchSource(key, { append: false })
     }
   }
 
@@ -230,7 +281,7 @@ export default class BrowseSoundsPlugin {
     if (!this.query) return
     for (const key of Object.keys(this.sources)) {
       const s = this.sources[key]
-      if (s.available && s.hasMore && !s.loading) this.fetchSource(key, { append: true })
+      if (s.available && s.enabled && s.hasMore && !s.loading) this.fetchSource(key, { append: true })
     }
   }
 
@@ -306,6 +357,10 @@ export default class BrowseSoundsPlugin {
       return
     }
     if (count === 0) {
+      if (!this.sources.freesound.enabled && !this.sources.youtube.enabled) {
+        this.els.status.textContent = 'Turn on at least one source above to search.'
+        return
+      }
       const errors = [this.sources.freesound.error, this.sources.youtube.error].filter(Boolean)
       this.els.status.textContent = errors[0] || 'No results.'
       return
