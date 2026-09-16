@@ -1,6 +1,6 @@
 # Noctívago
 
-Windows desktop ambient sound mixer, inspired by the Linux app [Blanket](https://github.com/rafaelmardojai/blanket) (not a port — Blanket is GTK/Linux-only). Electron + vanilla JS/DOM (no UI framework).
+Windows desktop ambient sound mixer. Electron + vanilla JS/DOM (no UI framework).
 
 See `CONTRIBUTING.md` for build/run instructions and code conventions if you're working on the codebase.
 

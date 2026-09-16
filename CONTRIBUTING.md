@@ -1,9 +1,8 @@
 # Contributing to Noctívago
 
 Thanks for considering a contribution! Noctívago is an Electron + vanilla
-JS/DOM ambient sound mixer for Windows, inspired by
-[Blanket](https://github.com/rafaelmardojai/blanket) — see `CLAUDE.md` for
-the full architecture writeup.
+JS/DOM ambient sound mixer for Windows — see `CLAUDE.md` for the full
+architecture writeup.
 
 ## Before you open a pull request
 

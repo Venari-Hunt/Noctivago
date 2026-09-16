@@ -2,8 +2,7 @@
 
 A desktop ambient sound mixer for Windows — loop, layer, and shape any
 sound for sleep, focus, or building a soundscape for a game, stream, or
-writing session. Inspired by [Blanket](https://github.com/rafaelmardojai/blanket)
-(Linux-only, which is why this exists), but grown well past a simple mixer.
+writing session.
 
 **[Download on itch.io](https://venar1.itch.io/noctivago)** · **[Full documentation](https://venari-hunt.github.io/noctivago-docs/)**
 
