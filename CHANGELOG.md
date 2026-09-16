@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.209 — Self-review: fixed a toggle-off race in Browse Sounds
+
+- BUG FIX: turning off Freesound or YouTube in Browse Sounds while it was still mid-search could let its results quietly reappear a moment later, un-hiding the "load more" trigger too — most likely with YouTube, whose search takes longer. Not reported — caught by a self-review pass over v0.1.204-208.
+
 ## v0.1.208 — Browse Sounds: Freesound links, a seekable preview bar
 
 - A Freesound card's name is now a real link to that sound's page on freesound.org, with a small link icon.

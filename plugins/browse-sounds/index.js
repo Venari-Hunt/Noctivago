@@ -62,6 +62,8 @@ const MAX_TAGS_SHOWN = 6
 // loop and crossfade it on the app").
 const YOUTUBE_DEFAULT_MAX_SECONDS = 10 * 60
 
+const SOURCE_KEYS = ['freesound', 'youtube']
+
 const PLAY_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
 const PAUSE_ICON_SVG =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
@@ -97,7 +99,7 @@ function cleanErrorMessage(err, fallback) {
 }
 
 function freshSourceState() {
-  return { available: false, enabled: true, page: 0, hasMore: false, loading: false, error: null }
+  return { available: false, enabled: true, page: 0, hasMore: false, loading: false, error: null, generation: 0 }
 }
 
 export default class BrowseSoundsPlugin {
@@ -186,7 +188,7 @@ export default class BrowseSoundsPlugin {
     this.els.sort.addEventListener('change', () => {
       if (this.query) this.search()
     })
-    for (const key of Object.keys(this.els.sourceToggles)) {
+    for (const key of SOURCE_KEYS) {
       this.els.sourceToggles[key].addEventListener('change', (evt) => this.toggleSource(key, evt.target.checked))
     }
 
@@ -315,17 +317,29 @@ export default class BrowseSoundsPlugin {
     // out every result as a false "already shown" duplicate.
     if (key === 'youtube') this.seenYoutubeIds.clear()
     if (!enabled) {
-      for (const el of this.els.results.querySelectorAll(`[data-source="${key}"]`)) el.remove()
+      // Bumping generation invalidates any fetch for this source still in
+      // flight from before it was disabled - it'll discard its response as
+      // stale instead of silently re-adding cards (or racing a fetch the
+      // re-enable branch below starts) once it resolves.
+      s.generation += 1
+      this.clearSourceCards(key)
       s.hasMore = false
       this.updateStatus()
-      this.els.sentinel.classList.toggle('hidden', !(this.sources.freesound.hasMore || this.sources.youtube.hasMore))
+      this.updateSentinelVisibility()
       return
     }
     if (s.available && this.query) {
       s.page = 0
-      s.hasMore = true
       this.fetchSource(key, { append: false })
     }
+  }
+
+  clearSourceCards(key) {
+    for (const el of this.els.results.querySelectorAll(`[data-source="${key}"]`)) el.remove()
+  }
+
+  updateSentinelVisibility() {
+    this.els.sentinel.classList.toggle('hidden', !SOURCE_KEYS.some((key) => this.sources[key].hasMore))
   }
 
   // Each source's own availability check is independent - a throwing
@@ -353,7 +367,7 @@ export default class BrowseSoundsPlugin {
     }
     this.els.query.disabled = !anyAvailable
     this.els.searchBtn.disabled = !anyAvailable
-    for (const key of Object.keys(this.sources)) {
+    for (const key of SOURCE_KEYS) {
       const toggle = this.els.sourceToggles[key]
       toggle.disabled = !this.sources[key].available
       if (!this.sources[key].available) {
@@ -371,7 +385,7 @@ export default class BrowseSoundsPlugin {
     this.query = query
     this.sort = this.els.sort.value
     this.requestId += 1
-    for (const key of Object.keys(this.sources)) {
+    for (const key of SOURCE_KEYS) {
       const s = this.sources[key]
       s.page = 0
       s.hasMore = s.available && s.enabled
@@ -382,19 +396,19 @@ export default class BrowseSoundsPlugin {
     this.els.status.textContent = 'Searching…'
     this.seenYoutubeIds.clear()
 
-    const anySourceQueried = Object.keys(this.sources).some((key) => this.sources[key].available && this.sources[key].enabled)
+    const anySourceQueried = SOURCE_KEYS.some((key) => this.sources[key].available && this.sources[key].enabled)
     if (!anySourceQueried) {
       this.updateStatus()
       return
     }
-    for (const key of Object.keys(this.sources)) {
+    for (const key of SOURCE_KEYS) {
       if (this.sources[key].available && this.sources[key].enabled) this.fetchSource(key, { append: false })
     }
   }
 
   loadMore() {
     if (!this.query) return
-    for (const key of Object.keys(this.sources)) {
+    for (const key of SOURCE_KEYS) {
       const s = this.sources[key]
       if (s.available && s.enabled && s.hasMore && !s.loading) this.fetchSource(key, { append: true })
     }
@@ -411,6 +425,7 @@ export default class BrowseSoundsPlugin {
     this.updateSearchButtonState()
 
     const requestId = this.requestId
+    const generation = s.generation
     let result
     try {
       result = key === 'freesound' ? await this.searchFreesound(s.page) : await this.searchYouTube(s.page)
@@ -421,6 +436,14 @@ export default class BrowseSoundsPlugin {
     if (requestId !== this.requestId) return // superseded by a newer search
     s.loading = false
     this.updateSearchButtonState()
+
+    // Superseded by this same source being toggled off (and possibly back
+    // on) since this fetch started - toggling off bumps generation, so a
+    // late response here is stale even if the source is enabled again by
+    // now (a fresh fetchSource call from the re-enable already owns the
+    // current generation). Checked after clearing s.loading above so a
+    // disabled source's search button doesn't stay stuck disabled forever.
+    if (generation !== s.generation) return
 
     if (!result.ok) {
       s.hasMore = false
@@ -434,7 +457,7 @@ export default class BrowseSoundsPlugin {
       // A source that returns late (e.g. YouTube's slower search) must not
       // wipe cards the other source already appended for this same fresh
       // search - only ever clear this source's own prior cards.
-      for (const el of this.els.results.querySelectorAll(`[data-source="${key}"]`)) el.remove()
+      this.clearSourceCards(key)
     }
     for (const sound of result.results) {
       if (key === 'youtube') {
@@ -449,7 +472,7 @@ export default class BrowseSoundsPlugin {
     }
     s.hasMore = Boolean(result.hasMore)
     this.updateStatus()
-    this.els.sentinel.classList.toggle('hidden', !(this.sources.freesound.hasMore || this.sources.youtube.hasMore))
+    this.updateSentinelVisibility()
   }
 
   async searchFreesound(page) {
