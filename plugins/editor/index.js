@@ -2315,8 +2315,28 @@ ${mixFluctuationMarkup('group')}
     return Boolean(this.currentEntry?.loopClipReady) && Boolean(this.bakedPreview)
   }
 
-  togglePreviewMode() {
-    if (!this.savedPreviewEligible()) return
+  // v0.1.214: the toggle is never disabled - owner's direct requirement
+  // ("it always has to change between live preview and saved audio
+  // preview"). Switching to Saved with no usable bake (never saved, or the
+  // last render failed) renders one first instead of refusing.
+  async togglePreviewMode() {
+    if (this._togglingPreviewMode) return
+    if (this.previewMode !== 'saved' && !this.savedPreviewEligible()) {
+      if (this._clipRebaking || this._saveInProgress || this.eqCompareViewing === 'B') return
+      this._togglingPreviewMode = true
+      const entry = this.currentEntry
+      try {
+        this.els.saveStatus.textContent = 'Rendering saved audio…'
+        await this.save({ forceBake: true })
+      } finally {
+        this._togglingPreviewMode = false
+      }
+      if (this.currentEntry !== entry) return
+      if (!this.savedPreviewEligible()) {
+        this.els.saveStatus.textContent = "Couldn't render the saved audio - still on Live edit. Click the toggle to try again."
+        return
+      }
+    }
     // Switching stops playback rather than trying to hand off mid-stream
     // between two structurally different engines (one crossfading pair of
     // <audio> elements through a live filter chain vs. one plain looping
@@ -2354,7 +2374,7 @@ ${mixFluctuationMarkup('group')}
   updatePreviewModeToggle() {
     if (!this.els.previewModeToggle) return
     const eligible = this.savedPreviewEligible()
-    if (!eligible && this.previewMode === 'saved') {
+    if (!eligible && this.previewMode === 'saved' && !this._clipRebaking) {
       // Pause whichever engine (bakedPreview) is actually live *before*
       // flipping the mode - activePreview() reads this.previewMode, so
       // pausing after the flip would silently target the wrong (idle)
@@ -2364,7 +2384,7 @@ ${mixFluctuationMarkup('group')}
       this.setPlayPauseIcon(false)
       this.previewMode = 'live'
     }
-    this.els.previewModeToggle.disabled = !eligible
+    this.els.previewModeToggle.disabled = false
     this.els.previewModeToggle.textContent = this.previewMode === 'saved' ? 'Saved audio' : 'Live edit'
     this.els.previewModeToggle.classList.toggle('editor-preview-mode-toggle-active', this.previewMode === 'saved')
     const stale = this.previewMode === 'saved' && this.hasUnsavedChanges()
@@ -2375,7 +2395,7 @@ ${mixFluctuationMarkup('group')}
           ? 'Hearing the last saved/baked audio - edited since then, autosave will refresh it shortly. Click to switch to the live editable preview'
           : 'Hearing the actual saved/baked audio - click to switch back to the live editable preview'
         : 'Hearing the live editable preview (Doppler, Reverse and Noise reduction have no live preview, and Pitch is only approximate) - click to hear the actual saved audio instead'
-      : 'Save first to unlock hearing the actual baked audio'
+      : 'Click to render and hear the actual saved audio'
     // Keep the "drift needs Live edit preview" note in sync with the mode.
     if (this.flucVolBar) this.updateFluctuationEnabledUI()
   }
@@ -4055,7 +4075,7 @@ ${mixFluctuationMarkup('group')}
   // and a debounced autosave firing at the same moment starting two
   // overlapping bakes of the same sound.
   async save(options = {}) {
-    const { trigger = 'manual' } = options
+    const { trigger = 'manual', forceBake = false } = options
     // Defense in depth - the Save button is already disabled while viewing
     // B (see updateSaveButtonState), but currentFilters() would silently
     // read B's read-only data instead of A's real live edits if this ever
@@ -4064,13 +4084,13 @@ ${mixFluctuationMarkup('group')}
     if (this._saveInProgress) return
     this._saveInProgress = true
     try {
-      await this.performSave(trigger)
+      await this.performSave(trigger, forceBake)
     } finally {
       this._saveInProgress = false
     }
   }
 
-  async performSave(trigger) {
+  async performSave(trigger, forceBake = false) {
     const savedWord = trigger === 'auto' ? 'Auto-saved' : 'Saved'
     const id = this.currentEntry.id
     // BUG FIX (self-review, v0.1.196): everything this async function reads
@@ -4098,7 +4118,7 @@ ${mixFluctuationMarkup('group')}
     // that case nothing that feeds the ffmpeg render actually changed, so
     // skip the bake round-trip entirely rather than re-rendering a
     // byte-identical clip (fluctuation is never baked in).
-    const bakeRelevantDirty = this.hasUnsavedChanges()
+    const bakeRelevantDirty = forceBake || this.hasUnsavedChanges()
     const flucDirty = this.fluctuationDirty()
     const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
     const filters = this.currentFilters()
@@ -4259,6 +4279,31 @@ ${mixFluctuationMarkup('group')}
       // failure means the existing branch below (which already calls
       // notifyLiveReconcile() and resets the button either way) handles it
       // for free, no separate error path needed.
+      // BUG FIX (v0.1.214): release the Saved-audio <audio> element's hold
+      // on the clip file *before* re-baking it. The sound:// handler streams
+      // the clip with backpressure, so a loaded element (playing or paused -
+      // bakedPreview is even preloaded in Live mode) keeps the file open
+      // indefinitely, and Windows refuses to rename the fresh render over
+      // an open file. loopClip.js's renameWithRetry only waits ~3s, so the
+      // render was reported as failed -> loopClipReady false -> the preview
+      // toggle greyed out right after every save made from Saved mode.
+      // Reported directly: "every time I'm on saved audio preview and save
+      // it it greys out." _clipRebaking keeps updatePreviewModeToggle from
+      // kicking the user out of Saved mode while the preview is torn down.
+      let resume = null
+      if (stillEditingThisEntry() && this.bakedPreview) {
+        resume = {
+          time: this.bakedPreview.audioEl.currentTime || 0,
+          playing: this.previewMode === 'saved' && this.bakedPreview.playing
+        }
+        if (resume.playing) {
+          this.stopPreviewTicking()
+          this.setPlayPauseIcon(false)
+        }
+        this._clipRebaking = true
+        this.bakedPreview.dispose()
+        this.bakedPreview = null
+      }
       let result
       try {
         result = await this.api.audio.renderLoopClip(id, {
@@ -4319,10 +4364,11 @@ ${mixFluctuationMarkup('group')}
       // stillEditingThisEntry() - this.bakedPreview/this.previewMode belong
       // to whatever sound is currently open in the Remix UI, which may no
       // longer be this one (see this function's own top-of-function note).
+      if (resume) this._clipRebaking = false
       if (stillEditingThisEntry()) {
-        const resumingSaved = this.previewMode === 'saved'
-        const resumeTime = resumingSaved ? this.bakedPreview?.audioEl.currentTime ?? 0 : 0
-        const resumePlaying = resumingSaved && Boolean(this.bakedPreview?.playing)
+        const resumingSaved = this.previewMode === 'saved' && result.ok
+        const resumeTime = resumingSaved ? resume?.time ?? this.bakedPreview?.audioEl.currentTime ?? 0 : 0
+        const resumePlaying = resumingSaved && (resume ? resume.playing : Boolean(this.bakedPreview?.playing))
         this.bakedPreview?.dispose()
         this.bakedPreview = new BakedClipPreview(this.engine, id, this.effectivePreviewVolume(), savingEditingPresetId)
         if (resumingSaved) {
@@ -4331,6 +4377,10 @@ ${mixFluctuationMarkup('group')}
             this.engine
               .resume()
               .then(() => this.bakedPreview?.play())
+              .then(() => {
+                this.setPlayPauseIcon(true)
+                this.tickPreviewPlayhead()
+              })
               .catch((err) => console.error('Editor: failed to resume saved-audio preview after re-bake', err))
           }
         }
