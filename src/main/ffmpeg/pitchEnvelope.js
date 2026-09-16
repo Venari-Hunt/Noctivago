@@ -15,6 +15,12 @@ import { app } from 'electron'
 // preserving pitch glide on broadband content). Same "bake one realization"
 // idea as scatter/scheduled shot placement and the volume envelope.
 //
+// v0.1.213: the export's primary path is now tape-style varispeed
+// (samplePitchRatios -> varispeedCore.js), which matches what the live
+// Mixer's detune actually does and is ~22x cheaper. The asendcmd/rubberband
+// command file below is kept only as the fallback for loop clips too long to
+// hold in memory (over MAX_BUFFER_CLIP_SECONDS).
+//
 // Pitch fluctuation is per-sound only (a Sound Group / whole-mix bus is a sum
 // of sources with nothing single to detune - see Modulator.js / the Board),
 // so unlike gainEnvelope.js this is only ever applied to a single loop
@@ -143,6 +149,16 @@ export function samplePitchWalk(config, durationSeconds, rng = Math.random) {
     out[i] = Math.max(min, Math.min(max, value))
   }
   return out
+}
+
+// The same walk expressed as playback-rate multipliers (2^(st/12)) plus the
+// step they're sampled at - the input exportMix.js's tape-style varispeed
+// drift (varispeedCore.js) needs.
+export function samplePitchRatios(config, durationSeconds, rng = Math.random) {
+  const semis = samplePitchWalk(config, durationSeconds, rng)
+  const ratios = new Float64Array(semis.length)
+  for (let i = 0; i < semis.length; i++) ratios[i] = Math.pow(2, semis[i] / 12)
+  return { ratios, stepSeconds: resolveStepSeconds(durationSeconds) }
 }
 
 // True when a fluctuation config actually asks for pitch drift.
