@@ -71,11 +71,27 @@ describe('applyOcclusionToFilters', () => {
     assert.equal(result.reverbMix, 0.4)
   })
 
-  test('occlusion only ever adds muffling, never undoes a more extreme manual setting', () => {
-    const result = applyOcclusionToFilters({ occlusion: 1, lowpassHz: 300, reverbSizeMs: 2000, reverbMix: 0.9 })
+  test('occlusion never undoes a more muffled manual lowpass', () => {
+    const result = applyOcclusionToFilters({ occlusion: 1, lowpassHz: 300 })
     assert.equal(result.lowpassHz, 300) // already more muffled than occlusion's own 700Hz ceiling
-    assert.equal(result.reverbSizeMs, 2000) // already more than occlusion's 900ms ceiling
-    assert.equal(result.reverbMix, 0.9) // already more than occlusion's 0.4 ceiling
+  })
+
+  test('occlusion only adds reverb on top of the manual setting', () => {
+    const result = applyOcclusionToFilters({ occlusion: 1, reverbSizeMs: 2000, reverbMix: 0.9 })
+    assert.ok(result.reverbSizeMs > 2000 && result.reverbSizeMs <= 4000)
+    assert.ok(result.reverbMix > 0.9 && result.reverbMix <= 1)
+  })
+
+  test('manual reverb changes stay audible under occlusion (regression, v0.1.215)', () => {
+    // Used to be max(manual, occlusion): every Mix below 0.4 at occlusion 1 gave the same 0.4.
+    const low = applyOcclusionToFilters({ occlusion: 1, reverbMix: 0.1, reverbSizeMs: 200 })
+    const high = applyOcclusionToFilters({ occlusion: 1, reverbMix: 0.25, reverbSizeMs: 600 })
+    assert.ok(high.reverbMix > low.reverbMix)
+    assert.ok(high.reverbSizeMs > low.reverbSizeMs)
+    assert.ok(low.reverbMix > 0.4) // still at least as wet as occlusion alone
+    const maxed = applyOcclusionToFilters({ occlusion: 1, reverbMix: 1, reverbSizeMs: 4000 })
+    assert.equal(maxed.reverbMix, 1)
+    assert.equal(maxed.reverbSizeMs, 4000)
   })
 
   test('occlusion log-interpolates lowpass between neutral and 700Hz, not linearly', () => {
