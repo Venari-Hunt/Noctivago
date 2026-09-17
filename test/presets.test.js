@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeWholeMix, normalizeGroupFilters, normalizeGroups } from '../src/main/presets.js'
+import { normalizeWholeMix, normalizeGroupFilters, normalizeGroups, updatePresetGroups, savePreset, deletePreset } from '../src/main/presets.js'
 
 describe('normalizeWholeMix', () => {
   test('null/undefined/non-object input is null', () => {
@@ -155,5 +155,68 @@ describe('group drift flags (v0.1.218)', () => {
     assert.equal(f.volume.biasEnabled, false)
     assert.equal(f.volume.perSound, undefined)
     assert.equal(f.pitch, undefined)
+  })
+})
+
+// v0.1.228: joining a Sound Group also joins the mix (owner report,
+// 2026-09-17: a group's own sounds weren't in the mix at all, silent with
+// no obvious cause). Uses the real store (electron-store falls back to a
+// throwaway path outside Electron - never the real app's presets.json),
+// cleaning up after itself.
+describe('updatePresetGroups: joining a group also joins the mix', () => {
+  test('a sound newly added to a group is added to sounds[] and reported via markIncluded', () => {
+    const preset = savePreset({ name: 'probe', sounds: [], wholeMix: null, groups: [] })
+    try {
+      const marked = []
+      const updated = updatePresetGroups(
+        preset.id,
+        [{ name: 'g', soundIds: ['sound-a'], filters: null }],
+        { markIncluded: (id, included) => marked.push([id, included]) }
+      )
+      assert.deepEqual(marked, [['sound-a', true]])
+      assert.ok(updated.sounds.some((s) => s.soundId === 'sound-a'))
+      assert.equal(updated.sounds.find((s) => s.soundId === 'sound-a').overrides, null)
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('a sound already in the mix is not re-marked or duplicated', () => {
+    const preset = savePreset({ name: 'probe', sounds: [{ soundId: 'sound-b', volume: 0.4, overrides: { gainDb: 2 } }], wholeMix: null, groups: [] })
+    try {
+      const marked = []
+      const updated = updatePresetGroups(
+        preset.id,
+        [{ name: 'g', soundIds: ['sound-b'], filters: null }],
+        { markIncluded: (id, included) => marked.push([id, included]) }
+      )
+      assert.deepEqual(marked, [['sound-b', true]])
+      const entries = updated.sounds.filter((s) => s.soundId === 'sound-b')
+      assert.equal(entries.length, 1)
+      assert.equal(entries[0].volume, 0.4)
+      assert.deepEqual(entries[0].overrides, { gainDb: 2 })
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('removing a sound from a group does not mark it included', () => {
+    const preset = savePreset({ name: 'probe', sounds: [{ soundId: 'sound-c', volume: 1, overrides: null }], wholeMix: null, groups: [{ name: 'g', soundIds: ['sound-c'], filters: null }] })
+    try {
+      const marked = []
+      updatePresetGroups(preset.id, [{ name: 'g', soundIds: [], filters: null }], { markIncluded: (id, included) => marked.push([id, included]) })
+      assert.deepEqual(marked, [])
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('markIncluded is optional - an unset callback does not throw', () => {
+    const preset = savePreset({ name: 'probe', sounds: [], wholeMix: null, groups: [] })
+    try {
+      assert.doesNotThrow(() => updatePresetGroups(preset.id, [{ name: 'g', soundIds: ['sound-d'], filters: null }]))
+    } finally {
+      deletePreset(preset.id)
+    }
   })
 })

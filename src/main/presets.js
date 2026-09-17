@@ -1,5 +1,6 @@
 import Store from 'electron-store'
 import crypto from 'node:crypto'
+import { DEFAULT_SOUND_VOLUME } from '../shared/constants.js'
 
 const store = new Store({
   name: 'presets',
@@ -222,11 +223,40 @@ export function savePreset({ name, sounds, wholeMix, groups }) {
 // always sends the full desired array, same "replace the whole field"
 // pattern updatePresetWholeMix/updatePresetSounds already use). Returns the
 // updated preset, or null if the id is unknown.
-export function updatePresetGroups(id, groups) {
+// markIncluded: injected (library.js's updateIncluded), not imported
+// directly - presets.js otherwise has no Electron dependency at all
+// (electron-store aside), which is what lets test/presets.test.js run
+// under plain node --test with no Electron stub; a static import of
+// library.js (which reaches electron via ffmpegPath.js) would break that.
+export function updatePresetGroups(id, groups, { markIncluded } = {}) {
   const presets = store.get('presets')
   const idx = presets.findIndex((p) => p.id === id)
   if (idx === -1) return null
-  presets[idx] = { ...presets[idx], groups: normalizeGroups(groups) }
+  const normalized = normalizeGroups(groups)
+
+  // Owner request (2026-09-17, "frog is on the group and on the mix and it
+  // isn't playing... same thing for outside group" - the outside group's
+  // members were never added to the mix at all, only to the group): joining
+  // a Sound Group now also joins the mix, one-way only - removing a sound
+  // from the mix later leaves its group membership untouched, and a sound
+  // already in the mix when it joins a group is unaffected. Every group-
+  // membership write (the Mixer's right-click menu, its "+ new group"
+  // dialog, and the Remix plugin's Group-mode member checklist) already
+  // funnels through this one function via presets:updateGroups, so this is
+  // the single place that needs the rule rather than three separate copies.
+  const before = new Set((presets[idx].groups ?? []).flatMap((g) => g.soundIds ?? []))
+  const after = new Set(normalized.flatMap((g) => g.soundIds ?? []))
+  const newlyJoined = [...after].filter((soundId) => !before.has(soundId))
+
+  let sounds = presets[idx].sounds ?? []
+  for (const soundId of newlyJoined) {
+    if (!sounds.some((s) => s.soundId === soundId)) {
+      sounds = [...sounds, { soundId, volume: DEFAULT_SOUND_VOLUME, overrides: null }]
+    }
+    markIncluded?.(soundId, true)
+  }
+
+  presets[idx] = { ...presets[idx], sounds, groups: normalized }
   store.set('presets', presets)
   return presets[idx]
 }

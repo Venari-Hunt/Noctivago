@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.228 — Joining a Sound Group now joins the mix
+
+- **Fixed: a sound added to a Sound Group wasn't automatically added to the mix.** Group membership and mix membership looked linked but weren't, so a group could sit there fully configured with none of its sounds actually playing. Adding a sound to a group (from the Mixer's right-click menu, its "New group…" dialog, or Remix's Group mode member list) now adds it to the mix too. Removing a sound from the mix afterwards still leaves its group membership alone.
+
 ## v0.1.227 — Stronger panning, Speed bar, and Remix setting fixes
 
 - **Panning is more noticeable.** Wide stereo recordings (field recordings of frogs, rain, crowds) barely moved before: a 25% pan made one side only 0.7 dB louder. They now move like they would in a mixing app (about 2 dB at 25%, 5 dB at 50%, 11 dB at 75%). Hard left and right are unchanged. Sounds you have already panned will sound a bit wider, and their saved audio re-renders once.

@@ -170,7 +170,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('presets:delete', (_event, id) => presets.deletePreset(id))
   ipcMain.handle('presets:updateWholeMix', (_event, id, wholeMix) => presets.updatePresetWholeMix(id, wholeMix))
   ipcMain.handle('presets:updateSounds', (_event, id, sounds) => presets.updatePresetSounds(id, sounds))
-  ipcMain.handle('presets:updateGroups', (_event, id, groups) => presets.updatePresetGroups(id, groups))
+  ipcMain.handle('presets:updateGroups', (_event, id, groups) => presets.updatePresetGroups(id, groups, { markIncluded: library.updateIncluded }))
   ipcMain.handle('presets:updateSoundOverride', (_event, presetId, soundId, overridePatch) =>
     presets.updatePresetSoundOverride(presetId, soundId, overridePatch)
   )
