@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.226 — No more example tabs
+
+- The **Hello** tab is gone. It was a developer example that was never meant to ship, and a second deliberately broken example plugin was removed from the installer along with it.
+
 ## v0.1.225 — Pitch drift works on long sounds
 
 - **Fixed: pitch drift did nothing audible on loops longer than 10 minutes.** Those sounds play straight from the file, and the drift only made them very slightly faster and slower. The pitch now really drifts, together with the tempo, the same way it already did for shorter sounds.
