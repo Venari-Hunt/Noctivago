@@ -5719,10 +5719,11 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
   }
 
   async _toggleGroupMemberNow(presetId, groupId, soundId) {
+    let wasAlreadyMember = false
     const updated = this.groups.map((g) => {
       if (g.id === groupId) {
-        const has = g.soundIds.includes(soundId)
-        return { ...g, soundIds: has ? g.soundIds.filter((s) => s !== soundId) : [...g.soundIds, soundId] }
+        wasAlreadyMember = g.soundIds.includes(soundId)
+        return { ...g, soundIds: wasAlreadyMember ? g.soundIds.filter((s) => s !== soundId) : [...g.soundIds, soundId] }
       }
       return { ...g, soundIds: g.soundIds.filter((s) => s !== soundId) }
     })
@@ -5738,7 +5739,10 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
       this.els.mixGroupSelect.value = this.selectedGroupId ?? ''
       this.renderGroupMembers()
     }
-    window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId } }))
+    // joinedSoundId: see the Mixer's identical sound-groups-changed
+    // listener comment - only set on an actual add, so a removal never
+    // gets misread as one.
+    window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId, joinedSoundId: wasAlreadyMember ? null : soundId } }))
   }
 
   writeGroupControls(filters) {

@@ -437,10 +437,11 @@ function toggleGroupMembership(presetId, groupId, soundId) {
 
 async function toggleGroupMembershipNow(presetId, groupId, soundId) {
   const current = presetId === state.activePresetId ? state.groups : (await api.presets.list()).find((p) => p.id === presetId)?.groups ?? []
+  let wasAlreadyMember = false
   const updated = current.map((g) => {
     if (g.id === groupId) {
-      const has = g.soundIds.includes(soundId)
-      return { ...g, soundIds: has ? g.soundIds.filter((s) => s !== soundId) : [...g.soundIds, soundId] }
+      wasAlreadyMember = g.soundIds.includes(soundId)
+      return { ...g, soundIds: wasAlreadyMember ? g.soundIds.filter((s) => s !== soundId) : [...g.soundIds, soundId] }
     }
     return { ...g, soundIds: g.soundIds.filter((s) => s !== soundId) }
   })
@@ -451,7 +452,11 @@ async function toggleGroupMembershipNow(presetId, groupId, soundId) {
     for (const [id, source] of state.sources) engine.routeSound(id, source)
     render()
   }
-  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId } }))
+  // joinedSoundId: only set when this call actually just added soundId to a
+  // group (not when it removed it) - see the sound-groups-changed
+  // listener's own comment for why this needs to be the *specific* sound,
+  // not every current member.
+  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId, joinedSoundId: wasAlreadyMember ? null : soundId } }))
 }
 
 let pendingGroupCreate = null // { presetId, soundId }
@@ -485,7 +490,7 @@ els.groupCreateConfirm.addEventListener('click', async () => {
     for (const [id, source] of state.sources) engine.routeSound(id, source)
     render()
   }
-  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId } }))
+  window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId, joinedSoundId: soundId } }))
   pendingGroupCreate = null
   hideModal(els.groupCreateDialog)
 })
@@ -2278,6 +2283,27 @@ document.addEventListener('library:linked', refreshList)
     state.groups = preset?.groups ?? []
     state.groupFilterPreviews.clear()
     engine.setSoundGroups(state.groups)
+    // "Adding to group adds to mix" (owner request, 2026-09-17: a group's
+    // sounds silently weren't in the mix at all, easy to miss since a
+    // group's member checklist looks like membership on its own).
+    // presets:updateGroups (src/main/presets.js) already adds a newly-joined
+    // sound to the preset's own sounds[] and flips its shared `included`
+    // flag - adoptActivePresetSounds picks up the sounds[] side. Only the
+    // one soundId the dispatching call site says it just joined (not every
+    // current group member) is auto-played here - scanning all members
+    // instead could resurrect a sound the user deliberately removed from
+    // the mix earlier but that's still listed as a group member (group
+    // membership is sticky; mix membership isn't), if this event fires
+    // again for an unrelated group edit before that removal's own autosave
+    // has committed to disk.
+    if (preset) adoptActivePresetSounds(preset)
+    const joinedId = e.detail.joinedSoundId
+    if (preset && joinedId && !state.included.has(joinedId)) {
+      const entry = state.library.find((s) => s.id === joinedId)
+      if (entry && entry.status !== 'missing') {
+        startPlayback(joinedId, entry).catch((err) => console.error('Failed to auto-play newly grouped sound', entry.name, err))
+      }
+    }
     for (const entry of state.library) reconcileSource(entry)
     for (const [id, source] of state.sources) engine.routeSound(id, source)
     // BUG FIX (self-review, v0.1.149): a group solo's own member snapshot
