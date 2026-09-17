@@ -79,7 +79,7 @@ jobs:
       # deliberately without that token, solely so the itch.io copy wouldn't
       # carry a working repo-clone credential. Now that this repo is public
       # (2026-09-14), electron-updater's GitHub provider reads releases with
-      # no auth at all (see CLAUDE.md's "Releasing and auto-update"), so the
+      # no auth at all (see docs/releasing.md), so the
       # token is unnecessary and the whole second build existed only to work
       # around it - discarded per the owner's own call once open-source made
       # it moot. One build now serves both destinations unmodified. The

@@ -1,0 +1,8 @@
+<!-- Part of Noctívago's docs. See ../CLAUDE.md for the map of what lives where. -->
+
+## Presets as primary context: per-preset sound overrides
+
+A preset's `sounds[]` items are `{soundId, volume, overrides}`, where `overrides` is `null` (pure inheritance from the sound's shared baseline) or a bag of the overridable keys named in `src/shared/constants.js`'s `OVERRIDABLE_SOUND_KEYS` (trim, filters/EQ, crossfade, Speed/Pitch, play mode, scatter/schedule config). Editing a shared sound while one preset is loaded only changes that preset's own copy — switching to a different preset shows its own separately-saved version, or plain baseline if that preset never touched it. The merge (`applySoundOverride(entry, override)` in `src/shared/constants.js`) is the single source of truth for this, shared by `library.js` (bake-eligibility) and `tabs/mixer/index.js` (the live resolution layer); `plugins/editor/index.js` and `plugins/export/index.js` each keep their own duplicated copy per the plugin sandbox's can't-import-outside-its-directory rule. `Fluctuation` is deliberately excluded from the override system — it's architecturally separate (own debounce, excluded from Remix's undo/snapshot system) and isn't a Save-button-driven field.
+
+The app always has at least one preset loaded — `presets.js`'s `ensureDefaultPreset` creates a "Default" preset (seeded from whatever's currently included, if migrating from an older version with no presets at all) if none exists, called from `src/main/index.js`'s startup bootstrap. Deleting the last remaining preset auto-creates a replacement seeded from the deleted preset's own sounds/overrides, so a preset is always active.
+
