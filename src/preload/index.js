@@ -86,6 +86,9 @@ const api = {
   },
   library: {
     list: () => ipcRenderer.invoke('library:list'),
+    // [{ id, name, source }] for the export's credits (fills in missing
+    // Freesound license/title details first).
+    resolveCredits: (ids) => ipcRenderer.invoke('library:resolveCredits', ids),
     pickFile: () => ipcRenderer.invoke('library:pickFile'),
     pickFolder: () => ipcRenderer.invoke('library:pickFolder'),
     addSound: (payload) => ipcRenderer.invoke('library:addSound', payload),

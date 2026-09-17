@@ -557,7 +557,9 @@ export default class BrowseSoundsPlugin {
         username: sound.username,
         license: sound.license,
         pageUrl: sound.pageUrl,
-        previewUrl: sound.previewUrl
+        previewUrl: sound.previewUrl,
+        description: sound.description,
+        tags: sound.tags
       })
       status.textContent = 'Added ✓'
       document.dispatchEvent(new CustomEvent('library:linked'))

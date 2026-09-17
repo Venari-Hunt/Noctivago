@@ -339,7 +339,9 @@ async function importFreesoundSound(portableSound) {
     username: source.username ?? null,
     license: source.license ?? null,
     pageUrl: source.pageUrl ?? `https://freesound.org/s/${freesoundId}/`,
-    previewUrl
+    previewUrl,
+    description: source.description,
+    tags: source.tags
   })
   library.applyImportedSettings(entry.id, portableSound.settings || {})
   if (typeof portableSound.volume === 'number') library.updateVolume(entry.id, portableSound.volume)

@@ -89,6 +89,38 @@ export async function getPreviewUrl(freesoundId) {
   return previewUrl
 }
 
+// Credit details for one sound (v0.1.224) - fills in what a hand-downloaded
+// file's name can't carry (license) for the export's credits. null when the
+// lookup isn't possible; callers keep whatever they already have.
+export async function getSoundCredits(freesoundId) {
+  const id = Number(freesoundId)
+  if (!isFreesoundAvailable() || !Number.isInteger(id) || id <= 0) return null
+  const url = new URL(`${API_BASE}/sounds/${id}/`)
+  url.searchParams.set('fields', 'id,name,username,license,description,tags')
+  url.searchParams.set('token', __FREESOUND_API_KEY__)
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const body = await res.json()
+    return {
+      title: body.name ?? null,
+      username: body.username ?? null,
+      license: body.license ?? null,
+      description: trimDescription(body.description),
+      tags: Array.isArray(body.tags) ? body.tags.slice(0, 15) : []
+    }
+  } catch (err) {
+    log.warn('Freesound credit lookup failed', id, err.message)
+    return null
+  }
+}
+
+// Kept short: it's context for a video description, not an archive.
+export function trimDescription(description) {
+  const text = String(description ?? '').replace(/\s+/g, ' ').trim()
+  return text.length > 400 ? `${text.slice(0, 397)}...` : text
+}
+
 // Appends the token as a query param rather than an Authorization header -
 // the one auth shape that works identically for every caller of this
 // function: ffmpeg's own -i URL fetch (freesound/download.js) can't set

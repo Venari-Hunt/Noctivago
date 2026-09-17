@@ -6,7 +6,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import log from 'electron-log/main'
 import { registerIpcHandlers } from './ipc.js'
-import { getPlaybackPathForId, getLoopClipPathForId, listSounds, migrateLoopClipFormat } from './library.js'
+import { getPlaybackPathForId, getLoopClipPathForId, listSounds, migrateLoopClipFormat, detectFreesoundSources } from './library.js'
 import { ensureDefaultPreset, getSoundOverride } from './presets.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
 import { registerFreesoundPreviewProtocol } from './freesound/protocol.js'
@@ -255,6 +255,7 @@ app.whenReady().then(() => {
   grantMicrophonePermission()
   registerIpcHandlers()
   migrateLoopClipFormat()
+  detectFreesoundSources()
   bootstrapDefaultPreset()
   const win = createWindow()
   initAutoUpdate(win)

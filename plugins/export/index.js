@@ -1,5 +1,6 @@
 import { simulateEvents, applyGroupShotOverride } from './simulate.js'
 import { routeDevAudioOutput } from './audio/devAudioOutput.js'
+import { buildSceneSection, buildCreditsSection } from './sceneSummary.js'
 
 // Duplicated from src/renderer/core/ (well, plugins/editor/util/time.js's own
 // duplicate of it) - same cross-directory-import reason every other plugin
@@ -123,7 +124,7 @@ const VIDEO_MODE_LABELS = {
 // (has the preset/library data already in memory) and handed to
 // export:writeInfoFile as a plain string, since the renderer has no direct
 // fs access - see ipc.js's own comment on that handler.
-function buildInfoFileText({ presetName, durationSeconds, format, videoMode, videoBackground, loopVideoName, imageName, imageMotion, visualizationSummary, soundInfoList, fadeInSeconds, fadeOutSeconds }) {
+function buildInfoFileText({ presetName, durationSeconds, format, videoMode, videoBackground, loopVideoName, imageName, imageMotion, visualizationSummary, soundInfoList, fadeInSeconds, fadeOutSeconds, sceneLines, creditLines }) {
   const lines = [presetName, '']
   lines.push(`Length: ${formatDuration(durationSeconds)}`)
   lines.push(`Format: ${String(format).toUpperCase()}`)
@@ -145,6 +146,9 @@ function buildInfoFileText({ presetName, durationSeconds, format, videoMode, vid
   for (const s of soundInfoList) {
     lines.push(`- ${s.name}${s.tags.length ? ` — tags: ${s.tags.join(', ')}` : ''}`)
   }
+  // v0.1.224 (owner inbox): what the mix actually does, and who to credit.
+  if (sceneLines?.length) lines.push('', ...sceneLines)
+  if (creditLines?.length) lines.push('', ...creditLines)
   // Direct follow-up (2026-09-05 inbox, after trying the plain file): "maybe
   // already put a prompt inside it that will return the text needed for
   // every field of a youtube video." The facts above are the raw material;
@@ -159,7 +163,9 @@ function buildInfoFileText({ presetName, durationSeconds, format, videoMode, vid
   lines.push(
     'Using the ambient mix details above, write everything needed to upload this as a YouTube video: ' +
       '(1) a title under 100 characters, (2) a 2-3 paragraph description mentioning the mood/setting and the ' +
-      'included sounds + 3-5 hashtags at the end to close the description with, written for people searching for ' +
+      'included sounds (use "How the scene is set up" to describe what the listener hears, in plain words, ' +
+      'without technical terms), followed by the Credits section above copied exactly as written, then 3-5 ' +
+      'hashtags to close the description with, written for people searching for ' +
       'ambient/relaxing/sleep/focus audio, and (3) a list of 10-15 relevant YouTube tags (comma-separated).'
   )
   return lines.join('\n')
@@ -756,6 +762,9 @@ export default class ExportPlugin {
     // onto the `sounds` payload itself, since that array is forwarded
     // straight to exportMix.js and tags mean nothing to the render pipeline.
     const soundInfoList = []
+    // What "How the scene is set up" describes: each sound's effective
+    // settings in this preset, with its volume.
+    const sceneSounds = []
     for (const presetSound of preset.sounds) {
       const baseline = this.library.find((e) => e.id === presetSound.soundId)
       if (!baseline || baseline.status !== 'ok') continue
@@ -796,6 +805,7 @@ export default class ExportPlugin {
         })
       })
       soundInfoList.push({ name: entry.name, tags: entry.tags ?? [] })
+      sceneSounds.push({ entry, volume: presetSound.volume ?? entry.volume ?? 0.7 })
     }
 
     if (sounds.length === 0) {
@@ -892,6 +902,17 @@ export default class ExportPlugin {
         // so this just explains why it's there instead of a video.
         else if (result.videoError) msg += `\n✗ Video render failed: ${result.videoError}`
         if (this.els.infoFile.checked) {
+          // Looks up missing Freesound license details (a hand-downloaded
+          // file only carries id/author/title in its name). A failed lookup
+          // still writes the file, with whatever is already known.
+          let credits = sceneSounds.map(({ entry }) => ({ name: entry.name, source: entry.source ?? null }))
+          try {
+            const resolved = await this.api.library.resolveCredits(sceneSounds.map(({ entry }) => entry.id))
+            const byId = new Map(resolved.map((c) => [c.id, c]))
+            credits = sceneSounds.map(({ entry }) => ({ name: entry.name, source: byId.get(entry.id)?.source ?? entry.source ?? null }))
+          } catch (err) {
+            console.error('Export: credit lookup failed', err)
+          }
           const infoContent = buildInfoFileText({
             presetName: preset.name,
             durationSeconds,
@@ -904,7 +925,9 @@ export default class ExportPlugin {
             visualizationSummary: `${this.els.vizType.value} visualization (${this.els.vizSize.value}, ${this.els.vizFps.value}fps)`,
             soundInfoList,
             fadeInSeconds,
-            fadeOutSeconds
+            fadeOutSeconds,
+            sceneLines: buildSceneSection({ sounds: sceneSounds, groups: preset.groups ?? [], wholeMix: preset.wholeMix ?? null }),
+            creditLines: buildCreditsSection(credits)
           })
           const infoResult = await this.api.export.writeInfoFile({ outputPath, content: infoContent })
           msg += infoResult.ok ? `\n✓ Info file: ${infoResult.infoPath}` : `\n✗ Info file failed: ${infoResult.error}`

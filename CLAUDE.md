@@ -265,6 +265,36 @@ The owner's own direction building this: "do it in a way that won't break the so
 
 **BUG FIX (v0.1.209) — self-review pass over v0.1.204-208 (8 parallel finder agents, backlog was dry of anything owner-actionable) caught a real toggle-off race in the per-source enable/exclude toggles (v0.1.207).** `toggleSource(key, false)` clears a source's cards and sets `hasMore = false`, but a `fetchSource()` call already in flight for that key when the toggle fires has no way to know it's now stale — its only staleness guard was `requestId`, which only changes on a fresh `search()`, not a toggle. Three independent review agents converged on the same repro: search with both sources on, disable the slower one (YouTube, mid-`yt-dlp` search) before its response lands, and the late response would silently re-append its cards and flip `hasMore` back to `true` — undoing the toggle-off the user had just performed, with no error and no visible cause. A related, subtler case (also flagged independently): a rapid off-then-on toggle before the pre-toggle fetch resolves could start a second, concurrent `fetchSource()` for the same key, racing the first and risking duplicate/stale cards depending on resolution order. Fixed with a per-source `generation` counter (mirroring the existing global `requestId` pattern this file already uses for cross-search staleness) — `toggleSource(key, false)` bumps `sources[key].generation`, and `fetchSource()` captures it before its awaits and bails if it's changed by the time the response lands, regardless of the source's `enabled` state when it resolves (a fresh fetch from a subsequent re-enable already owns the current generation, so the stale one is correctly discarded even if the user turned the source back on in between). Also extracted two small pieces of logic that were independently duplicated in both `toggleSource()` and `fetchSource()` (the sentinel-visibility check, the per-source card-clear query) into `updateSentinelVisibility()`/`clearSourceCards()`, added a module-level `SOURCE_KEYS` constant replacing 5 repeated `Object.keys(this.sources)` calls, and dropped a dead `s.hasMore = true` write in the toggle re-enable path (unconditionally overwritten by the very next `fetchSource()` call before ever being read). Not live-verified via CDP — no existing Electron/CDP test harness in this repo, and building one from scratch was judged disproportionate to a self-review cleanup pass (the same call made in prior self-review passes, e.g. v0.1.205); instead verified directly against the real, unmodified `BrowseSoundsPlugin` class via a hand-rolled minimal-DOM Node harness with controllable delayed search promises — confirmed the harness genuinely reproduces the bug against the pre-fix code (stale card reappears, `hasMore` flips back on, sentinel un-hides) before confirming the fix resolves it, plus a second scenario for the rapid off→on double-fetch case (exactly one card survives, from the fresher call, no stuck `loading` state). A handful of lower-severity/theoretical findings from the same review pass (YouTube's `hasMore` computed after filtering out live-stream results, which could rarely end infinite scroll one page early; a confusing retry message if "Add folder" partially fails after files are already imported; minor cross-file pagination-clamp duplication between `client.js`/`search.js`) were not chased this pass — none were confirmed-reproducible regressions, matching the usual bar for what gets fixed immediately versus logged as a follow-up. Full 65-test suite and a clean build.
 
+**Export credits + scene details (v0.1.224)**, owner inbox. The export's `info.txt` gains two sections, so a person or an AI can write a YouTube description with proper credits and an accurate picture of the mix.
+
+**Credits.** `src/shared/credits.js` (Electron-free, `test/credits.test.js`; the plugin copy `plugins/export/credits.js` is asserted identical apart from its 2-line header) provides:
+- `parseFreesoundFileName`, which reads Freesound's download names `<id>__<username>__<title>`. Usernames may contain single underscores, and a trailing `_optimized` from the owner's re-encode step is dropped.
+- `describeLicense`, which maps CC URLs and names to short labels plus whether attribution is required.
+- `creditLine`.
+
+Sources are recorded in `library.js`:
+- `addSound` detects a Freesound source from the file name when none was given. It uses the title as the name when the caller passed the bare file name.
+- `addSoundFromUrl` now records `source: { type: 'url', url }`.
+- Freesound imports (Browse Sounds and community re-downloads) also keep `title`, a trimmed `description` and `tags`.
+- `detectFreesoundSources()` runs once at startup (`freesoundSourcesDetected` store flag) to backfill existing entries from `originalPath`. That's 25 of the owner's 81 sounds.
+- `resolveCredits(ids)` (IPC `library:resolveCredits`, preload `library.resolveCredits`) fills a Freesound source's missing license/title/description/tags via `freesound/client.js`'s new `getSoundCredits` and saves them. It returns null without a key or on any error, and the export still writes the file.
+
+**Scene section.** `plugins/export/sceneSummary.js` (pure, `test/exportSceneSummary.test.js`) has `buildSceneSection({ sounds: [{entry, volume}], groups, wholeMix })`:
+- One line per sound: volume, play mode (loop, random interval with its gap, clock times or interval), and group.
+- Then a detail line listing only non-neutral settings: speed/pitch/reverse/Doppler, drift ranges and timing (loop sounds) or per-play ranges (random interval/scheduled), filters, effects, and pan.
+- Then the groups with their bus processing and drift ("each sound on its own"), and whole-mix processing.
+
+`buildCreditsSection(credits)` adds the attribution reminder, a check-these list for unknown licenses, and the authors' own descriptions. `plugins/export/index.js` collects each sound's effective entry and volume, resolves credits before writing `info.txt`, and appends both sections. The AI prompt now asks for a plain-words scene description followed by the Credits section copied exactly.
+
+**Verified.**
+- 157 tests and a clean build.
+- Live via CDP in a throwaway profile:
+  - A pre-existing entry renamed to a Freesound file name was backfilled on restart.
+  - A folder import of `654321__night_owl__owl-hoot-forest.wav` got a Freesound source, and a later one imported as "morning chorus".
+  - `resolveCredits` round-tripped (no key in dev, so licenses stayed unknown and were flagged).
+  - The plugin's `sceneSummary.js` loaded over `plugin://` and rendered both sections from the real preset, including a per-preset pan override.
+- **Not verified:** the full export run (its native save dialog can't be driven from CDP) and a real Freesound license lookup (the key only exists in CI builds).
+
 ## Community presets (v0.1.219)
 
 Owner request: users upload presets from the app, and other users browse and import them. The owner made three decisions:

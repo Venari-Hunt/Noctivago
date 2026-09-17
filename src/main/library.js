@@ -9,6 +9,8 @@ import { resolveFfmpegPath } from './ffmpeg/ffmpegPath.js'
 import { runYtDlp } from './ytdlp/runYtDlp.js'
 import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
 import { downloadPreviewToWav } from './freesound/download.js'
+import { getSoundCredits, trimDescription } from './freesound/client.js'
+import { parseFreesoundFileName } from '../shared/credits.js'
 import { getSettings } from './settings.js'
 import { tagsForWatchedFile } from './watchFolderTags.js'
 import { walkFilesRecursive } from './folderWalk.js'
@@ -378,7 +380,19 @@ async function maybeEagerBakeOnImport(entry) {
   }
 }
 
+// A file downloaded from freesound.org by hand keeps Freesound's own name
+// ("<id>__<user>__<title>.wav"), which is enough to credit it (v0.1.224).
+function sourceFromFileName(filePath) {
+  const parsed = parseFreesoundFileName(filePath)
+  return parsed ? { type: 'freesound', ...parsed, license: null, detectedFrom: 'file-name', importedAt: Date.now() } : null
+}
+
 export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
+  if (!source) {
+    source = sourceFromFileName(sourcePath)
+    // "331589__user__rain-on-roof" reads better as its Freesound title.
+    if (source && name === path.basename(sourcePath, path.extname(sourcePath))) name = source.title
+  }
   const id = crypto.randomUUID()
   const stats = fs.statSync(sourcePath)
   const now = Date.now()
@@ -730,7 +744,12 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
     onProgress?.({ type: 'step', message: 'Adding it to your library…' })
     const fallbackName =
       (usedYtDlp ? null : decodeURIComponent(path.basename(parsed.pathname)).replace(/\.[^.]+$/, '')) || 'Downloaded audio'
-    return addSound({ path: wavPath, name: name || fallbackName, keepCopy: true })
+    return addSound({
+      path: wavPath,
+      name: name || fallbackName,
+      keepCopy: true,
+      source: { type: 'url', url: parsed.toString(), importedAt: Date.now() }
+    })
   } finally {
     try {
       if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
@@ -748,7 +767,7 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
 // same addSound(keepCopy: true) path every other import does. The only new
 // thing is `source`, carrying the attribution a CC-BY (or similar) sound
 // needs - see SoundRow.js for where it's surfaced.
-export async function addSoundFromFreesound({ freesoundId, name, username, license, pageUrl, previewUrl }, onProgress) {
+export async function addSoundFromFreesound({ freesoundId, name, username, license, pageUrl, previewUrl, description, tags }, onProgress) {
   onProgress?.({ type: 'step', message: 'Downloading preview from Freesound…' })
   const wavPath = await downloadPreviewToWav(previewUrl)
   try {
@@ -757,7 +776,17 @@ export async function addSoundFromFreesound({ freesoundId, name, username, licen
       path: wavPath,
       name: name || 'Freesound sound',
       keepCopy: true,
-      source: { type: 'freesound', freesoundId, username, license, pageUrl, importedAt: Date.now() }
+      source: {
+        type: 'freesound',
+        freesoundId,
+        username,
+        license,
+        pageUrl,
+        title: name ?? null,
+        description: trimDescription(description),
+        tags: Array.isArray(tags) ? tags.slice(0, 15) : [],
+        importedAt: Date.now()
+      }
     })
   } finally {
     try {
@@ -1018,6 +1047,47 @@ export function migrateLoopClipFormat() {
   )
   store.set('sounds', sounds)
   store.set('loopClipFormat', LOOP_CLIP_FORMAT)
+}
+
+// One-time pass (v0.1.224): sounds imported before file-name detection
+// existed get the same Freesound source a fresh import would.
+export function detectFreesoundSources() {
+  if (store.get('freesoundSourcesDetected')) return
+  const sounds = store.get('sounds').map((s) => {
+    if (s.source) return s
+    const source = sourceFromFileName(s.originalPath)
+    return source ? { ...s, source } : s
+  })
+  store.set('sounds', sounds)
+  store.set('freesoundSourcesDetected', true)
+}
+
+// Credits for the export's info file: each sound's name and source, with a
+// Freesound sound's missing details (a file-name import has no license)
+// looked up once and saved.
+export async function resolveCredits(ids) {
+  const wanted = new Set(ids)
+  const entries = store.get('sounds').filter((s) => wanted.has(s.id))
+  const credits = []
+  for (const entry of entries) {
+    let source = entry.source ?? null
+    if (source?.type === 'freesound' && (!source.license || !source.title)) {
+      const found = await getSoundCredits(source.freesoundId)
+      if (found) {
+        source = {
+          ...source,
+          title: source.title || found.title,
+          username: source.username || found.username,
+          license: source.license || found.license,
+          description: source.description || found.description,
+          tags: source.tags?.length ? source.tags : found.tags
+        }
+        updateEntry(entry.id, { source })
+      }
+    }
+    credits.push({ id: entry.id, name: entry.name, source })
+  }
+  return credits
 }
 
 export function setLoopClipStale(id) {

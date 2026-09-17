@@ -104,6 +104,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('sleepTimer:runEndAction', (_event, action) => runSleepTimerEndAction(action))
 
   ipcMain.handle('library:list', () => library.listSounds())
+  ipcMain.handle('library:resolveCredits', (_event, ids) => library.resolveCredits(Array.isArray(ids) ? ids : []))
   ipcMain.handle('library:pickFile', () => library.pickFile())
   ipcMain.handle('library:pickFolder', () => library.pickFolder())
   ipcMain.handle('library:addSound', (_event, payload) => library.addSound(payload))
