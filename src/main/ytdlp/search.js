@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import log from 'electron-log/main'
 import { resolveYtDlpPath, isYtDlpAvailable } from './ytDlpPath.js'
 import { getSettings } from '../settings.js'
+import { parseYouTubeSearchResults } from './searchResults.js'
 
 // YouTube search for the Browse Sounds tab (research pass 2026-09-15,
 // see the Board / CLAUDE.md): the official YouTube Data API's quota is
@@ -63,37 +64,11 @@ export async function searchYouTube({ query, page = 1, pageSize = 12 } = {}) {
 
   try {
     const stdout = await runAndCapture(args)
-    const results = stdout
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .map(parseLine)
-      .filter(Boolean)
-      .filter((r) => typeof r.duration === 'number' && r.duration > 0) // drop live streams (null duration) - nothing to trim/loop
-      .map(mapResult)
-    return { ok: true, results, hasMore: results.length >= size }
+    const { results, hasMore } = parseYouTubeSearchResults(stdout, size)
+    return { ok: true, results, hasMore }
   } catch (err) {
     log.error('YouTube search failed', err)
     return { ok: false, error: 'YouTube search failed - try again shortly.' }
-  }
-}
-
-function parseLine(line) {
-  try {
-    return JSON.parse(line)
-  } catch {
-    return null
-  }
-}
-
-function mapResult(r) {
-  return {
-    id: r.id,
-    title: r.title || r.id,
-    channel: r.channel || r.uploader || '',
-    durationSeconds: r.duration,
-    thumbnailUrl: r.thumbnails?.[0]?.url || null,
-    description: r.description || '',
-    url: r.webpage_url || r.url
   }
 }
 
