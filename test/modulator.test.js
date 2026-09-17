@@ -222,3 +222,16 @@ describe('pickBiasedValue', () => {
     assert.strictEqual(pickBiasedValue(5, 5, 5), 5)
   })
 })
+
+describe('Modulator bias toggle (v0.1.218)', () => {
+  test('bias off picks evenly across min..max and starts mid-range', async () => {
+    const { Modulator } = await import('../src/renderer/audio/Modulator.js')
+    const m = new Modulator({ onValue: () => {}, neutral: 0, rangeMin: -1, rangeMax: 1 })
+    m.configure({ enabled: true, fullyRandom: false, biasEnabled: false, min: -0.8, max: 0.4, bias: 0.4, changeMinSeconds: 1, changeMaxSeconds: 2, transitionSeconds: 1 })
+    assert.ok(Math.abs(m.bias - -0.2) < 1e-9)
+    const picks = Array.from({ length: 4000 }, () => m._pickTarget())
+    assert.ok(picks.every((v) => v >= -0.8 && v <= 0.4))
+    const nearBias = picks.filter((v) => v > 0.3).length / picks.length
+    assert.ok(nearBias > 0.05 && nearBias < 0.12) // uniform: ~1/12 of the span, not clustered at 0.4
+  })
+})

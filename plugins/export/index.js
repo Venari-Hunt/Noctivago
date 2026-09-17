@@ -1,4 +1,4 @@
-import { simulateEvents } from './simulate.js'
+import { simulateEvents, applyGroupShotOverride } from './simulate.js'
 import { routeDevAudioOutput } from './audio/devAudioOutput.js'
 
 // Duplicated from src/renderer/core/ (well, plugins/editor/util/time.js's own
@@ -744,7 +744,9 @@ export default class ExportPlugin {
     // can route that group's members through their own filter chain before
     // the final mix - the same bus a live SoundGroupChain already applies.
     const groupIdBySoundId = new Map()
+    const groupFluctuationById = new Map()
     for (const group of preset.groups ?? []) {
+      groupFluctuationById.set(group.id, group.filters?.fluctuation ?? null)
       for (const soundId of group.soundIds) groupIdBySoundId.set(soundId, group.id)
     }
 
@@ -778,7 +780,20 @@ export default class ExportPlugin {
         // (the UI hides it for scatter/scheduled). exportMix.js ignores it
         // for anything that isn't an ungrouped/grouped loop sound.
         fluctuation: entry.fluctuation ?? null,
-        events: simulateEvents({ entry, durationSeconds })
+        // v0.1.218: a group drift axis set to "each sound on its own" sets
+        // this sound's per-play random range for that axis.
+        events: simulateEvents({
+          entry: (() => {
+            const groupFluctuation = groupFluctuationById.get(groupIdBySoundId.get(entry.id)) ?? null
+            if (!groupFluctuation) return entry
+            return {
+              ...entry,
+              scatter: applyGroupShotOverride(entry.scatter, groupFluctuation),
+              schedule: applyGroupShotOverride(entry.schedule, groupFluctuation)
+            }
+          })(),
+          durationSeconds
+        })
       })
       soundInfoList.push({ name: entry.name, tags: entry.tags ?? [] })
     }

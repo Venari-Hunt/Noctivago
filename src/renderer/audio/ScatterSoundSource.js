@@ -2,6 +2,7 @@ import log from 'electron-log/renderer'
 import { pitchShiftBuffer } from './pitchStretch.js'
 import { createStreamFilterChain, updateStreamFilterChain, disposeStreamFilterChain } from './StreamFilterChain.js'
 import { pickBiasedValue } from './Modulator.js'
+import { PanStage } from './PanStage.js'
 
 const RAMP_SECONDS = 0.15
 // Matches the Remix plugin's Pitch slider range (plugins/editor/index.js) -
@@ -74,9 +75,32 @@ export function randomPitchSemitones(scatter) {
 // default is both bounds at 1 (always full volume, today's existing
 // behavior), and a user who explicitly wants full random variation can
 // already get it directly by setting min to 0.
+// v0.1.218: volume gets the same "Fully random" (0..100%) and "Bias toward a
+// value" options pitch has - both off by default, so an existing sound's
+// volume picks are unchanged.
 export function randomVolumeScale(scatter) {
+  if (scatter?.volumeFullyRandom) return Math.random()
   const min = Math.max(0, scatter?.minVolume ?? 1)
   const max = Math.max(min, scatter?.maxVolume ?? 1)
+  if (scatter?.volumeBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.volumeBias ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
+  return min + Math.random() * (max - min)
+}
+
+// Per-play pan position (v0.1.218), -1 (left) .. 1 (right), applied by a
+// PanStage after the shot's own (baked or live) static pan - the same
+// two-stage arrangement Fluctuation's pan drift uses. Both bounds at 0 (the
+// default) means no pan variation.
+export function randomPanPosition(scatter) {
+  if (scatter?.panFullyRandom) return -1 + Math.random() * 2
+  const min = Math.max(-1, Math.min(1, scatter?.minPan ?? 0))
+  const max = Math.max(min, Math.min(1, scatter?.maxPan ?? 0))
+  if (scatter?.panBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.panBias ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
   return min + Math.random() * (max - min)
 }
 
@@ -142,6 +166,14 @@ function normalizeScatter(scatter) {
     pitchBiasSemitones: scatter?.pitchBiasSemitones ?? null,
     minVolume: scatter?.minVolume ?? 1,
     maxVolume: scatter?.maxVolume ?? 1,
+    volumeFullyRandom: Boolean(scatter?.volumeFullyRandom),
+    volumeBiasEnabled: Boolean(scatter?.volumeBiasEnabled),
+    volumeBias: scatter?.volumeBias ?? null,
+    minPan: scatter?.minPan ?? 0,
+    maxPan: scatter?.maxPan ?? 0,
+    panFullyRandom: Boolean(scatter?.panFullyRandom),
+    panBiasEnabled: Boolean(scatter?.panBiasEnabled),
+    panBias: scatter?.panBias ?? null,
     minSpeed: scatter?.minSpeed ?? 1,
     maxSpeed: scatter?.maxSpeed ?? 1,
     fadeInMs: scatter?.fadeInMs ?? 0,
@@ -190,6 +222,10 @@ export class BufferScatterSource {
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
     this.gainNode.connect(engine.masterGain)
+    // Per-play pan (v0.1.218) - only one shot plays at a time, so one stage
+    // re-aimed at the start of each shot is enough.
+    this.panStage = new PanStage(engine.context, 0)
+    this.panStage.output.connect(this.gainNode)
   }
 
   waitForMetadata() {
@@ -249,7 +285,8 @@ export class BufferScatterSource {
       : this.audioBuffer.duration / (Math.pow(2, semitones / 12) * speedFactor)
     const shotGain = this.engine.context.createGain()
     node.connect(shotGain)
-    shotGain.connect(this.gainNode)
+    this.panStage.setPan(randomPanPosition(this.scatter), { immediate: true })
+    shotGain.connect(this.panStage.input)
     const target = randomVolumeScale(this.scatter)
     const { fadeInSeconds, fadeOutSeconds } = fadeSeconds(this.scatter, durationSeconds)
     scheduleShotEnvelope(shotGain.gain, target, this.engine.context.currentTime, durationSeconds, fadeInSeconds, fadeOutSeconds)
@@ -365,6 +402,7 @@ export class BufferScatterSource {
       this.currentShotGain?.disconnect()
       this.currentShotGain = null
     }
+    this.panStage.dispose()
     this.gainNode.disconnect()
   }
 }
@@ -430,7 +468,10 @@ export class StreamScatterSource {
     this.filters = this._filterChain.filters
 
     this.sourceNode.connect(this._filterChain.highpassNode)
-    this.shotGainNode.connect(this.gainNode)
+    // Per-play pan (v0.1.218), after the filter chain's own static pan.
+    this.panStage = new PanStage(engine.context, 0)
+    this.shotGainNode.connect(this.panStage.input)
+    this.panStage.output.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -536,6 +577,7 @@ export class StreamScatterSource {
     const playbackRate = Math.pow(2, randomPitchSemitones(this.scatter) / 12) * randomSpeedFactor(this.scatter)
     this.audioEl.playbackRate = playbackRate
     this.audioEl.currentTime = this.loopStart
+    this.panStage.setPan(randomPanPosition(this.scatter), { immediate: true })
     try {
       await this.audioEl.play()
     } catch (err) {
@@ -601,6 +643,7 @@ export class StreamScatterSource {
     this.sourceNode.disconnect()
     disposeStreamFilterChain(this._filterChain)
     this.shotGainNode.disconnect()
+    this.panStage.dispose()
     this.gainNode.disconnect()
   }
 }

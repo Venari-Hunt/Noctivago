@@ -103,7 +103,7 @@ async function probeAvailableDuration(inputPath, start, requestedDuration) {
 // Channel count of inputPath's first audio stream, read from ffmpeg's own
 // stream-info line (same stderr technique as bandEnergy.js's
 // probeSourceSampleRate). Only called when a sound is actually panned.
-function probeChannelCount(inputPath) {
+export function probeChannelCount(inputPath) {
   return new Promise((resolve) => {
     const child = spawn(resolveFfmpegPath(), ['-i', inputPath, '-t', '0.01', '-f', 'null', '-'], { windowsHide: true })
     let stderr = ''

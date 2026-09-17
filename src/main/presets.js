@@ -34,21 +34,27 @@ function normalizeEqBand(band) {
 
 // Fluctuation (v0.1.166): slow random volume drift on the whole mix / a
 // group bus - the multi-sound counterpart of a sound's own filters.
-// fluctuation. Volume axis, plus pan for a Sound Group (v0.1.217); no pitch
-// (a bus is a sum of sources, nothing to pitch-shift). Stored as null when disabled so the "does this have
+// fluctuation. Volume axis, plus pan (v0.1.217) and per-sound pitch
+// (v0.1.218) for a Sound Group - see normalizeMixFluctuation. Stored as null when disabled so the "does this have
 // whole-mix settings" truthiness checks stay simple; a group keeps it as a
 // field of its always-present filters object (also null when off).
-function normalizeMixFluctuation(input, { allowPan = false } = {}) {
+function normalizeMixFluctuation(input, { groupAxes = false } = {}) {
   const src = input && typeof input === 'object' ? input : null
-  const volume = normalizeMixAxis(src?.volume, { lo: 0, hi: 1, min: 0.5, max: 1 })
-  // Pan drift (v0.1.217) - Sound Groups only (a whole-mix pan has no UI).
-  const pan = allowPan ? normalizeMixAxis(src?.pan, { lo: -1, hi: 1, min: -0.5, max: 0.5 }) : null
-  if (!volume && !pan) return null
-  return { ...(volume ? { volume } : {}), ...(pan ? { pan } : {}) }
+  const volume = normalizeMixAxis(src?.volume, { lo: 0, hi: 1, min: 0.5, max: 1, perSound: groupAxes })
+  // Sound Groups only (a whole mix has no UI for these): pan drift
+  // (v0.1.217), and pitch drift (v0.1.218), which a bus can't do itself, so
+  // it's always "each sound on its own".
+  const pan = groupAxes ? normalizeMixAxis(src?.pan, { lo: -1, hi: 1, min: -0.5, max: 0.5, perSound: true }) : null
+  const pitchAxis = groupAxes ? normalizeMixAxis(src?.pitch, { lo: -6, hi: 6, min: -1, max: 1, perSound: true }) : null
+  const pitch = pitchAxis ? { ...pitchAxis, perSound: true } : null
+  if (!volume && !pan && !pitch) return null
+  return { ...(volume ? { volume } : {}), ...(pitch ? { pitch } : {}), ...(pan ? { pan } : {}) }
 }
 
 // One drift axis, or null when absent/disabled.
-function normalizeMixAxis(axis, { lo: rangeLo, hi: rangeHi, min: defMin, max: defMax }) {
+// perSound: whether this axis may carry the Sound Group "each sound on its
+// own" flag (v0.1.218).
+function normalizeMixAxis(axis, { lo: rangeLo, hi: rangeHi, min: defMin, max: defMax, perSound = false }) {
   if (!axis || typeof axis !== 'object' || !axis.enabled) return null
   const min = clamp(axis.min, rangeLo, rangeHi, defMin)
   const max = clamp(axis.max, rangeLo, rangeHi, defMax)
@@ -78,6 +84,8 @@ function normalizeMixAxis(axis, { lo: rangeLo, hi: rangeHi, min: defMin, max: de
   return {
     enabled: true,
     fullyRandom: Boolean(axis.fullyRandom),
+    biasEnabled: axis.biasEnabled !== false,
+    ...(perSound ? { perSound: Boolean(axis.perSound) } : {}),
     min: lo,
     max: hi,
     bias: clamp(axis.bias, lo, hi, (lo + hi) / 2),
@@ -148,7 +156,7 @@ export function normalizeGroupFilters(input) {
     // applyOcclusionToFilters for the full reasoning. Not part of
     // normalizeWholeMix - a whole preset has no "inside/outside" of itself.
     occlusion: clamp(src.occlusion, 0, 1, 0),
-    fluctuation: normalizeMixFluctuation(src.fluctuation, { allowPan: true }),
+    fluctuation: normalizeMixFluctuation(src.fluctuation, { groupAxes: true }),
     eq: Array.isArray(src.eq) ? src.eq.map(normalizeEqBand).filter(Boolean) : []
   }
 }

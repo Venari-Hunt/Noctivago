@@ -483,6 +483,18 @@ export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
       pitchBiasSemitones: 0,
       minVolume: 1,
       maxVolume: 1,
+      // v0.1.218: the same Fully random / Bias options pitch has, for volume,
+      // plus a per-play pan range (-1 left .. 1 right; both 0 = no variation).
+      // A Sound Group whose drift axis is set to "each sound on its own"
+      // replaces these for its members (src/shared/groupDrift.js).
+      volumeFullyRandom: false,
+      volumeBiasEnabled: false,
+      volumeBias: 1,
+      minPan: 0,
+      maxPan: 0,
+      panFullyRandom: false,
+      panBiasEnabled: false,
+      panBias: 0,
       // Per-shot wall-clock playback speed range, as a multiplier (1 = original
       // tempo). Both at 1 (default) = no speed variation. Pitch-preserved: the
       // shot clip is time-stretched, so the shot just gets shorter/longer, not
@@ -520,6 +532,14 @@ export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
       pitchBiasSemitones: 0,
       minVolume: 1,
       maxVolume: 1,
+      volumeFullyRandom: false,
+      volumeBiasEnabled: false,
+      volumeBias: 1,
+      minPan: 0,
+      maxPan: 0,
+      panFullyRandom: false,
+      panBiasEnabled: false,
+      panBias: 0,
       minSpeed: 1,
       maxSpeed: 1,
       fadeInMs: 0,

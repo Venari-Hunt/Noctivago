@@ -130,3 +130,30 @@ describe('pan drift (v0.1.217)', () => {
     assert.ok(f.volume.enabled)
   })
 })
+
+describe('group drift flags (v0.1.218)', () => {
+  const base = { enabled: true, min: -1, max: 1, bias: 0 }
+
+  test('bias and each-sound-on-its-own flags round-trip on a group', () => {
+    const f = normalizeGroupFilters({
+      fluctuation: { volume: { ...base, min: 0.2, max: 1, biasEnabled: false, perSound: true }, pan: { ...base, perSound: false } }
+    }).fluctuation
+    assert.equal(f.volume.biasEnabled, false)
+    assert.equal(f.volume.perSound, true)
+    assert.equal(f.pan.biasEnabled, true)
+    assert.equal(f.pan.perSound, false)
+  })
+
+  test('a group keeps pitch drift, always per sound, clamped to +/-6 st', () => {
+    const f = normalizeGroupFilters({ fluctuation: { pitch: { ...base, min: -20, max: 3, perSound: false } } }).fluctuation
+    assert.equal(f.pitch.min, -6)
+    assert.equal(f.pitch.perSound, true)
+  })
+
+  test('the whole mix keeps bias but never per-sound or pitch', () => {
+    const f = normalizeWholeMix({ fluctuation: { volume: { ...base, min: 0.2, max: 1, biasEnabled: false, perSound: true }, pitch: base } }).fluctuation
+    assert.equal(f.volume.biasEnabled, false)
+    assert.equal(f.volume.perSound, undefined)
+    assert.equal(f.pitch, undefined)
+  })
+})

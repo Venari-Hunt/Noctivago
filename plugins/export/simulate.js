@@ -52,9 +52,60 @@ function randomPitchSemitones(scatter) {
 }
 
 function randomVolumeScale(scatter) {
+  if (scatter?.volumeFullyRandom) return Math.random()
   const min = Math.max(0, scatter?.minVolume ?? 1)
   const max = Math.max(min, scatter?.maxVolume ?? 1)
+  if (scatter?.volumeBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.volumeBias ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
   return min + Math.random() * (max - min)
+}
+
+// Per-play pan (v0.1.218) - mirror of ScatterSoundSource.js's randomPanPosition.
+function randomPanPosition(scatter) {
+  if (scatter?.panFullyRandom) return -1 + Math.random() * 2
+  const min = Math.max(-1, Math.min(1, scatter?.minPan ?? 0))
+  const max = Math.max(min, Math.min(1, scatter?.maxPan ?? 0))
+  if (scatter?.panBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.panBias ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
+  return min + Math.random() * (max - min)
+}
+
+// Copy of src/shared/groupDrift.js's applyGroupShotOverride (plugin sandbox)
+// - keep in sync. A Sound Group drift axis set to "each sound on its own"
+// hands its min/max/bias to a Random Interval / Scheduled member as that
+// axis's per-play random range.
+const SHOT_AXIS_FIELDS = {
+  volume: { min: 'minVolume', max: 'maxVolume', bias: 'volumeBias', biasEnabled: 'volumeBiasEnabled', fullyRandom: 'volumeFullyRandom' },
+  pitch: { min: 'minPitchSemitones', max: 'maxPitchSemitones', bias: 'pitchBiasSemitones', biasEnabled: 'pitchBiasEnabled', fullyRandom: 'pitchFullyRandom' },
+  pan: { min: 'minPan', max: 'maxPan', bias: 'panBias', biasEnabled: 'panBiasEnabled', fullyRandom: 'panFullyRandom' }
+}
+const DRIFT_FULL_RANGE = { volume: [0, 1], pitch: [-6, 6], pan: [-1, 1] }
+
+export function applyGroupShotOverride(config, groupFluctuation) {
+  if (!groupFluctuation) return config
+  let out = config
+  for (const axis of ['volume', 'pitch', 'pan']) {
+    const a = groupFluctuation[axis]
+    if (!(a?.enabled && (a.perSound || axis === 'pitch'))) continue
+    const f = SHOT_AXIS_FIELDS[axis]
+    const [lo, hi] = DRIFT_FULL_RANGE[axis]
+    const fully = Boolean(a.fullyRandom)
+    const min = fully ? lo : Math.min(a.min, a.max)
+    const max = fully ? hi : Math.max(a.min, a.max)
+    out = {
+      ...(out ?? {}),
+      [f.min]: min,
+      [f.max]: max,
+      [f.bias]: Math.min(max, Math.max(min, Number.isFinite(a.bias) ? a.bias : (min + max) / 2)),
+      [f.biasEnabled]: !fully && a.biasEnabled !== false,
+      [f.fullyRandom]: false
+    }
+  }
+  return out
 }
 
 // Per-shot wall-clock playback speed multiplier - mirror of
@@ -97,6 +148,7 @@ function simulateScatterEvents(entry, durationSeconds) {
       offsetSeconds: offset,
       pitchSemitones: randomPitchSemitones(scatter),
       volumeScale: randomVolumeScale(scatter),
+      panPosition: randomPanPosition(scatter),
       speedFactor,
       fadeInMs: scatter.fadeInMs ?? 0,
       fadeOutMs: scatter.fadeOutMs ?? 0,
@@ -143,6 +195,7 @@ function simulateScheduledEvents(entry, durationSeconds) {
       offsetSeconds: offset,
       pitchSemitones: randomPitchSemitones(schedule),
       volumeScale: randomVolumeScale(schedule),
+      panPosition: randomPanPosition(schedule),
       speedFactor,
       fadeInMs: schedule.fadeInMs ?? 0,
       fadeOutMs: schedule.fadeOutMs ?? 0,

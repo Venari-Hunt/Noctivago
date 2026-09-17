@@ -6,6 +6,9 @@
 // The left edge of the track is valueMin, the right edge is valueMax. Drag a
 // handle to move it; double-click a handle to reset just that one to its
 // default. onChange fires continuously during a drag and once on release.
+// v0.1.218: setBiasEnabled(false) hides the bias circle (values are then
+// picked evenly between min and max) - used by every drift and per-play
+// random bar's "Bias" toggle.
 //
 // Same canvas discipline as this plugin's other custom controls
 // (LoopEditor / EqEditor): interaction math works in CSS-pixel space
@@ -26,6 +29,7 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
   const fmt = format ?? ((v) => String(Math.round(v * 100) / 100))
   let values = { ...defaults }
   let enabled = true
+  let biasOn = true
   let dragging = null // 'min' | 'bias' | 'max' | null
   let cssW = 0
   let cssH = 0
@@ -98,7 +102,7 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
     }
     drawHandle(values.min, accent, false)
     drawHandle(values.max, accent, false)
-    drawHandle(values.bias, biasColor, true)
+    if (biasOn) drawHandle(values.bias, biasColor, true)
 
     // value labels under each handle
     ctx.globalAlpha = dim
@@ -109,14 +113,22 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
     ctx.textAlign = 'center'
     ctx.fillText(fmt(values.min), clamp(xFor(values.min), 12, cssW - 12), labelY)
     ctx.fillText(fmt(values.max), clamp(xFor(values.max), 12, cssW - 12), labelY)
-    ctx.fillStyle = biasColor
-    ctx.fillText(fmt(values.bias), clamp(xFor(values.bias), 12, cssW - 12), cy - HANDLE_RADIUS - 13)
+    if (biasOn) {
+      ctx.fillStyle = biasColor
+      ctx.fillText(fmt(values.bias), clamp(xFor(values.bias), 12, cssW - 12), cy - HANDLE_RADIUS - 13)
+    }
     ctx.globalAlpha = 1
   }
 
   function pickHandle(x) {
+    // min and max sitting on the same spot (e.g. a "no variation" default):
+    // which one to move is decided by the first drag direction - see
+    // onPointerMove's 'split' case.
+    if (Math.abs(xFor(values.min) - xFor(values.max)) < 2 && Math.abs(x - xFor(values.min)) <= GRAB_SLOP) {
+      return 'split'
+    }
     const cands = [
-      ['bias', Math.abs(x - xFor(values.bias))],
+      ...(biasOn ? [['bias', Math.abs(x - xFor(values.bias))]] : []),
       ['min', Math.abs(x - xFor(values.min))],
       ['max', Math.abs(x - xFor(values.max))]
     ].sort((a, b) => a[1] - b[1])
@@ -143,12 +155,18 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
     return evt.clientX - rect.left
   }
 
+  let splitStartX = 0
+
   function onPointerDown(evt) {
     if (!enabled) return
     const handle = pickHandle(localX(evt))
     if (!handle) return
     dragging = handle
     canvas.setPointerCapture?.(evt.pointerId)
+    if (handle === 'split') {
+      splitStartX = localX(evt)
+      return
+    }
     applyDrag(handle, localX(evt))
   }
 
@@ -156,6 +174,11 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
     if (!dragging) {
       canvas.style.cursor = enabled && pickHandle(localX(evt)) ? 'ew-resize' : 'default'
       return
+    }
+    if (dragging === 'split') {
+      const dx = localX(evt) - splitStartX
+      if (Math.abs(dx) < 2) return
+      dragging = dx < 0 ? 'min' : 'max'
     }
     applyDrag(dragging, localX(evt))
   }
@@ -169,8 +192,9 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
 
   function onDblClick(evt) {
     if (!enabled) return
-    const handle = pickHandle(localX(evt))
-    if (!handle) return
+    const picked = pickHandle(localX(evt))
+    if (!picked) return
+    const handle = picked === 'split' ? 'min' : picked
     values[handle] = defaults[handle]
     // keep ordering sane after a reset
     values.min = Math.min(values.min, values.max)
@@ -205,6 +229,10 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
     },
     setEnabled(on) {
       enabled = Boolean(on)
+      draw()
+    },
+    setBiasEnabled(on) {
+      biasOn = Boolean(on)
       draw()
     },
     redraw: draw,

@@ -219,8 +219,10 @@ const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echo
 // left/right); the whole mix keeps volume only (presets.js drops pan there).
 function defaultMixFluctuation() {
   return {
-    volume: { enabled: false, fullyRandom: false, min: 0.5, max: 1, bias: 0.8, ...FLUC_DEFAULT_TIMING },
-    pan: { enabled: false, fullyRandom: false, ...PAN_DRIFT_DEFAULTS, ...FLUC_DEFAULT_TIMING }
+    volume: { enabled: false, fullyRandom: false, biasEnabled: true, perSound: false, min: 0.5, max: 1, bias: 0.8, ...FLUC_DEFAULT_TIMING },
+    // v0.1.218: pitch only ever works "each sound on its own" on a group.
+    pitch: { enabled: false, fullyRandom: false, biasEnabled: true, perSound: true, min: -1, max: 1, bias: 0, ...FLUC_DEFAULT_TIMING },
+    pan: { enabled: false, fullyRandom: false, biasEnabled: true, perSound: false, ...PAN_DRIFT_DEFAULTS, ...FLUC_DEFAULT_TIMING }
   }
 }
 
@@ -228,10 +230,11 @@ function cloneMixFluctuation(f) {
   // No saved fluctuation → start the bar/sliders at a sensible spread (not
   // all three handles collapsed at 1), same as Sound mode's defaultFluctuation.
   const d = defaultMixFluctuation()
-  return {
-    volume: { ...d.volume, ...normalizeFluctuationAxis(f?.volume ?? d.volume, 1) },
-    pan: { ...d.pan, ...normalizeFluctuationAxis(f?.pan ?? d.pan, 0) }
+  const axis = (name, neutral) => {
+    const src = f?.[name] ?? d[name]
+    return { ...d[name], ...normalizeFluctuationAxis(src, neutral), perSound: name === 'pitch' || Boolean(src.perSound) }
   }
+  return { volume: axis('volume', 1), pitch: axis('pitch', 0), pan: axis('pan', 0) }
 }
 
 function cloneMixFilters(obj, neutral) {
@@ -280,6 +283,61 @@ function fluctuationTimingMarkup(idp) {
               </div>`
 }
 
+// v0.1.218: the Bias toggle every drift bar has, plus (a Sound Group's bars
+// only) "Each sound on its own" - locked on for pitch, which a group can
+// only do per sound.
+function driftAxisTogglesMarkup(idp, { perSound = false, perSoundLocked = false } = {}) {
+  return `
+              <div class="editor-fluctuation-knobs">
+                <label class="editor-fluctuation-fullrandom">
+                  <input id="${idp}-bias" type="checkbox" checked />
+                  <span>Bias <span class="editor-fluctuation-sub">(the middle circle wins most of the time; off = anywhere between the outer circles equally)</span></span>
+                </label>${
+                  perSound
+                    ? `
+                <label class="editor-fluctuation-fullrandom">
+                  <input id="${idp}-persound" type="checkbox"${perSoundLocked ? ' checked disabled' : ''} />
+                  <span>Each sound on its own <span class="editor-fluctuation-sub">(${perSoundLocked ? 'always for pitch — ' : ''}every sound in the group drifts separately with these settings, so they don't move together; Random Interval / Scheduled sounds use them as their per-play random range)</span></span>
+                </label>`
+                    : ''
+                }
+              </div>`
+}
+
+// v0.1.218: a per-play random bar (Random Interval / Scheduled) - same
+// 3-circle layout as the drift bars, with Fully random + Bias toggles.
+function shotAxisMarkup(idp, label, sub) {
+  return `
+            <div class="editor-fluctuation-axis">
+              <span class="editor-fluctuation-enable">${label} <span class="editor-fluctuation-sub">${sub}</span></span>
+              <canvas id="${idp}-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
+              <div class="editor-fluctuation-knobs">
+                <label class="editor-fluctuation-fullrandom">
+                  <input id="${idp}-fully-random" type="checkbox" />
+                  <span>Fully random <span class="editor-fluctuation-sub">(ignore the circles — roll the whole range every play)</span></span>
+                </label>
+                <label class="editor-fluctuation-fullrandom">
+                  <input id="${idp}-bias-enabled" type="checkbox" />
+                  <span>Bias <span class="editor-fluctuation-sub">(the middle circle wins more often than a plain random pick)</span></span>
+                </label>
+              </div>
+            </div>`
+}
+
+function formatSemitones(v) {
+  const r = Math.round(v * 10) / 10
+  return `${r > 0 ? '+' : ''}${r} st`
+}
+
+// Per-play random axes: bar range + reset defaults + config field names
+// (mirrors src/shared/groupDrift.js's SHOT_AXIS_FIELDS).
+const SHOT_AXES = {
+  pitch: { lo: -12, hi: 12, defaults: { min: 0, bias: 0, max: 0 }, format: formatSemitones, round: 10, fields: ['minPitchSemitones', 'maxPitchSemitones', 'pitchBiasSemitones', 'pitchBiasEnabled', 'pitchFullyRandom'] },
+  volume: { lo: 0, hi: 1, defaults: { min: 1, bias: 1, max: 1 }, format: (v) => `${Math.round(v * 100)}%`, round: 100, fields: ['minVolume', 'maxVolume', 'volumeBias', 'volumeBiasEnabled', 'volumeFullyRandom'] },
+  pan: { lo: -1, hi: 1, defaults: { min: 0, bias: 0, max: 0 }, format: formatPan, round: 100, fields: ['minPan', 'maxPan', 'panBias', 'panBiasEnabled', 'panFullyRandom'] }
+}
+const SHOT_AXIS_NAMES = ['pitch', 'volume', 'pan']
+
 // Markup for the Fluctuation block, shared by the Preset and Group filter
 // panels (prefix 'preset' | 'group') - one volume bar + the flat-seconds
 // timing row + an enable checkbox. Deliberately simpler than Sound mode's own
@@ -299,16 +357,27 @@ function mixFluctuationMarkup(prefix) {
               </label>
               <canvas id="editor-mix-${prefix}-fluc-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
               ${fluctuationTimingMarkup(`editor-mix-${prefix}-fluc`)}
+              ${driftAxisTogglesMarkup(`editor-mix-${prefix}-fluc`, { perSound: prefix === 'group' })}
             </div>${
               prefix === 'group'
                 ? `
             <div class="editor-fluctuation-axis">
               <label class="editor-fluctuation-enable">
+                <input id="editor-mix-group-flucpitch-enabled" type="checkbox" />
+                Pitch drift <span class="editor-fluctuation-sub">(small shifts read as a gentle wobble)</span>
+              </label>
+              <canvas id="editor-mix-group-flucpitch-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
+              ${fluctuationTimingMarkup('editor-mix-group-flucpitch')}
+              ${driftAxisTogglesMarkup('editor-mix-group-flucpitch', { perSound: true, perSoundLocked: true })}
+            </div>
+            <div class="editor-fluctuation-axis">
+              <label class="editor-fluctuation-enable">
                 <input id="editor-mix-group-flucpan-enabled" type="checkbox" />
-                Pan drift <span class="editor-fluctuation-sub">(the whole group wanders left/right together; while on, it replaces its sounds' own pan drift)</span>
+                Pan drift <span class="editor-fluctuation-sub">(the whole group wanders left/right together — while on, it replaces its sounds' own pan drift — or, with "Each sound on its own", every sound wanders separately)</span>
               </label>
               <canvas id="editor-mix-group-flucpan-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
               ${fluctuationTimingMarkup('editor-mix-group-flucpan')}
+              ${driftAxisTogglesMarkup('editor-mix-group-flucpan', { perSound: true })}
             </div>`
                 : ''
             }
@@ -342,6 +411,8 @@ function canonicalMixFilters(obj, { includeFadeIn }) {
         const n = normalizeFluctuationAxis(a, neutral)
         return {
           fullyRandom: n.fullyRandom,
+          biasEnabled: n.biasEnabled,
+          perSound: Boolean(a.perSound),
           min: n.min,
           max: n.max,
           bias: n.bias,
@@ -352,7 +423,8 @@ function canonicalMixFilters(obj, { includeFadeIn }) {
       }
       const volume = axis(o.fluctuation?.volume, 1)
       const pan = axis(o.fluctuation?.pan, 0)
-      return volume || pan ? { volume, pan } : null
+      const pitch = axis(o.fluctuation?.pitch && { ...o.fluctuation.pitch, perSound: true }, 0)
+      return volume || pan || pitch ? { volume, pitch, pan } : null
     })(),
     eq: (o.eq ?? []).map((b) => ({
       freqHz: Math.round(Number(b.freqHz) || 0),
@@ -715,6 +787,8 @@ export default class EditorPlugin {
     this.flucPitchBar?.destroy()
     this.flucPanBar?.destroy()
     this.groupFlucPanBar?.destroy()
+    this.groupFlucPitchBar?.destroy()
+    for (const bars of Object.values(this.shotBars ?? {})) for (const bar of Object.values(bars)) bar.destroy()
     this.unregister?.()
   }
 
@@ -1095,39 +1169,10 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-scatter-gap-bias" type="number" min="0" max="3600" step="1" value="20" />
               <span class="editor-filter-value">s</span>
             </label>
-            <label>
-              <span>Pitch (min)</span>
-              <input id="editor-scatter-pitch-min" type="range" min="-12" max="12" value="0" step="1" />
-              <span id="editor-scatter-pitch-min-value" class="editor-filter-value">0 st</span>
-            </label>
-            <label>
-              <span>Pitch (max)</span>
-              <input id="editor-scatter-pitch-max" type="range" min="-12" max="12" value="0" step="1" />
-              <span id="editor-scatter-pitch-max-value" class="editor-filter-value">0 st</span>
-            </label>
-            <label class="editor-scatter-check">
-              <input id="editor-scatter-pitch-fully-random" type="checkbox" />
-              <span>Fully random pitch — a new random shift across the whole ±12&nbsp;st range every replay; ignores the min/max above</span>
-            </label>
-            <label class="editor-scatter-check">
-              <input id="editor-scatter-pitch-bias-enabled" type="checkbox" />
-              <span>Bias toward a value — this pitch wins more often than a plain random pick within the min/max above</span>
-            </label>
-            <label>
-              <span>Pitch bias</span>
-              <input id="editor-scatter-pitch-bias" type="range" min="-12" max="12" value="0" step="1" />
-              <span id="editor-scatter-pitch-bias-value" class="editor-filter-value">0 st</span>
-            </label>
-            <label>
-              <span>Volume (min)</span>
-              <input id="editor-scatter-volume-min" type="range" min="0" max="100" value="100" step="1" />
-              <span id="editor-scatter-volume-min-value" class="editor-filter-value">100%</span>
-            </label>
-            <label>
-              <span>Volume (max)</span>
-              <input id="editor-scatter-volume-max" type="range" min="0" max="100" value="100" step="1" />
-              <span id="editor-scatter-volume-max-value" class="editor-filter-value">100%</span>
-            </label>
+            <p id="editor-scatter-group-note" class="editor-scatter-hint hidden"></p>
+${shotAxisMarkup('editor-scatter-pitch', 'Pitch', '(a random shift every replay)')}
+${shotAxisMarkup('editor-scatter-volume', 'Volume', '(a random level every replay; never above the sound\'s own)')}
+${shotAxisMarkup('editor-scatter-pan', 'Pan', '(a random left/right position every replay)')}
             <label>
               <span>Speed (min)</span>
               <input id="editor-scatter-speed-min" type="range" min="50" max="200" value="100" step="5" />
@@ -1152,7 +1197,7 @@ ${mixFluctuationMarkup('group')}
               <span>Sync group</span>
               <input id="editor-scatter-sync-group" type="text" placeholder="e.g. door-effects" />
             </label>
-            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Check "Bias toward a value" on gap or pitch to make one value inside the range win more often than a plain random pick, instead of every value being equally likely. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
+            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, pan, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Check "Bias" to make one value inside the range (the middle circle) win more often than a plain random pick. On the bars, drag the outer circles for the range; when they sit together there's no variation. Both speed bounds at 100% means no speed variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
           </div>
           <div id="editor-schedule-section" class="editor-scatter-controls hidden">
             <label class="editor-playmode-option">
@@ -1172,39 +1217,10 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-schedule-interval" type="number" min="1" max="1440" step="1" value="60" />
               <span class="editor-filter-value">minutes</span>
             </label>
-            <label>
-              <span>Pitch (min)</span>
-              <input id="editor-schedule-pitch-min" type="range" min="-12" max="12" value="0" step="1" />
-              <span id="editor-schedule-pitch-min-value" class="editor-filter-value">0 st</span>
-            </label>
-            <label>
-              <span>Pitch (max)</span>
-              <input id="editor-schedule-pitch-max" type="range" min="-12" max="12" value="0" step="1" />
-              <span id="editor-schedule-pitch-max-value" class="editor-filter-value">0 st</span>
-            </label>
-            <label class="editor-scatter-check">
-              <input id="editor-schedule-pitch-fully-random" type="checkbox" />
-              <span>Fully random pitch — a new random shift across the whole ±12&nbsp;st range every trigger; ignores the min/max above</span>
-            </label>
-            <label class="editor-scatter-check">
-              <input id="editor-schedule-pitch-bias-enabled" type="checkbox" />
-              <span>Bias toward a value — this pitch wins more often than a plain random pick within the min/max above</span>
-            </label>
-            <label>
-              <span>Pitch bias</span>
-              <input id="editor-schedule-pitch-bias" type="range" min="-12" max="12" value="0" step="1" />
-              <span id="editor-schedule-pitch-bias-value" class="editor-filter-value">0 st</span>
-            </label>
-            <label>
-              <span>Volume (min)</span>
-              <input id="editor-schedule-volume-min" type="range" min="0" max="100" value="100" step="1" />
-              <span id="editor-schedule-volume-min-value" class="editor-filter-value">100%</span>
-            </label>
-            <label>
-              <span>Volume (max)</span>
-              <input id="editor-schedule-volume-max" type="range" min="0" max="100" value="100" step="1" />
-              <span id="editor-schedule-volume-max-value" class="editor-filter-value">100%</span>
-            </label>
+            <p id="editor-schedule-group-note" class="editor-scatter-hint hidden"></p>
+${shotAxisMarkup('editor-schedule-pitch', 'Pitch', '(a random shift every trigger)')}
+${shotAxisMarkup('editor-schedule-volume', 'Volume', '(a random level every trigger; never above the sound\'s own)')}
+${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position every trigger)')}
             <label>
               <span>Speed (min)</span>
               <input id="editor-schedule-speed-min" type="range" min="50" max="200" value="100" step="5" />
@@ -1225,7 +1241,7 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-schedule-fade-out" type="number" min="0" max="10000" step="50" value="0" />
               <span class="editor-filter-value">ms</span>
             </label>
-            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, and speed within these ranges, same as Random Interval — or check "Fully random pitch" to roll the whole ±12 st range regardless of the min/max. Check "Bias toward a value" to make one pitch inside the range win more often than a plain random pick. Both pitch bounds at 0 means no pitch variation; both volume bounds at 100% means no volume variation; both speed bounds at 100% means no speed variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
+            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, pan, and speed within these ranges, same as Random Interval — or check "Fully random" to roll the whole range regardless of the circles. Check "Bias" to make the middle circle's value win more often than a plain random pick. When a bar's outer circles sit together there's no variation; both speed bounds at 100% means no speed variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -1420,6 +1436,7 @@ ${mixFluctuationMarkup('group')}
               <span class="editor-fluctuation-label">Fluctuation</span>
               <span class="editor-fluctuation-hint">Slow, random drift while the sound loops — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further. On each bar: drag the outer circles for the lowest/highest it reaches, the middle circle for where it sits most of the time. "Change every" is the seconds between new targets (a random value in that range); "Transition" is roughly how long each glide takes. "Fully random" ignores the circles and roams the whole range. Applies live in the Mixer and the preview, and is baked into exports. Saves on its own the moment you let go of a control — no need to hit Save.</span>
             </div>
+            <p id="editor-fluc-group-note" class="editor-fluctuation-hint hidden"></p>
             <p id="editor-fluctuation-saved-note" class="editor-fluctuation-hint hidden">Drift only plays in the <strong>Live edit</strong> preview — the <strong>Saved audio</strong> preview is the baked clip, which never contains it. Switch the preview toggle to Live edit to hear it.</p>
             <div class="editor-fluctuation-axis">
               <label class="editor-fluctuation-enable">
@@ -1428,6 +1445,7 @@ ${mixFluctuationMarkup('group')}
               </label>
               <canvas id="editor-fluc-vol-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
               ${fluctuationTimingMarkup('editor-fluc-vol')}
+              ${driftAxisTogglesMarkup('editor-fluc-vol')}
             </div>
             <div class="editor-fluctuation-axis">
               <label class="editor-fluctuation-enable">
@@ -1436,15 +1454,16 @@ ${mixFluctuationMarkup('group')}
               </label>
               <canvas id="editor-fluc-pitch-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
               ${fluctuationTimingMarkup('editor-fluc-pitch')}
+              ${driftAxisTogglesMarkup('editor-fluc-pitch')}
             </div>
             <div class="editor-fluctuation-axis">
               <label class="editor-fluctuation-enable">
                 <input id="editor-fluc-pan-enabled" type="checkbox" />
                 Pan drift <span class="editor-fluctuation-sub">(wanders left/right, starting from the Pan slider's position)</span>
               </label>
-              <p id="editor-fluc-pan-group-note" class="editor-fluctuation-hint hidden"></p>
               <canvas id="editor-fluc-pan-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
               ${fluctuationTimingMarkup('editor-fluc-pan')}
+              ${driftAxisTogglesMarkup('editor-fluc-pan')}
             </div>
           </div>
           <p id="editor-save-status" class="editor-save-status"></p>
@@ -1500,18 +1519,16 @@ ${mixFluctuationMarkup('group')}
       scatterGapFullyRandom: container.querySelector('#editor-scatter-gap-fully-random'),
       scatterGapBiasEnabled: container.querySelector('#editor-scatter-gap-bias-enabled'),
       scatterGapBias: container.querySelector('#editor-scatter-gap-bias'),
-      scatterPitchMin: container.querySelector('#editor-scatter-pitch-min'),
-      scatterPitchMinValue: container.querySelector('#editor-scatter-pitch-min-value'),
-      scatterPitchMax: container.querySelector('#editor-scatter-pitch-max'),
-      scatterPitchMaxValue: container.querySelector('#editor-scatter-pitch-max-value'),
+      scatterPitchBar: container.querySelector('#editor-scatter-pitch-bar'),
       scatterPitchFullyRandom: container.querySelector('#editor-scatter-pitch-fully-random'),
       scatterPitchBiasEnabled: container.querySelector('#editor-scatter-pitch-bias-enabled'),
-      scatterPitchBias: container.querySelector('#editor-scatter-pitch-bias'),
-      scatterPitchBiasValue: container.querySelector('#editor-scatter-pitch-bias-value'),
-      scatterVolumeMin: container.querySelector('#editor-scatter-volume-min'),
-      scatterVolumeMinValue: container.querySelector('#editor-scatter-volume-min-value'),
-      scatterVolumeMax: container.querySelector('#editor-scatter-volume-max'),
-      scatterVolumeMaxValue: container.querySelector('#editor-scatter-volume-max-value'),
+      scatterVolumeBar: container.querySelector('#editor-scatter-volume-bar'),
+      scatterVolumeFullyRandom: container.querySelector('#editor-scatter-volume-fully-random'),
+      scatterVolumeBiasEnabled: container.querySelector('#editor-scatter-volume-bias-enabled'),
+      scatterPanBar: container.querySelector('#editor-scatter-pan-bar'),
+      scatterPanFullyRandom: container.querySelector('#editor-scatter-pan-fully-random'),
+      scatterPanBiasEnabled: container.querySelector('#editor-scatter-pan-bias-enabled'),
+      scatterGroupNote: container.querySelector('#editor-scatter-group-note'),
       scatterSpeedMin: container.querySelector('#editor-scatter-speed-min'),
       scatterSpeedMinValue: container.querySelector('#editor-scatter-speed-min-value'),
       scatterSpeedMax: container.querySelector('#editor-scatter-speed-max'),
@@ -1526,18 +1543,16 @@ ${mixFluctuationMarkup('group')}
       scheduleTimes: container.querySelector('#editor-schedule-times'),
       scheduleIntervalRow: container.querySelector('#editor-schedule-interval-row'),
       scheduleInterval: container.querySelector('#editor-schedule-interval'),
-      schedulePitchMin: container.querySelector('#editor-schedule-pitch-min'),
-      schedulePitchMinValue: container.querySelector('#editor-schedule-pitch-min-value'),
-      schedulePitchMax: container.querySelector('#editor-schedule-pitch-max'),
-      schedulePitchMaxValue: container.querySelector('#editor-schedule-pitch-max-value'),
+      schedulePitchBar: container.querySelector('#editor-schedule-pitch-bar'),
       schedulePitchFullyRandom: container.querySelector('#editor-schedule-pitch-fully-random'),
       schedulePitchBiasEnabled: container.querySelector('#editor-schedule-pitch-bias-enabled'),
-      schedulePitchBias: container.querySelector('#editor-schedule-pitch-bias'),
-      schedulePitchBiasValue: container.querySelector('#editor-schedule-pitch-bias-value'),
-      scheduleVolumeMin: container.querySelector('#editor-schedule-volume-min'),
-      scheduleVolumeMinValue: container.querySelector('#editor-schedule-volume-min-value'),
-      scheduleVolumeMax: container.querySelector('#editor-schedule-volume-max'),
-      scheduleVolumeMaxValue: container.querySelector('#editor-schedule-volume-max-value'),
+      scheduleVolumeBar: container.querySelector('#editor-schedule-volume-bar'),
+      scheduleVolumeFullyRandom: container.querySelector('#editor-schedule-volume-fully-random'),
+      scheduleVolumeBiasEnabled: container.querySelector('#editor-schedule-volume-bias-enabled'),
+      schedulePanBar: container.querySelector('#editor-schedule-pan-bar'),
+      schedulePanFullyRandom: container.querySelector('#editor-schedule-pan-fully-random'),
+      schedulePanBiasEnabled: container.querySelector('#editor-schedule-pan-bias-enabled'),
+      scheduleGroupNote: container.querySelector('#editor-schedule-group-note'),
       scheduleSpeedMin: container.querySelector('#editor-schedule-speed-min'),
       scheduleSpeedMinValue: container.querySelector('#editor-schedule-speed-min-value'),
       scheduleSpeedMax: container.querySelector('#editor-schedule-speed-max'),
@@ -1623,7 +1638,10 @@ ${mixFluctuationMarkup('group')}
       flucPitchTransition: container.querySelector('#editor-fluc-pitch-transition'),
       flucPitchFullRandom: container.querySelector('#editor-fluc-pitch-fullrandom'),
       flucPanEnabled: container.querySelector('#editor-fluc-pan-enabled'),
-      flucPanGroupNote: container.querySelector('#editor-fluc-pan-group-note'),
+      flucGroupNote: container.querySelector('#editor-fluc-group-note'),
+      flucVolBias: container.querySelector('#editor-fluc-vol-bias'),
+      flucPitchBias: container.querySelector('#editor-fluc-pitch-bias'),
+      flucPanBias: container.querySelector('#editor-fluc-pan-bias'),
       flucPanBar: container.querySelector('#editor-fluc-pan-bar'),
       flucPanChangeMin: container.querySelector('#editor-fluc-pan-changemin'),
       flucPanChangeMax: container.querySelector('#editor-fluc-pan-changemax'),
@@ -1689,6 +1707,7 @@ ${mixFluctuationMarkup('group')}
       mixPresetEffectButtons: container.querySelectorAll('[data-mix-preset-effect]'),
       mixPresetHint: container.querySelector('#editor-mix-preset-hint'),
       mixPresetFlucEnabled: container.querySelector('#editor-mix-preset-fluc-enabled'),
+      mixPresetFlucBias: container.querySelector('#editor-mix-preset-fluc-bias'),
       mixPresetFlucBar: container.querySelector('#editor-mix-preset-fluc-bar'),
       mixPresetFlucChangeMin: container.querySelector('#editor-mix-preset-fluc-changemin'),
       mixPresetFlucChangeMax: container.querySelector('#editor-mix-preset-fluc-changemax'),
@@ -1742,6 +1761,18 @@ ${mixFluctuationMarkup('group')}
       mixGroupFlucChangeMax: container.querySelector('#editor-mix-group-fluc-changemax'),
       mixGroupFlucTransition: container.querySelector('#editor-mix-group-fluc-transition'),
       mixGroupFlucFullRandom: container.querySelector('#editor-mix-group-fluc-fullrandom'),
+      mixGroupFlucBias: container.querySelector('#editor-mix-group-fluc-bias'),
+      mixGroupFlucPerSound: container.querySelector('#editor-mix-group-fluc-persound'),
+      mixGroupFlucPitchEnabled: container.querySelector('#editor-mix-group-flucpitch-enabled'),
+      mixGroupFlucPitchBar: container.querySelector('#editor-mix-group-flucpitch-bar'),
+      mixGroupFlucPitchChangeMin: container.querySelector('#editor-mix-group-flucpitch-changemin'),
+      mixGroupFlucPitchChangeMax: container.querySelector('#editor-mix-group-flucpitch-changemax'),
+      mixGroupFlucPitchTransition: container.querySelector('#editor-mix-group-flucpitch-transition'),
+      mixGroupFlucPitchFullRandom: container.querySelector('#editor-mix-group-flucpitch-fullrandom'),
+      mixGroupFlucPitchBias: container.querySelector('#editor-mix-group-flucpitch-bias'),
+      mixGroupFlucPitchPerSound: container.querySelector('#editor-mix-group-flucpitch-persound'),
+      mixGroupFlucPanBias: container.querySelector('#editor-mix-group-flucpan-bias'),
+      mixGroupFlucPanPerSound: container.querySelector('#editor-mix-group-flucpan-persound'),
       mixGroupFlucPanEnabled: container.querySelector('#editor-mix-group-flucpan-enabled'),
       mixGroupFlucPanBar: container.querySelector('#editor-mix-group-flucpan-bar'),
       mixGroupFlucPanChangeMin: container.querySelector('#editor-mix-group-flucpan-changemin'),
@@ -1888,6 +1919,13 @@ ${mixFluctuationMarkup('group')}
         this.readGroupControlsAndPreview()
       }
     })
+    this.groupFlucPitchBar = createFluctuationBar(this.els.mixGroupFlucPitchBar, {
+      valueMin: FLUC_PITCH_MIN,
+      valueMax: FLUC_PITCH_MAX,
+      defaults: { min: -1, bias: 0, max: 1 },
+      format: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} st`,
+      onChange: () => this.readGroupControlsAndPreview()
+    })
     this.groupFlucPanBar = createFluctuationBar(this.els.mixGroupFlucPanBar, {
       valueMin: FLUC_PAN_MIN,
       valueMax: FLUC_PAN_MAX,
@@ -1905,7 +1943,8 @@ ${mixFluctuationMarkup('group')}
       changeMinEl: this.els.mixPresetFlucChangeMin,
       changeMaxEl: this.els.mixPresetFlucChangeMax,
       transEl: this.els.mixPresetFlucTransition,
-      fullRandomEl: this.els.mixPresetFlucFullRandom
+      fullRandomEl: this.els.mixPresetFlucFullRandom,
+      biasEl: this.els.mixPresetFlucBias
     }
     this.groupFlucEls = {
       enabledEl: this.els.mixGroupFlucEnabled,
@@ -1914,13 +1953,28 @@ ${mixFluctuationMarkup('group')}
       changeMaxEl: this.els.mixGroupFlucChangeMax,
       transEl: this.els.mixGroupFlucTransition,
       fullRandomEl: this.els.mixGroupFlucFullRandom,
+      biasEl: this.els.mixGroupFlucBias,
+      perSoundEl: this.els.mixGroupFlucPerSound,
+      pitch: {
+        enabledEl: this.els.mixGroupFlucPitchEnabled,
+        bar: this.groupFlucPitchBar,
+        changeMinEl: this.els.mixGroupFlucPitchChangeMin,
+        changeMaxEl: this.els.mixGroupFlucPitchChangeMax,
+        transEl: this.els.mixGroupFlucPitchTransition,
+        fullRandomEl: this.els.mixGroupFlucPitchFullRandom,
+        biasEl: this.els.mixGroupFlucPitchBias,
+        perSoundEl: this.els.mixGroupFlucPitchPerSound,
+        perSoundLocked: true
+      },
       pan: {
         enabledEl: this.els.mixGroupFlucPanEnabled,
         bar: this.groupFlucPanBar,
         changeMinEl: this.els.mixGroupFlucPanChangeMin,
         changeMaxEl: this.els.mixGroupFlucPanChangeMax,
         transEl: this.els.mixGroupFlucPanTransition,
-        fullRandomEl: this.els.mixGroupFlucPanFullRandom
+        fullRandomEl: this.els.mixGroupFlucPanFullRandom,
+        biasEl: this.els.mixGroupFlucPanBias,
+        perSoundEl: this.els.mixGroupFlucPanPerSound
       }
     }
 
@@ -2010,13 +2064,6 @@ ${mixFluctuationMarkup('group')}
     this.els.scatterGapFullyRandom.addEventListener('change', () => this.applyScatterControls())
     this.els.scatterGapBiasEnabled.addEventListener('change', () => this.applyScatterControls())
     this.els.scatterGapBias.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterPitchMin.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterPitchMax.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterPitchFullyRandom.addEventListener('change', () => this.applyScatterControls())
-    this.els.scatterPitchBiasEnabled.addEventListener('change', () => this.applyScatterControls())
-    this.els.scatterPitchBias.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterVolumeMin.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterVolumeMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterSpeedMin.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterSpeedMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeIn.addEventListener('input', () => this.applyScatterControls())
@@ -2027,13 +2074,6 @@ ${mixFluctuationMarkup('group')}
     this.els.scheduleTypeInterval.addEventListener('change', () => this.applyScheduleControls())
     this.els.scheduleTimes.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleInterval.addEventListener('input', () => this.applyScheduleControls())
-    this.els.schedulePitchMin.addEventListener('input', () => this.applyScheduleControls())
-    this.els.schedulePitchMax.addEventListener('input', () => this.applyScheduleControls())
-    this.els.schedulePitchFullyRandom.addEventListener('change', () => this.applyScheduleControls())
-    this.els.schedulePitchBiasEnabled.addEventListener('change', () => this.applyScheduleControls())
-    this.els.schedulePitchBias.addEventListener('input', () => this.applyScheduleControls())
-    this.els.scheduleVolumeMin.addEventListener('input', () => this.applyScheduleControls())
-    this.els.scheduleVolumeMax.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleSpeedMin.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleSpeedMax.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleFadeIn.addEventListener('input', () => this.applyScheduleControls())
@@ -2207,12 +2247,35 @@ ${mixFluctuationMarkup('group')}
         this.applyFluctuationControls()
       }
     })
+    // Per-play random bars (v0.1.218) - Random Interval + Scheduled.
+    this.shotBars = { scatter: {}, schedule: {} }
+    for (const kind of ['scatter', 'schedule']) {
+      for (const axis of SHOT_AXIS_NAMES) {
+        const cfg = SHOT_AXES[axis]
+        const key = `${kind}${axis[0].toUpperCase()}${axis.slice(1)}`
+        this.shotBars[kind][axis] = createFluctuationBar(this.els[`${key}Bar`], {
+          valueMin: cfg.lo,
+          valueMax: cfg.hi,
+          defaults: cfg.defaults,
+          format: cfg.format,
+          onChange: () => (kind === 'scatter' ? this.applyScatterControls() : this.applyScheduleControls())
+        })
+        for (const suffix of ['FullyRandom', 'BiasEnabled']) {
+          this.els[`${key}${suffix}`].addEventListener('change', () =>
+            kind === 'scatter' ? this.applyScatterControls() : this.applyScheduleControls()
+          )
+        }
+      }
+    }
     const flucInputs = [
       this.els.flucPanEnabled,
       this.els.flucPanFullRandom,
       this.els.flucPanChangeMin,
       this.els.flucPanChangeMax,
       this.els.flucPanTransition,
+      this.els.flucPanBias,
+      this.els.flucVolBias,
+      this.els.flucPitchBias,
       this.els.flucVolEnabled,
       this.els.flucVolFullRandom,
       this.els.flucVolChangeMin,
@@ -3039,6 +3102,7 @@ ${mixFluctuationMarkup('group')}
     this.els[`${key}ChangeMin`].value = String(axis.changeMinSeconds)
     this.els[`${key}ChangeMax`].value = String(axis.changeMaxSeconds)
     this.els[`${key}Transition`].value = String(axis.transitionSeconds)
+    this.els[`${key}Bias`].checked = axis.biasEnabled !== false
   }
 
   updateFluctuationEnabledUI() {
@@ -3050,6 +3114,8 @@ ${mixFluctuationMarkup('group')}
       const on = this.els[`${key}Enabled`].checked
       const random = this.els[`${key}FullRandom`].checked
       bar.setEnabled(on && !random)
+      bar.setBiasEnabled(this.els[`${key}Bias`].checked)
+      this.els[`${key}Bias`].disabled = !on || random
       this.els[`${key}FullRandom`].disabled = !on
       this.els[`${key}ChangeMin`].disabled = !on
       this.els[`${key}ChangeMax`].disabled = !on
@@ -3060,21 +3126,45 @@ ${mixFluctuationMarkup('group')}
     // design has no fluctuation (so it'd look like the feature does nothing).
     const anyOn = this.els.flucVolEnabled.checked || this.els.flucPitchEnabled.checked || this.els.flucPanEnabled.checked
     this.els.fluctuationSavedNote?.classList.toggle('hidden', !(anyOn && this.previewMode === 'saved'))
-    // A Sound Group with its own pan drift overrides this sound's in the
-    // Mixer (the preview here plays the sound on its own, so it still drifts).
-    const group = this.panDriftOverridingGroup()
-    this.els.flucPanGroupNote.textContent = group
-      ? `Its group "${group.name}" has its own pan drift on, so the Mixer and exports use the group's instead of this one.`
-      : ''
-    this.els.flucPanGroupNote.classList.toggle('hidden', !(group && this.els.flucPanEnabled.checked))
+    this.updateGroupOverrideNotes()
   }
 
-  panDriftOverridingGroup() {
+  // v0.1.218: tells the user when this sound's Sound Group replaces some of
+  // its drift / per-play settings in the Mixer and exports (the Remix preview
+  // plays the sound on its own, so it still uses this sound's own settings).
+  groupDriftForCurrentSound() {
     const id = this.currentEntry?.id
     if (!id) return null
     const preset = this.presets?.find((p) => p.id === this.editingPresetId)
     const group = preset?.groups?.find((g) => g.soundIds?.includes(id))
-    return group?.filters?.fluctuation?.pan?.enabled ? group : null
+    const f = group?.filters?.fluctuation
+    if (!f) return null
+    const perSound = ['volume', 'pitch', 'pan'].filter((a) => f[a]?.enabled && (f[a].perSound || a === 'pitch'))
+    const sharedPan = Boolean(f.pan?.enabled && !f.pan.perSound)
+    return perSound.length || sharedPan ? { group, perSound, sharedPan } : null
+  }
+
+  updateGroupOverrideNotes() {
+    const info = this.groupDriftForCurrentSound()
+    const list = (axes) => axes.join(' and ')
+    let fluc = ''
+    let shot = ''
+    if (info) {
+      const name = `"${info.group.name}"`
+      if (info.perSound.length) {
+        fluc = `In the Mixer and exports, this sound's ${list(info.perSound)} drift comes from its group ${name} (each sound on its own), not from the bars below.`
+        shot = `In the Mixer and exports, the ${list(info.perSound)} range comes from this sound's group ${name}'s drift settings, not from the bars below.`
+      }
+      if (info.sharedPan && !info.perSound.includes('pan')) {
+        fluc = `${fluc ? `${fluc} ` : ''}Its group ${name} drifts pan for the whole group, so this sound's own pan drift is switched off there.`
+      }
+    }
+    this.els.flucGroupNote.textContent = fluc
+    this.els.flucGroupNote.classList.toggle('hidden', !fluc)
+    for (const el of [this.els.scatterGroupNote, this.els.scheduleGroupNote]) {
+      el.textContent = shot
+      el.classList.toggle('hidden', !shot)
+    }
   }
 
   readFluctuationAxisFields(key, bar) {
@@ -3082,6 +3172,7 @@ ${mixFluctuationMarkup('group')}
     return {
       enabled: this.els[`${key}Enabled`].checked,
       fullyRandom: this.els[`${key}FullRandom`].checked,
+      biasEnabled: this.els[`${key}Bias`].checked,
       min: v.min,
       max: v.max,
       bias: v.bias,
@@ -3176,6 +3267,52 @@ ${mixFluctuationMarkup('group')}
       // it's back on screen so the bars aren't stuck at a stale size.
       this.flucVolBar?.redraw()
       this.flucPitchBar?.redraw()
+      this.flucPanBar?.redraw()
+    }
+    this.redrawShotBars()
+  }
+
+  redrawShotBars() {
+    for (const bars of Object.values(this.shotBars ?? {})) for (const bar of Object.values(bars)) bar.redraw()
+  }
+
+  // Reads one kind's per-play random bars into config fields.
+  readShotAxes(kind) {
+    const out = {}
+    for (const axis of SHOT_AXIS_NAMES) {
+      const { fields, round } = SHOT_AXES[axis]
+      const key = `${kind}${axis[0].toUpperCase()}${axis.slice(1)}`
+      const v = this.shotBars[kind][axis].getValues()
+      const r = (n) => Math.round(n * round) / round
+      out[fields[0]] = r(v.min)
+      out[fields[1]] = r(v.max)
+      out[fields[2]] = r(v.bias)
+      out[fields[3]] = this.els[`${key}BiasEnabled`].checked
+      out[fields[4]] = this.els[`${key}FullyRandom`].checked
+    }
+    return out
+  }
+
+  writeShotAxes(kind, config) {
+    for (const axis of SHOT_AXIS_NAMES) {
+      const { fields, defaults } = SHOT_AXES[axis]
+      const key = `${kind}${axis[0].toUpperCase()}${axis.slice(1)}`
+      const min = config?.[fields[0]] ?? defaults.min
+      const max = config?.[fields[1]] ?? defaults.max
+      this.shotBars[kind][axis].setValues({ min, max, bias: config?.[fields[2]] ?? (min + max) / 2 })
+      this.els[`${key}BiasEnabled`].checked = Boolean(config?.[fields[3]])
+      this.els[`${key}FullyRandom`].checked = Boolean(config?.[fields[4]])
+    }
+    this.updateShotAxesUI(kind)
+  }
+
+  updateShotAxesUI(kind) {
+    for (const axis of SHOT_AXIS_NAMES) {
+      const key = `${kind}${axis[0].toUpperCase()}${axis.slice(1)}`
+      const random = this.els[`${key}FullyRandom`].checked
+      this.shotBars[kind][axis].setEnabled(!random)
+      this.shotBars[kind][axis].setBiasEnabled(this.els[`${key}BiasEnabled`].checked)
+      this.els[`${key}BiasEnabled`].disabled = random
     }
   }
 
@@ -3186,13 +3323,7 @@ ${mixFluctuationMarkup('group')}
       gapFullyRandom: this.els.scatterGapFullyRandom.checked,
       gapBiasEnabled: this.els.scatterGapBiasEnabled.checked,
       gapBiasSeconds: Number(this.els.scatterGapBias.value),
-      minPitchSemitones: Number(this.els.scatterPitchMin.value),
-      maxPitchSemitones: Number(this.els.scatterPitchMax.value),
-      pitchFullyRandom: this.els.scatterPitchFullyRandom.checked,
-      pitchBiasEnabled: this.els.scatterPitchBiasEnabled.checked,
-      pitchBiasSemitones: Number(this.els.scatterPitchBias.value),
-      minVolume: Number(this.els.scatterVolumeMin.value) / 100,
-      maxVolume: Number(this.els.scatterVolumeMax.value) / 100,
+      ...this.readShotAxes('scatter'),
       minSpeed: Number(this.els.scatterSpeedMin.value) / 100,
       maxSpeed: Number(this.els.scatterSpeedMax.value) / 100,
       fadeInMs: Number(this.els.scatterFadeIn.value),
@@ -3201,37 +3332,25 @@ ${mixFluctuationMarkup('group')}
     }
   }
 
-  setScatterControls({
-    minGapSeconds = 5,
-    maxGapSeconds = 35,
-    gapFullyRandom = false,
-    gapBiasEnabled = false,
-    gapBiasSeconds = 20,
-    minPitchSemitones = 0,
-    maxPitchSemitones = 0,
-    pitchFullyRandom = false,
-    pitchBiasEnabled = false,
-    pitchBiasSemitones = 0,
-    minVolume = 1,
-    maxVolume = 1,
-    minSpeed = 1,
-    maxSpeed = 1,
-    fadeInMs = 0,
-    fadeOutMs = 0,
-    syncGroup = ''
-  }) {
+  setScatterControls(scatter) {
+    const {
+      minGapSeconds = 5,
+      maxGapSeconds = 35,
+      gapFullyRandom = false,
+      gapBiasEnabled = false,
+      gapBiasSeconds = 20,
+      minSpeed = 1,
+      maxSpeed = 1,
+      fadeInMs = 0,
+      fadeOutMs = 0,
+      syncGroup = ''
+    } = scatter ?? {}
     this.els.scatterGapMin.value = String(minGapSeconds)
     this.els.scatterGapMax.value = String(maxGapSeconds)
     this.els.scatterGapFullyRandom.checked = Boolean(gapFullyRandom)
     this.els.scatterGapBiasEnabled.checked = Boolean(gapBiasEnabled)
     this.els.scatterGapBias.value = String(gapBiasSeconds)
-    this.els.scatterPitchMin.value = String(minPitchSemitones)
-    this.els.scatterPitchMax.value = String(maxPitchSemitones)
-    this.els.scatterPitchFullyRandom.checked = Boolean(pitchFullyRandom)
-    this.els.scatterPitchBiasEnabled.checked = Boolean(pitchBiasEnabled)
-    this.els.scatterPitchBias.value = String(pitchBiasSemitones)
-    this.els.scatterVolumeMin.value = String(Math.round(minVolume * 100))
-    this.els.scatterVolumeMax.value = String(Math.round(maxVolume * 100))
+    this.writeShotAxes('scatter', scatter)
     this.els.scatterSpeedMin.value = String(Math.round(minSpeed * 100))
     this.els.scatterSpeedMax.value = String(Math.round(maxSpeed * 100))
     this.els.scatterFadeIn.value = String(fadeInMs)
@@ -3240,20 +3359,7 @@ ${mixFluctuationMarkup('group')}
     this.updateScatterRangeDisabled()
   }
 
-  updateScatterLabels({
-    minPitchSemitones = 0,
-    maxPitchSemitones = 0,
-    pitchBiasSemitones = 0,
-    minVolume = 1,
-    maxVolume = 1,
-    minSpeed = 1,
-    maxSpeed = 1
-  }) {
-    this.els.scatterPitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
-    this.els.scatterPitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
-    this.els.scatterPitchBiasValue.textContent = `${pitchBiasSemitones > 0 ? '+' : ''}${pitchBiasSemitones} st`
-    this.els.scatterVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
-    this.els.scatterVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
+  updateScatterLabels({ minSpeed = 1, maxSpeed = 1 }) {
     this.els.scatterSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
     this.els.scatterSpeedMaxValue.textContent = `${Math.round(maxSpeed * 100)}%`
   }
@@ -3269,6 +3375,7 @@ ${mixFluctuationMarkup('group')}
     // on the canvas, not the underlying data - switching back to Loop mode
     // shows whatever was already drawn.
     this.loopEditorController?.setEnvelopeUiVisible(playMode === 'loop')
+    this.redrawShotBars()
     this.updateFadeVisual()
     this.updateSaveButtonState()
   }
@@ -3308,11 +3415,7 @@ ${mixFluctuationMarkup('group')}
     this.els.scatterGapMax.disabled = gapRandom
     this.els.scatterGapBiasEnabled.disabled = gapRandom
     this.els.scatterGapBias.disabled = gapRandom || !this.els.scatterGapBiasEnabled.checked
-    const pitchRandom = this.els.scatterPitchFullyRandom.checked
-    this.els.scatterPitchMin.disabled = pitchRandom
-    this.els.scatterPitchMax.disabled = pitchRandom
-    this.els.scatterPitchBiasEnabled.disabled = pitchRandom
-    this.els.scatterPitchBias.disabled = pitchRandom || !this.els.scatterPitchBiasEnabled.checked
+    this.updateShotAxesUI('scatter')
   }
 
   currentScheduleConfig() {
@@ -3325,13 +3428,7 @@ ${mixFluctuationMarkup('group')}
       type,
       times,
       intervalMinutes: Number(this.els.scheduleInterval.value),
-      minPitchSemitones: Number(this.els.schedulePitchMin.value),
-      maxPitchSemitones: Number(this.els.schedulePitchMax.value),
-      pitchFullyRandom: this.els.schedulePitchFullyRandom.checked,
-      pitchBiasEnabled: this.els.schedulePitchBiasEnabled.checked,
-      pitchBiasSemitones: Number(this.els.schedulePitchBias.value),
-      minVolume: Number(this.els.scheduleVolumeMin.value) / 100,
-      maxVolume: Number(this.els.scheduleVolumeMax.value) / 100,
+      ...this.readShotAxes('schedule'),
       minSpeed: Number(this.els.scheduleSpeedMin.value) / 100,
       maxSpeed: Number(this.els.scheduleSpeedMax.value) / 100,
       fadeInMs: Number(this.els.scheduleFadeIn.value),
@@ -3339,67 +3436,33 @@ ${mixFluctuationMarkup('group')}
     }
   }
 
-  setScheduleControls({
-    type = 'times',
-    times = [],
-    intervalMinutes = 60,
-    minPitchSemitones = 0,
-    maxPitchSemitones = 0,
-    pitchFullyRandom = false,
-    pitchBiasEnabled = false,
-    pitchBiasSemitones = 0,
-    minVolume = 1,
-    maxVolume = 1,
-    minSpeed = 1,
-    maxSpeed = 1,
-    fadeInMs = 0,
-    fadeOutMs = 0
-  }) {
+  setScheduleControls(schedule) {
+    const {
+      type = 'times',
+      times = [],
+      intervalMinutes = 60,
+      minSpeed = 1,
+      maxSpeed = 1,
+      fadeInMs = 0,
+      fadeOutMs = 0
+    } = schedule ?? {}
     this.els.scheduleTypeTimes.checked = type !== 'interval'
     this.els.scheduleTypeInterval.checked = type === 'interval'
     this.els.scheduleTimes.value = times.join(', ')
     this.els.scheduleInterval.value = String(intervalMinutes)
     this.els.scheduleTimesRow.classList.toggle('hidden', type === 'interval')
     this.els.scheduleIntervalRow.classList.toggle('hidden', type !== 'interval')
-    this.els.schedulePitchMin.value = String(minPitchSemitones)
-    this.els.schedulePitchMax.value = String(maxPitchSemitones)
-    this.els.schedulePitchFullyRandom.checked = Boolean(pitchFullyRandom)
-    this.els.schedulePitchBiasEnabled.checked = Boolean(pitchBiasEnabled)
-    this.els.schedulePitchBias.value = String(pitchBiasSemitones)
-    this.els.scheduleVolumeMin.value = String(Math.round(minVolume * 100))
-    this.els.scheduleVolumeMax.value = String(Math.round(maxVolume * 100))
+    this.writeShotAxes('schedule', schedule)
     this.els.scheduleSpeedMin.value = String(Math.round(minSpeed * 100))
     this.els.scheduleSpeedMax.value = String(Math.round(maxSpeed * 100))
     this.els.scheduleFadeIn.value = String(fadeInMs)
     this.els.scheduleFadeOut.value = String(fadeOutMs)
-    this.updateScheduleLabels({ minPitchSemitones, maxPitchSemitones, pitchBiasSemitones, minVolume, maxVolume, minSpeed, maxSpeed })
-    this.updateSchedulePitchDisabled()
+    this.updateScheduleLabels({ minSpeed, maxSpeed })
   }
 
-  updateScheduleLabels({
-    minPitchSemitones = 0,
-    maxPitchSemitones = 0,
-    pitchBiasSemitones = 0,
-    minVolume = 1,
-    maxVolume = 1,
-    minSpeed = 1,
-    maxSpeed = 1
-  }) {
-    this.els.schedulePitchMinValue.textContent = `${minPitchSemitones > 0 ? '+' : ''}${minPitchSemitones} st`
-    this.els.schedulePitchMaxValue.textContent = `${maxPitchSemitones > 0 ? '+' : ''}${maxPitchSemitones} st`
-    this.els.schedulePitchBiasValue.textContent = `${pitchBiasSemitones > 0 ? '+' : ''}${pitchBiasSemitones} st`
-    this.els.scheduleVolumeMinValue.textContent = `${Math.round(minVolume * 100)}%`
-    this.els.scheduleVolumeMaxValue.textContent = `${Math.round(maxVolume * 100)}%`
+  updateScheduleLabels({ minSpeed = 1, maxSpeed = 1 }) {
     this.els.scheduleSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
     this.els.scheduleSpeedMaxValue.textContent = `${Math.round(maxSpeed * 100)}%`
-  }
-
-  updateSchedulePitchDisabled() {
-    const pitchRandom = this.els.schedulePitchFullyRandom.checked
-    this.els.schedulePitchMin.disabled = pitchRandom
-    this.els.schedulePitchMax.disabled = pitchRandom
-    this.els.schedulePitchBiasEnabled.disabled = pitchRandom
-    this.els.schedulePitchBias.disabled = pitchRandom || !this.els.schedulePitchBiasEnabled.checked
   }
 
   applyScheduleControls() {
@@ -3407,7 +3470,7 @@ ${mixFluctuationMarkup('group')}
     this.els.scheduleTimesRow.classList.toggle('hidden', schedule.type === 'interval')
     this.els.scheduleIntervalRow.classList.toggle('hidden', schedule.type !== 'interval')
     this.updateScheduleLabels(schedule)
-    this.updateSchedulePitchDisabled()
+    this.updateShotAxesUI('schedule')
     this.updateFadeVisual()
     this.updateSaveButtonState()
   }
@@ -3540,6 +3603,14 @@ ${mixFluctuationMarkup('group')}
         pitchBiasSemitones: scatter.pitchBiasSemitones ?? 0,
         minVolume: scatter.minVolume ?? 1,
         maxVolume: scatter.maxVolume ?? 1,
+        volumeFullyRandom: Boolean(scatter.volumeFullyRandom),
+        volumeBiasEnabled: Boolean(scatter.volumeBiasEnabled),
+        volumeBias: scatter.volumeBias ?? 1,
+        minPan: scatter.minPan ?? 0,
+        maxPan: scatter.maxPan ?? 0,
+        panFullyRandom: Boolean(scatter.panFullyRandom),
+        panBiasEnabled: Boolean(scatter.panBiasEnabled),
+        panBias: scatter.panBias ?? 0,
         minSpeed: scatter.minSpeed ?? 1,
         maxSpeed: scatter.maxSpeed ?? 1,
         fadeInMs: scatter.fadeInMs ?? 0,
@@ -3557,6 +3628,14 @@ ${mixFluctuationMarkup('group')}
         pitchBiasSemitones: schedule?.pitchBiasSemitones ?? 0,
         minVolume: schedule?.minVolume ?? 1,
         maxVolume: schedule?.maxVolume ?? 1,
+        volumeFullyRandom: Boolean(schedule?.volumeFullyRandom),
+        volumeBiasEnabled: Boolean(schedule?.volumeBiasEnabled),
+        volumeBias: schedule?.volumeBias ?? 1,
+        minPan: schedule?.minPan ?? 0,
+        maxPan: schedule?.maxPan ?? 0,
+        panFullyRandom: Boolean(schedule?.panFullyRandom),
+        panBiasEnabled: Boolean(schedule?.panBiasEnabled),
+        panBias: schedule?.panBias ?? 0,
         minSpeed: schedule?.minSpeed ?? 1,
         maxSpeed: schedule?.maxSpeed ?? 1,
         fadeInMs: schedule?.fadeInMs ?? 0,
@@ -4633,7 +4712,7 @@ ${mixFluctuationMarkup('group')}
       el.addEventListener('input', () => this.readPresetMixControlsAndPreview())
     }
     this.els.mixPresetFadeIn.addEventListener('input', () => this.readPresetMixControlsAndPreview())
-    for (const el of [this.els.mixPresetFlucEnabled, this.els.mixPresetFlucFullRandom, this.els.mixPresetFlucChangeMin, this.els.mixPresetFlucChangeMax, this.els.mixPresetFlucTransition]) {
+    for (const el of [this.els.mixPresetFlucEnabled, this.els.mixPresetFlucFullRandom, this.els.mixPresetFlucChangeMin, this.els.mixPresetFlucChangeMax, this.els.mixPresetFlucTransition, this.els.mixPresetFlucBias]) {
       el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => this.readPresetMixControlsAndPreview())
     }
     this.els.mixPresetEqType.addEventListener('change', () => this.applyPresetEqFieldsToSelectedBand())
@@ -4700,7 +4779,7 @@ ${mixFluctuationMarkup('group')}
     for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay, this.els.mixGroupReverbSize, this.els.mixGroupReverbMix, this.els.mixGroupOcclusion]) {
       el.addEventListener('input', () => this.readGroupControlsAndPreview())
     }
-    for (const el of [this.els.mixGroupFlucEnabled, this.els.mixGroupFlucFullRandom, this.els.mixGroupFlucChangeMin, this.els.mixGroupFlucChangeMax, this.els.mixGroupFlucTransition, this.els.mixGroupFlucPanEnabled, this.els.mixGroupFlucPanFullRandom, this.els.mixGroupFlucPanChangeMin, this.els.mixGroupFlucPanChangeMax, this.els.mixGroupFlucPanTransition]) {
+    for (const el of [this.els.mixGroupFlucEnabled, this.els.mixGroupFlucFullRandom, this.els.mixGroupFlucChangeMin, this.els.mixGroupFlucChangeMax, this.els.mixGroupFlucTransition, this.els.mixGroupFlucPanEnabled, this.els.mixGroupFlucPanFullRandom, this.els.mixGroupFlucPanChangeMin, this.els.mixGroupFlucPanChangeMax, this.els.mixGroupFlucPanTransition, this.els.mixGroupFlucBias, this.els.mixGroupFlucPerSound, this.els.mixGroupFlucPanBias, this.els.mixGroupFlucPanPerSound, this.els.mixGroupFlucPitchEnabled, this.els.mixGroupFlucPitchFullRandom, this.els.mixGroupFlucPitchChangeMin, this.els.mixGroupFlucPitchChangeMax, this.els.mixGroupFlucPitchTransition, this.els.mixGroupFlucPitchBias]) {
       el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => this.readGroupControlsAndPreview())
     }
     this.els.mixGroupEqType.addEventListener('change', () => this.applyGroupEqFieldsToSelectedBand())
@@ -5186,6 +5265,7 @@ ${mixFluctuationMarkup('group')}
   readMixFluctuation(els) {
     return {
       volume: this.readMixFlucAxis(els),
+      ...(els.pitch ? { pitch: this.readMixFlucAxis(els.pitch) } : {}),
       ...(els.pan ? { pan: this.readMixFlucAxis(els.pan) } : {})
     }
   }
@@ -5195,6 +5275,8 @@ ${mixFluctuationMarkup('group')}
     return {
       enabled: axisEls.enabledEl.checked,
       fullyRandom: axisEls.fullRandomEl.checked,
+      biasEnabled: axisEls.biasEl.checked,
+      ...(axisEls.perSoundEl ? { perSound: axisEls.perSoundLocked || axisEls.perSoundEl.checked } : {}),
       min: v.min,
       max: v.max,
       bias: v.bias,
@@ -5208,8 +5290,13 @@ ${mixFluctuationMarkup('group')}
     // No saved axis (a neutral preset, or Reset filters) → show the default
     // spread, not all three handles collapsed at 1.
     const d = defaultMixFluctuation()
-    this.writeMixFlucAxis({ ...d.volume, ...normalizeFluctuationAxis(fluctuation?.volume ?? d.volume, 1) }, els)
-    if (els.pan) this.writeMixFlucAxis({ ...d.pan, ...normalizeFluctuationAxis(fluctuation?.pan ?? d.pan, 0) }, els.pan)
+    const volSrc = fluctuation?.volume ?? d.volume
+    this.writeMixFlucAxis({ ...d.volume, ...normalizeFluctuationAxis(volSrc, 1), perSound: Boolean(volSrc.perSound) }, els)
+    if (els.pitch) this.writeMixFlucAxis({ ...d.pitch, ...normalizeFluctuationAxis(fluctuation?.pitch ?? d.pitch, 0) }, els.pitch)
+    if (els.pan) {
+      const src = fluctuation?.pan ?? d.pan
+      this.writeMixFlucAxis({ ...d.pan, ...normalizeFluctuationAxis(src, 0), perSound: Boolean(src.perSound) }, els.pan)
+    }
     this.updateMixFlucEnabledUI(els)
   }
 
@@ -5219,17 +5306,23 @@ ${mixFluctuationMarkup('group')}
     axisEls.changeMinEl.value = String(axis.changeMinSeconds)
     axisEls.changeMaxEl.value = String(axis.changeMaxSeconds)
     axisEls.transEl.value = String(axis.transitionSeconds)
+    axisEls.biasEl.checked = axis.biasEnabled !== false
+    if (axisEls.perSoundEl && !axisEls.perSoundLocked) axisEls.perSoundEl.checked = Boolean(axis.perSound)
     axisEls.bar.setValues(axis)
   }
 
   updateMixFlucEnabledUI(els) {
-    for (const axisEls of els.pan ? [els, els.pan] : [els]) {
+    for (const axisEls of [els, els.pitch, els.pan].filter(Boolean)) {
       const on = axisEls.enabledEl.checked
-      axisEls.bar.setEnabled(on && !axisEls.fullRandomEl.checked)
+      const random = axisEls.fullRandomEl.checked
+      axisEls.bar.setEnabled(on && !random)
+      axisEls.bar.setBiasEnabled(axisEls.biasEl.checked)
       axisEls.changeMinEl.disabled = !on
       axisEls.changeMaxEl.disabled = !on
       axisEls.transEl.disabled = !on
       axisEls.fullRandomEl.disabled = !on
+      axisEls.biasEl.disabled = !on || random
+      if (axisEls.perSoundEl && !axisEls.perSoundLocked) axisEls.perSoundEl.disabled = !on
     }
   }
 

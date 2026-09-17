@@ -1,5 +1,6 @@
 import log from 'electron-log/renderer'
-import { randomPitchSemitones, randomVolumeScale, randomSpeedFactor, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
+import { randomPitchSemitones, randomVolumeScale, randomPanPosition, randomSpeedFactor, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
+import { PanStage } from './PanStage.js'
 import { pitchShiftBuffer } from './pitchStretch.js'
 import { createStreamFilterChain, updateStreamFilterChain, disposeStreamFilterChain } from './StreamFilterChain.js'
 
@@ -63,6 +64,14 @@ function normalizeSchedule(schedule) {
     pitchBiasSemitones: schedule?.pitchBiasSemitones ?? null,
     minVolume: schedule?.minVolume ?? 1,
     maxVolume: schedule?.maxVolume ?? 1,
+    volumeFullyRandom: Boolean(schedule?.volumeFullyRandom),
+    volumeBiasEnabled: Boolean(schedule?.volumeBiasEnabled),
+    volumeBias: schedule?.volumeBias ?? null,
+    minPan: schedule?.minPan ?? 0,
+    maxPan: schedule?.maxPan ?? 0,
+    panFullyRandom: Boolean(schedule?.panFullyRandom),
+    panBiasEnabled: Boolean(schedule?.panBiasEnabled),
+    panBias: schedule?.panBias ?? null,
     minSpeed: schedule?.minSpeed ?? 1,
     maxSpeed: schedule?.maxSpeed ?? 1,
     fadeInMs: schedule?.fadeInMs ?? 0,
@@ -93,6 +102,9 @@ export class BufferScheduledSource {
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
     this.gainNode.connect(engine.masterGain)
+    // Per-play pan (v0.1.218) - see BufferScatterSource's panStage.
+    this.panStage = new PanStage(engine.context, 0)
+    this.panStage.output.connect(this.gainNode)
   }
 
   waitForMetadata() {
@@ -144,7 +156,8 @@ export class BufferScheduledSource {
       : this.audioBuffer.duration / (Math.pow(2, semitones / 12) * speedFactor)
     const shotGain = this.engine.context.createGain()
     node.connect(shotGain)
-    shotGain.connect(this.gainNode)
+    this.panStage.setPan(randomPanPosition(this.schedule), { immediate: true })
+    shotGain.connect(this.panStage.input)
     const target = randomVolumeScale(this.schedule)
     const { fadeInSeconds, fadeOutSeconds } = fadeSeconds(this.schedule, durationSeconds)
     scheduleShotEnvelope(shotGain.gain, target, this.engine.context.currentTime, durationSeconds, fadeInSeconds, fadeOutSeconds)
@@ -256,6 +269,7 @@ export class BufferScheduledSource {
       this.currentShotGain?.disconnect()
       this.currentShotGain = null
     }
+    this.panStage.dispose()
     this.gainNode.disconnect()
   }
 }
@@ -324,7 +338,10 @@ export class StreamScheduledSource {
     this.filters = this._filterChain.filters
 
     this.sourceNode.connect(this._filterChain.highpassNode)
-    this.shotGainNode.connect(this.gainNode)
+    // Per-play pan (v0.1.218), after the filter chain's own static pan.
+    this.panStage = new PanStage(engine.context, 0)
+    this.shotGainNode.connect(this.panStage.input)
+    this.panStage.output.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -405,6 +422,7 @@ export class StreamScheduledSource {
     // pitch still couples to tempo - the documented accepted limitation for
     // this never-baked fallback. Speed is meant to change tempo anyway.
     const playbackRate = Math.pow(2, randomPitchSemitones(this.schedule) / 12) * randomSpeedFactor(this.schedule)
+    this.panStage.setPan(randomPanPosition(this.schedule), { immediate: true })
     this.audioEl.playbackRate = playbackRate
     this.audioEl.currentTime = this.loopStart
     try {
@@ -494,6 +512,7 @@ export class StreamScheduledSource {
     this.sourceNode.disconnect()
     disposeStreamFilterChain(this._filterChain)
     this.shotGainNode.disconnect()
+    this.panStage.dispose()
     this.gainNode.disconnect()
   }
 }
