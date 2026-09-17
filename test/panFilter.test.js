@@ -1,5 +1,6 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { stereoPanMatrix as pluginPanMatrix } from '../plugins/editor/audio/PanStage.js'
 import { buildPanFilter, normalizePan, parseChannelCount, stereoPanMatrix } from '../src/main/ffmpeg/panFilter.js'
 
 const close = (a, b) => Math.abs(a - b) < 1e-9
@@ -39,6 +40,43 @@ describe('stereoPanMatrix', () => {
       const [[ll, lr]] = stereoPanMatrix(p)
       assert.ok(close(ll * ll + lr * lr, 1))
     }
+  })
+})
+
+describe('pan law strength (v0.1.227)', () => {
+  // Power ratio near/far for uncorrelated stereo, and amplitude ratio for mono, in dB.
+  const wideDb = (p) => {
+    const [[ll, lr], [rl, rr]] = stereoPanMatrix(-p)
+    return 10 * Math.log10((ll * ll + lr * lr) / (rl * rl + rr * rr))
+  }
+  const monoDb = (p) => {
+    const [[ll, lr], [rl, rr]] = stereoPanMatrix(-p)
+    return 20 * Math.log10((ll + lr) / (rl + rr))
+  }
+
+  test('wide stereo audibly moves at moderate pans', () => {
+    assert.ok(wideDb(0.25) > 1.8 && wideDb(0.25) < 2.5)
+    assert.ok(wideDb(0.5) > 5 && wideDb(0.5) < 5.7)
+    assert.ok(wideDb(0.75) > 10.5 && wideDb(0.75) < 12)
+  })
+
+  test('mono stays close to a standard mixer pan', () => {
+    assert.ok(monoDb(0.25) > 3 && monoDb(0.25) < 6)
+    assert.ok(monoDb(0.5) > 7 && monoDb(0.5) < 9.5)
+    assert.ok(monoDb(0.75) > 13 && monoDb(0.75) < 16.5)
+  })
+
+  test('balance grows steadily from center to the side', () => {
+    let prev = -1
+    for (let p = 0; p < 1; p += 0.05) {
+      const db = wideDb(p)
+      assert.ok(db > prev)
+      prev = db
+    }
+  })
+
+  test('the Remix plugin copy matches core exactly', () => {
+    for (let p = -1; p <= 1; p += 0.01) assert.deepEqual(pluginPanMatrix(p), stereoPanMatrix(p))
   })
 })
 

@@ -516,6 +516,9 @@ export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
       // ScatterSoundSource.js's randomSpeedFactor.
       minSpeed: 1,
       maxSpeed: 1,
+      speedFullyRandom: false,
+      speedBiasEnabled: false,
+      speedBias: 1,
       fadeInMs: 0,
       fadeOutMs: 0,
       // Two or more scatter sounds sharing a non-empty, case-sensitive group
@@ -556,6 +559,9 @@ export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
       panBias: 0,
       minSpeed: 1,
       maxSpeed: 1,
+      speedFullyRandom: false,
+      speedBiasEnabled: false,
+      speedBias: 1,
       fadeInMs: 0,
       fadeOutMs: 0
     },
@@ -1028,12 +1034,17 @@ export function setLoopClipReady(id, { loopStart, loopEnd, filters, crossfadeSec
 // affected and are kept. v3 (v0.1.222): the crossfade moved to the middle
 // of the clip (Remix maps Saved-audio time by that layout), and filtered
 // segments got a pre-roll so they no longer click at the joins.
-const LOOP_CLIP_FORMAT = 3
+const LOOP_CLIP_FORMAT = 4
 
 export function migrateLoopClipFormat() {
-  if ((store.get('loopClipFormat') ?? 1) >= LOOP_CLIP_FORMAT) return
+  const from = store.get('loopClipFormat') ?? 1
+  if (from >= LOOP_CLIP_FORMAT) return
+  // Format 3 changed the crossfade layout; format 4 (v0.1.227) changed the
+  // pan law, so clips baked with a non-zero pan are stale too.
+  const outdated = (s) =>
+    (from < 3 && s.loopClipCrossfadeSeconds !== 0) || (from < 4 && Number(s.loopClipFilters?.pan ?? 0) !== 0)
   const sounds = store.get('sounds').map((s) =>
-    s.loopClipReady && s.loopClipCrossfadeSeconds !== 0
+    s.loopClipReady && outdated(s)
       ? {
           ...s,
           loopClipReady: false,

@@ -339,9 +339,18 @@ function formatSemitones(v) {
 const SHOT_AXES = {
   pitch: { lo: -12, hi: 12, defaults: { min: 0, bias: 0, max: 0 }, format: formatSemitones, round: 10, fields: ['minPitchSemitones', 'maxPitchSemitones', 'pitchBiasSemitones', 'pitchBiasEnabled', 'pitchFullyRandom'] },
   volume: { lo: 0, hi: 1, defaults: { min: 1, bias: 1, max: 1 }, format: (v) => `${Math.round(v * 100)}%`, round: 100, fields: ['minVolume', 'maxVolume', 'volumeBias', 'volumeBiasEnabled', 'volumeFullyRandom'] },
-  pan: { lo: -1, hi: 1, defaults: { min: 0, bias: 0, max: 0 }, format: formatPan, round: 100, fields: ['minPan', 'maxPan', 'panBias', 'panBiasEnabled', 'panFullyRandom'] }
+  pan: { lo: -1, hi: 1, defaults: { min: 0, bias: 0, max: 0 }, format: formatPan, round: 100, fields: ['minPan', 'maxPan', 'panBias', 'panBiasEnabled', 'panFullyRandom'] },
+  // v0.1.227: Speed joined the bars (it used to be two min/max sliders).
+  speed: { lo: 0.5, hi: 2, defaults: { min: 1, bias: 1, max: 1 }, format: (v) => `${Math.round(v * 100)}%`, round: 100, fields: ['minSpeed', 'maxSpeed', 'speedBias', 'speedBiasEnabled', 'speedFullyRandom'] }
 }
-const SHOT_AXIS_NAMES = ['pitch', 'volume', 'pan']
+// What the bar shows for a missing bias: the middle of the range, rounded
+// the way readShotAxes rounds it (v0.1.227 - the snapshot used to assume
+// 0/1, so loading such a sound read as an unsaved edit and auto-saved).
+function shotBiasDefault(bias, min, max, round) {
+  if (bias != null) return bias
+  return Math.round(((min + max) / 2) * round) / round
+}
+const SHOT_AXIS_NAMES = ['pitch', 'volume', 'pan', 'speed']
 
 // Markup for the Fluctuation block, shared by the Preset and Group filter
 // panels (prefix 'preset' | 'group') - one volume bar + the flat-seconds
@@ -1185,16 +1194,7 @@ ${mixFluctuationMarkup('group')}
 ${shotAxisMarkup('editor-scatter-pitch', 'Pitch', '(a random shift every replay)')}
 ${shotAxisMarkup('editor-scatter-volume', 'Volume', '(a random level every replay; never above the sound\'s own)')}
 ${shotAxisMarkup('editor-scatter-pan', 'Pan', '(a random left/right position every replay)')}
-            <label>
-              <span>Speed (min)</span>
-              <input id="editor-scatter-speed-min" type="range" min="50" max="200" value="100" step="5" />
-              <span id="editor-scatter-speed-min-value" class="editor-filter-value">100%</span>
-            </label>
-            <label>
-              <span>Speed (max)</span>
-              <input id="editor-scatter-speed-max" type="range" min="50" max="200" value="100" step="5" />
-              <span id="editor-scatter-speed-max-value" class="editor-filter-value">100%</span>
-            </label>
+${shotAxisMarkup('editor-scatter-speed', 'Speed', '(a random tempo every replay, 50–200%)')}
             <label>
               <span>Fade in</span>
               <input id="editor-scatter-fade-in" type="number" min="0" max="10000" step="50" value="0" />
@@ -1209,7 +1209,7 @@ ${shotAxisMarkup('editor-scatter-pan', 'Pan', '(a random left/right position eve
               <span>Sync group</span>
               <input id="editor-scatter-sync-group" type="text" placeholder="e.g. door-effects" />
             </label>
-            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, pan, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Check "Bias" to make one value inside the range (the middle circle) win more often than a plain random pick. On the bars, drag the outer circles for the range; when they sit together there's no variation. Both speed bounds at 100% means no speed variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
+            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, pan, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Check "Bias" to make one value inside the range (the middle circle) win more often than a plain random pick. On the bars, drag the outer circles for the range; when they sit together there's no variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
           </div>
           <div id="editor-schedule-section" class="editor-scatter-controls hidden">
             <label class="editor-playmode-option">
@@ -1233,16 +1233,7 @@ ${shotAxisMarkup('editor-scatter-pan', 'Pan', '(a random left/right position eve
 ${shotAxisMarkup('editor-schedule-pitch', 'Pitch', '(a random shift every trigger)')}
 ${shotAxisMarkup('editor-schedule-volume', 'Volume', '(a random level every trigger; never above the sound\'s own)')}
 ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position every trigger)')}
-            <label>
-              <span>Speed (min)</span>
-              <input id="editor-schedule-speed-min" type="range" min="50" max="200" value="100" step="5" />
-              <span id="editor-schedule-speed-min-value" class="editor-filter-value">100%</span>
-            </label>
-            <label>
-              <span>Speed (max)</span>
-              <input id="editor-schedule-speed-max" type="range" min="50" max="200" value="100" step="5" />
-              <span id="editor-schedule-speed-max-value" class="editor-filter-value">100%</span>
-            </label>
+${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigger, 50–200%)')}
             <label>
               <span>Fade in</span>
               <input id="editor-schedule-fade-in" type="number" min="0" max="10000" step="50" value="0" />
@@ -1253,7 +1244,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
               <input id="editor-schedule-fade-out" type="number" min="0" max="10000" step="50" value="0" />
               <span class="editor-filter-value">ms</span>
             </label>
-            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, pan, and speed within these ranges, same as Random Interval — or check "Fully random" to roll the whole range regardless of the circles. Check "Bias" to make the middle circle's value win more often than a plain random pick. When a bar's outer circles sit together there's no variation; both speed bounds at 100% means no speed variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
+            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, pan, and speed within these ranges, same as Random Interval — or check "Fully random" to roll the whole range regardless of the circles. Check "Bias" to make the middle circle's value win more often than a plain random pick. When a bar's outer circles sit together there's no variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -1544,10 +1535,9 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       scatterPanFullyRandom: container.querySelector('#editor-scatter-pan-fully-random'),
       scatterPanBiasEnabled: container.querySelector('#editor-scatter-pan-bias-enabled'),
       scatterGroupNote: container.querySelector('#editor-scatter-group-note'),
-      scatterSpeedMin: container.querySelector('#editor-scatter-speed-min'),
-      scatterSpeedMinValue: container.querySelector('#editor-scatter-speed-min-value'),
-      scatterSpeedMax: container.querySelector('#editor-scatter-speed-max'),
-      scatterSpeedMaxValue: container.querySelector('#editor-scatter-speed-max-value'),
+      scatterSpeedBar: container.querySelector('#editor-scatter-speed-bar'),
+      scatterSpeedFullyRandom: container.querySelector('#editor-scatter-speed-fully-random'),
+      scatterSpeedBiasEnabled: container.querySelector('#editor-scatter-speed-bias-enabled'),
       scatterFadeIn: container.querySelector('#editor-scatter-fade-in'),
       scatterFadeOut: container.querySelector('#editor-scatter-fade-out'),
       scatterSyncGroup: container.querySelector('#editor-scatter-sync-group'),
@@ -1568,10 +1558,9 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       schedulePanFullyRandom: container.querySelector('#editor-schedule-pan-fully-random'),
       schedulePanBiasEnabled: container.querySelector('#editor-schedule-pan-bias-enabled'),
       scheduleGroupNote: container.querySelector('#editor-schedule-group-note'),
-      scheduleSpeedMin: container.querySelector('#editor-schedule-speed-min'),
-      scheduleSpeedMinValue: container.querySelector('#editor-schedule-speed-min-value'),
-      scheduleSpeedMax: container.querySelector('#editor-schedule-speed-max'),
-      scheduleSpeedMaxValue: container.querySelector('#editor-schedule-speed-max-value'),
+      scheduleSpeedBar: container.querySelector('#editor-schedule-speed-bar'),
+      scheduleSpeedFullyRandom: container.querySelector('#editor-schedule-speed-fully-random'),
+      scheduleSpeedBiasEnabled: container.querySelector('#editor-schedule-speed-bias-enabled'),
       scheduleFadeIn: container.querySelector('#editor-schedule-fade-in'),
       scheduleFadeOut: container.querySelector('#editor-schedule-fade-out'),
       speed: container.querySelector('#editor-speed'),
@@ -2100,8 +2089,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.els.scatterGapFullyRandom.addEventListener('change', () => this.applyScatterControls())
     this.els.scatterGapBiasEnabled.addEventListener('change', () => this.applyScatterControls())
     this.els.scatterGapBias.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterSpeedMin.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterSpeedMax.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeIn.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterFadeOut.addEventListener('input', () => this.applyScatterControls())
     this.els.scatterSyncGroup.addEventListener('input', () => this.applyScatterControls())
@@ -2110,8 +2097,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.els.scheduleTypeInterval.addEventListener('change', () => this.applyScheduleControls())
     this.els.scheduleTimes.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleInterval.addEventListener('input', () => this.applyScheduleControls())
-    this.els.scheduleSpeedMin.addEventListener('input', () => this.applyScheduleControls())
-    this.els.scheduleSpeedMax.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleFadeIn.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleFadeOut.addEventListener('input', () => this.applyScheduleControls())
 
@@ -3506,8 +3491,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       gapBiasEnabled: this.els.scatterGapBiasEnabled.checked,
       gapBiasSeconds: Number(this.els.scatterGapBias.value),
       ...this.readShotAxes('scatter'),
-      minSpeed: Number(this.els.scatterSpeedMin.value) / 100,
-      maxSpeed: Number(this.els.scatterSpeedMax.value) / 100,
       fadeInMs: Number(this.els.scatterFadeIn.value),
       fadeOutMs: Number(this.els.scatterFadeOut.value),
       syncGroup: this.els.scatterSyncGroup.value.trim()
@@ -3521,8 +3504,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       gapFullyRandom = false,
       gapBiasEnabled = false,
       gapBiasSeconds = 20,
-      minSpeed = 1,
-      maxSpeed = 1,
       fadeInMs = 0,
       fadeOutMs = 0,
       syncGroup = ''
@@ -3533,17 +3514,10 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.els.scatterGapBiasEnabled.checked = Boolean(gapBiasEnabled)
     this.els.scatterGapBias.value = String(gapBiasSeconds)
     this.writeShotAxes('scatter', scatter)
-    this.els.scatterSpeedMin.value = String(Math.round(minSpeed * 100))
-    this.els.scatterSpeedMax.value = String(Math.round(maxSpeed * 100))
     this.els.scatterFadeIn.value = String(fadeInMs)
     this.els.scatterFadeOut.value = String(fadeOutMs)
     this.els.scatterSyncGroup.value = syncGroup
     this.updateScatterRangeDisabled()
-  }
-
-  updateScatterLabels({ minSpeed = 1, maxSpeed = 1 }) {
-    this.els.scatterSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
-    this.els.scatterSpeedMaxValue.textContent = `${Math.round(maxSpeed * 100)}%`
   }
 
   applyPlayModeControl() {
@@ -3580,7 +3554,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
 
   applyScatterControls() {
     const scatter = this.currentScatterConfig()
-    this.updateScatterLabels(scatter)
     this.updateScatterRangeDisabled()
     this.updateFadeVisual()
     this.updateSaveButtonState()
@@ -3611,8 +3584,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       times,
       intervalMinutes: Number(this.els.scheduleInterval.value),
       ...this.readShotAxes('schedule'),
-      minSpeed: Number(this.els.scheduleSpeedMin.value) / 100,
-      maxSpeed: Number(this.els.scheduleSpeedMax.value) / 100,
       fadeInMs: Number(this.els.scheduleFadeIn.value),
       fadeOutMs: Number(this.els.scheduleFadeOut.value)
     }
@@ -3623,8 +3594,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       type = 'times',
       times = [],
       intervalMinutes = 60,
-      minSpeed = 1,
-      maxSpeed = 1,
       fadeInMs = 0,
       fadeOutMs = 0
     } = schedule ?? {}
@@ -3635,23 +3604,14 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.els.scheduleTimesRow.classList.toggle('hidden', type === 'interval')
     this.els.scheduleIntervalRow.classList.toggle('hidden', type !== 'interval')
     this.writeShotAxes('schedule', schedule)
-    this.els.scheduleSpeedMin.value = String(Math.round(minSpeed * 100))
-    this.els.scheduleSpeedMax.value = String(Math.round(maxSpeed * 100))
     this.els.scheduleFadeIn.value = String(fadeInMs)
     this.els.scheduleFadeOut.value = String(fadeOutMs)
-    this.updateScheduleLabels({ minSpeed, maxSpeed })
-  }
-
-  updateScheduleLabels({ minSpeed = 1, maxSpeed = 1 }) {
-    this.els.scheduleSpeedMinValue.textContent = `${Math.round(minSpeed * 100)}%`
-    this.els.scheduleSpeedMaxValue.textContent = `${Math.round(maxSpeed * 100)}%`
   }
 
   applyScheduleControls() {
     const schedule = this.currentScheduleConfig()
     this.els.scheduleTimesRow.classList.toggle('hidden', schedule.type === 'interval')
     this.els.scheduleIntervalRow.classList.toggle('hidden', schedule.type !== 'interval')
-    this.updateScheduleLabels(schedule)
     this.updateShotAxesUI('schedule')
     this.updateFadeVisual()
     this.updateSaveButtonState()
@@ -3783,19 +3743,22 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
         maxPitchSemitones: scatter.maxPitchSemitones ?? 0,
         pitchFullyRandom: Boolean(scatter.pitchFullyRandom),
         pitchBiasEnabled: Boolean(scatter.pitchBiasEnabled),
-        pitchBiasSemitones: scatter.pitchBiasSemitones ?? 0,
+        pitchBiasSemitones: shotBiasDefault(scatter.pitchBiasSemitones, scatter.minPitchSemitones ?? 0, scatter.maxPitchSemitones ?? 0, 10),
         minVolume: scatter.minVolume ?? 1,
         maxVolume: scatter.maxVolume ?? 1,
         volumeFullyRandom: Boolean(scatter.volumeFullyRandom),
         volumeBiasEnabled: Boolean(scatter.volumeBiasEnabled),
-        volumeBias: scatter.volumeBias ?? 1,
+        volumeBias: shotBiasDefault(scatter.volumeBias, scatter.minVolume ?? 1, scatter.maxVolume ?? 1, 100),
         minPan: scatter.minPan ?? 0,
         maxPan: scatter.maxPan ?? 0,
         panFullyRandom: Boolean(scatter.panFullyRandom),
         panBiasEnabled: Boolean(scatter.panBiasEnabled),
-        panBias: scatter.panBias ?? 0,
+        panBias: shotBiasDefault(scatter.panBias, scatter.minPan ?? 0, scatter.maxPan ?? 0, 100),
         minSpeed: scatter.minSpeed ?? 1,
         maxSpeed: scatter.maxSpeed ?? 1,
+        speedFullyRandom: Boolean(scatter.speedFullyRandom),
+        speedBiasEnabled: Boolean(scatter.speedBiasEnabled),
+        speedBias: shotBiasDefault(scatter.speedBias, scatter.minSpeed ?? 1, scatter.maxSpeed ?? 1, 100),
         fadeInMs: scatter.fadeInMs ?? 0,
         fadeOutMs: scatter.fadeOutMs ?? 0,
         syncGroup: scatter.syncGroup ?? ''
@@ -3808,19 +3771,22 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
         maxPitchSemitones: schedule?.maxPitchSemitones ?? 0,
         pitchFullyRandom: Boolean(schedule?.pitchFullyRandom),
         pitchBiasEnabled: Boolean(schedule?.pitchBiasEnabled),
-        pitchBiasSemitones: schedule?.pitchBiasSemitones ?? 0,
+        pitchBiasSemitones: shotBiasDefault(schedule?.pitchBiasSemitones, schedule?.minPitchSemitones ?? 0, schedule?.maxPitchSemitones ?? 0, 10),
         minVolume: schedule?.minVolume ?? 1,
         maxVolume: schedule?.maxVolume ?? 1,
         volumeFullyRandom: Boolean(schedule?.volumeFullyRandom),
         volumeBiasEnabled: Boolean(schedule?.volumeBiasEnabled),
-        volumeBias: schedule?.volumeBias ?? 1,
+        volumeBias: shotBiasDefault(schedule?.volumeBias, schedule?.minVolume ?? 1, schedule?.maxVolume ?? 1, 100),
         minPan: schedule?.minPan ?? 0,
         maxPan: schedule?.maxPan ?? 0,
         panFullyRandom: Boolean(schedule?.panFullyRandom),
         panBiasEnabled: Boolean(schedule?.panBiasEnabled),
-        panBias: schedule?.panBias ?? 0,
+        panBias: shotBiasDefault(schedule?.panBias, schedule?.minPan ?? 0, schedule?.maxPan ?? 0, 100),
         minSpeed: schedule?.minSpeed ?? 1,
         maxSpeed: schedule?.maxSpeed ?? 1,
+        speedFullyRandom: Boolean(schedule?.speedFullyRandom),
+        speedBiasEnabled: Boolean(schedule?.speedBiasEnabled),
+        speedBias: shotBiasDefault(schedule?.speedBias, schedule?.minSpeed ?? 1, schedule?.maxSpeed ?? 1, 100),
         fadeInMs: schedule?.fadeInMs ?? 0,
         fadeOutMs: schedule?.fadeOutMs ?? 0
       }
@@ -4353,7 +4319,6 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     }
     this.setPlayModeControls(playMode)
     this.setScatterControls(scatter)
-    this.updateScatterLabels(scatter)
     this.setScheduleControls(schedule)
 
     const fluctuation = entry.fluctuation ?? defaultFluctuation()
@@ -5238,8 +5203,12 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
   // --- Preset mode ---
 
   async refreshMixPanel() {
-    this.presets = await this.api.presets.list()
-    this.library = await this.api.library.list()
+    // BUG FIX (v0.1.227): this used to set this.library to the raw shared
+    // defaults, so a sound opened in Sound mode after visiting Preset/Group
+    // mode showed (and then saved over its preset settings with) the shared
+    // defaults. refreshLibrary() keeps the per-preset effective view and
+    // refreshes this.presets too.
+    await this.refreshLibrary()
     const previous = this.selectedPresetId
     this.els.mixPresetSelect.innerHTML = this.presets.length
       ? this.presets.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')
