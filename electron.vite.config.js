@@ -24,7 +24,11 @@ export default defineConfig({
       // re-issuable, read-only key (not a real credential like a GitHub PAT),
       // so the owner accepted the risk of it being extractable from a public
       // binary rather than losing the feature on itch.io.
-      __FREESOUND_API_KEY__: JSON.stringify(process.env.FREESOUND_API_KEY ?? '')
+      __FREESOUND_API_KEY__: JSON.stringify(process.env.FREESOUND_API_KEY ?? ''),
+      // Community presets API (community/, a Cloudflare Worker). A public URL,
+      // not a secret - set as a repo variable for release builds. Empty means
+      // the Community tab shows "not available".
+      __COMMUNITY_API_URL__: JSON.stringify(process.env.COMMUNITY_API_URL ?? '')
     }
   },
   preload: {

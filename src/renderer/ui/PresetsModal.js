@@ -54,9 +54,10 @@ export function renderPresetList(listEl, presets, callbacks) {
 }
 
 // Renders the per-sound status list inside the "Import preset" dialog. Each
-// sound is already in the library, included in the preset file itself, or
-// still needs its audio located (a "Locate…" button). `sounds` is the
-// analyzed array from presets:pickImport, mutated in place as sounds resolve.
+// sound is already in the library, included in the preset file itself,
+// re-downloaded from Freesound, or still needs its audio located (a
+// "Locate…" button). `sounds` is the analyzed array from
+// presets:pickImport, mutated in place as sounds resolve.
 export function renderPresetImportList(listEl, sounds, callbacks) {
   listEl.innerHTML = ''
 
@@ -72,7 +73,7 @@ export function renderPresetImportList(listEl, sounds, callbacks) {
     name.textContent = sound.name
     info.appendChild(name)
 
-    const resolved = Boolean(sound.matchedSoundId) || sound.fromBundle
+    const resolved = Boolean(sound.matchedSoundId) || sound.fromBundle || sound.fromFreesound
     const status = document.createElement('span')
     status.className = resolved
       ? 'preset-import-sound-status resolved'
@@ -81,7 +82,9 @@ export function renderPresetImportList(listEl, sounds, callbacks) {
       ? 'In your library'
       : sound.fromBundle
         ? 'Included in this file'
-        : `Needs file — ${sound.fileName || 'unknown file'}`
+        : sound.fromFreesound
+          ? 'Downloads from Freesound'
+          : `Needs file — ${sound.fileName || 'unknown file'}`
     info.appendChild(status)
 
     li.appendChild(info)

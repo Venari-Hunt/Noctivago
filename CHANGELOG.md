@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.219 — Community presets (groundwork) and fuller preset files
+
+- **Exported preset files now keep Sound Groups and per-preset sound settings.** Before, a preset file dropped its groups and any sound tweaks saved only in that preset, so an imported mix could sound different from the original. Older preset files still import as before.
+- A preset file can now list a Freesound sound instead of carrying its audio. On import it's downloaded from Freesound, or matched to the same Freesound sound already in your library.
+- The import summary now tells you if any sounds couldn't be added.
+- Groundwork for a new **Community** tab to browse, import and share ambience presets made by other users. It stays hidden until the community server is online.
+
 ## v0.1.218 — Groups can drift each sound on its own; per-play pan; Bias toggles
 
 - Every Sound Group drift bar (Remix, Group mode) has a new **Each sound on its own** toggle. With it on, every sound in the group drifts separately using the group's settings, instead of the whole group moving together, so they don't all swell or wander at the same moment.

@@ -1809,13 +1809,20 @@ let importAnalysis = null
 function renderImport() {
   els.presetImportName.textContent = importAnalysis.name
   renderPresetImportList(els.presetImportList, importAnalysis.sounds, { onLocate: locateImportSound })
-  const resolved = importAnalysis.sounds.filter((s) => s.matchedSoundId || s.fromBundle).length
+  const resolved = importAnalysis.sounds.filter((s) => s.matchedSoundId || s.fromBundle || s.fromFreesound).length
   const total = importAnalysis.sounds.length
   els.presetImportConfirm.disabled = resolved === 0
   els.presetImportStatus.textContent =
     resolved === total
       ? `All ${total} sound${total === 1 ? '' : 's'} ready.`
       : `${resolved} of ${total} ready — unresolved sounds will be left out of the preset.`
+}
+
+function openImportDialog(analysis) {
+  if (importAnalysis?.importSessionId) api.presets.cancelImport(importAnalysis.importSessionId)
+  importAnalysis = analysis
+  renderImport()
+  showModal(els.presetImportDialog)
 }
 
 els.importPresetBtn.addEventListener('click', async () => {
@@ -1826,9 +1833,18 @@ els.importPresetBtn.addEventListener('click', async () => {
     els.presetSaveHint.textContent = result.error ?? 'Could not read that preset file.'
     return
   }
-  importAnalysis = result
-  renderImport()
-  showModal(els.presetImportDialog)
+  openImportDialog(result)
+})
+
+// The Community plugin downloads a shared preset and hands its analysis here
+// (the same shape presets:pickImport returns), so both entry points share one
+// import dialog. Dispatched synchronously; detail.handled tells the plugin
+// the dialog actually opened.
+window.addEventListener('noctivago:open-preset-import', (event) => {
+  const analysis = event.detail?.analysis
+  if (!analysis?.ok) return
+  openImportDialog(analysis)
+  event.detail.handled = true
 })
 
 async function locateImportSound(index) {
@@ -1848,11 +1864,12 @@ els.presetImportCancel.addEventListener('click', () => {
   if (importAnalysis?.importSessionId) api.presets.cancelImport(importAnalysis.importSessionId)
   importAnalysis = null
   hideModal(els.presetImportDialog)
+  window.dispatchEvent(new CustomEvent('noctivago:preset-import-finished', { detail: { result: { ok: false, canceled: true } } }))
 })
 
 els.presetImportConfirm.addEventListener('click', async () => {
   if (!importAnalysis) return
-  const anyResolvable = importAnalysis.sounds.some((s) => s.matchedSoundId || s.fromBundle)
+  const anyResolvable = importAnalysis.sounds.some((s) => s.matchedSoundId || s.fromBundle || s.fromFreesound)
   if (!anyResolvable) return
   els.presetImportConfirm.disabled = true
   els.presetImportStatus.textContent = 'Adding sounds…'
@@ -1860,7 +1877,8 @@ els.presetImportConfirm.addEventListener('click', async () => {
     importSessionId: importAnalysis.importSessionId ?? null,
     name: importAnalysis.name,
     sounds: importAnalysis.sounds,
-    wholeMix: importAnalysis.wholeMix ?? null
+    wholeMix: importAnalysis.wholeMix ?? null,
+    groups: importAnalysis.groups ?? []
   })
   importAnalysis = null
   hideModal(els.presetImportDialog)
@@ -1868,8 +1886,9 @@ els.presetImportConfirm.addEventListener('click', async () => {
   await refreshPresetList()
   els.presetSaveHint.classList.toggle('ok', Boolean(result.ok))
   els.presetSaveHint.textContent = result.ok
-    ? `Preset imported — ${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}.`
+    ? `Preset imported — ${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}${result.failedCount ? ` (${result.failedCount} couldn't be added)` : ''}.`
     : result.error ?? 'Import failed.'
+  window.dispatchEvent(new CustomEvent('noctivago:preset-import-finished', { detail: { result } }))
 })
 
 // Re-reads the library on every return to this tab, so edits made in

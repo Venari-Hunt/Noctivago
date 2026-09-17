@@ -1,0 +1,18 @@
+name = "noctivago-community"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "noctivago-community"
+# Replace with the id printed by `npx wrangler d1 create noctivago-community`.
+# Local `wrangler dev` works with this placeholder.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "noctivago-community"
+
+# Secrets (set with `npx wrangler secret put <NAME>`, never committed):
+#   ADMIN_TOKEN  moderation token for the /v1/admin routes
+#   IP_SALT      random string mixed into hashed client IPs

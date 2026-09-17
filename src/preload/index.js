@@ -179,6 +179,20 @@ const api = {
     create: (payload) => ipcRenderer.invoke('composite:create', payload),
     rebake: (payload) => ipcRenderer.invoke('composite:rebake', payload)
   },
+  community: {
+    getProfile: () => ipcRenderer.invoke('community:getProfile'),
+    list: (params) => ipcRenderer.invoke('community:list', params),
+    listMine: () => ipcRenderer.invoke('community:listMine'),
+    download: (id) => ipcRenderer.invoke('community:download', id),
+    publish: (payload) => ipcRenderer.invoke('community:publish', payload),
+    delete: (id) => ipcRenderer.invoke('community:delete', id),
+    report: (id, reason) => ipcRenderer.invoke('community:report', id, reason),
+    onPublishProgress: (callback) => {
+      const listener = (_event, update) => callback(update)
+      ipcRenderer.on('community:publishProgress', listener)
+      return () => ipcRenderer.removeListener('community:publishProgress', listener)
+    }
+  },
   freesound: {
     isAvailable: () => ipcRenderer.invoke('freesound:isAvailable'),
     search: (params) => ipcRenderer.invoke('freesound:search', params)
