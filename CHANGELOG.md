@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.229 — Fixed: resuming a sound could play it with stale settings
+
+- **Fixed: a paused sound could resume with the wrong settings, or silently keep an out-of-date saved clip, instead of what Remix showed.** Pausing a sound (turning it off, switching presets, or Pause All) never actually let go of its player — only specific edits were set up to reach it while paused. Anything else that changed its settings in the meantime had no way back in, so playing it again could sound like an older version, or in some cases not update its audio at all, until something unrelated (like a Sound Group change) forced everything to recheck itself. Every sound now rechecks its own settings the moment it's played, the same way it already double-checks which Sound Group it belongs to.
+
 ## v0.1.228 — Joining a Sound Group now joins the mix
 
 - **Fixed: a sound added to a Sound Group wasn't automatically added to the mix.** Group membership and mix membership looked linked but weren't, so a group could sit there fully configured with none of its sounds actually playing. Adding a sound to a group (from the Mixer's right-click menu, its "New group…" dialog, or Remix's Group mode member list) now adds it to the mix too. Removing a sound from the mix afterwards still leaves its group membership alone.

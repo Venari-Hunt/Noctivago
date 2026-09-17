@@ -619,19 +619,23 @@ function effectiveSchedule(entry) {
   return applyGroupShotOverride(entry.schedule, groupFluctuationFor(entry.id))
 }
 
-function reconcileSource(entry) {
-  const source = state.sources.get(entry.id)
-  if (!source) return
-
+// Whether a live source still matches what `entry` currently calls for -
+// shared by reconcileSource (below) and getOrCreateSource's cache-reuse
+// branch, which needs the exact same check before it can trust a cached
+// source rather than only routing it (see that function's own comment).
+function sourceNeedsSwap(entry, source) {
   const desiredKind = desiredSourceKind(entry)
   const isBuffer = desiredKind === 'loop-buffer' || desiredKind === 'scatter-buffer' || desiredKind === 'scheduled-buffer'
   const bufferIsStale = isBuffer && source.kind === desiredKind && source.bakeSnapshot !== bufferBakeSnapshot(entry)
+  return desiredKind !== source.kind || bufferIsStale
+}
 
-  if (desiredKind !== source.kind || bufferIsStale) {
-    swapSource(entry)
-    return
-  }
-
+// Brings an already-correct-kind source's live params in line with `entry`
+// (filters/loop points/speed/crossfade/scatter/schedule/fluctuation) -
+// split out of reconcileSource so getOrCreateSource's cache-reuse branch can
+// call it too, without also re-running the swap decision reconcileSource
+// itself already made.
+function patchSourceSettings(entry, source, desiredKind) {
   // Fluctuation (v0.1.164) is playback-time only, never baked - so unlike
   // filters it applies to buffer-mode sources too, and it's reconciled here
   // for every source kind that supports it rather than inside one branch.
@@ -658,6 +662,18 @@ function reconcileSource(entry) {
   } else if (desiredKind === 'scheduled-buffer') {
     if (!source.hasScheduleConfig(effectiveSchedule(entry))) source.setScheduleConfig(effectiveSchedule(entry))
   }
+}
+
+function reconcileSource(entry) {
+  const source = state.sources.get(entry.id)
+  if (!source) return
+
+  if (sourceNeedsSwap(entry, source)) {
+    swapSource(entry)
+    return
+  }
+
+  patchSourceSettings(entry, source, desiredSourceKind(entry))
 }
 
 function swapSource(entry) {
@@ -832,9 +848,36 @@ async function getOrCreateSource(entry) {
   // Groups routing self-heals on every access instead of depending on every
   // future group-membership change remembering to loop over state.sources
   // and re-route each one by hand.
+  //
+  // BUG FIX: a cached source used to be trusted on its settings as much as
+  // its routing - but nothing actually re-checks settings just by playing a
+  // sound, only specific edit-time bridge events do (sound-override-changed,
+  // sound-baseline-changed, sound-fluctuation-changed, sound-groups-changed).
+  // A source sitting paused (stopPlayback never disposes it - see its own
+  // comment) stays in state.sources indefinitely, so any edit path that
+  // reaches this entry without going through one of those specific events -
+  // or a future one that doesn't yet exist - left the *next* play (a toggle
+  // back on, or the global Play-all resume loop, which calls startPlayback
+  // for every included sound without reconciling any of them first) silently
+  // serving stale filters/speed/pitch/loop-points/scatter-or-schedule config,
+  // or a stale baked clip, with no self-heal short of some *other* action
+  // happening to sweep the whole library (switching presets, a group
+  // membership change, a tab-switch refresh) - reported directly as sounds
+  // playing with the wrong settings, or in one case likely silence (a stale
+  // buffer clip surviving what should have been a swap). Same "don't trust
+  // the cache, verify on every access" fix as the routeSound call above,
+  // now applied to what the source actually plays, not just where it's
+  // plugged in.
   if (source) {
-    engine.routeSound(entry.id, source)
-    return source
+    if (sourceNeedsSwap(entry, source)) {
+      source.dispose()
+      state.sources.delete(entry.id)
+      source = null
+    } else {
+      patchSourceSettings(entry, source, desiredSourceKind(entry))
+      engine.routeSound(entry.id, source)
+      return source
+    }
   }
 
   if (loopClipEligible(entry)) {
