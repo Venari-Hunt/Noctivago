@@ -10,6 +10,12 @@ asarUnpack:
 extraResources:
   - from: plugins
     to: plugins
+    # hello-world and broken-plugin-example are developer examples/test
+    # fixtures, not features - they stay in the repo but not in releases.
+    filter:
+      - "**/*"
+      - "!hello-world/**"
+      - "!broken-plugin-example/**"
   # yt-dlp.exe (scripts/download-ytdlp.mjs's postinstall download) - a plain
   # standalone .exe, never inside node_modules/asar to begin with, so
   # extraResources (not asarUnpack) is the right mechanism, same as the
