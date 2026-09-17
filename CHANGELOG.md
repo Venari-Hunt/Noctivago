@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.231 — Zoom the loop seam view, and Sound Group drift fix
+
+- **Remix's "Loop seam" view can now be zoomed and panned** — scroll to zoom in on the crossfade (or anywhere else in the loop), middle-click drag to pan, double-click empty space to reset. Same interaction as the main trim waveform, and it fetches finer detail for whatever you've zoomed into instead of just stretching the same coarse picture. Dragging the crossfade pins directly still only works at full zoom-out (the "Loop crossfade" slider still works at any zoom).
+- **Fixed: a Sound Group's shared volume drift didn't keep members in sync.** When a group's Pan drift is set to move the whole group together, each sound's own pan drift correctly switched off so they'd move as one. Volume drift never got the same treatment — a member with its own volume drift kept wandering on its own even while the group was also drifting its volume as a whole, so they could drift apart instead of moving together. Found from a direct question about whether this was expected, not a report.
+
 ## v0.1.230 — Remix: clearer Random Interval / Scheduled layout
 
 - **Each Pitch/Volume/Pan/Speed bar (and the new Gap card) now has its own visible box**, so it's clear which "Fully random" and "Bias" checkboxes belong to which one, and the section names are easier to spot at a glance.

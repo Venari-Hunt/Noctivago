@@ -32,6 +32,24 @@ describe('effectiveMemberFluctuation', () => {
     assert.equal(out.pan.min, -1)
   })
 
+  // v0.1.231: a shared (non-per-sound) group axis is meant to move every
+  // member together - before this fix, only pan actually switched a
+  // member's own drift off; a shared group volume drift left members free
+  // to also wander their own volume independently, out of sync with the
+  // group. Caught from a direct question about whether members stay in
+  // sync, not a reported bug.
+  test('shared group volume switches the member\'s own volume drift off, same as pan', () => {
+    const withOwnVolume = { ...own, volume: axis({ min: -1, max: -1, bias: -1 }) }
+    const out = effectiveMemberFluctuation(withOwnVolume, { volume: axis() })
+    assert.equal(out.volume.enabled, false)
+    assert.equal(out.volume.min, -1)
+  })
+
+  test('a disabled member volume axis stays disabled under a shared group volume drift', () => {
+    const out = effectiveMemberFluctuation(own, { volume: axis() })
+    assert.equal(out.volume.enabled, false)
+  })
+
   test('per-sound group axes replace the member\'s own settings', () => {
     const groupVol = axis({ perSound: true, min: 0.3, max: 0.9, bias: 0.6 })
     const out = effectiveMemberFluctuation(own, { volume: groupVol, pan: axis({ perSound: true }) })
@@ -97,9 +115,14 @@ describe('groupDriftMemberKey', () => {
   test('changes only when what members receive changes', () => {
     const a = groupDriftMemberKey({ volume: axis({ min: 0.2 }) })
     const b = groupDriftMemberKey({ volume: axis({ min: 0.5 }) })
-    assert.equal(a, b) // shared volume never reaches members
+    assert.equal(a, b) // a shared volume's own min/max never reaches members, only on/off does
     assert.notEqual(groupDriftMemberKey({ volume: axis({ perSound: true }) }), a)
     assert.notEqual(groupDriftMemberKey({ pan: axis() }), groupDriftMemberKey(null))
+    // v0.1.231: toggling a shared volume drift on/off now switches members'
+    // own volume drift off/on too, so it must change the key the same way
+    // a shared pan drift already did (see the effectiveMemberFluctuation
+    // fix above) - this used to be a no-op key (a real gap this closes).
+    assert.notEqual(a, groupDriftMemberKey(null))
   })
 })
 

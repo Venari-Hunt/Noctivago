@@ -795,6 +795,7 @@ export default class EditorPlugin {
     if (this._onActivePresetChanged) window.removeEventListener('noctivago:active-preset-changed', this._onActivePresetChanged)
     this.disposePreview()
     this.stopWholeMixSpectrumTicking()
+    clearTimeout(this._seamDetailPeaksTimer)
     this.presetEq?.destroy()
     this.seamView?.destroy()
     this.groupEq?.destroy()
@@ -1828,6 +1829,9 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     this.seamView.onCrossfadeChange((seconds) => {
       this.els.crossfade.value = String(Math.round(seconds * 1000))
       this.applyCrossfadeControl()
+    })
+    this.seamView.onViewportChange((sourceRange) => {
+      this.scheduleSeamDetailPeaks(sourceRange)
     })
     this.seamView.onScrub((liveClipTime) => {
       const source = clipToSource(this.liveLayout(), liveClipTime)
@@ -3219,6 +3223,30 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     }, 300)
   }
 
+  // Finer peaks for exactly what the "Loop seam" strip's current zoom
+  // shows (v0.1.231) - the same idea as maybeFetchDetailPeaks for the main
+  // trim waveform, keyed off the source-time range SeamView's own
+  // onViewportChange already resolved (it can be two disjoint stretches'
+  // union collapsed into one span, when the view straddles the crossfade
+  // blend - see that file's computeSourceRange).
+  scheduleSeamDetailPeaks(sourceRange) {
+    clearTimeout(this._seamDetailPeaksTimer)
+    const id = this.currentEntry?.id
+    if (!id || !this.seamView || !sourceRange) return
+    const [start, end] = sourceRange
+    if (!(end > start)) return
+    this._seamDetailPeaksTimer = setTimeout(async () => {
+      const width = Math.max(1, Math.round(this.els.seamCanvas.getBoundingClientRect().width))
+      try {
+        const peaks = await this.api.audio.getWaveformPeaks(id, width, start, end)
+        if (!peaks || this.currentEntry?.id !== id) return
+        this.seamView.setDetailPeaks(peaks, start, end)
+      } catch (err) {
+        console.error('Editor: seam detail peaks fetch failed', err)
+      }
+    }, 250)
+  }
+
   // The strip's playhead, in liveLayout() clip time.
   updateSeamPlayhead(sourceTime) {
     if (!this.seamView) return
@@ -3357,8 +3385,12 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     const f = group?.filters?.fluctuation
     if (!f) return null
     const perSound = ['volume', 'pitch', 'pan'].filter((a) => f[a]?.enabled && (f[a].perSound || a === 'pitch'))
-    const sharedPan = Boolean(f.pan?.enabled && !f.pan.perSound)
-    return perSound.length || sharedPan ? { group, perSound, sharedPan } : null
+    // Mirrors groupDrift.js's BUS_CAPABLE_AXES (can't import it - plugin
+    // sandbox) - a shared (non-per-sound) volume or pan drift on the group's
+    // bus switches off that same axis's own drift on the member, so they
+    // move together instead of each also wandering on its own.
+    const sharedAxes = ['volume', 'pan'].filter((a) => f[a]?.enabled && !f[a].perSound)
+    return perSound.length || sharedAxes.length ? { group, perSound, sharedAxes } : null
   }
 
   updateGroupOverrideNotes() {
@@ -3372,8 +3404,9 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
         fluc = `In the Mixer and exports, this sound's ${list(info.perSound)} drift comes from its group ${name} (each sound on its own), not from the bars below.`
         shot = `In the Mixer and exports, the ${list(info.perSound)} range comes from this sound's group ${name}'s drift settings, not from the bars below.`
       }
-      if (info.sharedPan && !info.perSound.includes('pan')) {
-        fluc = `${fluc ? `${fluc} ` : ''}Its group ${name} drifts pan for the whole group, so this sound's own pan drift is switched off there.`
+      const overridden = info.sharedAxes.filter((a) => !info.perSound.includes(a))
+      if (overridden.length) {
+        fluc = `${fluc ? `${fluc} ` : ''}Its group ${name} drifts ${list(overridden)} for the whole group, so this sound's own ${list(overridden)} drift is switched off there.`
       }
     }
     this.els.flucGroupNote.textContent = fluc
@@ -4330,6 +4363,8 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
 
   async loadSound(id) {
     clearTimeout(this.detailPeaksDebounceTimer)
+    clearTimeout(this._seamDetailPeaksTimer)
+    this.seamView?.resetZoom()
     const entry = this.library.find((s) => s.id === id)
     if (!entry) return
     // Solo is scoped to whichever sound was previously open, not the one
