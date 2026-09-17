@@ -4539,16 +4539,24 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     // fall back to exactly today's global write - identical to every
     // sound's behavior before this feature existed.
     const overridePatch = { loopStart, loopEnd, filters, crossfadeSeconds, speedPitch, playMode, scatter, schedule }
+    // BUG FIX (v0.1.223): membership is read from disk, not this.presets
+    // (cached when the tab loaded). A sound added to or removed from the
+    // preset in the Mixer since then used to send the edit to the wrong
+    // place: to shared defaults, or to an override slot that no longer
+    // existed, where updateSoundOverride silently did nothing.
+    if (savingEditingPresetId) this.presets = await this.api.presets.list()
     const editingPreset = savingEditingPresetId ? this.presets.find((p) => p.id === savingEditingPresetId) : null
-    const presetSoundItem = editingPreset?.sounds.find((s) => s.soundId === id)
-    const overrideHint = !presetSoundItem && savingEditingPresetId
-      ? " This sound isn't in the current preset, so this changed its shared defaults."
-      : ''
+    let presetSoundItem = editingPreset?.sounds.find((s) => s.soundId === id) ?? null
     if (presetSoundItem) {
       const updated = await this.api.presets.updateSoundOverride(savingEditingPresetId, id, overridePatch)
       const updatedItem = updated?.sounds.find((s) => s.soundId === id)
-      presetSoundItem.overrides = updatedItem?.overrides ?? overridePatch
-    } else {
+      if (updatedItem) presetSoundItem.overrides = updatedItem.overrides
+      else presetSoundItem = null
+    }
+    const overrideHint = !presetSoundItem && savingEditingPresetId
+      ? " This sound isn't in the current preset, so this changed its shared defaults."
+      : ''
+    if (!presetSoundItem) {
       await this.api.library.updateLoopPoints(id, { loopStart, loopEnd })
       await this.api.library.updateFilters(id, filters)
       await this.api.library.updateCrossfade(id, crossfadeSeconds)

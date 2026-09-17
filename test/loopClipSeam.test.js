@@ -90,6 +90,27 @@ describe('renderLoopClip seam', { skip: !fs.existsSync(ffmpeg) && 'bundled ffmpe
     })
   }
 
+  // Regression (v0.1.223): an overlapping request with different settings
+  // used to get the in-flight render's result, leaving the old pan on disk.
+  test('overlapping renders of one sound finish with the last request on disk', async () => {
+    const base = { id: 'queue', inputPath: source, loopStart: 1, loopEnd: 9, crossfadeSeconds: 0.2, speedPitch: null }
+    const hardLeft = { ...base, filters: { pan: -1 } }
+    const first = renderLoopClip(hardLeft)
+    assert.equal(renderLoopClip(hardLeft), first, 'an identical request joins the one in flight')
+    const second = renderLoopClip({ ...base, filters: { pan: 1 } })
+    const results = await Promise.all([first, second])
+    assert.deepEqual(results.map((r) => r.ok), [true, true])
+    const raw = execFileSync(ffmpeg, ['-v', 'error', '-i', path.join(userData, 'clips', 'queue.wav'), '-f', 'f32le', '-'], { maxBuffer: 1 << 30 })
+    const stereo = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4)
+    let left = 0
+    let right = 0
+    for (let i = 0; i < stereo.length; i += 2) {
+      left += Math.abs(stereo[i])
+      right += Math.abs(stereo[i + 1])
+    }
+    assert.ok(left < right * 0.01, `hard right expected, got L=${left} R=${right}`)
+  })
+
   test('crossfade 0 is a plain trim of the full length', async () => {
     const result = await renderLoopClip({ id: 'seam-off', inputPath: source, loopStart: 1, loopEnd: 5, filters: {}, crossfadeSeconds: 0 })
     assert.equal(result.ok, true)

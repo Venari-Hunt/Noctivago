@@ -617,13 +617,26 @@ function buildCrossfadedLoopArgs({ inputPath, loopStart, loopEnd, fade, filters 
 // nullable too — null/neutral values skip the pre-processing pass below
 // entirely, leaving the default (no speed/pitch/reverse) path byte-for-byte
 // identical to before this option existed.
+//
+// Renders of one sound run one at a time, since they all write the same
+// file. An identical request joins the one in flight. BUG FIX (v0.1.223): a
+// request with *different* settings used to join it too and get back a clip
+// rendered with the old settings, while the caller (ipc.js) recorded its own
+// new settings as baked - so the Mixer trusted a clip with, say, the
+// previous pan. It now waits for the in-flight render and then renders its
+// own settings, so the last request always leaves its own audio on disk.
 export function renderLoopClip({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }) {
-  if (pending.has(id)) return pending.get(id)
+  const key = JSON.stringify({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch })
+  const inFlight = pending.get(id)
+  if (inFlight?.key === key) return inFlight.promise
 
-  const promise = doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }).finally(() =>
-    pending.delete(id)
-  )
-  pending.set(id, promise)
+  const previous = inFlight ? inFlight.promise.catch(() => {}) : Promise.resolve()
+  const promise = previous
+    .then(() => doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeSeconds, speedPitch }))
+    .finally(() => {
+      if (pending.get(id)?.promise === promise) pending.delete(id)
+    })
+  pending.set(id, { key, promise })
   return promise
 }
 
