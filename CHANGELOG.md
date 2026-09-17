@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.232 — Fixed a real crash on very long exports
+
+- **Fixed: a very long, dense export (matching real reports around 9 hours) could die outright right after its most expensive step, discarding all the work already done.** A whole-mix or Sound Group reverb pass reads an intermediate file's exact length before running — for a normal export that's a tiny, instant check, but on a long enough export that intermediate can be several gigabytes, and the check was reading the *entire* file into memory just to look at its first few bytes. It now reads only the header it actually needs.
+- Also fixed a related, quieter risk: an export to plain WAV format long enough to cross about 4.3 GB used to write a silently broken file (a corrupted length in its header) instead of failing loudly. Both now use WAV's own extended-size format automatically once a file actually needs it — invisible for every normal-length export.
+
 ## v0.1.231 — Zoom the loop seam view, and Sound Group drift fix
 
 - **Remix's "Loop seam" view can now be zoomed and panned** — scroll to zoom in on the crossfade (or anywhere else in the loop), middle-click drag to pan, double-click empty space to reset. Same interaction as the main trim waveform, and it fetches finer detail for whatever you've zoomed into instead of just stretching the same coarse picture. Dragging the crossfade pins directly still only works at full zoom-out (the "Loop crossfade" slider still works at any zoom).

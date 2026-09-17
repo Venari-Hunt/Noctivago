@@ -509,15 +509,50 @@ function buildSpeedPitchReverseChain(speedPitch, durationSeconds) {
   return parts.length > 0 ? parts.join(',') : null
 }
 
+// Only the header is ever needed (RIFF/fmt/data chunk headers, never the
+// audio payload itself) - comfortably generous for any real WAV, including
+// one with a few extra metadata chunks before 'data'.
+const WAV_HEADER_SCAN_BYTES = 65536
+
 // Reads a WAV file's real duration straight from its own RIFF/data chunk
 // header rather than spawning ffprobe (not bundled) or another ffmpeg
 // process - used only on WAV files this module just rendered itself (see
-// doRender's pre-processing pass), so the format is always exactly what's
-// expected.
-function readWavDuration(filePath) {
-  const buf = fs.readFileSync(filePath)
+// doRender's pre-processing pass and exportMix.js's applyReverbPass calls),
+// so the format is always exactly what's expected.
+// BUG FIX (owner-reported, real 9-hour export): this used to read the whole
+// file into memory with fs.readFileSync to get at a handful of header bytes
+// - harmless for the short per-sound bake clips this was written for, but a
+// long export's whole-mix or Sound Group reverb pass calls this (via the
+// shared applyReverbPass) on a full-duration intermediate WAV that can be
+// several GB. Node's fs.readFileSync hard-refuses anything over ~2GiB
+// ("File size (5715360078) is greater than 2 GiB"), so a real long/dense
+// export with whole-mix reverb enabled died outright right after its most
+// expensive merge step, discarding all of that work. Fixed by reading only
+// a bounded prefix (fs.readSync at a fixed size) - the loop below only ever
+// needs the first few dozen/hundred bytes in practice, so this is also a
+// strict speedup, not just a correctness fix, even on a short clip.
+// Exported (v0.1.231) so test/readWavDuration.test.js can exercise the RF64
+// ds64-chunk parsing directly, the same way applyReverbPass was exported.
+export function readWavDuration(filePath) {
+  const fd = fs.openSync(filePath, 'r')
+  let buf
+  try {
+    const scanBuf = Buffer.alloc(WAV_HEADER_SCAN_BYTES)
+    const bytesRead = fs.readSync(fd, scanBuf, 0, WAV_HEADER_SCAN_BYTES, 0)
+    buf = scanBuf.subarray(0, bytesRead)
+  } finally {
+    fs.closeSync(fd)
+  }
   let offset = 12
   let channels, sampleRate, bitsPerSample
+  // RF64 (the >4GiB WAV variant applyGroupFilters/finalizeWholeMix's own
+  // -rf64 auto now writes for a long export - see SAFE_LARGE_CODEC in
+  // exportMix.js) marks both the outer RIFF size and the 'data' chunk's own
+  // size as the 0xFFFFFFFF sentinel and puts the real 64-bit sizes in a
+  // leading 'ds64' chunk instead - riffSize(8)/dataSize(8)/sampleCount(8)/
+  // tableLength(4) starting right after ds64's own 8-byte id+size header.
+  // Number() is safe for a byte count this size (well under 2^53).
+  let ds64DataSize = null
   while (offset < buf.length) {
     const id = buf.toString('ascii', offset, offset + 4)
     const size = buf.readUInt32LE(offset + 4)
@@ -526,7 +561,11 @@ function readWavDuration(filePath) {
       sampleRate = buf.readUInt32LE(offset + 12)
       bitsPerSample = buf.readUInt16LE(offset + 22)
     }
-    if (id === 'data') return size / ((bitsPerSample / 8) * channels) / sampleRate
+    if (id === 'ds64') ds64DataSize = Number(buf.readBigUInt64LE(offset + 16))
+    if (id === 'data') {
+      const dataSize = size === 0xffffffff && ds64DataSize != null ? ds64DataSize : size
+      return dataSize / ((bitsPerSample / 8) * channels) / sampleRate
+    }
     offset += 8 + size + (size % 2)
   }
   return 0
@@ -786,7 +825,14 @@ export async function applyReverbPass(inputPath, outputPath, reverbSizeMs, rever
       `[rvdryout][rvwetout]amix=inputs=2:normalize=0,alimiter=limit=0.95:level=disabled[out]`,
     '-map', '[out]',
     '-t', duration.toFixed(6),
-    '-vn', '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', outputPath
+    // -rf64 auto: a whole-mix/group reverb pass (exportMix.js's own callers)
+    // can be several GB on a long export - the classic WAV format's 32-bit
+    // RIFF sizes silently wrap past ~4.29GiB instead of erroring, and
+    // readWavDuration above would then read back a wrapped, wrong duration.
+    // Free for the short per-sound bakes this function also serves (see its
+    // own header comment) - only switches the WAV header format once a file
+    // actually needs to exceed the classic limit.
+    '-rf64', 'auto', '-vn', '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', outputPath
   ])
 }
 
