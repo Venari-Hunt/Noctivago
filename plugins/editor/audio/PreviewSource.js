@@ -408,6 +408,11 @@ export class PreviewSource {
     return this.voices[this.activeIndex].audioEl
   }
 
+  // Same shape as BakedClipPreview.currentTime (source-file time here).
+  get currentTime() {
+    return this.audioEl.currentTime
+  }
+
   _inactiveVoice() {
     return this.voices[1 - this.activeIndex]
   }

@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { loopLayout, clipToSource, sourceToClip } from '../plugins/editor/audio/loopLayout.js'
 
 // loopClip.js imports `app` from electron only to find userData. Under plain
 // `node --test` that import is redirected to a stub whose getPath points at a
@@ -57,16 +58,35 @@ describe('renderLoopClip seam', { skip: !fs.existsSync(ffmpeg) && 'bundled ffmpe
     { loopStart: 0, loopEnd: 12, crossfadeSeconds: 0.2 },
     { loopStart: 2, loopEnd: 9, crossfadeSeconds: 1 },
     { loopStart: 0, loopEnd: 12, crossfadeSeconds: 0.5, filters: { pan: 0.5 } },
-    { loopStart: 1, loopEnd: 3, crossfadeSeconds: 2 }
+    { loopStart: 1, loopEnd: 3, crossfadeSeconds: 2 },
+    // Regression (v0.1.222): each segment is filtered separately, so without
+    // a pre-roll a lowpass restarted from silence at every join.
+    { loopStart: 2, loopEnd: 9, crossfadeSeconds: 1, filters: { lowpassHz: 2000 } },
+    { loopStart: 0, loopEnd: 9, crossfadeSeconds: 1, filters: { lowpassHz: 2000, eq: [{ type: 'peaking', freqHz: 500, gainDb: 6, q: 1 }] } }
   ].entries()) {
     test(`no jump anywhere, wrap included: ${JSON.stringify(c)}`, async () => {
-      const result = await renderLoopClip({ id: `seam${i}`, inputPath: source, filters: {}, speedPitch: null, ...c })
+      const result = await renderLoopClip({ id: `seam${i}`, inputPath: source, speedPitch: null, filters: {}, ...c })
       assert.equal(result.ok, true)
       const samples = decodeMono(path.join(userData, 'clips', `seam${i}.wav`))
       const trim = c.loopEnd - c.loopStart
       const fade = Math.min(c.crossfadeSeconds, trim / 4)
       assert.ok(Math.abs(samples.length / RATE - (trim - fade)) < 0.002, `length ${samples.length / RATE}`)
       assert.ok(worstJumpSeconds(samples) < 0.01, `jump ${worstJumpSeconds(samples)}s`)
+      // The clip starts (and ends) on the trim's midpoint, so the edit and
+      // its crossfade sit mid-clip. (A lowpass delays the ramp slightly.)
+      if (!c.filters) {
+        const start = samples[0] / SLOPE
+        assert.ok(Math.abs(start - (c.loopStart + c.loopEnd) / 2) < 0.002, `start ${start}`)
+        // The Remix plugin's copy of the layout agrees with the real render
+        // everywhere outside the blend.
+        const layout = loopLayout(c.loopStart, c.loopEnd, c.crossfadeSeconds)
+        for (let k = 0; k < samples.length; k += 997) {
+          const t = k / RATE
+          if (t > layout.blendStart - 0.01 && t < layout.blendEnd + 0.01) continue
+          assert.ok(Math.abs(samples[k] / SLOPE - clipToSource(layout, t)) < 0.002, `t=${t}`)
+          assert.ok(Math.abs(sourceToClip(layout, clipToSource(layout, t)) - t) < 1e-9, `round trip t=${t}`)
+        }
+      }
     })
   }
 

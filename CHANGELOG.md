@@ -6,6 +6,15 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.222 — Click-free Saved audio, and the crossfade moves to the middle
+
+- **Fixed: a click every time Saved audio restarted in Remix.** The preview player inserted a short silence (about 8 ms) at each restart, whatever the loop sounded like. It now loops without a gap, the same way the Mixer plays.
+- **Saved loops now follow the classic seamless-loop layout:** the second half of your trim plays first, then the first half, with the end of the trim crossfading into its start in the middle. The loop's own restart lands on one continuous piece of the recording.
+- **Fixed: sounds with EQ or filters could click at the loop's joins.** Each piece is now filtered with the audio just before it, so they join cleanly.
+- **New "Loop seam" view in Remix**, replacing the orange zones on the waveform: the loop drawn the way it plays, with the crossfade in the middle. Drag an edge of the crossfade to resize it, double-click an edge to reset it, or click anywhere to jump there.
+- **Listen to the seam** now plays through that middle crossfade when you're on Saved audio.
+- Your existing sounds re-render on their own the next time they play.
+
 ## v0.1.221 — Smoother loop seams, and a visual crossfade editor
 
 - **Fixed: saved loops had an audible skip at the seam.** Every saved loop jumped back a fraction of a second in the middle of the clip, by exactly the crossfade length. Loops now join cleanly. Your existing sounds re-render on their own the next time they play.

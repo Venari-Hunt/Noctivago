@@ -996,8 +996,10 @@ export function setLoopClipReady(id, { loopStart, loopEnd, filters, crossfadeSec
 // baked before that still has the jump, so it's marked stale once and the
 // Mixer's maybeAutoBake re-bakes it the next time the sound plays. Clips
 // baked with no crossfade (0, e.g. every Random Interval sound) were never
-// affected and are kept.
-const LOOP_CLIP_FORMAT = 2
+// affected and are kept. v3 (v0.1.222): the crossfade moved to the middle
+// of the clip (Remix maps Saved-audio time by that layout), and filtered
+// segments got a pre-roll so they no longer click at the joins.
+const LOOP_CLIP_FORMAT = 3
 
 export function migrateLoopClipFormat() {
   if ((store.get('loopClipFormat') ?? 1) >= LOOP_CLIP_FORMAT) return
