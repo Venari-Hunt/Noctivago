@@ -9,6 +9,8 @@ import { createVarispeedLooper } from './varispeedCore.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass } from './loopClip.js'
 import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
 import { renderPitchCommandFile, pitchCommandFilter, hasPitchFluctuation, samplePitchRatios } from './pitchEnvelope.js'
+import { hasPanFluctuation, panDriftGraph } from './panDrift.js'
+import { renderPanEnvelopeWav } from './panEnvelope.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
@@ -610,19 +612,18 @@ async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
 // 0..1), applying it after a track's own limiter - which is where a group
 // bus / whole mix ends up - can't introduce clipping, so the exact node
 // position (live: before the limiter) doesn't matter for the bake.
-async function applyEnvelopeToTrack(track, fluctuation, durationSeconds, reporter) {
+// v0.1.217: also applies a Sound Group's pan drift (panDrift.js) in the same
+// pass, after the volume drift - the live SoundGroupChain's order.
+async function applyBusDriftToTrack(track, fluctuation, durationSeconds, reporter) {
   const envPath = renderGainEnvelopeWav(fluctuation, durationSeconds)
-  if (!envPath) return track
+  const panPath = renderPanEnvelopeWav(fluctuation, durationSeconds)
+  if (!envPath && !panPath) return track
   const outPath = tempPath(INTERMEDIATE_EXT)
   try {
     await runFfmpegToFile(
       [
-        '-y', '-i', track.path, '-i', envPath,
-        '-filter_complex',
-        '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env];' +
-          '[0:a]aformat=channel_layouts=stereo:sample_fmts=fltp[sig];' +
-          '[sig][env]amultiply[out]',
-        '-map', '[out]',
+        '-y', '-i', track.path,
+        ...driftOutputArgs('', envPath, panPath),
         '-t', durationSeconds.toFixed(6),
         ...INTERMEDIATE_CODEC, outPath
       ],
@@ -631,22 +632,63 @@ async function applyEnvelopeToTrack(track, fluctuation, durationSeconds, reporte
     reporter?.completePhase(durationSeconds)
     return { path: outPath, offset: 0 }
   } finally {
-    await cleanupFiles([envPath])
+    await cleanupFiles([envPath, panPath].filter(Boolean))
   }
+}
+
+// The input/-filter_complex/-map args that take input 0 through `preChain`
+// (an -af style fragment, may be empty), then the volume envelope
+// (amultiply) and then pan drift (panDriftGraph), each only when its control
+// file exists - the same order as the live chain (fluctuationGain, then the
+// drift PanStage). Input 0 must be 44100 Hz. With neither file it's a plain
+// -af chain (or nothing).
+function driftOutputArgs(preChain, envPath, panPath) {
+  if (!envPath && !panPath) return preChain ? ['-af', preChain] : []
+  const inputs = []
+  const graph = [`[0:a]${preChain ? `${preChain},` : ''}aformat=channel_layouts=stereo:sample_fmts=fltp[dsig0]`]
+  let cur = 'dsig0'
+  let idx = 1
+  if (envPath) {
+    inputs.push('-i', envPath)
+    graph.push(`[${idx}:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[denv]`, `[${cur}][denv]amultiply[dsig1]`)
+    cur = 'dsig1'
+    idx++
+  }
+  if (panPath) {
+    inputs.push('-i', panPath)
+    graph.push(panDriftGraph(`${idx}:a`, cur, 'out'))
+  } else {
+    graph.push(`[${cur}]anull[out]`)
+  }
+  return [...inputs, '-filter_complex', graph.join(';'), '-map', '[out]']
 }
 
 // (Pitch Fluctuation baking, v0.1.179, used to live here as
 // applyPitchEnvelopeToTrack alongside an applyLoopFluctuation that chained it
-// with applyEnvelopeToTrack. Both were folded into tileAndDriftLoopShot below
-// in 2026-09-16's optimization pass, which does the tile and both drift axes
-// in one ffmpeg invocation instead of three sequential full-duration ones.
-// applyEnvelopeToTrack above is still live - a Sound Group's own bus drift
+// with applyEnvelopeToTrack (now applyBusDriftToTrack). Both were folded
+// into tileAndDriftLoopShot below in 2026-09-16's optimization pass, which
+// does the tile and every drift axis in one ffmpeg invocation instead of
+// three sequential full-duration ones.
+// applyBusDriftToTrack above is still live - a Sound Group's own bus drift
 // genuinely is a separate pass over an already-combined submix.)
 
 // True when a loop sound needs pulling off renderFinalMixdown's cheap
 // -stream_loop path onto a materialized full-duration track (either drift axis).
+function hasBusFluctuation(fluctuation) {
+  return hasVolumeFluctuation(fluctuation) || hasPanFluctuation(fluctuation)
+}
+
+// A Sound Group with its own pan drift overrides its members' (v0.1.217) -
+// mirrors the live Mixer's effectiveFluctuation (tabs/mixer/index.js).
+function memberFluctuation(sound, groups) {
+  const f = sound.fluctuation ?? null
+  if (!sound.groupId || !hasPanFluctuation(f)) return f
+  const group = groups.find((g) => g.id === sound.groupId)
+  return hasPanFluctuation(group?.filters?.fluctuation) ? { ...f, pan: { ...f.pan, enabled: false } } : f
+}
+
 function hasLoopFluctuation(fluctuation) {
-  return hasVolumeFluctuation(fluctuation) || hasPitchFluctuation(fluctuation)
+  return hasVolumeFluctuation(fluctuation) || hasPitchFluctuation(fluctuation) || hasPanFluctuation(fluctuation)
 }
 
 // Optimization (2026-09-16). Baking a drifting loop sound used to cost THREE
@@ -678,17 +720,19 @@ async function tileAndDriftLoopShot({ shot, durationSeconds, reporter }) {
   const fluctuation = shot.fluctuation
   const wantsPitch = hasPitchFluctuation(fluctuation)
   const envPath = hasVolumeFluctuation(fluctuation) ? renderGainEnvelopeWav(fluctuation, durationSeconds) : null
-  const toCleanup = envPath ? [envPath] : []
+  // Pan drift (v0.1.217) rides the same pass, after the volume envelope.
+  const panPath = hasPanFluctuation(fluctuation) ? renderPanEnvelopeWav(fluctuation, durationSeconds) : null
+  const toCleanup = [envPath, panPath].filter(Boolean)
   const outPath = tempPath(INTERMEDIATE_EXT)
   // This one pass stands in for what the reporter budgeted as a tile plus
   // one pass per active axis (see fluctuationWorkSeconds / the tile counted
   // in groupedLoopSoundCount) - bank all of it so the bar still reaches 100%.
-  const replacedPasses = 1 + (wantsPitch ? 1 : 0) + (envPath ? 1 : 0)
+  const replacedPasses = 1 + (wantsPitch ? 1 : 0) + (envPath ? 1 : 0) + (panPath ? 1 : 0)
   try {
     if (wantsPitch) {
       const samples = await decodeClipToFloat32(shot.path, MAX_BUFFER_CLIP_SECONDS)
       if (samples) {
-        await renderVarispeedDrift({ shot, samples, durationSeconds, envPath, outPath, reporter })
+        await renderVarispeedDrift({ shot, samples, durationSeconds, envPath, panPath, outPath, reporter })
         reporter?.completePhase(durationSeconds * replacedPasses)
         return { track: { path: outPath, offset: 0 }, newPaths: [outPath] }
       }
@@ -698,26 +742,14 @@ async function tileAndDriftLoopShot({ shot, durationSeconds, reporter }) {
     if (cmdPath) toCleanup.push(cmdPath)
     // No drift (or a config that generated nothing): plain tile, and
     // tileLoopShotFull does its own completePhase for the one pass it is.
-    if (!cmdPath && !envPath) {
+    if (!cmdPath && !envPath && !panPath) {
       const tile = await tileLoopShotFull({ shot, durationSeconds, reporter })
       return { track: tile, newPaths: [tile.path] }
     }
 
     const sig = [`volume=${shot.volume.toFixed(6)}`]
     if (cmdPath) sig.push(pitchCommandFilter(cmdPath))
-    const args = ['-y', '-stream_loop', '-1', '-i', shot.path]
-    if (envPath) {
-      args.push(
-        '-i', envPath,
-        '-filter_complex',
-        `${ENVELOPE_INPUT_CHAIN};` +
-          `[0:a]${sig.join(',')},aformat=channel_layouts=stereo:sample_fmts=fltp[sig];` +
-          '[sig][env]amultiply[out]',
-        '-map', '[out]'
-      )
-    } else {
-      args.push('-af', sig.join(','))
-    }
+    const args = ['-y', '-stream_loop', '-1', '-i', shot.path, ...driftOutputArgs(sig.join(','), envPath, panPath)]
     args.push('-t', durationSeconds.toFixed(6), ...INTERMEDIATE_CODEC, outPath)
     await runFfmpegToFile(args, { onProgress: (sec) => reporter?.tick(sec, durationSeconds) })
     reporter?.completePhase(durationSeconds * replacedPasses)
@@ -732,7 +764,6 @@ async function tileAndDriftLoopShot({ shot, durationSeconds, reporter }) {
 }
 
 const VARISPEED_SAMPLE_RATE = 44100
-const ENVELOPE_INPUT_CHAIN = '[1:a]aresample=44100,aformat=channel_layouts=stereo:sample_fmts=fltp[env]'
 const CLIP_TOO_LONG = new Error('loop clip too long to hold in memory')
 
 // Decodes a whole clip to interleaved stereo Float32 at VARISPEED_SAMPLE_RATE,
@@ -769,7 +800,7 @@ async function decodeClipToFloat32(clipPath, maxSeconds) {
 // Generates the drifting loop in JS (varispeedCore.js) and pipes it straight
 // into ffmpeg, which applies the volume envelope (if any) and encodes -
 // replacing both the full-duration tile pass and the rubberband pass.
-async function renderVarispeedDrift({ shot, samples, durationSeconds, envPath, outPath, reporter }) {
+async function renderVarispeedDrift({ shot, samples, durationSeconds, envPath, panPath, outPath, reporter }) {
   const { ratios, stepSeconds } = samplePitchRatios(shot.fluctuation.pitch, durationSeconds)
   const looper = createVarispeedLooper({
     shot: samples,
@@ -779,15 +810,10 @@ async function renderVarispeedDrift({ shot, samples, durationSeconds, envPath, o
     sampleRate: VARISPEED_SAMPLE_RATE,
     gain: shot.volume
   })
-  const args = ['-y', '-f', 'f32le', '-ar', String(VARISPEED_SAMPLE_RATE), '-ac', '2', '-i', 'pipe:0']
-  if (envPath) {
-    args.push(
-      '-i', envPath,
-      '-filter_complex',
-      `${ENVELOPE_INPUT_CHAIN};[0:a]aformat=channel_layouts=stereo:sample_fmts=fltp[sig];[sig][env]amultiply[out]`,
-      '-map', '[out]'
-    )
-  }
+  const args = [
+    '-y', '-f', 'f32le', '-ar', String(VARISPEED_SAMPLE_RATE), '-ac', '2', '-i', 'pipe:0',
+    ...driftOutputArgs('', envPath, panPath)
+  ]
   args.push('-t', durationSeconds.toFixed(6), ...INTERMEDIATE_CODEC, outPath)
 
   const totalFrames = Math.ceil(durationSeconds * VARISPEED_SAMPLE_RATE)
@@ -1000,11 +1026,13 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       const groupFilters = groupsById.get(groupId)?.filters
       let bus = await applyGroupFilters(combined, groupFilters, durationSeconds, reporter)
       ownPaths.push(bus.path)
-      // The group's own volume Fluctuation (Remix Group mode) - the whole
-      // bus drifting, applied after its filter/limiter chain (attenuation
-      // only, so post-limiter is safe - see applyEnvelopeToTrack).
-      if (hasVolumeFluctuation(groupFilters?.fluctuation)) {
-        bus = await applyEnvelopeToTrack(bus, groupFilters.fluctuation, durationSeconds, reporter)
+      // The group's own volume and pan Fluctuation (Remix Group mode) - the
+      // whole bus drifting, applied after its filter/limiter chain in one
+      // pass (volume is attenuation only, so post-limiter is safe; live, the
+      // pan stage sits just before the limiter - pan never adds more than
+      // +3 dB to a channel and the limiter only catches overs).
+      if (hasBusFluctuation(groupFilters?.fluctuation)) {
+        bus = await applyBusDriftToTrack(bus, groupFilters.fluctuation, durationSeconds, reporter)
         ownPaths.push(bus.path)
       }
       groupBusTracks.push(bus)
@@ -1515,14 +1543,16 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   // (already counted in groupedLoopSoundCount) but still needs its axis
   // pass(es); a group or the whole mix drifting needs one volume-multiply
   // pass each. Same rough-estimate spirit as groupWorkSeconds above.
-  const loopAxisPasses = (s) =>
-    (hasVolumeFluctuation(s.fluctuation) ? 1 : 0) + (hasPitchFluctuation(s.fluctuation) ? 1 : 0)
+  const loopAxisPasses = (s) => {
+    const f = memberFluctuation(s, groups)
+    return (hasVolumeFluctuation(f) ? 1 : 0) + (hasPitchFluctuation(f) ? 1 : 0) + (hasPanFluctuation(f) ? 1 : 0)
+  }
   const fluctLoopUngrouped = loopSounds
     .filter((s) => !s.groupId)
     .reduce((sum, s) => sum + (loopAxisPasses(s) > 0 ? loopAxisPasses(s) + 1 : 0), 0)
   const fluctLoopGrouped = loopSounds.filter((s) => s.groupId).reduce((sum, s) => sum + loopAxisPasses(s), 0)
   const fluctGroupCount = [...usedGroupIds].filter((id) =>
-    hasVolumeFluctuation(groups.find((group) => group.id === id)?.filters?.fluctuation)
+    hasBusFluctuation(groups.find((group) => group.id === id)?.filters?.fluctuation)
   ).length
   const wholeMixFluctSeconds = hasVolumeFluctuation(wholeMixFilters?.fluctuation) ? durationSeconds : 0
   const fluctuationWorkSeconds =
@@ -1573,7 +1603,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         path: shot.path,
         volume: sound.volume ?? 0.7,
         groupId: sound.groupId ?? null,
-        fluctuation: sound.fluctuation ?? null
+        fluctuation: memberFluctuation(sound, groups)
       })
     })
 

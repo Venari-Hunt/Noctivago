@@ -34,15 +34,24 @@ function normalizeEqBand(band) {
 
 // Fluctuation (v0.1.166): slow random volume drift on the whole mix / a
 // group bus - the multi-sound counterpart of a sound's own filters.
-// fluctuation. Volume axis only (a bus is a sum of sources, nothing to
-// pitch-shift). Stored as null when disabled so the "does this have
+// fluctuation. Volume axis, plus pan for a Sound Group (v0.1.217); no pitch
+// (a bus is a sum of sources, nothing to pitch-shift). Stored as null when disabled so the "does this have
 // whole-mix settings" truthiness checks stay simple; a group keeps it as a
 // field of its always-present filters object (also null when off).
-function normalizeMixFluctuation(input) {
-  const vol = input && typeof input === 'object' && typeof input.volume === 'object' ? input.volume : null
-  if (!vol || !vol.enabled) return null
-  const min = clamp(vol.min, 0, 1, 0.5)
-  const max = clamp(vol.max, 0, 1, 1)
+function normalizeMixFluctuation(input, { allowPan = false } = {}) {
+  const src = input && typeof input === 'object' ? input : null
+  const volume = normalizeMixAxis(src?.volume, { lo: 0, hi: 1, min: 0.5, max: 1 })
+  // Pan drift (v0.1.217) - Sound Groups only (a whole-mix pan has no UI).
+  const pan = allowPan ? normalizeMixAxis(src?.pan, { lo: -1, hi: 1, min: -0.5, max: 0.5 }) : null
+  if (!volume && !pan) return null
+  return { ...(volume ? { volume } : {}), ...(pan ? { pan } : {}) }
+}
+
+// One drift axis, or null when absent/disabled.
+function normalizeMixAxis(axis, { lo: rangeLo, hi: rangeHi, min: defMin, max: defMax }) {
+  if (!axis || typeof axis !== 'object' || !axis.enabled) return null
+  const min = clamp(axis.min, rangeLo, rangeHi, defMin)
+  const max = clamp(axis.max, rangeLo, rangeHi, defMax)
   const lo = Math.min(min, max)
   const hi = Math.max(min, max)
   // v0.1.176: flat-seconds timing (was 0..1 changeRate/transition). A
@@ -51,15 +60,15 @@ function normalizeMixFluctuation(input) {
   let changeMinSeconds
   let changeMaxSeconds
   let transitionSeconds
-  if (Number.isFinite(vol.changeMinSeconds) || Number.isFinite(vol.transitionSeconds)) {
-    const cLo = clamp(vol.changeMinSeconds, 0.2, 300, 6)
-    const cHi = clamp(vol.changeMaxSeconds, 0.2, 300, 14)
+  if (Number.isFinite(axis.changeMinSeconds) || Number.isFinite(axis.transitionSeconds)) {
+    const cLo = clamp(axis.changeMinSeconds, 0.2, 300, 6)
+    const cHi = clamp(axis.changeMaxSeconds, 0.2, 300, 14)
     changeMinSeconds = Math.min(cLo, cHi)
     changeMaxSeconds = Math.max(cLo, cHi)
-    transitionSeconds = clamp(vol.transitionSeconds, 0, 120, 8)
+    transitionSeconds = clamp(axis.transitionSeconds, 0, 120, 8)
   } else {
-    const r = clamp(vol.changeRate, 0, 1, 0.5)
-    const t = clamp(vol.transition, 0, 1, 0.5)
+    const r = clamp(axis.changeRate, 0, 1, 0.5)
+    const t = clamp(axis.transition, 0, 1, 0.5)
     const centre = 20 + (1.5 - 20) * r
     const tau = 9 + (0.15 - 9) * t
     changeMinSeconds = Math.round(centre * 0.6 * 10) / 10
@@ -67,16 +76,14 @@ function normalizeMixFluctuation(input) {
     transitionSeconds = Math.round(tau * 3 * 10) / 10
   }
   return {
-    volume: {
-      enabled: true,
-      fullyRandom: Boolean(vol.fullyRandom),
-      min: lo,
-      max: hi,
-      bias: clamp(vol.bias, lo, hi, (lo + hi) / 2),
-      changeMinSeconds,
-      changeMaxSeconds,
-      transitionSeconds
-    }
+    enabled: true,
+    fullyRandom: Boolean(axis.fullyRandom),
+    min: lo,
+    max: hi,
+    bias: clamp(axis.bias, lo, hi, (lo + hi) / 2),
+    changeMinSeconds,
+    changeMaxSeconds,
+    transitionSeconds
   }
 }
 
@@ -141,7 +148,7 @@ export function normalizeGroupFilters(input) {
     // applyOcclusionToFilters for the full reasoning. Not part of
     // normalizeWholeMix - a whole preset has no "inside/outside" of itself.
     occlusion: clamp(src.occlusion, 0, 1, 0),
-    fluctuation: normalizeMixFluctuation(src.fluctuation),
+    fluctuation: normalizeMixFluctuation(src.fluctuation, { allowPan: true }),
     eq: Array.isArray(src.eq) ? src.eq.map(normalizeEqBand).filter(Boolean) : []
   }
 }

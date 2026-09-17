@@ -91,6 +91,10 @@ const state = {
   // open; the source of truth is always presets.list(), re-fetched whenever
   // this could be stale (loadPreset, the sound-groups-changed bridge below).
   groups: [],
+  // groupId -> the filters a Remix Group-mode session is currently
+  // previewing (unsaved), so a live pan-drift toggle there overrides member
+  // sounds right away - see effectiveFluctuation. Cleared on preset load.
+  groupFilterPreviews: new Map(),
   // Per-preset sound overrides (planned 2026-09-12, "presets as primary
   // context"): the active preset's own sounds[] array (soundId, volume,
   // overrides), the single source of truth for both currentMixSounds()'s
@@ -577,6 +581,23 @@ function propagateSync(firedId) {
   }
 }
 
+// Pan drift override (v0.1.217): when a sound's Sound Group has its own pan
+// drift on, the group bus moves the whole group together and each member's
+// own pan drift is switched off (its static Pan stays). Uses the group's
+// live Remix preview when one is in progress, else its saved filters.
+function groupPanDriftOn(soundId) {
+  const group = state.groups.find((g) => g.soundIds?.includes(soundId))
+  if (!group) return false
+  const filters = state.groupFilterPreviews.get(group.id) ?? group.filters
+  return Boolean(filters?.fluctuation?.pan?.enabled)
+}
+
+function effectiveFluctuation(entry) {
+  const f = entry.fluctuation
+  if (!f?.pan?.enabled || !groupPanDriftOn(entry.id)) return f
+  return { ...f, pan: { ...f.pan, enabled: false } }
+}
+
 function reconcileSource(entry) {
   const source = state.sources.get(entry.id)
   if (!source) return
@@ -593,8 +614,9 @@ function reconcileSource(entry) {
   // Fluctuation (v0.1.164) is playback-time only, never baked - so unlike
   // filters it applies to buffer-mode sources too, and it's reconciled here
   // for every source kind that supports it rather than inside one branch.
-  if (source.hasFluctuation && !source.hasFluctuation(entry.fluctuation)) {
-    source.setFluctuation(entry.fluctuation)
+  const fluctuation = effectiveFluctuation(entry)
+  if (source.hasFluctuation && !source.hasFluctuation(fluctuation)) {
+    source.setFluctuation(fluctuation)
   }
 
   if (desiredKind === 'loop-stream') {
@@ -760,7 +782,7 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
     } else if (isScheduled) {
       source = new BufferScheduledSource(engine, { audioBuffer, volume, schedule: entry.schedule })
     } else {
-      source = new BufferSoundSource(engine, { audioBuffer, volume, fluctuation: entry.fluctuation })
+      source = new BufferSoundSource(engine, { audioBuffer, volume, fluctuation: effectiveFluctuation(entry) })
     }
     source.kind = isScatter ? 'scatter-buffer' : isScheduled ? 'scheduled-buffer' : 'loop-buffer'
     source.bakeSnapshot = bufferBakeSnapshot(entry)
@@ -818,7 +840,7 @@ async function getOrCreateSource(entry) {
             filters: entry.filters,
             speed: entry.speedPitch?.speed,
             crossfadeSeconds: entry.crossfadeSeconds,
-            fluctuation: entry.fluctuation
+            fluctuation: effectiveFluctuation(entry)
           })
     source.kind = isScatter ? 'scatter-stream' : isScheduled ? 'scheduled-stream' : 'loop-stream'
     if (isScatter) source.onShotStart = () => propagateSync(entry.id)
@@ -1708,8 +1730,12 @@ async function loadPresetInner(preset) {
   // switching presets can change (or clear) which group a given sound
   // belongs to.
   state.groups = preset.groups ?? []
+  state.groupFilterPreviews.clear()
   engine.setSoundGroups(state.groups)
   for (const [id, source] of state.sources) engine.routeSound(id, source)
+  // Sounds above started before this preset's groups were installed, so a
+  // group's pan-drift override (effectiveFluctuation) needs re-applying.
+  for (const entry of state.library) reconcileSource(entry)
 
   // Lets the Remix plugin's Sound mode (a separate, sandboxed JS realm) know
   // the active preset changed, so a sound it has open can offer to reload
@@ -1903,6 +1929,7 @@ async function restoreLastActivePreset(settings) {
   setActivePresetIndicator(preset.name)
   engine.wholeMix.set(preset.wholeMix ?? null)
   state.groups = preset.groups ?? []
+  state.groupFilterPreviews.clear()
   engine.setSoundGroups(state.groups)
   window.dispatchEvent(new CustomEvent('noctivago:active-preset-changed', { detail: { presetId: preset.id } }))
   // No live sources exist yet at this point in mount()'s startup sequence -
@@ -2163,13 +2190,22 @@ document.addEventListener('library:linked', refreshList)
   window.addEventListener('noctivago:sound-group-preview', (e) => {
     if (!e.detail || e.detail.presetId !== state.activePresetId) return
     engine.previewGroup(e.detail.groupId, e.detail.filters)
+    const wasOn = Boolean(state.groupFilterPreviews.get(e.detail.groupId)?.fluctuation?.pan?.enabled)
+    state.groupFilterPreviews.set(e.detail.groupId, e.detail.filters ?? null)
+    // Only a change to the group's pan-drift switch can change which
+    // members' own pan drift is overridden.
+    if (wasOn !== Boolean(e.detail.filters?.fluctuation?.pan?.enabled)) {
+      for (const entry of state.library) reconcileSource(entry)
+    }
   })
   window.addEventListener('noctivago:sound-groups-changed', async (e) => {
     if (!e.detail || e.detail.presetId !== state.activePresetId) return
     const presets = await api.presets.list()
     const preset = presets.find((p) => p.id === state.activePresetId)
     state.groups = preset?.groups ?? []
+    state.groupFilterPreviews.clear()
     engine.setSoundGroups(state.groups)
+    for (const entry of state.library) reconcileSource(entry)
     for (const [id, source] of state.sources) engine.routeSound(id, source)
     // BUG FIX (self-review, v0.1.149): a group solo's own member snapshot
     // (applyGroupSolo's memberIds) is only ever captured at the moment

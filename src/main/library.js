@@ -131,7 +131,10 @@ export function defaultVolumeEnvelope() {
 export function defaultFluctuation() {
   return {
     volume: { enabled: false, fullyRandom: false, min: 0.5, max: 1, bias: 0.8, changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 },
-    pitch: { enabled: false, fullyRandom: false, min: -1, max: 1, bias: 0, changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
+    pitch: { enabled: false, fullyRandom: false, min: -1, max: 1, bias: 0, changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 },
+    // Pan drift (v0.1.217): -1 (left) .. 1 (right), applied after the sound's
+    // own static Pan.
+    pan: { enabled: false, fullyRandom: false, min: -0.5, max: 0.5, bias: 0, changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
   }
 }
 

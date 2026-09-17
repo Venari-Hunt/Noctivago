@@ -35,6 +35,8 @@ const TICK_MS = 60
 // and roams the whole axis uniformly (owner: "there's no fully random volume
 // nor fully random pitch - there should be").
 export const FLUCTUATION_PITCH_RANGE = 6
+// Pan drift (v0.1.217) roams -1 (hard left) .. 1 (hard right), neutral 0.
+export const FLUCTUATION_PAN_RANGE = 1
 
 function lerp(a, b, t) {
   return a + (b - a) * Math.max(0, Math.min(1, t))
@@ -216,23 +218,32 @@ export function normalizeFluctuationAxis(axis, neutral) {
 export function fluctuationKey(fluctuation) {
   return JSON.stringify({
     vol: normalizeFluctuationAxis(fluctuation?.volume, 1),
-    pit: normalizeFluctuationAxis(fluctuation?.pitch, 0)
+    pit: normalizeFluctuationAxis(fluctuation?.pitch, 0),
+    pan: normalizeFluctuationAxis(fluctuation?.pan, 0)
   })
 }
 
-// Owns the volume + pitch Modulator pair for one playing sound (or one
+// Owns the volume + pitch + pan Modulators for one playing sound (or one
 // preview voice-set). The caller supplies how each axis actually reaches the
-// audio graph: onVolume(0..1 multiplier) and onPitch(semitone offset).
+// audio graph: onVolume(0..1 multiplier), onPitch(semitone offset) and
+// onPan(-1..1, v0.1.217 - drives a second PanStage after the sound's own
+// static pan, so it works the same on a baked clip as on a stream).
 // Shared by src/renderer/audio/SoundSource.js and BufferSoundSource.js (and,
 // duplicated per the plugin's bundle-your-own rule, the Remix PreviewSource).
 export class SoundFluctuation {
-  constructor({ onVolume, onPitch }) {
+  constructor({ onVolume, onPitch, onPan = () => {} }) {
     this.volMod = new Modulator({ onValue: onVolume, neutral: 1, rangeMin: 0, rangeMax: 1 })
     this.pitchMod = new Modulator({
       onValue: onPitch,
       neutral: 0,
       rangeMin: -FLUCTUATION_PITCH_RANGE,
       rangeMax: FLUCTUATION_PITCH_RANGE
+    })
+    this.panMod = new Modulator({
+      onValue: onPan,
+      neutral: 0,
+      rangeMin: -FLUCTUATION_PAN_RANGE,
+      rangeMax: FLUCTUATION_PAN_RANGE
     })
     this.key = fluctuationKey(null)
   }
@@ -241,6 +252,7 @@ export class SoundFluctuation {
     this.key = fluctuationKey(fluctuation)
     this.volMod.configure(normalizeFluctuationAxis(fluctuation?.volume, 1))
     this.pitchMod.configure(normalizeFluctuationAxis(fluctuation?.pitch, 0))
+    this.panMod.configure(normalizeFluctuationAxis(fluctuation?.pan, 0))
   }
 
   // Brings each modulator's running state in line with whether the sound is
@@ -248,7 +260,7 @@ export class SoundFluctuation {
   // setFluctuation() while already playing (enabling an axis mid-playback
   // should start it; disabling should stop and neutralize it).
   sync(playing) {
-    for (const mod of [this.volMod, this.pitchMod]) {
+    for (const mod of [this.volMod, this.pitchMod, this.panMod]) {
       if (playing && mod.enabled && !mod.running) mod.start()
       else if ((!playing || !mod.enabled) && mod.running) mod.stop()
     }
@@ -257,10 +269,12 @@ export class SoundFluctuation {
   stop() {
     this.volMod.stop()
     this.pitchMod.stop()
+    this.panMod.stop()
   }
 
   dispose() {
     this.volMod.dispose()
     this.pitchMod.dispose()
+    this.panMod.dispose()
   }
 }
