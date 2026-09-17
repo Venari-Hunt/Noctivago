@@ -6,6 +6,16 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.218 — Groups can drift each sound on its own; per-play pan; Bias toggles
+
+- Every Sound Group drift bar (Remix, Group mode) has a new **Each sound on its own** toggle. With it on, every sound in the group drifts separately using the group's settings, instead of the whole group moving together, so they don't all swell or wander at the same moment.
+- Groups now have **Pitch drift** too. A group can only shift pitch sound by sound, so that bar is always "each sound on its own".
+- Random Interval and Scheduled sounds get a **Pan** range (a random left/right position every play), and **Volume** now has "Fully random" and "Bias" like Pitch does. Pitch, Volume and Pan all use the same three-circle bar as the drift controls. Existing pitch/volume settings carry over as they were.
+- When a group's drift bar is set to each sound on its own, its Random Interval and Scheduled sounds use that bar's range (and bias) for their per-play pitch, volume or pan. Remix shows a note on a sound when its group is doing this.
+- **Bias** is now an on/off toggle on every drift bar and every per-play bar. With it off, the middle circle disappears and values are picked evenly between the outer circles. Existing drift keeps bias on.
+- On any of these bars, when the outer circles sit together (the "no variation" default), dragging now pulls them apart in the direction you drag.
+- Everything here is heard live in the Mixer and baked into exports.
+
 ## v0.1.217 — Pan drift (Fluctuation for left/right)
 
 - Fluctuation has a new **Pan drift** bar next to Volume and Pitch drift (Remix, Sound mode): the sound slowly wanders left and right on its own. It works like the other two: drag the outer circles for how far it goes each way, the middle one for where it sits most of the time, and use "Change every", "Transition" and "Fully random" the same way. It starts from wherever the Pan slider puts the sound.

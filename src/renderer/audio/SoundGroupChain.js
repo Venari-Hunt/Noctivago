@@ -3,6 +3,7 @@ import { createReverbImpulse } from './reverbIR.js'
 import { Modulator, normalizeFluctuationAxis } from './Modulator.js'
 import { applyOcclusionToFilters } from '../../shared/constants.js'
 import { PanStage } from './PanStage.js'
+import { busFluctuation } from '../../shared/groupDrift.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -173,7 +174,9 @@ export class SoundGroupChain {
       })
     }
 
-    this.setFluctuation(c.fluctuation)
+    // Axes set to "each sound on its own" (v0.1.218) drift on the members
+    // instead - the bus only runs the shared ones.
+    this.setFluctuation(busFluctuation(c.fluctuation))
   }
 
   // config.fluctuation: { volume: { enabled, fullyRandom, min, max, bias,

@@ -6,11 +6,13 @@ import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { runFfmpegToFile, runFfmpegPipe, runFfmpegWithStdin } from './runFfmpeg.js'
 import { createVarispeedLooper } from './varispeedCore.js'
-import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass } from './loopClip.js'
+import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass, probeChannelCount } from './loopClip.js'
 import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
 import { renderPitchCommandFile, pitchCommandFilter, hasPitchFluctuation, samplePitchRatios } from './pitchEnvelope.js'
 import { hasPanFluctuation, panDriftGraph } from './panDrift.js'
 import { renderPanEnvelopeWav } from './panEnvelope.js'
+import { stereoPanMatrix } from '../../shared/pan.js'
+import { effectiveMemberFluctuation, busFluctuation } from '../../shared/groupDrift.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
@@ -372,7 +374,26 @@ async function bakeShotClip(sound, { forLoop }) {
   return { path: shotPath, owned: true }
 }
 
-function eventBranchChain(evt, volume, batchStart) {
+// Per-play pan (v0.1.218). A batch with any panned event makes every branch
+// stereo itself (the usual convert-after-amix shortcut can't pan). For a
+// mono shot, each branch's rows are summed (L = R = M) and scaled by -3 dB so
+// an unpanned branch comes out exactly as loud as the batch's normal
+// mono->stereo conversion does.
+const PAN_EPSILON = 1e-4
+function eventPanFilter(pan, channels) {
+  const [[ll, lr], [rl, rr]] = stereoPanMatrix(pan ?? 0)
+  const f = (n) => n.toFixed(8)
+  if (channels === 1) {
+    return `pan=stereo|c0=${f((ll + lr) * Math.SQRT1_2)}*c0|c1=${f((rl + rr) * Math.SQRT1_2)}*c0`
+  }
+  return `pan=stereo|c0=${f(ll)}*c0+${f(lr)}*c1|c1=${f(rl)}*c0+${f(rr)}*c1`
+}
+
+function batchHasPan(events) {
+  return events.some((evt) => Math.abs(evt.panPosition ?? 0) > PAN_EPSILON)
+}
+
+function eventBranchChain(evt, volume, batchStart, panChannels = null) {
   const semitones = evt.pitchSemitones ?? 0
   const speedFactor = evt.speedFactor ?? 1
   const gain = (evt.volumeScale ?? 1) * volume
@@ -397,6 +418,7 @@ function eventBranchChain(evt, volume, batchStart) {
     const start = Math.max(0, evt.shotDurationSeconds - evt.fadeOutMs / 1000)
     parts.push(`afade=t=out:st=${start.toFixed(3)}:d=${(evt.fadeOutMs / 1000).toFixed(3)}`)
   }
+  if (panChannels != null) parts.push(eventPanFilter(evt.panPosition, panChannels))
   const delayMs = Math.max(0, Math.round((evt.offsetSeconds - batchStart) * 1000))
   parts.push(`adelay=delays=${delayMs}:all=1`)
   return parts.join(',')
@@ -406,7 +428,7 @@ function eventBranchChain(evt, volume, batchStart) {
 // needs to sit at in the final mix. asplit+per-branch+amix(normalize=0) is
 // written to a script file and passed via -filter_complex_script so a dense
 // batch can't hit a command-line length limit.
-async function renderSlicedBatch({ shotPath, batch, volume, reporter }) {
+async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, reporter }) {
   const trackPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
   const { events, start, span } = batch
@@ -423,10 +445,12 @@ async function renderSlicedBatch({ shotPath, batch, volume, reporter }) {
     // 20-event mono batch (2991ms -> 2000ms), and an exact no-op for an
     // already-stereo source. Safe for amix, whose inputs all come from this
     // one asplit and so always share a layout.
-    const parts = [`[0:a]asplit=${n}${splitLabels};`]
+    const panChannels = batchHasPan(events) ? channels : null
+    const head = panChannels != null && panChannels !== 1 ? 'aformat=channel_layouts=stereo,' : ''
+    const parts = [`[0:a]${head}asplit=${n}${splitLabels};`]
     const mixLabels = []
     events.forEach((evt, i) => {
-      parts.push(`[s${i}]${eventBranchChain(evt, volume, start)}[d${i}];`)
+      parts.push(`[s${i}]${eventBranchChain(evt, volume, start, panChannels == null ? null : panChannels === 1 ? 1 : 2)}[d${i}];`)
       mixLabels.push(`[d${i}]`)
     })
     parts.push(
@@ -678,13 +702,12 @@ function hasBusFluctuation(fluctuation) {
   return hasVolumeFluctuation(fluctuation) || hasPanFluctuation(fluctuation)
 }
 
-// A Sound Group with its own pan drift overrides its members' (v0.1.217) -
-// mirrors the live Mixer's effectiveFluctuation (tabs/mixer/index.js).
+// A looping member's effective drift under its Sound Group's rules (shared
+// pan override, v0.1.217; "each sound on its own", v0.1.218) - the same
+// src/shared/groupDrift.js rules the live Mixer uses.
 function memberFluctuation(sound, groups) {
-  const f = sound.fluctuation ?? null
-  if (!sound.groupId || !hasPanFluctuation(f)) return f
-  const group = groups.find((g) => g.id === sound.groupId)
-  return hasPanFluctuation(group?.filters?.fluctuation) ? { ...f, pan: { ...f.pan, enabled: false } } : f
+  const group = sound.groupId ? groups.find((g) => g.id === sound.groupId) : null
+  return effectiveMemberFluctuation(sound.fluctuation ?? null, group?.filters?.fluctuation ?? null)
 }
 
 function hasLoopFluctuation(fluctuation) {
@@ -1031,8 +1054,9 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       // pass (volume is attenuation only, so post-limiter is safe; live, the
       // pan stage sits just before the limiter - pan never adds more than
       // +3 dB to a channel and the limiter only catches overs).
-      if (hasBusFluctuation(groupFilters?.fluctuation)) {
-        bus = await applyBusDriftToTrack(bus, groupFilters.fluctuation, durationSeconds, reporter)
+      const busDrift = busFluctuation(groupFilters?.fluctuation)
+      if (hasBusFluctuation(busDrift)) {
+        bus = await applyBusDriftToTrack(bus, busDrift, durationSeconds, reporter)
         ownPaths.push(bus.path)
       }
       groupBusTracks.push(bus)
@@ -1552,7 +1576,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     .reduce((sum, s) => sum + (loopAxisPasses(s) > 0 ? loopAxisPasses(s) + 1 : 0), 0)
   const fluctLoopGrouped = loopSounds.filter((s) => s.groupId).reduce((sum, s) => sum + loopAxisPasses(s), 0)
   const fluctGroupCount = [...usedGroupIds].filter((id) =>
-    hasBusFluctuation(groups.find((group) => group.id === id)?.filters?.fluctuation)
+    hasBusFluctuation(busFluctuation(groups.find((group) => group.id === id)?.filters?.fluctuation))
   ).length
   const wholeMixFluctSeconds = hasVolumeFluctuation(wholeMixFilters?.fluctuation) ? durationSeconds : 0
   const fluctuationWorkSeconds =
@@ -1618,6 +1642,15 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     // independent (each reads its shot clip read-only, writes its own temp
     // track) - flattened into one job list so the pool stays saturated
     // across sound boundaries.
+    // Per-play pan needs each panned sound's shot channel count (one quick probe).
+    const shotChannelsBySound = new Map()
+    await mapPool(
+      eventSounds.filter(({ sound }) => batchHasPan(sound.events ?? [])),
+      concurrency,
+      async ({ sound }) => {
+        shotChannelsBySound.set(sound, await probeChannelCount(eventShotPathBySound.get(sound)))
+      }
+    )
     const batchJobs = []
     for (const { sound, batches } of eventSounds) {
       const label = `"${sound.name ?? 'sound'}"`
@@ -1627,6 +1660,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
           sound,
           batch,
           shotPath: eventShotPathBySound.get(sound),
+          channels: shotChannelsBySound.get(sound),
           stepLabel:
             batches.length > 1
               ? `Placing ${label}: batch ${b + 1} of ${batches.length}…`
@@ -1642,6 +1676,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         shotPath: job.shotPath,
         batch: job.batch,
         volume: job.sound.volume ?? 0.7,
+        channels: job.channels,
         reporter
       })
       batchTrackPaths.push(track.path)

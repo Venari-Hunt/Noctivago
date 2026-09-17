@@ -10,6 +10,7 @@ import { openRecordDialog } from '../../core/RecordDialog.js'
 import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
 import { openContextMenu } from '../../core/ContextMenu.js'
 import { MAX_BUFFER_CLIP_SECONDS, applySoundOverride } from '../../../shared/constants.js'
+import { effectiveMemberFluctuation, applyGroupShotOverride, groupDriftMemberKey } from '../../../shared/groupDrift.js'
 import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
 
 const api = window.noctivago
@@ -581,21 +582,32 @@ function propagateSync(firedId) {
   }
 }
 
-// Pan drift override (v0.1.217): when a sound's Sound Group has its own pan
-// drift on, the group bus moves the whole group together and each member's
-// own pan drift is switched off (its static Pan stays). Uses the group's
-// live Remix preview when one is in progress, else its saved filters.
-function groupPanDriftOn(soundId) {
+// Sound Group drift rules (v0.1.217 pan override, v0.1.218 "each sound on
+// its own") - see src/shared/groupDrift.js. Uses the group's live Remix
+// preview when one is in progress, else its saved filters.
+function groupFluctuationFor(soundId) {
   const group = state.groups.find((g) => g.soundIds?.includes(soundId))
-  if (!group) return false
-  const filters = state.groupFilterPreviews.get(group.id) ?? group.filters
-  return Boolean(filters?.fluctuation?.pan?.enabled)
+  if (!group) return null
+  const filters = state.groupFilterPreviews.has(group.id) ? state.groupFilterPreviews.get(group.id) : group.filters
+  return filters?.fluctuation ?? null
 }
 
 function effectiveFluctuation(entry) {
-  const f = entry.fluctuation
-  if (!f?.pan?.enabled || !groupPanDriftOn(entry.id)) return f
-  return { ...f, pan: { ...f.pan, enabled: false } }
+  return effectiveMemberFluctuation(entry.fluctuation, groupFluctuationFor(entry.id))
+}
+
+function groupFluctuationForGroup(groupId) {
+  const group = state.groups.find((g) => g.id === groupId)
+  const filters = state.groupFilterPreviews.has(groupId) ? state.groupFilterPreviews.get(groupId) : group?.filters
+  return filters?.fluctuation ?? null
+}
+
+function effectiveScatter(entry) {
+  return applyGroupShotOverride(entry.scatter, groupFluctuationFor(entry.id))
+}
+
+function effectiveSchedule(entry) {
+  return applyGroupShotOverride(entry.schedule, groupFluctuationFor(entry.id))
 }
 
 function reconcileSource(entry) {
@@ -627,15 +639,15 @@ function reconcileSource(entry) {
   } else if (desiredKind === 'scatter-stream') {
     if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
     if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
-    if (!source.hasScatterConfig(entry.scatter)) source.setScatterConfig(entry.scatter)
+    if (!source.hasScatterConfig(effectiveScatter(entry))) source.setScatterConfig(effectiveScatter(entry))
   } else if (desiredKind === 'scatter-buffer') {
-    if (!source.hasScatterConfig(entry.scatter)) source.setScatterConfig(entry.scatter)
+    if (!source.hasScatterConfig(effectiveScatter(entry))) source.setScatterConfig(effectiveScatter(entry))
   } else if (desiredKind === 'scheduled-stream') {
     if (!source.hasFilters(entry.filters)) source.setFilters(entry.filters)
     if (!source.hasLoopPoints(entry.loopStart, entry.loopEnd)) source.setLoopPoints(entry.loopStart, entry.loopEnd)
-    if (!source.hasScheduleConfig(entry.schedule)) source.setScheduleConfig(entry.schedule)
+    if (!source.hasScheduleConfig(effectiveSchedule(entry))) source.setScheduleConfig(effectiveSchedule(entry))
   } else if (desiredKind === 'scheduled-buffer') {
-    if (!source.hasScheduleConfig(entry.schedule)) source.setScheduleConfig(entry.schedule)
+    if (!source.hasScheduleConfig(effectiveSchedule(entry))) source.setScheduleConfig(effectiveSchedule(entry))
   }
 }
 
@@ -777,10 +789,10 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
     const volume = state.volumes.get(entry.id) ?? DEFAULT_VOLUME
     let source
     if (isScatter) {
-      source = new BufferScatterSource(engine, { audioBuffer, volume, scatter: entry.scatter, oneShot })
+      source = new BufferScatterSource(engine, { audioBuffer, volume, scatter: effectiveScatter(entry), oneShot })
       if (!oneShot) source.onShotStart = () => propagateSync(entry.id)
     } else if (isScheduled) {
-      source = new BufferScheduledSource(engine, { audioBuffer, volume, schedule: entry.schedule })
+      source = new BufferScheduledSource(engine, { audioBuffer, volume, schedule: effectiveSchedule(entry) })
     } else {
       source = new BufferSoundSource(engine, { audioBuffer, volume, fluctuation: effectiveFluctuation(entry) })
     }
@@ -821,7 +833,7 @@ async function getOrCreateSource(entry) {
           loopEnd: entry.loopEnd,
           volume,
           filters: entry.filters,
-          scatter: entry.scatter
+          scatter: effectiveScatter(entry)
         })
       : isScheduled
         ? new StreamScheduledSource(engine, {
@@ -830,7 +842,7 @@ async function getOrCreateSource(entry) {
             loopEnd: entry.loopEnd,
             volume,
             filters: entry.filters,
-            schedule: entry.schedule
+            schedule: effectiveSchedule(entry)
           })
         : new LocalFileSoundSource(engine, {
             soundId: entry.id,
@@ -1142,7 +1154,7 @@ async function testFireOneShot(id) {
           loopEnd: entry.loopEnd,
           volume,
           filters: entry.filters,
-          scatter: entry.scatter,
+          scatter: effectiveScatter(entry),
           oneShot: true
         })
       : new StreamScheduledSource(engine, {
@@ -1151,7 +1163,7 @@ async function testFireOneShot(id) {
           loopEnd: entry.loopEnd,
           volume,
           filters: entry.filters,
-          schedule: entry.schedule,
+          schedule: effectiveSchedule(entry),
           oneShot: true
         })
   }
@@ -2190,11 +2202,12 @@ document.addEventListener('library:linked', refreshList)
   window.addEventListener('noctivago:sound-group-preview', (e) => {
     if (!e.detail || e.detail.presetId !== state.activePresetId) return
     engine.previewGroup(e.detail.groupId, e.detail.filters)
-    const wasOn = Boolean(state.groupFilterPreviews.get(e.detail.groupId)?.fluctuation?.pan?.enabled)
-    state.groupFilterPreviews.set(e.detail.groupId, e.detail.filters ?? null)
-    // Only a change to the group's pan-drift switch can change which
-    // members' own pan drift is overridden.
-    if (wasOn !== Boolean(e.detail.filters?.fluctuation?.pan?.enabled)) {
+    const groupId = e.detail.groupId
+    const before = groupDriftMemberKey(groupFluctuationForGroup(groupId))
+    state.groupFilterPreviews.set(groupId, e.detail.filters ?? null)
+    // Only a change to what the group hands its members (a per-sound axis's
+    // settings, or the shared pan switch) needs the members reconciled.
+    if (before !== groupDriftMemberKey(e.detail.filters?.fluctuation)) {
       for (const entry of state.library) reconcileSource(entry)
     }
   })

@@ -111,9 +111,11 @@ function resolveTiming(axis) {
 // fullyRandom). `rng` is injectable for deterministic tests.
 export function samplePitchWalk(config, durationSeconds, rng = Math.random) {
   const fullyRandom = Boolean(config.fullyRandom)
+  // v0.1.218: bias off picks targets evenly across min..max (walk starts mid-range).
+  const uniform = fullyRandom || config?.biasEnabled === false
   const min = fullyRandom ? -PITCH_RANGE_SEMITONES : Math.min(num(config.min, 0), num(config.max, 0))
   const max = fullyRandom ? PITCH_RANGE_SEMITONES : Math.max(num(config.min, 0), num(config.max, 0))
-  const bias = fullyRandom ? 0 : Math.min(max, Math.max(min, num(config.bias, 0)))
+  const bias = fullyRandom ? 0 : uniform ? (min + max) / 2 : Math.min(max, Math.max(min, num(config.bias, 0)))
   const timing = resolveTiming(config)
   const changeMin = timing.changeMinSeconds
   const changeSpan = timing.changeMaxSeconds - timing.changeMinSeconds
@@ -121,7 +123,7 @@ export function samplePitchWalk(config, durationSeconds, rng = Math.random) {
 
   const jitteredInterval = () => changeMin + rng() * changeSpan
   const pickTarget = () => {
-    if (fullyRandom) return min + rng() * (max - min)
+    if (uniform) return min + rng() * (max - min)
     const lower = bias - min
     const upper = max - bias
     const span = lower + upper

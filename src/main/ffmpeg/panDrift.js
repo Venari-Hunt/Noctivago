@@ -54,11 +54,13 @@ export function hasPanFluctuation(fluctuation) {
 // 1/PAN_GEN_RATE seconds. `rng` is injectable for deterministic tests.
 export function samplePanWalk(config, durationSeconds, rng = Math.random) {
   const fullyRandom = Boolean(config?.fullyRandom)
+  // v0.1.218: bias off picks targets evenly across min..max (walk starts mid-range).
+  const uniform = fullyRandom || config?.biasEnabled === false
   const rawMin = Math.max(-1, Math.min(1, num(config?.min, 0)))
   const rawMax = Math.max(-1, Math.min(1, num(config?.max, 0)))
   const min = fullyRandom ? -1 : Math.min(rawMin, rawMax)
   const max = fullyRandom ? 1 : Math.max(rawMin, rawMax)
-  const bias = fullyRandom ? 0 : Math.min(max, Math.max(min, num(config?.bias, 0)))
+  const bias = fullyRandom ? 0 : uniform ? (min + max) / 2 : Math.min(max, Math.max(min, num(config?.bias, 0)))
   const timing = resolveTiming(config)
   const changeMin = timing.changeMinSeconds
   const changeSpan = timing.changeMaxSeconds - timing.changeMinSeconds
@@ -66,7 +68,7 @@ export function samplePanWalk(config, durationSeconds, rng = Math.random) {
 
   const jitteredInterval = () => changeMin + rng() * changeSpan
   const pickTarget = () => {
-    if (fullyRandom) return min + rng() * (max - min)
+    if (uniform) return min + rng() * (max - min)
     const lower = bias - min
     const upper = max - bias
     const span = lower + upper

@@ -101,6 +101,8 @@ export class Modulator {
     this.rangeMax = Math.max(rangeMin, rangeMax)
     this.enabled = false
     this.fullyRandom = false
+    // v0.1.218: with bias off, targets are picked evenly across min..max.
+    this.biasEnabled = true
     this.running = false
     this._timerId = null
     this._lastTick = 0
@@ -117,9 +119,10 @@ export class Modulator {
     this.target = neutral
   }
 
-  configure({ enabled, fullyRandom, min, max, bias, changeMinSeconds, changeMaxSeconds, transitionSeconds }) {
+  configure({ enabled, fullyRandom, biasEnabled = true, min, max, bias, changeMinSeconds, changeMaxSeconds, transitionSeconds }) {
     this.enabled = Boolean(enabled)
     this.fullyRandom = Boolean(fullyRandom)
+    this.biasEnabled = biasEnabled !== false
     if (this.fullyRandom) {
       this.min = this.rangeMin
       this.max = this.rangeMax
@@ -127,7 +130,7 @@ export class Modulator {
     } else {
       this.min = Math.min(min, max)
       this.max = Math.max(min, max)
-      this.bias = Math.min(this.max, Math.max(this.min, bias))
+      this.bias = this.biasEnabled ? Math.min(this.max, Math.max(this.min, bias)) : (this.min + this.max) / 2
     }
     this.changeMinSeconds = Math.max(0.1, Math.min(changeMinSeconds, changeMaxSeconds))
     this.changeMaxSeconds = Math.max(this.changeMinSeconds, changeMinSeconds, changeMaxSeconds)
@@ -148,7 +151,7 @@ export class Modulator {
   // the pick toward small deviations from the bias. `fullyRandom` drops all
   // of that and picks uniformly across the whole axis.
   _pickTarget() {
-    if (this.fullyRandom) {
+    if (this.fullyRandom || !this.biasEnabled) {
       return this.min + Math.random() * (this.max - this.min)
     }
     return pickBiasedValue(this.min, this.max, this.bias)
@@ -203,6 +206,7 @@ export function normalizeFluctuationAxis(axis, neutral) {
   return {
     enabled: Boolean(axis?.enabled),
     fullyRandom: Boolean(axis?.fullyRandom),
+    biasEnabled: axis?.biasEnabled !== false,
     min: Number.isFinite(axis?.min) ? axis.min : neutral,
     max: Number.isFinite(axis?.max) ? axis.max : neutral,
     bias: Number.isFinite(axis?.bias) ? axis.bias : neutral,

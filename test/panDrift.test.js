@@ -42,6 +42,13 @@ describe('samplePanWalk', () => {
     assert.ok(lo < -0.5 && hi > 0.5)
   })
 
+  test('bias off starts mid-range and spreads evenly', () => {
+    const walk = samplePanWalk({ ...config, biasEnabled: false, transitionSeconds: 0 }, 600, seeded(6))
+    assert.ok(Math.abs(walk[0] - -0.1) < 1e-9) // (-0.6 + 0.4) / 2
+    const high = walk.filter((v) => v > 0.2).length / walk.length
+    assert.ok(high > 0.12 && high < 0.28) // uniform: ~20% of the span
+  })
+
   test('transition 0 snaps straight to each target', () => {
     const walk = samplePanWalk({ ...config, transitionSeconds: 0 }, 5, seeded(5))
     assert.ok(walk.every((v) => Number.isFinite(v)))
