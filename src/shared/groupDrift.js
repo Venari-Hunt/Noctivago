@@ -6,9 +6,14 @@
 // keep them in sync.
 //
 // A group drift axis (volume, pitch, pan) is either:
-//   - shared (perSound off): the group's bus drifts, all members together.
+//   - shared (perSound off): the group's bus drifts, all members together -
+//     and, so a member doesn't also wander on its own and fall out of sync
+//     with the group it's supposedly moving with, a shared volume or pan
+//     drift switches off that same axis's own per-sound drift (originally
+//     only done for pan in v0.1.217; volume never got the equivalent fix
+//     until v0.1.231, an inconsistency caught from a direct question about
+//     whether members drift together, not a report of an audible bug).
 //     Pitch can't be shared (a bus is a sum of sounds, nothing to detune).
-//     A shared pan drift switches off members' own pan drift (v0.1.217).
 //   - per sound (perSound on): the bus leaves that axis alone and every
 //     member runs the group's settings on its own - a looping member gets
 //     them as its own drift (its own random walk, so members differ); a
@@ -16,6 +21,10 @@
 //     per-play random range for that axis.
 
 export const DRIFT_AXES = ['volume', 'pitch', 'pan']
+// Axes a group's bus can actually drift on its own (pitch never can - see
+// above) - shared, non-per-sound bus drift on one of these switches off a
+// member's own drift on that same axis.
+export const BUS_CAPABLE_AXES = ['volume', 'pan']
 
 // Drift pitch roams +/-6 st (Modulator.js's FLUCTUATION_PITCH_RANGE).
 const DRIFT_FULL_RANGE = { volume: [0, 1], pitch: [-6, 6], pan: [-1, 1] }
@@ -52,8 +61,8 @@ export function effectiveMemberFluctuation(fluctuation, groupFluctuation) {
     const own = perSoundAxis(groupFluctuation, axis)
     if (own) {
       out = { ...(out ?? {}), [axis]: { ...own, enabled: true } }
-    } else if (axis === 'pan' && shared?.enabled && out?.pan?.enabled) {
-      out = { ...out, pan: { ...out.pan, enabled: false } }
+    } else if (BUS_CAPABLE_AXES.includes(axis) && shared?.enabled && out?.[axis]?.enabled) {
+      out = { ...out, [axis]: { ...out[axis], enabled: false } }
     }
   }
   return out
@@ -93,7 +102,7 @@ export function groupDriftMemberKey(groupFluctuation) {
     DRIFT_AXES.map((axis) => {
       const a = groupFluctuation?.[axis]
       if (!a?.enabled) return null
-      return perSoundAxis(groupFluctuation, axis) ? a : axis === 'pan' ? 'shared' : null
+      return perSoundAxis(groupFluctuation, axis) ? a : BUS_CAPABLE_AXES.includes(axis) ? 'shared' : null
     })
   )
 }

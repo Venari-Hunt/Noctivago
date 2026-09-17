@@ -72,9 +72,12 @@ export class SoundGroupChain {
     this._fluctKey = ''
 
     // Pan drift (v0.1.217): the whole group wandering left/right together,
-    // right after the volume drift. While it's on, member sounds' own pan
-    // drift is switched off by the Mixer (tabs/mixer/index.js's
-    // effectiveFluctuation) - the group's setting overrides theirs.
+    // right after the volume drift. While either is a shared (non-per-sound)
+    // group drift, member sounds' own drift on that same axis is switched
+    // off by the Mixer (tabs/mixer/index.js's effectiveFluctuation, via
+    // groupDrift.js's effectiveMemberFluctuation) - the group's setting
+    // overrides theirs, so members move together instead of also drifting
+    // on their own.
     this.panStage = new PanStage(context, 0)
     this._panMod = new Modulator({
       onValue: (v) => this.panStage.setPan(v),
