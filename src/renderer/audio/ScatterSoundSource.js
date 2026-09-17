@@ -116,8 +116,15 @@ export function randomPanPosition(scatter) {
 // variation. Floored at 0.1 so a stray 0 can't divide-by-zero the duration
 // math or ask for an infinite stretch.
 export function randomSpeedFactor(scatter) {
+  // Fully random / Bias (v0.1.227) work like the pitch/volume/pan picks;
+  // fully random rolls the Remix bar's whole 50-200% range.
+  if (scatter?.speedFullyRandom) return 0.5 + Math.random() * 1.5
   const min = Math.max(0.1, scatter?.minSpeed ?? 1)
   const max = Math.max(min, scatter?.maxSpeed ?? 1)
+  if (scatter?.speedBiasEnabled) {
+    const bias = Math.min(max, Math.max(min, scatter?.speedBias ?? (min + max) / 2))
+    return pickBiasedValue(min, max, bias)
+  }
   return min + Math.random() * (max - min)
 }
 
@@ -176,6 +183,9 @@ function normalizeScatter(scatter) {
     panBias: scatter?.panBias ?? null,
     minSpeed: scatter?.minSpeed ?? 1,
     maxSpeed: scatter?.maxSpeed ?? 1,
+    speedFullyRandom: Boolean(scatter?.speedFullyRandom),
+    speedBiasEnabled: Boolean(scatter?.speedBiasEnabled),
+    speedBias: scatter?.speedBias ?? null,
     fadeInMs: scatter?.fadeInMs ?? 0,
     fadeOutMs: scatter?.fadeOutMs ?? 0,
     syncGroup: scatter?.syncGroup ?? ''

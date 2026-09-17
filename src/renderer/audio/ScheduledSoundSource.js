@@ -74,6 +74,9 @@ function normalizeSchedule(schedule) {
     panBias: schedule?.panBias ?? null,
     minSpeed: schedule?.minSpeed ?? 1,
     maxSpeed: schedule?.maxSpeed ?? 1,
+    speedFullyRandom: Boolean(schedule?.speedFullyRandom),
+    speedBiasEnabled: Boolean(schedule?.speedBiasEnabled),
+    speedBias: schedule?.speedBias ?? null,
     fadeInMs: schedule?.fadeInMs ?? 0,
     fadeOutMs: schedule?.fadeOutMs ?? 0
   })

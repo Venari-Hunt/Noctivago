@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.227 — Stronger panning, Speed bar, and Remix setting fixes
+
+- **Panning is more noticeable.** Wide stereo recordings (field recordings of frogs, rain, crowds) barely moved before: a 25% pan made one side only 0.7 dB louder. They now move like they would in a mixing app (about 2 dB at 25%, 5 dB at 50%, 11 dB at 75%). Hard left and right are unchanged. Sounds you have already panned will sound a bit wider, and their saved audio re-renders once.
+- **Speed for Random Interval and Scheduled sounds now uses the same three-circle bar** as Pitch, Volume and Pan, with Fully random and Bias options.
+- **Fixed: Remix could overwrite a sound's settings for the loaded preset.** After visiting Group or Preset mode, opening a sound in Sound mode showed its shared default settings, and saving replaced the preset's own settings with them.
+- **Fixed: just opening some Random Interval or Scheduled sounds in Remix counted as an edit** and auto-saved.
+
 ## v0.1.226 — No more example tabs
 
 - The **Hello** tab is gone. It was a developer example that was never meant to ship, and a second deliberately broken example plugin was removed from the installer along with it.
