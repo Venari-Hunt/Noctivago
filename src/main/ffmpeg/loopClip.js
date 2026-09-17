@@ -127,7 +127,7 @@ export async function probeDurationSeconds(inputPath) {
 }
 
 // Default length of the self-crossfade blended into the tail of every
-// rendered clip (see buildFilterComplex) so the loop seam has no hard
+// rendered clip (see buildCrossfadedLoopArgs) so the loop seam has no hard
 // discontinuity, even when the audio content itself doesn't naturally
 // repeat. Used whenever a sound has no per-sound override (entry.
 // crossfadeSeconds is null - see library.js) - see renderLoopClip's
@@ -532,48 +532,78 @@ function readWavDuration(filePath) {
   return 0
 }
 
-// Builds the filter_complex that crossfades the clip's own tail into its own
-// head, given three separate reads of the same source (see
-// renderCrossfadedLoop): input 0 is the body [S+f, E-f), input 1 is the tail
-// [E-f, E), input 2 is the head [S, S+f). The tail blends into the head, and
-// that blend is appended after the body - so the clip starts at source time
-// S+f and ends on source time S+f too, and the wrap point is continuous. The
-// loop comes out `fade` seconds shorter than the trim, which is exactly what
-// the live two-element crossfade (SoundSource.js / PreviewSource.js) plays:
-// the tail fades out while the head fades in, then playback carries on from
-// S+f.
+// The seamless-loop layout ("overlapping tail crossfade" - the technique the
+// owner described): cut the trim [S, E) at its midpoint M into A = [S, M)
+// and B = [M, E), put B first and A after it, and overlap A's start onto
+// B's end with an equal-power crossfade. The clip is:
 //
-// BUG FIX (v0.1.221): the body used to be [S, E-f), so the blend ended on
-// S+f but the clip wrapped back to S - a jump of exactly `fade` seconds of
-// audio on every loop. A later half-rotation (2026-08-16) only moved that
-// jump into the middle of the clip. Measured with a linear-ramp source
-// (sample value = source time): the old graph jumped 0.2s at 6.0s of a 12s
-// clip; this one has no jump anywhere, wrap included.
+//   B body [M, E-f)  |  tail [E-f, E) x head [S, S+f)  |  A body [S+f, M)
 //
-// The curve is equal-power (qsin), not linear: tail and head are different
-// moments of the source, so for the noisy textures this app is mostly used
-// for (rain, fire, crowds) they're uncorrelated, and a linear blend dips
-// ~3 dB in the middle of the seam - an audible "breath" on every loop.
+// It starts and ends on source time M - one continuous recording - so the
+// wrap needs no blend at all, and the only edit (the original E -> S join)
+// sits in the middle under the crossfade. The loop is `fade` seconds
+// shorter than the trim, the same audio the live two-element crossfade
+// (SoundSource.js / PreviewSource.js) plays at its own seam.
 //
-// This *must* stay three separate ffmpeg inputs rather than one input
-// split+trimmed internally (asplit/atrim on a single stream) - that was
-// tried first and silently produced truncated output. Verify against real
-// output, not just exit code 0, before changing this.
-// atrim after the filter chain matters specifically for echo: aecho extends
-// its output past the input's own length to fit the echo tail, which would
-// desync acrossfade/concat's exact-duration assumptions. On a looping clip
-// any tail past the loop point is cut by the wrap anyway.
-function buildFilterComplex(filters, fade, bodyDuration) {
-  const filterChain = buildFilterChain(filters)
-  const suffix = filterChain ? `,${filterChain}` : ''
+// History: until v0.1.221 the body was [S, E-f) with the blend appended and
+// the result rotated by half. The blend ended on S+f but the clip wrapped
+// to S, so every loop jumped by `fade` seconds of audio (measured with a
+// linear-ramp source: 0.2s at 6.0s of a 12s clip). v0.1.221 made the wrap
+// continuous but left the blend at the clip's end; v0.1.222 centers it as
+// above.
+//
+// The curve is equal-power (qsin): tail and head are different moments of
+// the source, so on noisy textures (rain, fire, crowds) they're
+// uncorrelated, and a linear blend dips ~3 dB in the middle of the seam.
+//
+// Each segment is its own ffmpeg input (one input split+trimmed internally
+// was tried first and silently produced truncated output - verify real
+// output, not just exit code 0, before changing that). Since each input is
+// filtered on its own, a stateful filter (biquads, gate, echo) would restart
+// from silence at every join and click. So each segment is read with up to
+// FILTER_PREROLL_SECONDS of the real audio before it, filtered, and the
+// pre-roll trimmed off: segments that continue each other in the source
+// (B body -> tail, head -> A body, A body -> B body across the wrap) then
+// continue each other exactly after filtering too. atrim also cuts aecho's
+// extended tail back to the segment's own length.
+const FILTER_PREROLL_SECONDS = 1
 
-  return [
-    `[0:a:0]anull${suffix},atrim=start=0:end=${bodyDuration}[bodyF]`,
-    `[1:a:0]anull${suffix},atrim=start=0:end=${fade}[tailF]`,
-    `[2:a:0]anull${suffix},atrim=start=0:end=${fade}[headF]`,
-    `[tailF][headF]acrossfade=d=${fade}:c1=qsin:c2=qsin[blended]`,
-    `[bodyF][blended]concat=n=2:v=0:a=1[out]`
-  ].join(';')
+function crossfadeSegments(loopStart, loopEnd, fade) {
+  const mid = (loopStart + loopEnd) / 2
+  return {
+    bodyB: { start: mid, duration: loopEnd - fade - mid },
+    tail: { start: loopEnd - fade, duration: fade },
+    head: { start: loopStart, duration: fade },
+    bodyA: { start: loopStart + fade, duration: mid - loopStart - fade }
+  }
+}
+
+function segmentInputArgs({ start, duration }, preroll, inputPath) {
+  return ['-ss', (start - preroll).toFixed(6), '-t', (duration + preroll).toFixed(6), '-i', inputPath]
+}
+
+function segmentChain(index, filterChain, preroll, duration, label) {
+  const filters = filterChain ? `${filterChain},` : ''
+  const endAt = (preroll + duration).toFixed(6)
+  return `[${index}:a:0]anull,${filters}atrim=start=${preroll.toFixed(6)}:end=${endAt},asetpts=PTS-STARTPTS[${label}]`
+}
+
+function buildCrossfadedLoopArgs({ inputPath, loopStart, loopEnd, fade, filters }) {
+  const filterChain = buildFilterChain(filters)
+  const segments = crossfadeSegments(loopStart, loopEnd, fade)
+  const order = ['bodyB', 'tail', 'head', 'bodyA']
+  const inputs = []
+  const chains = []
+  order.forEach((name, index) => {
+    const segment = segments[name]
+    const preroll = filterChain ? Math.min(FILTER_PREROLL_SECONDS, segment.start) : 0
+    inputs.push(...segmentInputArgs(segment, preroll, inputPath))
+    chains.push(segmentChain(index, filterChain, preroll, segment.duration, name))
+  })
+  const fadeText = fade.toFixed(6)
+  chains.push(`[tail][head]acrossfade=d=${fadeText}:c1=qsin:c2=qsin[blended]`)
+  chains.push('[bodyB][blended][bodyA]concat=n=3:v=0:a=1[out]')
+  return { inputs, filterComplex: chains.join(';') }
 }
 
 // Renders just [loopStart, loopEnd) of inputPath — with any filters baked
@@ -647,15 +677,18 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath
     ]
   } else {
-    const bodyDuration = effectiveDuration - 2 * fade
+    const { inputs, filterComplex } = buildCrossfadedLoopArgs({
+      inputPath,
+      loopStart: effectiveLoopStart,
+      loopEnd: effectiveLoopEnd,
+      fade,
+      filters
+    })
     args = [
       '-y',
-      '-ss', (effectiveLoopStart + fade).toFixed(6), '-t', bodyDuration.toFixed(6), '-i', inputPath,
-      '-ss', (effectiveLoopEnd - fade).toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
-      '-ss', effectiveLoopStart.toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
+      ...inputs,
       '-filter_complex',
-      buildFilterComplex(filters, fade.toFixed(6), bodyDuration.toFixed(6)) +
-        (panFilter ? `;[out]${panFilter}[panned]` : ''),
+      filterComplex + (panFilter ? `;[out]${panFilter}[panned]` : ''),
       '-map', panFilter ? '[panned]' : '[out]',
       '-vn',
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath

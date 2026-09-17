@@ -93,17 +93,6 @@ export function createLoopEditorController(canvas) {
   let fadesEnabled = false
   let fadeInSec = 0
   let fadeOutSec = 0
-  // Loop crossfade zones (Loop mode) - the draggable counterpart to the
-  // "Loop crossfade" slider. One value for both ends; drawn clamped to a
-  // quarter of the region, the same cap loopClip.js and SoundSource.js apply.
-  // Dragging snaps to crossfadeStepSec and stops at crossfadeMaxSec (the
-  // slider's own step/max, set by index.js).
-  let crossfadeEnabled = false
-  let crossfadeSec = 0
-  let crossfadeMaxSec = 2
-  let crossfadeStepSec = 0.01
-  let crossfadeDefaultSec = 0.2
-  let onCrossfadeChange = () => {}
   // Volume envelope (Loop mode only, v1) - drag control points directly on
   // the waveform to shape volume over time (Audacity's classic envelope
   // tool). `position` is a 0..1 fraction of the loop region (never absolute
@@ -213,26 +202,6 @@ export function createLoopEditorController(canvas) {
     return { fadeIn: fi, fadeOut: fo }
   }
 
-  // Doppler bakes with no crossfade (loopClip.js / effectiveCrossfadeSeconds),
-  // so the zones are hidden while it's on.
-  function crossfadeShown() {
-    return crossfadeEnabled && !dopplerEnabled
-  }
-
-  function clampedCrossfade() {
-    return Math.min(Math.max(crossfadeSec, 0), Math.max(0, loopEnd - loopStart) / 4)
-  }
-
-  function crossfadeHandleHit(x, rect) {
-    const cf = clampedCrossfade()
-    const candidates = [
-      { type: 'crossfadeHead', dist: Math.abs(x - timeToX(loopStart + cf, rect.width)) },
-      { type: 'crossfadeTail', dist: Math.abs(x - timeToX(loopEnd - cf, rect.width)) }
-    ]
-    const closest = candidates.reduce((a, b) => (a.dist <= b.dist ? a : b))
-    return closest.dist <= HANDLE_HIT_PX ? closest.type : null
-  }
-
   function redraw() {
     const useDetail = detailPeaks && viewStart >= detailPeaksStart && viewEnd <= detailPeaksEnd
     const { fadeIn, fadeOut } = clampedFades()
@@ -251,8 +220,6 @@ export function createLoopEditorController(canvas) {
       fadesEnabled,
       fadeInSec: fadeIn,
       fadeOutSec: fadeOut,
-      crossfadeEnabled: crossfadeShown(),
-      crossfadeSec: clampedCrossfade(),
       envelopeEnabled: envelopeEnabled && envelopeUiVisible,
       envelopePoints: envelopePoints.map((p) => ({ time: envelopePointTime(p), gain: p.gain }))
     })
@@ -466,17 +433,6 @@ export function createLoopEditorController(canvas) {
       }
     }
 
-    // Crossfade pins share the fade pins' top band, for the same reason: a
-    // zero-length zone puts them on the trim line. The two never show at once
-    // (fades are Random Interval/Scheduled only, crossfade is Loop only).
-    if (crossfadeShown() && loopEnd > loopStart && evt.clientY - rect.top <= FADE_HANDLE_ZONE_PX) {
-      const hit = crossfadeHandleHit(x, rect)
-      if (hit) {
-        dragging = hit
-        return
-      }
-    }
-
     const candidates = [
       { type: 'start', dist: Math.abs(x - timeToX(loopStart, rect.width)) },
       { type: 'end', dist: Math.abs(x - timeToX(loopEnd, rect.width)) }
@@ -538,13 +494,6 @@ export function createLoopEditorController(canvas) {
       }
     }
 
-    if (crossfadeShown() && evt.clientY - rect.top <= FADE_HANDLE_ZONE_PX && crossfadeHandleHit(x, rect)) {
-      crossfadeSec = crossfadeDefaultSec
-      redraw()
-      onCrossfadeChange(crossfadeSec)
-      return
-    }
-
     if (!dopplerEnabled) return
     if (Math.abs(x - timeToX(dopplerMarkerTime(), rect.width)) > HANDLE_HIT_PX) return
     dopplerClosestFraction = 0.5
@@ -603,16 +552,6 @@ export function createLoopEditorController(canvas) {
       fadeOutSec = Math.min(Math.max(loopEnd - t, 0), maxFade)
       redraw()
       onFadesChange({ fadeInSec, fadeOutSec })
-    } else if (dragging === 'crossfadeHead' || dragging === 'crossfadeTail') {
-      const raw = dragging === 'crossfadeHead' ? t - loopStart : loopEnd - t
-      const cap = Math.min(crossfadeMaxSec, Math.max(0, loopEnd - loopStart) / 4)
-      const snapped = Math.round(Math.min(Math.max(raw, 0), cap) / crossfadeStepSec) * crossfadeStepSec
-      const next = Math.min(snapped, cap)
-      if (next !== crossfadeSec) {
-        crossfadeSec = next
-        redraw()
-        onCrossfadeChange(crossfadeSec)
-      }
     } else if (dragging === 'doppler') {
       const span = loopEnd - loopStart
       const rawFraction = span > 0 ? (t - loopStart) / span : 0.5
@@ -944,18 +883,6 @@ export function createLoopEditorController(canvas) {
       fadeOutSec = Math.max(0, newFadeOutSec ?? 0)
       redraw()
     },
-    setCrossfade({ enabled, seconds, maxSeconds, stepSeconds, defaultSeconds } = {}) {
-      if (enabled != null) crossfadeEnabled = Boolean(enabled)
-      if (seconds != null) crossfadeSec = Math.max(0, seconds)
-      if (maxSeconds != null) crossfadeMaxSec = maxSeconds
-      if (stepSeconds != null) crossfadeStepSec = stepSeconds
-      if (defaultSeconds != null) crossfadeDefaultSec = defaultSeconds
-      redraw()
-    },
-    // What's actually applied at the current trim (the quarter-region cap).
-    getEffectiveCrossfade() {
-      return clampedCrossfade()
-    },
     getFades() {
       const { fadeIn, fadeOut } = clampedFades()
       return { fadeInSec: fadeIn, fadeOutSec: fadeOut }
@@ -995,9 +922,6 @@ export function createLoopEditorController(canvas) {
     },
     onFadesChange(fn) {
       onFadesChange = fn
-    },
-    onCrossfadeChange(fn) {
-      onCrossfadeChange = fn
     },
     onEnvelopeChange(fn) {
       onEnvelopeChange = fn
