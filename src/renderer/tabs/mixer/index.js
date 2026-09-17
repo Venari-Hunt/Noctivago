@@ -188,6 +188,10 @@ let pickedFolderForTag = null // folder path for the standalone "Add folder as t
 // second concurrent bake for the same sound if getOrCreateSource runs again
 // (e.g. a rapid re-toggle) before the first one finishes.
 const autoBaking = new Set()
+// id -> the bufferBakeSnapshot last auto-baked this session, so a settings
+// combination is only ever tried once (a failed or never-matching render
+// can't loop).
+const autoBakedSnapshots = new Map()
 
 function showModal(el) {
   el.classList.remove('hidden')
@@ -747,11 +751,21 @@ function loopClipEligible(entry) {
 // reconcileSource (already run on every refreshList) picks up the result
 // and swaps the live source over to BufferSoundSource with zero additional
 // code, same as any other filter/loop-point change.
+//
+// BUG FIX (v0.1.223): this used to skip any sound that had *ever* been
+// baked, so a clip that went stale (a preset override changed without a
+// Remix save, another preset's settings baked over the shared clip, a
+// Remix render that failed) left the sound streaming for good - no Pitch,
+// Reverse, Doppler or noise reduction, and a rougher seam. It now re-bakes
+// whenever the clip doesn't match the sound's current effective settings.
 function maybeAutoBake(entry) {
-  if (entry.loopClipReady || autoBaking.has(entry.id)) return
+  if (loopClipEligible(entry) || autoBaking.has(entry.id)) return
   const loopEnd = entry.loopEnd ?? entry.durationSeconds
   if (loopEnd == null) return
   if (loopEnd - entry.loopStart > MAX_BUFFER_CLIP_SECONDS) return
+  const snapshot = bufferBakeSnapshot(entry)
+  if (autoBakedSnapshots.get(entry.id) === snapshot) return
+  autoBakedSnapshots.set(entry.id, snapshot)
 
   autoBaking.add(entry.id)
   api.audio
@@ -1568,6 +1582,19 @@ function updatePresetAutosaveNoteText() {
     : 'Autosave is off - use "Save … now" below to update this preset by hand.'
 }
 
+// BUG FIX (v0.1.223): state.activePresetSounds used to be set only when a
+// preset loaded, so it went stale as soon as the mix changed (a sound added
+// mid-session wasn't in it). Remix's override events for such a sound were
+// dropped, and currentMixSounds() sent its overrides as null. After every
+// preset write, the stored preset (which main keeps the overrides on - see
+// presets.js's updatePresetSounds) becomes the Mixer's copy again.
+function adoptActivePresetSounds(preset) {
+  if (!preset || preset.id !== state.activePresetId) return
+  state.activePresetSounds = preset.sounds ?? []
+  recomputeEffectiveLibrary()
+  for (const entry of state.library) reconcileSource(entry)
+}
+
 function autosaveActivePreset() {
   if (!presetAutosaveReady || presetAutosaveLoading || !presetAutosaveUserEnabled) return
   const presetId = state.activePresetId
@@ -1577,6 +1604,7 @@ function autosaveActivePreset() {
     presetAutosaveTimer = null
     if (state.activePresetId !== presetId || state.included.size === 0) return
     const updated = await api.presets.updateSounds(presetId, currentMixSounds())
+    adoptActivePresetSounds(updated)
     if (updated && !els.presetsModal.classList.contains('hidden')) {
       els.presetSaveHint.classList.add('ok')
       els.presetSaveHint.textContent = `Autosaved changes to "${updated.name}".`
@@ -1595,7 +1623,7 @@ async function flushPresetAutosave() {
   presetAutosaveTimer = null
   const presetId = state.activePresetId
   if (!presetId || state.included.size === 0) return
-  await api.presets.updateSounds(presetId, currentMixSounds())
+  adoptActivePresetSounds(await api.presets.updateSounds(presetId, currentMixSounds()))
 }
 
 els.updateActivePresetBtn.addEventListener('click', async () => {
@@ -1606,6 +1634,7 @@ els.updateActivePresetBtn.addEventListener('click', async () => {
     return
   }
   const updated = await api.presets.updateSounds(state.activePresetId, currentMixSounds())
+  adoptActivePresetSounds(updated)
   els.presetSaveHint.classList.add('ok')
   els.presetSaveHint.textContent = updated ? `Saved changes to "${updated.name}".` : 'Could not save - that preset may have been deleted.'
   await refreshPresetList()
@@ -1634,9 +1663,12 @@ els.savePresetBtn.addEventListener('click', async () => {
   const activePreset = state.activePresetId
     ? (await api.presets.list()).find((p) => p.id === state.activePresetId)
     : null
+  const storedOverrides = new Map((activePreset?.sounds ?? []).map((item) => [item.soundId, item.overrides]))
   await api.presets.save({
     name,
-    sounds: currentMixSounds(),
+    sounds: currentMixSounds().map((item) =>
+      storedOverrides.has(item.soundId) ? { ...item, overrides: storedOverrides.get(item.soundId) } : item
+    ),
     wholeMix: activePreset?.wholeMix ?? null,
     groups: state.groups
   })
@@ -2168,8 +2200,17 @@ document.addEventListener('library:linked', refreshList)
       if (overrideBaseline) state.baselineById.set(soundId, { ...overrideBaseline, ...loopClipPatchFields(loopClip) })
     }
     if (presetId !== state.activePresetId) return
+    // Remix only writes an override for a sound the stored preset contains,
+    // so a missing entry just means this copy is behind - add it rather than
+    // drop the edit.
     const item = state.activePresetSounds.find((s) => s.soundId === soundId)
     if (item) item.overrides = overrides
+    else {
+      state.activePresetSounds = [
+        ...state.activePresetSounds,
+        { soundId, volume: state.volumes.get(soundId) ?? DEFAULT_VOLUME, overrides }
+      ]
+    }
     recomputeEffectiveLibrary()
     const entry = state.library.find((s) => s.id === soundId)
     if (entry) reconcileSource(entry)

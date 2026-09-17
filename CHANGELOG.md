@@ -6,6 +6,14 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.223 — Remix changes reliably reach the Mixer
+
+- **Fixed: the Mixer could erase a sound's Remix settings for the loaded preset.** If the sound had been added to the mix during the session, changing any volume in the Mixer wiped the pan (or any other Remix edit) you had just saved for that preset. Settings you already lost this way need to be set again once.
+- **Fixed: Remix edits to a sound added during the session didn't reach the Mixer** until you reloaded the preset.
+- **Fixed: quick back-to-back edits could leave the Mixer playing an older version** of the sound (for example the previous pan).
+- The Mixer now re-renders a sound on its own whenever its saved audio no longer matches its settings, so pitch, reverse, Doppler and noise reduction keep applying and the loop stays seamless.
+- "Save as new preset" in the Mixer now copies each sound's Remix settings from the loaded preset.
+
 ## v0.1.222 — Click-free Saved audio, and the crossfade moves to the middle
 
 - **Fixed: a click every time Saved audio restarted in Remix.** The preview player inserted a short silence (about 8 ms) at each restart, whatever the loop sounded like. It now loops without a gap, the same way the Mixer plays.

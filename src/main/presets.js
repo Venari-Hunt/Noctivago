@@ -253,16 +253,26 @@ export function updatePresetWholeMix(id, wholeMix) {
 // structure to one created fresh. name/createdAt/wholeMix are left untouched
 // - this only ever touches the sound list, matching the button's own scope.
 // Returns the updated preset, or null if the id is unknown.
+//
+// BUG FIX (v0.1.223): a sound already in the preset keeps its stored
+// overrides, whatever the caller sends. Overrides belong to Remix
+// (updatePresetSoundOverride below); the Mixer only knows the copy it
+// cached when the preset loaded, and a sound added during the session
+// wasn't in that copy at all. Its autosave (any volume drag) then wrote
+// `overrides: null` and erased a pan the owner had just saved in Remix
+// ("changes made in the remix tab still aren't consistently transferring to
+// the mixer tab"). Only a sound new to the preset takes the caller's value.
 export function updatePresetSounds(id, sounds) {
   const presets = store.get('presets')
   const idx = presets.findIndex((p) => p.id === id)
   if (idx === -1) return null
+  const storedOverrides = new Map((presets[idx].sounds ?? []).map((s) => [s.soundId, s.overrides ?? null]))
   presets[idx] = {
     ...presets[idx],
     sounds: sounds.map((s) => ({
       soundId: s.soundId,
       volume: s.volume,
-      overrides: normalizeSoundOverride(s.overrides)
+      overrides: storedOverrides.has(s.soundId) ? storedOverrides.get(s.soundId) : normalizeSoundOverride(s.overrides)
     }))
   }
   store.set('presets', presets)
