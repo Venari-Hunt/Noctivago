@@ -4,6 +4,7 @@ import { PanStage } from './PanStage.js'
 import { SoundFluctuation, fluctuationKey } from './Modulator.js'
 import { NoiseGate } from './NoiseGate.js'
 import { rampEqualPower } from './equalPowerRamp.js'
+import { createPitchShiftNode } from './pitchShiftNode.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -104,10 +105,19 @@ export class LocalFileSoundSource {
     this.speed = speed ?? 1
     // Live pitch-fluctuation multiplier on top of Speed (see this._fluctuation
     // below). 1 when no pitch drift is active. Stream mode has no detune
-    // primitive on <audio>, so pitch drift here rides playbackRate the same
-    // way Speed does - which also nudges tempo, the same documented trade-off
-    // the Remix Pitch preview already accepts.
+    // primitive on <audio>, so pitch drift rides playbackRate.
+    //
+    // BUG FIX (v0.1.225): with the browser's default preservesPitch, that
+    // made drift a slight tempo wobble with no pitch change at all. While
+    // pitch drift is on, the elements now run with preservesPitch off, so
+    // drift is tape-style (pitch and tempo together) like buffer mode's
+    // detune. Speed must stay a pure tempo change, so when Speed isn't 100%
+    // a pitch-shift node undoes the pitch Speed would otherwise add (see
+    // _syncPitchMode and pitchShiftNode.js).
     this._pitchFactor = 1
+    this._pitchCorrection = null
+    this._pitchCorrectionRatio = 1
+    this._pitchModeToken = 0
     // Nullable - null means "use DEFAULT_STREAM_CROSSFADE_SECONDS". See
     // _crossfadeSeconds() / _tick() for how it drives the loop-seam blend.
     this.crossfadeSeconds = crossfadeSeconds ?? null
@@ -263,8 +273,13 @@ export class LocalFileSoundSource {
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
 
-    this._xfadeGains[0].connect(this.noiseGate.input)
-    this._xfadeGains[1].connect(this.noiseGate.input)
+    // Both voices meet here; the optional pitch-correction node is inserted
+    // between this bus and the noise gate.
+    this.voiceBus = engine.context.createGain()
+    this._xfadeGains[0].connect(this.voiceBus)
+    this._xfadeGains[1].connect(this.voiceBus)
+    this.voiceBus.connect(this.noiseGate.input)
+    this._syncPitchMode()
     this.noiseGate.output.connect(this.highpassNode)
     this.highpassNode.connect(this.lowpassNode)
     this._rebuildEqChain(this.filters.eq ?? [])
@@ -293,6 +308,46 @@ export class LocalFileSoundSource {
 
   _applyPlaybackRate() {
     for (const el of this._els) el.playbackRate = this._rate
+  }
+
+  // Pitch drift on -> preservesPitch off, plus a 1/speed pitch correction
+  // when Speed isn't 100%. Called when the drift config or Speed changes.
+  _syncPitchMode() {
+    const driftOn = this._fluctuation.pitchMod.enabled
+    for (const el of this._els) el.preservesPitch = !driftOn
+    const ratio = driftOn && Math.abs(this.speed - 1) > 0.001 ? 1 / this.speed : 1
+    if (ratio === this._pitchCorrectionRatio) return
+    this._pitchCorrectionRatio = ratio
+    const token = ++this._pitchModeToken
+    if (ratio === 1) {
+      this._setPitchCorrection(null)
+      return
+    }
+    if (this._pitchCorrection) {
+      this._pitchCorrection.parameters.get('ratio').value = ratio
+      return
+    }
+    createPitchShiftNode(this.engine.context, ratio)
+      .then((node) => {
+        if (this._disposed || token !== this._pitchModeToken) {
+          node.disconnect()
+          return
+        }
+        this._setPitchCorrection(node)
+      })
+      .catch((err) => log.warn('Stream pitch correction unavailable', err))
+  }
+
+  _setPitchCorrection(node) {
+    this.voiceBus.disconnect()
+    if (this._pitchCorrection) this._pitchCorrection.disconnect()
+    this._pitchCorrection = node
+    if (node) {
+      this.voiceBus.connect(node)
+      node.connect(this.noiseGate.input)
+    } else {
+      this.voiceBus.connect(this.noiseGate.input)
+    }
   }
 
   get audioEl() {
@@ -503,11 +558,13 @@ export class LocalFileSoundSource {
   setSpeed(speed) {
     this.speed = speed ?? 1
     this._applyPlaybackRate()
+    this._syncPitchMode()
   }
 
   setFluctuation(fluctuation) {
     this._fluctuation.configure(fluctuation ?? {})
     this._fluctuation.sync(this.playing)
+    this._syncPitchMode()
   }
 
   hasFluctuation(fluctuation) {
@@ -707,6 +764,7 @@ export class LocalFileSoundSource {
 
   dispose() {
     this.playing = false
+    this._disposed = true
     this._fluctuation.dispose()
     if (this._rafId) cancelAnimationFrame(this._rafId)
     if (this._pauseTimeoutId) clearTimeout(this._pauseTimeoutId)
@@ -722,6 +780,8 @@ export class LocalFileSoundSource {
     }
     for (const node of this._srcNodes) node.disconnect()
     for (const gain of this._xfadeGains) gain.disconnect()
+    this.voiceBus.disconnect()
+    this._pitchCorrection?.disconnect()
     this.noiseGate.dispose()
     this.highpassNode.disconnect()
     this.lowpassNode.disconnect()
