@@ -325,7 +325,8 @@ export class PreviewSource {
       onPitch: (semitones) => {
         this._pitchModFactor = Math.pow(2, semitones / 12)
         this._applyPlaybackRate()
-      }
+      },
+      onPan: (v) => this.driftPanStage.setPan(v)
     })
     this._fluctuation.configure(fluctuation ?? {})
 
@@ -351,13 +352,17 @@ export class PreviewSource {
     // Stereo pan (v0.1.216) - last stage before the preview volume, matching
     // core's LocalFileSoundSource and the ffmpeg bake.
     this.panStage = new PanStage(engine.context, 0)
+    // Pan drift (v0.1.217) - a second stage after the static pan, same as
+    // core's LocalFileSoundSource/BufferSoundSource.
+    this.driftPanStage = new PanStage(engine.context, 0)
 
     this.outputGainNode = engine.context.createGain()
     this.outputGainNode.gain.value = 0
     for (const voice of this.voices) voice.crossfadeGain.connect(this.fluctuationGain)
     this.fluctuationGain.connect(this.envelopeGain)
     this.envelopeGain.connect(this.panStage.input)
-    this.panStage.output.connect(this.outputGainNode)
+    this.panStage.output.connect(this.driftPanStage.input)
+    this.driftPanStage.output.connect(this.outputGainNode)
     this.outputGainNode.connect(engine.masterGain)
 
     // Real-time spectrum analyzer tap for the Remix EQ graph's live backdrop
@@ -633,6 +638,7 @@ export class PreviewSource {
     this.fluctuationGain.disconnect()
     this.envelopeGain.disconnect()
     this.panStage.dispose()
+    this.driftPanStage.dispose()
     this.outputGainNode.disconnect()
     this.analyserFeedNode.disconnect()
     this.analyserNode.disconnect()

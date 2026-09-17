@@ -241,6 +241,7 @@ export class LocalFileSoundSource {
     this.fluctuationGain.gain.value = 1
     this._fluctuation = new SoundFluctuation({
       onVolume: (v) => this.fluctuationGain.gain.setTargetAtTime(v, this.engine.context.currentTime, 0.12),
+      onPan: (v) => this.driftPanStage.setPan(v),
       onPitch: (semitones) => {
         this._pitchFactor = Math.pow(2, semitones / 12)
         this._applyPlaybackRate()
@@ -252,6 +253,11 @@ export class LocalFileSoundSource {
     // chain, right before the per-sound volume - the same spot the ffmpeg
     // bake applies it (loopClip.js's renderCrossfadedLoop, last stage).
     this.panStage = new PanStage(engine.context, this.filters.pan ?? 0)
+    // Pan drift (v0.1.217) is its own stage right after the static one - a
+    // baked clip already has the static pan in its samples, so buffer mode
+    // (BufferSoundSource) can only add drift *after* it; doing the same here
+    // keeps stream and buffer mode (and the export) sounding identical.
+    this.driftPanStage = new PanStage(engine.context, 0)
 
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
@@ -274,7 +280,8 @@ export class LocalFileSoundSource {
     this.reverbConvolver.connect(this.fluctuationGain)
 
     this.fluctuationGain.connect(this.panStage.input)
-    this.panStage.output.connect(this.gainNode)
+    this.panStage.output.connect(this.driftPanStage.input)
+    this.driftPanStage.output.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -730,6 +737,7 @@ export class LocalFileSoundSource {
     this.reverbConvolver.disconnect()
     this.fluctuationGain.disconnect()
     this.panStage.dispose()
+    this.driftPanStage.dispose()
     this.gainNode.disconnect()
   }
 }

@@ -132,6 +132,14 @@ const FLUC_VOL_MIN = 0
 const FLUC_VOL_MAX = 1
 const FLUC_PITCH_MIN = -6
 const FLUC_PITCH_MAX = 6
+// Pan drift (v0.1.217): -1 (left) .. 1 (right).
+const FLUC_PAN_MIN = -1
+const FLUC_PAN_MAX = 1
+const PAN_DRIFT_DEFAULTS = { min: -0.5, bias: 0, max: 0.5 }
+function formatPan(v) {
+  const r = Math.round(v * 100)
+  return r === 0 ? 'C' : `${r < 0 ? 'L' : 'R'}${Math.abs(r)}`
+}
 // v0.1.176: timing is flat seconds the user reads directly (changeMinSeconds
 // / changeMaxSeconds = the random gap before a new target is picked;
 // transitionSeconds = how long the glide there takes). fullyRandom bypasses
@@ -141,7 +149,8 @@ const FLUC_DEFAULT_TIMING = { changeMinSeconds: 6, changeMaxSeconds: 14, transit
 function defaultFluctuation() {
   return {
     volume: { enabled: false, fullyRandom: false, min: 0.5, max: 1, bias: 0.8, ...FLUC_DEFAULT_TIMING },
-    pitch: { enabled: false, fullyRandom: false, min: -1, max: 1, bias: 0, ...FLUC_DEFAULT_TIMING }
+    pitch: { enabled: false, fullyRandom: false, min: -1, max: 1, bias: 0, ...FLUC_DEFAULT_TIMING },
+    pan: { enabled: false, fullyRandom: false, ...PAN_DRIFT_DEFAULTS, ...FLUC_DEFAULT_TIMING }
   }
 }
 
@@ -206,15 +215,23 @@ const NEUTRAL_GROUP_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echo
 // special-case null; presets.js collapses a disabled one back to null on
 // save. Deep-copied by cloneMixFilters the same way `eq` is, so editing
 // this.wholeMixCurrent.fluctuation never mutates the shared neutral/saved.
+// v0.1.217: a Sound Group also has a pan axis (the whole group wandering
+// left/right); the whole mix keeps volume only (presets.js drops pan there).
 function defaultMixFluctuation() {
-  return { volume: { enabled: false, fullyRandom: false, min: 0.5, max: 1, bias: 0.8, ...FLUC_DEFAULT_TIMING } }
+  return {
+    volume: { enabled: false, fullyRandom: false, min: 0.5, max: 1, bias: 0.8, ...FLUC_DEFAULT_TIMING },
+    pan: { enabled: false, fullyRandom: false, ...PAN_DRIFT_DEFAULTS, ...FLUC_DEFAULT_TIMING }
+  }
 }
 
 function cloneMixFluctuation(f) {
   // No saved fluctuation → start the bar/sliders at a sensible spread (not
   // all three handles collapsed at 1), same as Sound mode's defaultFluctuation.
-  const src = f?.volume ?? defaultMixFluctuation().volume
-  return { volume: { ...defaultMixFluctuation().volume, ...normalizeFluctuationAxis(src, 1) } }
+  const d = defaultMixFluctuation()
+  return {
+    volume: { ...d.volume, ...normalizeFluctuationAxis(f?.volume ?? d.volume, 1) },
+    pan: { ...d.pan, ...normalizeFluctuationAxis(f?.pan ?? d.pan, 0) }
+  }
 }
 
 function cloneMixFilters(obj, neutral) {
@@ -273,7 +290,7 @@ function mixFluctuationMarkup(prefix) {
           <div class="editor-fluctuation">
             <div class="editor-fluctuation-head">
               <span class="editor-fluctuation-label">Fluctuation</span>
-              <span class="editor-fluctuation-hint">Slow, random volume drift on ${scope} — weather rolling through, the ambience swelling and fading on its own. Drag the outer circles for the quietest/loudest it reaches, the middle circle for where it sits most of the time. "Change every" is the seconds between new targets (a random value in that range); "Transition" is roughly how long each glide takes. Applies live in the Mixer; not baked into an export yet.</span>
+              <span class="editor-fluctuation-hint">Slow, random drift on ${scope} — weather rolling through, the ambience swelling and fading on its own. Drag the outer circles for the lowest/highest it reaches, the middle circle for where it sits most of the time. "Change every" is the seconds between new targets (a random value in that range); "Transition" is roughly how long each glide takes. Applies live in the Mixer and is baked into exports.</span>
             </div>
             <div class="editor-fluctuation-axis">
               <label class="editor-fluctuation-enable">
@@ -282,7 +299,19 @@ function mixFluctuationMarkup(prefix) {
               </label>
               <canvas id="editor-mix-${prefix}-fluc-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
               ${fluctuationTimingMarkup(`editor-mix-${prefix}-fluc`)}
-            </div>
+            </div>${
+              prefix === 'group'
+                ? `
+            <div class="editor-fluctuation-axis">
+              <label class="editor-fluctuation-enable">
+                <input id="editor-mix-group-flucpan-enabled" type="checkbox" />
+                Pan drift <span class="editor-fluctuation-sub">(the whole group wanders left/right together; while on, it replaces its sounds' own pan drift)</span>
+              </label>
+              <canvas id="editor-mix-group-flucpan-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
+              ${fluctuationTimingMarkup('editor-mix-group-flucpan')}
+            </div>`
+                : ''
+            }
           </div>`
 }
 
@@ -308,18 +337,22 @@ function canonicalMixFilters(obj, { includeFadeIn }) {
     occlusion: Number(o.occlusion) || 0,
     ...(includeFadeIn ? { fadeInSeconds: Number(o.fadeInSeconds) || 0 } : {}),
     fluctuation: (() => {
-      const v = o.fluctuation?.volume
-      if (!v?.enabled) return null
-      const n = normalizeFluctuationAxis(v, 1)
-      return {
-        fullyRandom: n.fullyRandom,
-        min: n.min,
-        max: n.max,
-        bias: n.bias,
-        changeMinSeconds: n.changeMinSeconds,
-        changeMaxSeconds: n.changeMaxSeconds,
-        transitionSeconds: n.transitionSeconds
+      const axis = (a, neutral) => {
+        if (!a?.enabled) return null
+        const n = normalizeFluctuationAxis(a, neutral)
+        return {
+          fullyRandom: n.fullyRandom,
+          min: n.min,
+          max: n.max,
+          bias: n.bias,
+          changeMinSeconds: n.changeMinSeconds,
+          changeMaxSeconds: n.changeMaxSeconds,
+          transitionSeconds: n.transitionSeconds
+        }
       }
+      const volume = axis(o.fluctuation?.volume, 1)
+      const pan = axis(o.fluctuation?.pan, 0)
+      return volume || pan ? { volume, pan } : null
     })(),
     eq: (o.eq ?? []).map((b) => ({
       freqHz: Math.round(Number(b.freqHz) || 0),
@@ -680,6 +713,8 @@ export default class EditorPlugin {
     this.groupEq?.destroy()
     this.flucVolBar?.destroy()
     this.flucPitchBar?.destroy()
+    this.flucPanBar?.destroy()
+    this.groupFlucPanBar?.destroy()
     this.unregister?.()
   }
 
@@ -1383,7 +1418,7 @@ ${mixFluctuationMarkup('group')}
           <div id="editor-fluctuation-section" class="editor-fluctuation">
             <div class="editor-fluctuation-head">
               <span class="editor-fluctuation-label">Fluctuation</span>
-              <span class="editor-fluctuation-hint">Slow, random drift while the sound loops — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further. On each bar: drag the outer circles for the lowest/highest it reaches, the middle circle for where it sits most of the time. "Change every" is the seconds between new targets (a random value in that range); "Transition" is roughly how long each glide takes. "Fully random" ignores the circles and roams the whole range. Applies live in the Mixer and the preview; not baked into an export. Saves on its own the moment you let go of a control — no need to hit Save.</span>
+              <span class="editor-fluctuation-hint">Slow, random drift while the sound loops — wind gusting stronger and weaker, rain swelling and fading, something drifting closer and further. On each bar: drag the outer circles for the lowest/highest it reaches, the middle circle for where it sits most of the time. "Change every" is the seconds between new targets (a random value in that range); "Transition" is roughly how long each glide takes. "Fully random" ignores the circles and roams the whole range. Applies live in the Mixer and the preview, and is baked into exports. Saves on its own the moment you let go of a control — no need to hit Save.</span>
             </div>
             <p id="editor-fluctuation-saved-note" class="editor-fluctuation-hint hidden">Drift only plays in the <strong>Live edit</strong> preview — the <strong>Saved audio</strong> preview is the baked clip, which never contains it. Switch the preview toggle to Live edit to hear it.</p>
             <div class="editor-fluctuation-axis">
@@ -1401,6 +1436,15 @@ ${mixFluctuationMarkup('group')}
               </label>
               <canvas id="editor-fluc-pitch-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
               ${fluctuationTimingMarkup('editor-fluc-pitch')}
+            </div>
+            <div class="editor-fluctuation-axis">
+              <label class="editor-fluctuation-enable">
+                <input id="editor-fluc-pan-enabled" type="checkbox" />
+                Pan drift <span class="editor-fluctuation-sub">(wanders left/right, starting from the Pan slider's position)</span>
+              </label>
+              <p id="editor-fluc-pan-group-note" class="editor-fluctuation-hint hidden"></p>
+              <canvas id="editor-fluc-pan-bar" class="editor-fluctuation-bar" title="Drag the circles. Double-click one to reset it."></canvas>
+              ${fluctuationTimingMarkup('editor-fluc-pan')}
             </div>
           </div>
           <p id="editor-save-status" class="editor-save-status"></p>
@@ -1578,6 +1622,13 @@ ${mixFluctuationMarkup('group')}
       flucPitchChangeMax: container.querySelector('#editor-fluc-pitch-changemax'),
       flucPitchTransition: container.querySelector('#editor-fluc-pitch-transition'),
       flucPitchFullRandom: container.querySelector('#editor-fluc-pitch-fullrandom'),
+      flucPanEnabled: container.querySelector('#editor-fluc-pan-enabled'),
+      flucPanGroupNote: container.querySelector('#editor-fluc-pan-group-note'),
+      flucPanBar: container.querySelector('#editor-fluc-pan-bar'),
+      flucPanChangeMin: container.querySelector('#editor-fluc-pan-changemin'),
+      flucPanChangeMax: container.querySelector('#editor-fluc-pan-changemax'),
+      flucPanTransition: container.querySelector('#editor-fluc-pan-transition'),
+      flucPanFullRandom: container.querySelector('#editor-fluc-pan-fullrandom'),
       saveStatus: container.querySelector('#editor-save-status'),
       scrollTop: container.querySelector('#editor-scroll-top'),
       leaveConfirmDialog: container.querySelector('#editor-leave-confirm'),
@@ -1690,7 +1741,13 @@ ${mixFluctuationMarkup('group')}
       mixGroupFlucChangeMin: container.querySelector('#editor-mix-group-fluc-changemin'),
       mixGroupFlucChangeMax: container.querySelector('#editor-mix-group-fluc-changemax'),
       mixGroupFlucTransition: container.querySelector('#editor-mix-group-fluc-transition'),
-      mixGroupFlucFullRandom: container.querySelector('#editor-mix-group-fluc-fullrandom')
+      mixGroupFlucFullRandom: container.querySelector('#editor-mix-group-fluc-fullrandom'),
+      mixGroupFlucPanEnabled: container.querySelector('#editor-mix-group-flucpan-enabled'),
+      mixGroupFlucPanBar: container.querySelector('#editor-mix-group-flucpan-bar'),
+      mixGroupFlucPanChangeMin: container.querySelector('#editor-mix-group-flucpan-changemin'),
+      mixGroupFlucPanChangeMax: container.querySelector('#editor-mix-group-flucpan-changemax'),
+      mixGroupFlucPanTransition: container.querySelector('#editor-mix-group-flucpan-transition'),
+      mixGroupFlucPanFullRandom: container.querySelector('#editor-mix-group-flucpan-fullrandom')
     }
 
     this.loopEditorController = createLoopEditorController(this.els.canvas)
@@ -1808,7 +1865,7 @@ ${mixFluctuationMarkup('group')}
     })
     this.groupEq.setTrashDropTarget(this.els.mixGroupEqRemoveBand)
 
-    // Fluctuation bars for Preset / Group mode (volume axis only). onChange
+    // Fluctuation bars for Preset / Group mode (volume; Group also pan). onChange
     // writes the three handle values into this.wholeMixCurrent/groupCurrent
     // and re-runs the same read+preview path the sliders use.
     this.presetFlucBar = createFluctuationBar(this.els.mixPresetFlucBar, {
@@ -1817,7 +1874,7 @@ ${mixFluctuationMarkup('group')}
       defaults: { min: 0.5, bias: 0.8, max: 1 },
       format: (v) => `${Math.round(v * 100)}%`,
       onChange: (vals) => {
-        this.wholeMixCurrent.fluctuation = { volume: { ...this.wholeMixCurrent.fluctuation.volume, ...vals } }
+        this.wholeMixCurrent.fluctuation = { ...this.wholeMixCurrent.fluctuation, volume: { ...this.wholeMixCurrent.fluctuation.volume, ...vals } }
         this.readPresetMixControlsAndPreview()
       }
     })
@@ -1827,9 +1884,16 @@ ${mixFluctuationMarkup('group')}
       defaults: { min: 0.5, bias: 0.8, max: 1 },
       format: (v) => `${Math.round(v * 100)}%`,
       onChange: (vals) => {
-        this.groupCurrent.fluctuation = { volume: { ...this.groupCurrent.fluctuation.volume, ...vals } }
+        this.groupCurrent.fluctuation = { ...this.groupCurrent.fluctuation, volume: { ...this.groupCurrent.fluctuation.volume, ...vals } }
         this.readGroupControlsAndPreview()
       }
+    })
+    this.groupFlucPanBar = createFluctuationBar(this.els.mixGroupFlucPanBar, {
+      valueMin: FLUC_PAN_MIN,
+      valueMax: FLUC_PAN_MAX,
+      defaults: PAN_DRIFT_DEFAULTS,
+      format: formatPan,
+      onChange: () => this.readGroupControlsAndPreview()
     })
 
     // Control bundles for the shared read/write/enabled-UI fluctuation
@@ -1849,7 +1913,15 @@ ${mixFluctuationMarkup('group')}
       changeMinEl: this.els.mixGroupFlucChangeMin,
       changeMaxEl: this.els.mixGroupFlucChangeMax,
       transEl: this.els.mixGroupFlucTransition,
-      fullRandomEl: this.els.mixGroupFlucFullRandom
+      fullRandomEl: this.els.mixGroupFlucFullRandom,
+      pan: {
+        enabledEl: this.els.mixGroupFlucPanEnabled,
+        bar: this.groupFlucPanBar,
+        changeMinEl: this.els.mixGroupFlucPanChangeMin,
+        changeMaxEl: this.els.mixGroupFlucPanChangeMax,
+        transEl: this.els.mixGroupFlucPanTransition,
+        fullRandomEl: this.els.mixGroupFlucPanFullRandom
+      }
     }
 
     this.wireMixControls()
@@ -2125,7 +2197,22 @@ ${mixFluctuationMarkup('group')}
         this.applyFluctuationControls()
       }
     })
+    this.flucPanBar = createFluctuationBar(this.els.flucPanBar, {
+      valueMin: FLUC_PAN_MIN,
+      valueMax: FLUC_PAN_MAX,
+      defaults: PAN_DRIFT_DEFAULTS,
+      format: formatPan,
+      onChange: (vals) => {
+        this.fluctuation.pan = { ...this.fluctuation.pan, ...vals }
+        this.applyFluctuationControls()
+      }
+    })
     const flucInputs = [
+      this.els.flucPanEnabled,
+      this.els.flucPanFullRandom,
+      this.els.flucPanChangeMin,
+      this.els.flucPanChangeMax,
+      this.els.flucPanTransition,
       this.els.flucVolEnabled,
       this.els.flucVolFullRandom,
       this.els.flucVolChangeMin,
@@ -2929,13 +3016,18 @@ ${mixFluctuationMarkup('group')}
   setFluctuationControls(fluctuation) {
     const f = {
       volume: normalizeFluctuationAxis(fluctuation?.volume, 1),
-      pitch: normalizeFluctuationAxis(fluctuation?.pitch, 0)
+      pitch: normalizeFluctuationAxis(fluctuation?.pitch, 0),
+      // A sound saved before pan drift existed gets the default spread on the
+      // bar, not all three circles collapsed at center.
+      pan: fluctuation?.pan ? normalizeFluctuationAxis(fluctuation.pan, 0) : { ...defaultFluctuation().pan }
     }
     this.fluctuation = f
     this.writeFluctuationAxisFields('flucVol', f.volume)
     this.flucVolBar.setValues(f.volume)
     this.writeFluctuationAxisFields('flucPitch', f.pitch)
     this.flucPitchBar.setValues(f.pitch)
+    this.writeFluctuationAxisFields('flucPan', f.pan)
+    this.flucPanBar.setValues(f.pan)
     this.updateFluctuationEnabledUI()
     // Freshly loaded from the library == the saved baseline for the dirty-check.
     this.savedFluctuationSnapshot = this.fluctuationSnapshot()
@@ -2952,7 +3044,8 @@ ${mixFluctuationMarkup('group')}
   updateFluctuationEnabledUI() {
     for (const [key, bar] of [
       ['flucVol', this.flucVolBar],
-      ['flucPitch', this.flucPitchBar]
+      ['flucPitch', this.flucPitchBar],
+      ['flucPan', this.flucPanBar]
     ]) {
       const on = this.els[`${key}Enabled`].checked
       const random = this.els[`${key}FullRandom`].checked
@@ -2965,8 +3058,23 @@ ${mixFluctuationMarkup('group')}
     // Drift is a live-preview / Mixer behavior only - warn if the user has an
     // axis on but is auditioning the baked "Saved audio" clip, which by
     // design has no fluctuation (so it'd look like the feature does nothing).
-    const anyOn = this.els.flucVolEnabled.checked || this.els.flucPitchEnabled.checked
+    const anyOn = this.els.flucVolEnabled.checked || this.els.flucPitchEnabled.checked || this.els.flucPanEnabled.checked
     this.els.fluctuationSavedNote?.classList.toggle('hidden', !(anyOn && this.previewMode === 'saved'))
+    // A Sound Group with its own pan drift overrides this sound's in the
+    // Mixer (the preview here plays the sound on its own, so it still drifts).
+    const group = this.panDriftOverridingGroup()
+    this.els.flucPanGroupNote.textContent = group
+      ? `Its group "${group.name}" has its own pan drift on, so the Mixer and exports use the group's instead of this one.`
+      : ''
+    this.els.flucPanGroupNote.classList.toggle('hidden', !(group && this.els.flucPanEnabled.checked))
+  }
+
+  panDriftOverridingGroup() {
+    const id = this.currentEntry?.id
+    if (!id) return null
+    const preset = this.presets?.find((p) => p.id === this.editingPresetId)
+    const group = preset?.groups?.find((g) => g.soundIds?.includes(id))
+    return group?.filters?.fluctuation?.pan?.enabled ? group : null
   }
 
   readFluctuationAxisFields(key, bar) {
@@ -2989,7 +3097,8 @@ ${mixFluctuationMarkup('group')}
   applyFluctuationControls() {
     this.fluctuation = {
       volume: this.readFluctuationAxisFields('flucVol', this.flucVolBar),
-      pitch: this.readFluctuationAxisFields('flucPitch', this.flucPitchBar)
+      pitch: this.readFluctuationAxisFields('flucPitch', this.flucPitchBar),
+      pan: this.readFluctuationAxisFields('flucPan', this.flucPanBar)
     }
     this.updateFluctuationEnabledUI()
     this.previewSource?.setFluctuation(this.fluctuation)
@@ -3030,7 +3139,8 @@ ${mixFluctuationMarkup('group')}
         if (this.currentEntry?.id === id) {
           this.savedFluctuationSnapshot = JSON.stringify({
             volume: normalizeFluctuationAxis(fluctuation?.volume, 1),
-            pitch: normalizeFluctuationAxis(fluctuation?.pitch, 0)
+            pitch: normalizeFluctuationAxis(fluctuation?.pitch, 0),
+            pan: normalizeFluctuationAxis(fluctuation?.pan, 0)
           })
           this.updateSaveButtonState()
           this.els.saveStatus.textContent = 'Fluctuation applied — saved automatically (no bake needed).'
@@ -3481,7 +3591,8 @@ ${mixFluctuationMarkup('group')}
   fluctuationSnapshot() {
     return JSON.stringify({
       volume: normalizeFluctuationAxis(this.fluctuation?.volume, 1),
-      pitch: normalizeFluctuationAxis(this.fluctuation?.pitch, 0)
+      pitch: normalizeFluctuationAxis(this.fluctuation?.pitch, 0),
+      pan: normalizeFluctuationAxis(this.fluctuation?.pan, 0)
     })
   }
 
@@ -4589,7 +4700,7 @@ ${mixFluctuationMarkup('group')}
     for (const el of [this.els.mixGroupHighpass, this.els.mixGroupLowpass, this.els.mixGroupGain, this.els.mixGroupEchoDelay, this.els.mixGroupEchoDecay, this.els.mixGroupReverbSize, this.els.mixGroupReverbMix, this.els.mixGroupOcclusion]) {
       el.addEventListener('input', () => this.readGroupControlsAndPreview())
     }
-    for (const el of [this.els.mixGroupFlucEnabled, this.els.mixGroupFlucFullRandom, this.els.mixGroupFlucChangeMin, this.els.mixGroupFlucChangeMax, this.els.mixGroupFlucTransition]) {
+    for (const el of [this.els.mixGroupFlucEnabled, this.els.mixGroupFlucFullRandom, this.els.mixGroupFlucChangeMin, this.els.mixGroupFlucChangeMax, this.els.mixGroupFlucTransition, this.els.mixGroupFlucPanEnabled, this.els.mixGroupFlucPanFullRandom, this.els.mixGroupFlucPanChangeMin, this.els.mixGroupFlucPanChangeMax, this.els.mixGroupFlucPanTransition]) {
       el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => this.readGroupControlsAndPreview())
     }
     this.els.mixGroupEqType.addEventListener('change', () => this.applyGroupEqFieldsToSelectedBand())
@@ -5067,47 +5178,59 @@ ${mixFluctuationMarkup('group')}
     if (this.mode === 'preset') this.dispatchWholeMixPreview(this.wholeMixCurrent)
   }
 
-  // --- Fluctuation shared helpers (Preset + Group mode, volume axis only) ---
+  // --- Fluctuation shared helpers (Preset + Group mode) ---
   // `els` is a bundle: { enabledEl, bar, changeMinEl, changeMaxEl, transEl,
-  // fullRandomEl } (this.presetFlucEls / this.groupFlucEls).
+  // fullRandomEl } for the volume axis (this.presetFlucEls /
+  // this.groupFlucEls), plus an optional `pan` sub-bundle of the same shape
+  // (Group mode only, v0.1.217).
   readMixFluctuation(els) {
-    const v = els.bar.getValues()
     return {
-      volume: {
-        enabled: els.enabledEl.checked,
-        fullyRandom: els.fullRandomEl.checked,
-        min: v.min,
-        max: v.max,
-        bias: v.bias,
-        changeMinSeconds: flucSeconds(els.changeMinEl.value, 6),
-        changeMaxSeconds: flucSeconds(els.changeMaxEl.value, 14),
-        transitionSeconds: flucSeconds(els.transEl.value, 8, true)
-      }
+      volume: this.readMixFlucAxis(els),
+      ...(els.pan ? { pan: this.readMixFlucAxis(els.pan) } : {})
+    }
+  }
+
+  readMixFlucAxis(axisEls) {
+    const v = axisEls.bar.getValues()
+    return {
+      enabled: axisEls.enabledEl.checked,
+      fullyRandom: axisEls.fullRandomEl.checked,
+      min: v.min,
+      max: v.max,
+      bias: v.bias,
+      changeMinSeconds: flucSeconds(axisEls.changeMinEl.value, 6),
+      changeMaxSeconds: flucSeconds(axisEls.changeMaxEl.value, 14),
+      transitionSeconds: flucSeconds(axisEls.transEl.value, 8, true)
     }
   }
 
   writeMixFluctuation(fluctuation, els) {
     // No saved axis (a neutral preset, or Reset filters) → show the default
     // spread, not all three handles collapsed at 1.
-    const src = fluctuation && fluctuation.volume ? fluctuation.volume : defaultMixFluctuation().volume
-    const vol = { ...defaultMixFluctuation().volume, ...normalizeFluctuationAxis(src, 1) }
-    els.enabledEl.checked = vol.enabled
-    els.fullRandomEl.checked = vol.fullyRandom
-    els.changeMinEl.value = String(vol.changeMinSeconds)
-    els.changeMaxEl.value = String(vol.changeMaxSeconds)
-    els.transEl.value = String(vol.transitionSeconds)
-    els.bar.setValues(vol)
+    const d = defaultMixFluctuation()
+    this.writeMixFlucAxis({ ...d.volume, ...normalizeFluctuationAxis(fluctuation?.volume ?? d.volume, 1) }, els)
+    if (els.pan) this.writeMixFlucAxis({ ...d.pan, ...normalizeFluctuationAxis(fluctuation?.pan ?? d.pan, 0) }, els.pan)
     this.updateMixFlucEnabledUI(els)
   }
 
+  writeMixFlucAxis(axis, axisEls) {
+    axisEls.enabledEl.checked = axis.enabled
+    axisEls.fullRandomEl.checked = axis.fullyRandom
+    axisEls.changeMinEl.value = String(axis.changeMinSeconds)
+    axisEls.changeMaxEl.value = String(axis.changeMaxSeconds)
+    axisEls.transEl.value = String(axis.transitionSeconds)
+    axisEls.bar.setValues(axis)
+  }
+
   updateMixFlucEnabledUI(els) {
-    const on = els.enabledEl.checked
-    const random = els.fullRandomEl.checked
-    els.bar.setEnabled(on && !random)
-    els.changeMinEl.disabled = !on
-    els.changeMaxEl.disabled = !on
-    els.transEl.disabled = !on
-    els.fullRandomEl.disabled = !on
+    for (const axisEls of els.pan ? [els, els.pan] : [els]) {
+      const on = axisEls.enabledEl.checked
+      axisEls.bar.setEnabled(on && !axisEls.fullRandomEl.checked)
+      axisEls.changeMinEl.disabled = !on
+      axisEls.changeMaxEl.disabled = !on
+      axisEls.transEl.disabled = !on
+      axisEls.fullRandomEl.disabled = !on
+    }
   }
 
   setPresetEffectPreset(preset) {

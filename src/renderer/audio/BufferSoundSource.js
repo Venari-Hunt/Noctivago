@@ -1,4 +1,5 @@
 import { SoundFluctuation, fluctuationKey } from './Modulator.js'
+import { PanStage } from './PanStage.js'
 
 const RAMP_SECONDS = 0.15
 
@@ -29,13 +30,18 @@ export class BufferSoundSource {
     this.fluctuationGain.gain.value = 1
     this._fluctuation = new SoundFluctuation({
       onVolume: (v) => this.fluctuationGain.gain.setTargetAtTime(v, this.engine.context.currentTime, 0.12),
-      onPitch: (semitones) => this.sourceNode?.detune.setTargetAtTime(semitones * 100, this.engine.context.currentTime, 0.12)
+      onPitch: (semitones) => this.sourceNode?.detune.setTargetAtTime(semitones * 100, this.engine.context.currentTime, 0.12),
+      onPan: (v) => this.driftPanStage.setPan(v)
     })
+    // Pan drift (v0.1.217) - the clip already carries the sound's static pan,
+    // so drift is a second stage on top (see SoundSource.js's driftPanStage).
+    this.driftPanStage = new PanStage(engine.context, 0)
     this._fluctuation.configure(fluctuation ?? {})
 
     this.gainNode = engine.context.createGain()
     this.gainNode.gain.value = 0
-    this.fluctuationGain.connect(this.gainNode)
+    this.fluctuationGain.connect(this.driftPanStage.input)
+    this.driftPanStage.output.connect(this.gainNode)
     this.gainNode.connect(engine.masterGain)
   }
 
@@ -130,6 +136,7 @@ export class BufferSoundSource {
       this.sourceNode = null
     }
     this.fluctuationGain.disconnect()
+    this.driftPanStage.dispose()
     this.gainNode.disconnect()
   }
 }

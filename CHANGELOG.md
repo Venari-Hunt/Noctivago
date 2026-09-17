@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.217 — Pan drift (Fluctuation for left/right)
+
+- Fluctuation has a new **Pan drift** bar next to Volume and Pitch drift (Remix, Sound mode): the sound slowly wanders left and right on its own. It works like the other two: drag the outer circles for how far it goes each way, the middle one for where it sits most of the time, and use "Change every", "Transition" and "Fully random" the same way. It starts from wherever the Pan slider puts the sound.
+- Sound Groups get Pan drift too (Remix, Group mode): the whole group wanders together. While a group's Pan drift is on, it replaces its sounds' own pan drift; their Pan slider positions still apply. Remix shows a note on a sound when its group is doing this.
+- Heard live in the Remix preview and the Mixer, and baked into exports. Export time only goes up for sounds or groups that actually use pan drift (about 1–2 seconds per 10 minutes of audio).
+- Fixed the Fluctuation help text, which still said drift isn't baked into exports; it has been since v0.1.171.
+
 ## v0.1.216 — Stereo pan per sound
 
 - New **Pan** slider in Remix (Sound mode, Filters section, under Gain): move a sound anywhere between the left and right speaker. Double-click it to center.

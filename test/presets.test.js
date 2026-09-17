@@ -101,3 +101,32 @@ describe('normalizeGroups', () => {
     assert.equal(group.name, 'Group')
   })
 })
+
+describe('pan drift (v0.1.217)', () => {
+  const pan = { enabled: true, min: -2, max: 0.5, bias: 0.9, changeMinSeconds: 3, changeMaxSeconds: 5, transitionSeconds: 1 }
+
+  test('a group keeps its pan drift, clamped into -1..1 with the bias inside the range', () => {
+    const f = normalizeGroupFilters({ fluctuation: { pan } }).fluctuation
+    assert.equal(f.volume, undefined)
+    assert.equal(f.pan.min, -1)
+    assert.equal(f.pan.max, 0.5)
+    assert.equal(f.pan.bias, 0.5)
+    assert.equal(f.pan.transitionSeconds, 1)
+  })
+
+  test('a group with only a disabled pan axis stores no fluctuation', () => {
+    assert.equal(normalizeGroupFilters({ fluctuation: { pan: { enabled: false } } }).fluctuation, null)
+  })
+
+  test('volume and pan drift are both kept on a group', () => {
+    const f = normalizeGroupFilters({ fluctuation: { volume: { enabled: true, min: 0.2, max: 0.9 }, pan } }).fluctuation
+    assert.ok(f.volume.enabled && f.pan.enabled)
+  })
+
+  test('the whole mix drops pan drift (it has no pan control)', () => {
+    assert.equal(normalizeWholeMix({ fluctuation: { pan } }), null)
+    const f = normalizeWholeMix({ fluctuation: { volume: { enabled: true, min: 0.2, max: 0.9 }, pan } }).fluctuation
+    assert.equal(f.pan, undefined)
+    assert.ok(f.volume.enabled)
+  })
+})

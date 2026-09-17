@@ -2,6 +2,7 @@ import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
 import { Modulator, normalizeFluctuationAxis } from './Modulator.js'
 import { applyOcclusionToFilters } from '../../shared/constants.js'
+import { PanStage } from './PanStage.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches
@@ -69,6 +70,19 @@ export class SoundGroupChain {
     })
     this._fluctKey = ''
 
+    // Pan drift (v0.1.217): the whole group wandering left/right together,
+    // right after the volume drift. While it's on, member sounds' own pan
+    // drift is switched off by the Mixer (tabs/mixer/index.js's
+    // effectiveFluctuation) - the group's setting overrides theirs.
+    this.panStage = new PanStage(context, 0)
+    this._panMod = new Modulator({
+      onValue: (v) => this.panStage.setPan(v),
+      neutral: 0,
+      rangeMin: -1,
+      rangeMax: 1
+    })
+    this._panKey = ''
+
     // Brick-wall safety limiter, same ceiling as WholeMixChain's - a group's
     // own gain/EQ boosts have no other ceiling, and several loud member
     // sounds summed together can genuinely clip.
@@ -98,7 +112,8 @@ export class SoundGroupChain {
     this.reverbSendGain.connect(this.reverbConvolver)
     this.reverbConvolver.connect(this.fluctGain)
 
-    this.fluctGain.connect(this.limiter)
+    this.fluctGain.connect(this.panStage.input)
+    this.panStage.output.connect(this.limiter)
     this.limiter.connect(destination)
 
     // Read-only tap for the merged Remix tab's live spectrogram (Group
@@ -168,13 +183,25 @@ export class SoundGroupChain {
   setFluctuation(fluctuation) {
     const vol = normalizeFluctuationAxis(fluctuation?.volume, 1)
     const key = JSON.stringify(vol.enabled ? vol : null)
-    if (key === this._fluctKey) return
-    this._fluctKey = key
-    if (vol.enabled) {
-      this._fluctMod.configure(vol)
-      if (!this._fluctMod.running) this._fluctMod.start()
-    } else {
-      this._fluctMod.stop()
+    if (key !== this._fluctKey) {
+      this._fluctKey = key
+      if (vol.enabled) {
+        this._fluctMod.configure(vol)
+        if (!this._fluctMod.running) this._fluctMod.start()
+      } else {
+        this._fluctMod.stop()
+      }
+    }
+    const pan = normalizeFluctuationAxis(fluctuation?.pan, 0)
+    const panKey = JSON.stringify(pan.enabled ? pan : null)
+    if (panKey !== this._panKey) {
+      this._panKey = panKey
+      if (pan.enabled) {
+        this._panMod.configure(pan)
+        if (!this._panMod.running) this._panMod.start()
+      } else {
+        this._panMod.stop()
+      }
     }
   }
 
@@ -212,6 +239,8 @@ export class SoundGroupChain {
     this.gain.disconnect()
     this._fluctMod.dispose()
     this.fluctGain.disconnect()
+    this._panMod.dispose()
+    this.panStage.dispose()
     this.echoDelay.disconnect()
     this.echoSendGain.disconnect()
     this.echoFeedbackGain.disconnect()
