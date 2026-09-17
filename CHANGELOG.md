@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.220 — Community tab is live
+
+- New **Community** tab: browse and search ambience presets shared by other Noctívago users, and import one with a click. Sounds from Freesound are downloaded from Freesound; the rest come with the preset.
+- **Share a preset** from the same tab. Your sounds are compressed before uploading, and you can update or delete what you shared under **My uploads**.
+- See something that shouldn't be there? Use **Report** on its card.
+- A shared preset can be up to 50 MB after compression.
+
 ## v0.1.219 — Community presets (groundwork) and fuller preset files
 
 - **Exported preset files now keep Sound Groups and per-preset sound settings.** Before, a preset file dropped its groups and any sound tweaks saved only in that preset, so an imported mix could sound different from the original. Older preset files still import as before.

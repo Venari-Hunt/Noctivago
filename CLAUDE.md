@@ -262,6 +262,14 @@ Owner request: users upload presets from the app, and other users browse and imp
   - Counters and moderation: download counting, 3 distinct reporters hide a preset (a repeat reporter isn't double-counted), wrong admin token rejected, unhide, delete.
 - The real built app in a throwaway `--user-data-dir` profile, driven via CDP (no playback). The Share UI refused to publish without the rights box, then showed each progress step and "1 sound uploaded, 1 linked from Freesound". The card rendered `<b>` in a tag as text. Import through the card opened the Mixer dialog ("Included in this file" / "In your library") and created a preset with its group, gain, volumes, overrides, and a `.opus` library file. Report, My uploads, Update (renamed on the server) and Delete all worked.
 
+**Server went live (v0.1.220).** The owner deployed on 2026-09-17 with Claude driving wrangler: D1 `noctivago-community` (its id is in `wrangler.toml`), R2 bucket `noctivago-community`, and Worker URL `https://noctivago-community.noctivago-community.workers.dev`. `ADMIN_TOKEN` and `IP_SALT` are set as Worker secrets; the owner keeps the admin token. The `COMMUNITY_API_URL` repo variable is set, so v0.1.220 is the first build that shows the Community tab.
+
+Deploying `community/` changes: run `npx wrangler deploy` from `community/` (already logged in on the owner's machine). Schema changes go through `npm run db:remote`.
+
+Testing gotcha: Cloudflare rejects any request that sets `CF-Connecting-IP` itself (403). A multi-reporter hide can only be tested against local `wrangler dev`, not production.
+
+The production API walkthrough passed (a single reporter is counted once and doesn't hide), and test data was cleaned up afterwards.
+
 ## Watch folders
 
 `src/main/watchFolders.js` auto-imports any audio file dropped into a folder the user has registered (`library.js`'s `addWatchedFolder`/`listWatchedFolders`), via `fs.watch` while running and a rescan (`library.js`'s `scanWatchedFolder`) on every startup to catch anything that arrived while the app was closed (`fs.watch` only reports live changes). A newly-seen file waits for its size to stop changing across two spaced checks before importing (`checkStable`), so a large file still mid-copy-in isn't imported truncated.
