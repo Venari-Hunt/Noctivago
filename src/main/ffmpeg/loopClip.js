@@ -40,7 +40,7 @@ async function renameWithRetry(tmpPath, outputPath, maxAttempts = 30, delayMs = 
   }
 }
 
-// BUG FIX (2026-08-16): discovered while verifying the rotation fix below
+// BUG FIX (2026-08-16): discovered while verifying the (since replaced) rotation fix
 // against a real (not synthetic) file - ffmpeg's acrossfade silently
 // produces a *completely empty* output, with no error and exit code 0, if
 // its first input is even a few milliseconds shorter than the declared `d`.
@@ -50,7 +50,7 @@ async function renameWithRetry(tmpPath, outputPath, maxAttempts = 30, delayMs = 
 // collapse the "tail" read to just under the requested crossfade length,
 // which made acrossfade emit nothing and left the render silently
 // crossfade-free (concat just carried mainF's length through unchanged).
-// This wasn't introduced by the rotation change above - it's been latent
+// This wasn't introduced by the rotation change - it's been latent
 // in the original tail/head crossfade since it first shipped, for any
 // source file where the last `fade` seconds aren't fully decodable for
 // this same reason - plausibly a real contributor to loops that "still
@@ -532,101 +532,47 @@ function readWavDuration(filePath) {
   return 0
 }
 
-// Builds the filter_complex fragment that crossfades the clip's own tail
-// into its own head, given three separate reads of the same source (see
-// doRender): input 0 is the main body (everything except the last `fade`
-// seconds), input 1 is just the tail (last `fade` seconds), input 2 is just
-// the head (first `fade` seconds). The tail and head get blended via
-// acrossfade, then reattached after the main body — output duration is
-// unchanged (see buildRotatedFilterComplex below for why this alone still
-// isn't the whole story). Any saved filters are applied to each of the
-// three reads identically, so the whole clip is filtered consistently.
-// Produces a stream labeled [combined], not the graph's final [out] —
-// buildRotatedFilterComplex appends one more stage on top of it.
+// Builds the filter_complex that crossfades the clip's own tail into its own
+// head, given three separate reads of the same source (see
+// renderCrossfadedLoop): input 0 is the body [S+f, E-f), input 1 is the tail
+// [E-f, E), input 2 is the head [S, S+f). The tail blends into the head, and
+// that blend is appended after the body - so the clip starts at source time
+// S+f and ends on source time S+f too, and the wrap point is continuous. The
+// loop comes out `fade` seconds shorter than the trim, which is exactly what
+// the live two-element crossfade (SoundSource.js / PreviewSource.js) plays:
+// the tail fades out while the head fades in, then playback carries on from
+// S+f.
+//
+// BUG FIX (v0.1.221): the body used to be [S, E-f), so the blend ended on
+// S+f but the clip wrapped back to S - a jump of exactly `fade` seconds of
+// audio on every loop. A later half-rotation (2026-08-16) only moved that
+// jump into the middle of the clip. Measured with a linear-ramp source
+// (sample value = source time): the old graph jumped 0.2s at 6.0s of a 12s
+// clip; this one has no jump anywhere, wrap included.
+//
+// The curve is equal-power (qsin), not linear: tail and head are different
+// moments of the source, so for the noisy textures this app is mostly used
+// for (rain, fire, crowds) they're uncorrelated, and a linear blend dips
+// ~3 dB in the middle of the seam - an audible "breath" on every loop.
 //
 // This *must* stay three separate ffmpeg inputs rather than one input
-// split+trimmed internally (asplit/atrim on a single stream) — that was
-// tried first and silently produced a near-empty crossfade: ffmpeg's link
-// labels can only be consumed once, and even after fixing that with a
-// second asplit, feeding acrossfade two atrim'd sub-streams at exactly its
-// crossfade duration produced truncated output for reasons that didn't
-// repro with genuinely separate inputs. Verified directly against ffmpeg
-// before landing this — don't "simplify" back to a single-input graph
-// without re-verifying against real output duration, not just exit code 0.
+// split+trimmed internally (asplit/atrim on a single stream) - that was
+// tried first and silently produced truncated output. Verify against real
+// output, not just exit code 0, before changing this.
 // atrim after the filter chain matters specifically for echo: aecho extends
-// its output past the input's own length to fit the echo tail (confirmed
-// directly against the bundled binary - a 2s input became ~4s of output),
-// which would silently desync acrossfade/concat's exact-duration
-// assumptions below. Trimming each fragment back to its own original
-// length is also musically correct on its own terms, not just a technical
-// workaround: this is a *looping* clip, so any echo tail that would have
-// bled past the loop point gets hard-cut by the loop wrap regardless -
-// better to trim it deliberately here than leave it to an undefined,
-// unverified interaction with the crossfade seam.
-function buildFilterComplex(filters, fade, mainDuration) {
+// its output past the input's own length to fit the echo tail, which would
+// desync acrossfade/concat's exact-duration assumptions. On a looping clip
+// any tail past the loop point is cut by the wrap anyway.
+function buildFilterComplex(filters, fade, bodyDuration) {
   const filterChain = buildFilterChain(filters)
   const suffix = filterChain ? `,${filterChain}` : ''
 
   return [
-    `[0:a:0]anull${suffix},atrim=start=0:end=${mainDuration}[mainF]`,
+    `[0:a:0]anull${suffix},atrim=start=0:end=${bodyDuration}[bodyF]`,
     `[1:a:0]anull${suffix},atrim=start=0:end=${fade}[tailF]`,
     `[2:a:0]anull${suffix},atrim=start=0:end=${fade}[headF]`,
-    `[tailF][headF]acrossfade=d=${fade}:c1=tri:c2=tri[blended]`,
-    `[mainF][blended]concat=n=2:v=0:a=1[combined]`
-  ].join(';')
-}
-
-// BUG FIX (2026-08-16): the crossfade above blends the tail *into* the
-// head, but that blended segment sits at the very end of the render — which
-// is *also* the clip's own wrap-around point (end connects back to start on
-// every loop). Even after crossfading, the sample the clip ends on and the
-// sample it starts on are still two genuinely different moments of the
-// source audio (`fade` seconds apart), so a real discontinuity persisted
-// exactly at the one spot every loop cycle draws the ear's attention to —
-// no amount of lengthening `fade` fixes this, since a longer blend window
-// only compares two moments that are *further* apart, not closer.
-//
-// The user described the standard fix directly, unprompted, in response to
-// still hearing the seam after the fade-duration bump above: split the clip
-// in half, swap the halves, and the point where they now join (the middle
-// of the new timeline) is exactly the *original* cut — which is where the
-// crossfade above already lives — while the clip's new start/end boundary
-// is a point that was never cut at all, and needs no blending because nothing
-// ever happened there.
-//
-// Implemented as one more stage on top of the already-verified [combined]
-// stream above (asplit it, atrim each copy to one half, concat them back in
-// swapped order) rather than rederiving the three-input read from scratch —
-// reuses 100% of that stage's tested behavior (including the echo/atrim
-// interaction) and is mathematically equivalent to building the swap
-// directly: the crossfaded edit ends up relocated to this stage's own join
-// point instead of sitting at the wrap boundary.
-//
-// Rotating by exactly half is always safe given the fade <= totalDuration/4
-// clamp in doRender: the blended segment occupies at most the last quarter
-// of [combined], so the halfway point is always comfortably inside the
-// untouched mainF region on both sides of the rotation cut, never inside
-// the blend itself.
-//
-// Verified directly against ffmpeg with a synthetic linear-ramp signal
-// (sample value encodes original timestamp, so any discontinuity shows up
-// immediately as a jump in decoded sample values, not just inferred from
-// exit code 0): the rendered clip's own wrap point (last sample vs. first
-// sample) measured exactly zero difference, while the relocated original
-// edit showed a real, expected jump squarely at the interior rotation
-// point instead of at the boundary — duration matched loopEnd-loopStart
-// exactly in every case tested, including with an echo filter active
-// (which needed its own atrim fix, see buildFilterComplex, to not desync
-// this arithmetic) and with a non-zero loopStart.
-function buildRotatedFilterComplex(filters, fade, mainDuration, totalDuration) {
-  const combined = buildFilterComplex(filters, fade, mainDuration)
-  const half = totalDuration / 2
-  return [
-    combined,
-    `[combined]asplit=2[c1][c2]`,
-    `[c1]atrim=start=${half}:end=${totalDuration}[second]`,
-    `[c2]atrim=start=0:end=${half}[first]`,
-    `[second][first]concat=n=2:v=0:a=1[out]`
+    `[tailF][headF]acrossfade=d=${fade}:c1=qsin:c2=qsin[blended]`,
+    `[bodyF][blended]concat=n=2:v=0:a=1[out]`
   ].join(';')
 }
 
@@ -651,7 +597,7 @@ export function renderLoopClip({ id, inputPath, loopStart, loopEnd, filters, cro
   return promise
 }
 
-// The actual crossfade+rotation render, unchanged from before speed/pitch/
+// The actual crossfade render, unchanged from before speed/pitch/
 // reverse existed - takes inputPath/loopStart/loopEnd/filters exactly as it
 // always has. Split out so doRender can point it at either the original
 // source directly (the common case) or at a pre-processed intermediate (see
@@ -659,8 +605,8 @@ export function renderLoopClip({ id, inputPath, loopStart, loopEnd, filters, cro
 // pan (v0.1.216) is applied as the very last stage of this render - after
 // every filter and, on doRender's pre-pass path, after reverb/envelope too,
 // matching the live chain where the StereoPannerNode sits just before the
-// per-sound volume. It's memoryless, so running it after trim/crossfade/
-// rotation is equivalent to running it before them.
+// per-sound volume. It's memoryless, so running it after the trim and
+// crossfade is equivalent to running it before them.
 async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, pan = 0, outputPath }) {
   const tmpPath = `${outputPath}.tmp`
   const panFilter = normalizePan(pan) !== 0 ? buildPanFilter(pan, await probeChannelCount(inputPath)) : null
@@ -701,14 +647,14 @@ async function renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, cr
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpPath
     ]
   } else {
-    const mainDuration = effectiveDuration - fade
+    const bodyDuration = effectiveDuration - 2 * fade
     args = [
       '-y',
-      '-ss', effectiveLoopStart.toFixed(6), '-t', mainDuration.toFixed(6), '-i', inputPath,
+      '-ss', (effectiveLoopStart + fade).toFixed(6), '-t', bodyDuration.toFixed(6), '-i', inputPath,
       '-ss', (effectiveLoopEnd - fade).toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
       '-ss', effectiveLoopStart.toFixed(6), '-t', fade.toFixed(6), '-i', inputPath,
       '-filter_complex',
-      buildRotatedFilterComplex(filters, fade.toFixed(6), mainDuration.toFixed(6), effectiveDuration.toFixed(6)) +
+      buildFilterComplex(filters, fade.toFixed(6), bodyDuration.toFixed(6)) +
         (panFilter ? `;[out]${panFilter}[panned]` : ''),
       '-map', panFilter ? '[panned]' : '[out]',
       '-vn',
@@ -842,7 +788,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   }
 
   // BUG FIX, caught during verification before this ever shipped: applying
-  // rubberband/areverse *after* the crossfade+rotation stage (i.e. as the
+  // rubberband/areverse *after* the crossfade stage (i.e. as the
   // very last step) left a real, measurable seam - worse than the seam this
   // whole crossfade system exists to remove. rubberband processes whatever
   // buffer it's handed as a bounded clip with its own internal windowed
@@ -878,7 +824,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     // Reverb runs as its own isolated pass, same "pre-process first, THEN
     // crossfade" reasoning as speed/pitch/reverse above - it's linear/time-
     // invariant so it can't reintroduce the class of edge-effect seam
-    // rubberband did, but doing it before rotation still means the
+    // rubberband did, but doing it before the crossfade still means the
     // convolution's own start-of-buffer warm-up settles against real
     // preceding audio (this clip's own tail-adjacent content) rather than
     // digital silence.
@@ -887,14 +833,14 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
       await applyReverbPass(tmpIntermediatePath, tmpReverbPath, filters.reverbSizeMs, filters.reverbMix)
       sourceForCrossfade = tmpReverbPath
     }
-    // Runs last among the pre-passes (after reverb, still before rotation) -
+    // Runs last among the pre-passes (after reverb, still before the crossfade) -
     // shaping the reverb's own wet tail along with the dry signal reads as
     // the natural, expected result of "this sound gets quieter here" (an
     // engineer's own volume automation is normally the very last stage
     // before a render, after everything else already applied). Must still
-    // run before renderCrossfadedLoop's rotation, same reason noise
+    // run before renderCrossfadedLoop's crossfade, same reason noise
     // reduction/speed-pitch do - the envelope's own timeline only lines up
-    // with a single linear read of the trimmed region, not the rotated one.
+    // with a single linear read of the trimmed region, not the three split reads.
     if (envelopeActive) {
       await applyVolumeEnvelopePass(sourceForCrossfade, tmpEnvelopePath, filters.volumeEnvelope)
       sourceForCrossfade = tmpEnvelopePath
@@ -952,7 +898,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
 // managed clip slot - used by the Export feature (exportMix.js) to build
 // throwaway per-sound/per-shot tracks without disturbing a sound's real
 // cached buffer-mode clip. Shares doRender's exact same logic (filter chain,
-// speed/pitch/reverse pre-pass ordering, crossfade+rotation), not a parallel
+// speed/pitch/reverse pre-pass ordering, crossfade), not a parallel
 // reimplementation - and deliberately bypasses the `pending` id-keyed dedup
 // map above, which exists to collapse concurrent Saves of the *same sound*,
 // not relevant for one-off exports to their own unique temp paths.

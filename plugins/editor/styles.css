@@ -1083,3 +1083,10 @@
 .editor-fluctuation-fullrandom > span {
   flex: 1;
 }
+
+.editor-seam-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}

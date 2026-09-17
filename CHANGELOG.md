@@ -6,6 +6,14 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.221 — Smoother loop seams, and a visual crossfade editor
+
+- **Fixed: saved loops had an audible skip at the seam.** Every saved loop jumped back a fraction of a second in the middle of the clip, by exactly the crossfade length. Loops now join cleanly. Your existing sounds re-render on their own the next time they play.
+- The seam blend now keeps a steady level through the crossfade instead of dipping slightly, which was noticeable on noisy sounds like rain or fire. Live playback and saved audio now blend the same way.
+- **Crossfade on the waveform (Remix):** orange zones at both ends of the trim show the crossfade. Drag their dots to change its length, or double-click a dot to reset it.
+- **Listen to the seam (Remix):** plays the few seconds around the loop point, through the blend, then stops. Works with both Live edit and Saved audio.
+- A loop now plays as long as its trim minus the crossfade, the same in Live edit, Saved audio and the Mixer.
+
 ## v0.1.220 — Community tab is live
 
 - New **Community** tab: browse and search ambience presets shared by other Noctívago users, and import one with a click. Sounds from Freesound are downloaded from Freesound; the rest come with the preset.

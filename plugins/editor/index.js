@@ -36,6 +36,9 @@ function applySoundOverride(entry, override) {
 // any sound that's never had it explicitly overridden (entry.
 // crossfadeSeconds is null).
 const DEFAULT_CROSSFADE_MS = 200
+// "Listen to the seam": how much plays before the crossfade and after it.
+const SEAM_LEAD_SECONDS = 2.5
+const SEAM_TAIL_SECONDS = 2.5
 
 // Undo/Redo: how long to wait after the last change before recording a
 // history point, and how many points to keep. A live drag or a rapid burst
@@ -1134,7 +1137,11 @@ ${mixFluctuationMarkup('group')}
               <input id="editor-crossfade" type="range" min="0" max="2000" value="200" step="10" />
               <span id="editor-crossfade-value" class="editor-filter-value">200 ms</span>
             </label>
-            <p class="editor-crossfade-hint">Blends the seam so the loop isn't audible. Longer helps busy, textured audio (rain, crowds) — 0 disables blending. Automatically capped for very short loops.</p>
+            <div class="editor-seam-row">
+              <button id="editor-seam-listen" class="btn btn-small" type="button" title="Play the few seconds around the loop point, through the crossfade, then stop">Listen to the seam</button>
+              <span id="editor-seam-status" class="editor-suggest-status"></span>
+            </div>
+            <p class="editor-crossfade-hint">Blends the end of the loop into its start so the seam isn't audible. The orange zones on the waveform show it: drag their dots to change the length, double-click a dot to reset it. Longer helps busy, textured audio (rain, fire, crowds); 0 turns blending off. Capped at a quarter of the loop, and the loop plays that much shorter.</p>
             <label class="editor-reverse-toggle">
               <input id="editor-envelope-enabled" type="checkbox" />
               Volume envelope
@@ -1511,6 +1518,8 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       crossfadeSection: container.querySelector('#editor-crossfade-section'),
       crossfade: container.querySelector('#editor-crossfade'),
       crossfadeValue: container.querySelector('#editor-crossfade-value'),
+      seamListen: container.querySelector('#editor-seam-listen'),
+      seamStatus: container.querySelector('#editor-seam-status'),
       envelopeEnabled: container.querySelector('#editor-envelope-enabled'),
       envelopeReset: container.querySelector('#editor-envelope-reset'),
       scatterSection: container.querySelector('#editor-scatter-section'),
@@ -1785,10 +1794,18 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.loopEditorController.onLoopChange(({ loopStart, loopEnd }) => {
       this.commitLoopPoints(loopStart, loopEnd)
     })
+    this.loopEditorController.setCrossfade({
+      maxSeconds: Number(this.els.crossfade.max) / 1000,
+      stepSeconds: Number(this.els.crossfade.step) / 1000,
+      defaultSeconds: DEFAULT_CROSSFADE_MS / 1000
+    })
+    this.loopEditorController.onCrossfadeChange((seconds) => {
+      this.els.crossfade.value = String(Math.round(seconds * 1000))
+      this.applyCrossfadeControl()
+    })
     this.loopEditorController.onScrub((t) => {
       if (this.previewMode === 'saved' && this.bakedPreview) {
-        const { loopStart } = this.loopEditorController.getLoopPoints()
-        const clipTime = t - loopStart
+        const clipTime = this.sourceTimeToClip(t)
         this.bakedPreview.scrubTo(clipTime)
         this.updateStickyProgress(clipTime)
       } else {
@@ -2080,6 +2097,9 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.els.scheduleFadeOut.addEventListener('input', () => this.applyScheduleControls())
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
+    this.els.seamListen.addEventListener('click', () =>
+      this.toggleSeamListen().catch((err) => console.error('Editor: seam preview failed', err))
+    )
 
     this.els.envelopeEnabled.addEventListener('change', () => {
       this.loopEditorController.setEnvelope(this.els.envelopeEnabled.checked, this.loopEditorController.getEnvelope().points)
@@ -2382,6 +2402,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.els.playPause.addEventListener('click', async () => {
       const active = this.activePreview()
       if (!active) return
+      this.stopSeamListen({ pause: false })
       if (active.playing) {
         active.pause()
         this.stopPreviewTicking()
@@ -2501,6 +2522,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     // <audio> element) - simpler and more predictable than attempting a
     // seamless handoff for what's fundamentally an A/B comparison tool, not
     // a continuous listening experience.
+    this.stopSeamListen({ pause: false })
     const wasPlaying = this.activePreview()?.playing
     this.activePreview()?.pause()
     this.stopPreviewTicking()
@@ -3068,7 +3090,97 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     const ms = this.currentCrossfadeMs()
     this.updateCrossfadeLabel(ms)
     this.previewSource?.setCrossfadeSeconds(ms / 1000)
+    this.loopEditorController?.setCrossfade({ seconds: ms / 1000 })
     this.updateSaveButtonState()
+  }
+
+  // --- Saved audio timeline (v0.1.221) ---
+  // A baked loop clip starts at source time loopStart + fade, and its last
+  // `fade` seconds are the seam blend (loopClip.js's buildFilterComplex).
+  // So clip time t maps to source time loopStart + fade + t, which puts the
+  // blend on the tail zone, where the waveform draws it. The baked fade is
+  // the requested one capped at a quarter of the trim; since the clip is the
+  // trim minus that fade, the same cap is a third of the clip.
+  savedClipFade() {
+    const entry = this.currentEntry
+    const clipDuration = this.bakedPreview?.audioEl.duration
+    if (!entry || !Number.isFinite(clipDuration)) return 0
+    const requested = entry.loopClipCrossfadeSeconds ?? DEFAULT_CROSSFADE_MS / 1000
+    return Math.max(0, Math.min(requested, clipDuration / 3))
+  }
+
+  clipTimeToSource(clipTime) {
+    const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+    return Math.min(loopEnd, loopStart + this.savedClipFade() + clipTime)
+  }
+
+  sourceTimeToClip(t) {
+    const { loopStart } = this.loopEditorController.getLoopPoints()
+    const fade = this.savedClipFade()
+    const clipDuration = this.bakedPreview?.audioEl.duration || 0
+    // The head zone [loopStart, loopStart + fade) only plays inside the
+    // blend at the clip's end.
+    const clipTime = t < loopStart + fade ? clipDuration - fade + (t - loopStart) : t - loopStart - fade
+    return Math.min(Math.max(clipTime, 0), clipDuration)
+  }
+
+  // --- Listen to the seam (v0.1.221) ---
+  // Plays SEAM_LEAD_SECONDS before the crossfade, through it and the wrap,
+  // then SEAM_TAIL_SECONDS more, and stops - in whichever preview mode is
+  // active. Looping is forced on while it runs, since the wrap is the point.
+  async toggleSeamListen() {
+    if (this._seamTimer) {
+      this.stopSeamListen()
+      return
+    }
+    const active = this.activePreview()
+    if (!active || !this.loopEditorController) return
+    let startAt
+    let secondsToSeamEnd
+    if (this.previewMode === 'saved' && this.bakedPreview) {
+      await this.bakedPreview.waitForMetadata()
+      const clipDuration = this.bakedPreview.audioEl.duration
+      const fade = this.savedClipFade()
+      startAt = Math.max(0, clipDuration - fade - SEAM_LEAD_SECONDS)
+      secondsToSeamEnd = clipDuration - startAt
+    } else {
+      const { loopStart, loopEnd } = this.loopEditorController.getLoopPoints()
+      const fade = this.loopEditorController.getEffectiveCrossfade()
+      startAt = Math.max(loopStart, loopEnd - fade - SEAM_LEAD_SECONDS)
+      // The live preview plays the source at its Speed/Pitch rate.
+      secondsToSeamEnd = (loopEnd - startAt) / (active.audioEl.playbackRate || 1)
+      this._seamRestoreLooping = !this.looping
+      if (!this.looping) this.previewSource.setLooping(true)
+    }
+    if (active.playing) active.pause()
+    active.scrubTo(startAt)
+    this._seamTimer = setTimeout(() => this.stopSeamListen(), (secondsToSeamEnd + SEAM_TAIL_SECONDS) * 1000)
+    this.els.seamListen.textContent = 'Stop'
+    this.els.seamStatus.textContent = 'Playing through the loop point…'
+    await this.engine.resume()
+    await active.play()
+    this.setPlayPauseIcon(true)
+    this.tickPreviewPlayhead()
+  }
+
+  // Ends a seam preview: pauses what it started and restores the loop
+  // toggle. Also called when the user takes over (Play/Pause, a mode switch,
+  // loading another sound) with pause: false, so a pending timer never
+  // pauses their own playback later.
+  stopSeamListen({ pause = true } = {}) {
+    if (!this._seamTimer) return
+    clearTimeout(this._seamTimer)
+    this._seamTimer = null
+    if (this._seamRestoreLooping) this.previewSource?.setLooping(this.looping)
+    this._seamRestoreLooping = false
+    this.els.seamListen.textContent = 'Listen to the seam'
+    this.els.seamStatus.textContent = ''
+    if (pause && this.activePreview()?.playing) {
+      this.activePreview().pause()
+      this.stopPreviewTicking()
+      this.setPlayPauseIcon(false)
+      this.eqEditorController.clearSpectrum()
+    }
   }
 
   // --- Fluctuation (v0.1.164; flat-seconds timing + Fully-random v0.1.176) ---
@@ -3254,6 +3366,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     this.els.playModeScatter.checked = playMode === 'scatter'
     this.els.playModeScheduled.checked = playMode === 'scheduled'
     this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
+    this.loopEditorController?.setCrossfade({ enabled: playMode !== 'scatter' && playMode !== 'scheduled' })
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
     this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
     // Fluctuation is continuous drift on a held loop - it has no meaning for
@@ -3367,6 +3480,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
   applyPlayModeControl() {
     const playMode = this.currentPlayMode()
     this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
+    this.loopEditorController?.setCrossfade({ enabled: playMode !== 'scatter' && playMode !== 'scheduled' })
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
     this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
     // Volume envelope is Loop-mode-only (v1) - scatter/scheduled shots have
@@ -3904,8 +4018,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
       // back into the original file's absolute time for the waveform's
       // playhead, but keep the sticky progress bar in the clip's own
       // 0..duration terms (see updateStickyProgress's mode branch).
-      const { loopStart } = this.loopEditorController.getLoopPoints()
-      this.loopEditorController.setPlayhead(loopStart + active.audioEl.currentTime)
+      this.loopEditorController.setPlayhead(this.clipTimeToSource(active.audioEl.currentTime))
       this.updateStickyProgress(active.audioEl.currentTime)
     } else {
       const currentTime = active.audioEl.currentTime
@@ -3947,8 +4060,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
         active.scrubTo(t)
         this.updateStickyProgress(t)
         if (this.loopEditorController) {
-          const { loopStart } = this.loopEditorController.getLoopPoints()
-          this.loopEditorController.setPlayhead(loopStart + t)
+          this.loopEditorController.setPlayhead(this.clipTimeToSource(t))
         }
       } else {
         if (!this.loopEditorController) return
@@ -4001,6 +4113,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
   }
 
   disposePreview() {
+    this.stopSeamListen({ pause: false })
     this.stopPreviewTicking()
     clearTimeout(this._autosaveTimer)
     this.flushFluctuation()
@@ -4109,6 +4222,7 @@ ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position ev
     const crossfadeMs = entry.crossfadeSeconds != null ? Math.round(entry.crossfadeSeconds * 1000) : DEFAULT_CROSSFADE_MS
     this.els.crossfade.value = String(crossfadeMs)
     this.updateCrossfadeLabel(crossfadeMs)
+    this.loopEditorController?.setCrossfade({ seconds: crossfadeMs / 1000 })
 
     const speedPitch = entry.speedPitch ?? {
       speed: 1,

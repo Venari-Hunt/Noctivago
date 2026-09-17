@@ -66,7 +66,7 @@ function resizeCanvasForDisplay(canvas) {
 // fetch (see waveformPeaks.js) covers just a narrow zoomed window instead,
 // so the caller passes that window's own bounds here rather than this
 // function assuming peaks always covers the whole file.
-export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5, dopplerReversed = false, fadesEnabled = false, fadeInSec = 0, fadeOutSec = 0, envelopeEnabled = false, envelopePoints = [] }) {
+export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, peaks, viewStart = 0, viewEnd = duration, peaksStart = 0, peaksEnd = duration, dopplerEnabled = false, dopplerClosestFraction = 0.5, dopplerReversed = false, fadesEnabled = false, fadeInSec = 0, fadeOutSec = 0, crossfadeEnabled = false, crossfadeSec = 0, envelopeEnabled = false, envelopePoints = [] }) {
   const { width, height, dpr } = resizeCanvasForDisplay(canvas)
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -244,6 +244,48 @@ export function drawWaveform(canvas, duration, { loopStart, loopEnd, playhead, p
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 1.5
     for (const x of [fadeInEndX, fadeOutStartX]) {
+      ctx.beginPath()
+      ctx.arc(x, 8, 5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+  }
+
+  // Loop crossfade zones (Loop mode): the last crossfadeSec of the trim
+  // fades out while the first crossfadeSec fades back in over it, so both
+  // ends get a tinted zone with its own equal-power curve (matching the bake's
+  // qsin and equalPowerRamp.js). The pins at the zones' inner edges drag the
+  // length (LoopEditor.js) - both ends always share one value.
+  if (crossfadeEnabled && crossfadeSec > 0 && loopEnd > loopStart) {
+    const color = '#ff9e64'
+    const headEndX = timeToX(loopStart + crossfadeSec)
+    const tailStartX = timeToX(loopEnd - crossfadeSec)
+    ctx.fillStyle = 'rgba(255, 158, 100, 0.16)'
+    ctx.fillRect(startX, 0, headEndX - startX, height)
+    ctx.fillRect(tailStartX, 0, endX - tailStartX, height)
+    const steps = 24
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    for (let i = 0; i <= steps; i++) {
+      const x = i / steps
+      const px = startX + (headEndX - startX) * x
+      const py = height - Math.sin((x * Math.PI) / 2) * (height - 16)
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    for (let i = 0; i <= steps; i++) {
+      const x = i / steps
+      const px = tailStartX + (endX - tailStartX) * x
+      const py = height - Math.cos((x * Math.PI) / 2) * (height - 16)
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.stroke()
+    ctx.fillStyle = color
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.5
+    for (const x of [headEndX, tailStartX]) {
       ctx.beginPath()
       ctx.arc(x, 8, 5, 0, Math.PI * 2)
       ctx.fill()
