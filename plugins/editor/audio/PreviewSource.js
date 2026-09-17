@@ -2,6 +2,7 @@ import { createReverbImpulse } from './reverbIR.js'
 import { PanStage } from './PanStage.js'
 import { SoundFluctuation } from './Modulator.js'
 import { NoiseGate } from './NoiseGate.js'
+import { rampEqualPower } from './equalPowerRamp.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -561,13 +562,8 @@ export class PreviewSource {
     incoming.audioEl.currentTime = this.loopStart
     incoming.audioEl.play().catch(() => {})
 
-    active.crossfadeGain.gain.cancelScheduledValues(now)
-    active.crossfadeGain.gain.setValueAtTime(1, now)
-    active.crossfadeGain.gain.linearRampToValueAtTime(0, now + fade)
-
-    incoming.crossfadeGain.gain.cancelScheduledValues(now)
-    incoming.crossfadeGain.gain.setValueAtTime(0, now)
-    incoming.crossfadeGain.gain.linearRampToValueAtTime(1, now + fade)
+    rampEqualPower(active.crossfadeGain.gain, now, fade, 1, 0)
+    rampEqualPower(incoming.crossfadeGain.gain, now, fade, 0, 1)
 
     this._crossfading = true
   }

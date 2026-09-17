@@ -990,6 +990,34 @@ export function setLoopClipReady(id, { loopStart, loopEnd, filters, crossfadeSec
   })
 }
 
+// Bumped whenever the baked clip's audio layout changes in a way the
+// staleness fields above can't see. v2 (v0.1.221): loopClip.js's crossfade
+// no longer leaves a jump in the middle of the clip. Every crossfaded clip
+// baked before that still has the jump, so it's marked stale once and the
+// Mixer's maybeAutoBake re-bakes it the next time the sound plays. Clips
+// baked with no crossfade (0, e.g. every Random Interval sound) were never
+// affected and are kept.
+const LOOP_CLIP_FORMAT = 2
+
+export function migrateLoopClipFormat() {
+  if ((store.get('loopClipFormat') ?? 1) >= LOOP_CLIP_FORMAT) return
+  const sounds = store.get('sounds').map((s) =>
+    s.loopClipReady && s.loopClipCrossfadeSeconds !== 0
+      ? {
+          ...s,
+          loopClipReady: false,
+          loopClipStart: null,
+          loopClipEnd: null,
+          loopClipFilters: null,
+          loopClipCrossfadeSeconds: null,
+          loopClipSpeedPitch: null
+        }
+      : s
+  )
+  store.set('sounds', sounds)
+  store.set('loopClipFormat', LOOP_CLIP_FORMAT)
+}
+
 export function setLoopClipStale(id) {
   return updateEntry(id, {
     loopClipReady: false,

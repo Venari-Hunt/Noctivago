@@ -3,6 +3,7 @@ import { createReverbImpulse } from './reverbIR.js'
 import { PanStage } from './PanStage.js'
 import { SoundFluctuation, fluctuationKey } from './Modulator.js'
 import { NoiseGate } from './NoiseGate.js'
+import { rampEqualPower } from './equalPowerRamp.js'
 
 const RAMP_SECONDS = 0.15
 const LOOP_EPSILON_SECONDS = 0.03
@@ -585,12 +586,8 @@ export class LocalFileSoundSource {
 
     const activeGain = this._activeXfadeGain
     const standbyGain = this._standbyXfadeGain
-    activeGain.cancelScheduledValues(now)
-    activeGain.setValueAtTime(activeGain.value, now)
-    activeGain.linearRampToValueAtTime(0, now + fade)
-    standbyGain.cancelScheduledValues(now)
-    standbyGain.setValueAtTime(standbyGain.value, now)
-    standbyGain.linearRampToValueAtTime(1, now + fade)
+    rampEqualPower(activeGain, now, fade, activeGain.value, 0)
+    rampEqualPower(standbyGain, now, fade, standbyGain.value, 1)
 
     if (this._crossfadeTimeoutId) clearTimeout(this._crossfadeTimeoutId)
     this._crossfadeTimeoutId = setTimeout(() => {
