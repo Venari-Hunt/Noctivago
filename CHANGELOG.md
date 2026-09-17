@@ -6,6 +6,28 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.232 — Fixed a real crash on very long exports
+
+- **Fixed: a very long, dense export (matching real reports around 9 hours) could die outright right after its most expensive step, discarding all the work already done.** A whole-mix or Sound Group reverb pass reads an intermediate file's exact length before running — for a normal export that's a tiny, instant check, but on a long enough export that intermediate can be several gigabytes, and the check was reading the *entire* file into memory just to look at its first few bytes. It now reads only the header it actually needs.
+- Also fixed a related, quieter risk: an export to plain WAV format long enough to cross about 4.3 GB used to write a silently broken file (a corrupted length in its header) instead of failing loudly. Both now use WAV's own extended-size format automatically once a file actually needs it — invisible for every normal-length export.
+
+## v0.1.231 — Zoom the loop seam view, and Sound Group drift fix
+
+- **Fixed: Browse Sounds keeps loading YouTube results when a page includes live streams.** Live streams are still omitted because they cannot be trimmed or looped, but they no longer make a full YouTube page look like the end of search results.
+- **Remix's "Loop seam" view can now be zoomed and panned** — scroll to zoom in on the crossfade (or anywhere else in the loop), middle-click drag to pan, double-click empty space to reset. Same interaction as the main trim waveform, and it fetches finer detail for whatever you've zoomed into instead of just stretching the same coarse picture. Dragging the crossfade pins directly still only works at full zoom-out (the "Loop crossfade" slider still works at any zoom).
+- **Fixed: a Sound Group's shared volume drift didn't keep members in sync.** When a group's Pan drift is set to move the whole group together, each sound's own pan drift correctly switched off so they'd move as one. Volume drift never got the same treatment — a member with its own volume drift kept wandering on its own even while the group was also drifting its volume as a whole, so they could drift apart instead of moving together. Found from a direct question about whether this was expected, not a report.
+
+## v0.1.230 — Remix: clearer Random Interval / Scheduled layout
+
+- **Each Pitch/Volume/Pan/Speed bar (and the new Gap card) now has its own visible box**, so it's clear which "Fully random" and "Bias" checkboxes belong to which one, and the section names are easier to spot at a glance.
+- **Fade in/out moved up next to the waveform** (which already shows the same fade as draggable pins at the trim edges), with a plain "Fade" switch instead of "0 = off" being the only way to turn it off.
+- **Sync group moved up next to the sound's own name**, since it names the sound rather than randomizing it.
+- **Fixed: switching Playback mode (Loop / Random Interval / Scheduled) without reloading the sound could leave the Fluctuation section stuck showing or stuck hidden.** Found while making the changes above, not reported.
+
+## v0.1.229 — Fixed: resuming a sound could play it with stale settings
+
+- **Fixed: a paused sound could resume with the wrong settings, or silently keep an out-of-date saved clip, instead of what Remix showed.** Pausing a sound (turning it off, switching presets, or Pause All) never actually let go of its player — only specific edits were set up to reach it while paused. Anything else that changed its settings in the meantime had no way back in, so playing it again could sound like an older version, or in some cases not update its audio at all, until something unrelated (like a Sound Group change) forced everything to recheck itself. Every sound now rechecks its own settings the moment it's played, the same way it already double-checks which Sound Group it belongs to.
+
 ## v0.1.228 — Joining a Sound Group now joins the mix
 
 - **Fixed: a sound added to a Sound Group wasn't automatically added to the mix.** Group membership and mix membership looked linked but weren't, so a group could sit there fully configured with none of its sounds actually playing. Adding a sound to a group (from the Mixer's right-click menu, its "New group…" dialog, or Remix's Group mode member list) now adds it to the mix too. Removing a sound from the mix afterwards still leaves its group membership alone.

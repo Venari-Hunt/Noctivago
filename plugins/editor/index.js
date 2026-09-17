@@ -795,6 +795,7 @@ export default class EditorPlugin {
     if (this._onActivePresetChanged) window.removeEventListener('noctivago:active-preset-changed', this._onActivePresetChanged)
     this.disposePreview()
     this.stopWholeMixSpectrumTicking()
+    clearTimeout(this._seamDetailPeaksTimer)
     this.presetEq?.destroy()
     this.seamView?.destroy()
     this.groupEq?.destroy()
@@ -1088,7 +1089,13 @@ ${mixFluctuationMarkup('group')}
           <ul id="editor-sound-options" class="editor-sound-options hidden"></ul>
         </div>
         <div id="editor-panel" class="editor-panel hidden">
-          <h3 id="editor-sound-name"></h3>
+          <div class="editor-name-row">
+            <h3 id="editor-sound-name"></h3>
+            <label id="editor-sync-group-row" class="editor-sync-group-row hidden">
+              <span>Sync group</span>
+              <input id="editor-scatter-sync-group" type="text" placeholder="e.g. door-effects" title="Give two or more Random Interval sounds the same name to make them always fire together - one starts, all start." />
+            </label>
+          </div>
           <canvas id="editor-canvas" width="640" height="160" title="Scroll to zoom, shift+scroll or middle-drag to pan. Right-click-drag inside the trimmed region to move it."></canvas>
           <div id="editor-scrollbar" class="editor-scrollbar">
             <div id="editor-scrollbar-thumb" class="editor-scrollbar-thumb"></div>
@@ -1143,6 +1150,41 @@ ${mixFluctuationMarkup('group')}
             </label>
             <p class="editor-playmode-hint">Random interval replays this clip at a random gap instead of looping it back-to-back — good for a short, event-like sound (a creak, a bird call) inside a longer ambient mix. Scheduled instead plays it once at real-world clock times you set — a church bell at noon, an hourly chime.</p>
           </div>
+          <div id="editor-fade-section" class="editor-fade-section hidden">
+            <div class="editor-fade-heading">Fade shot edges <span class="editor-fluctuation-sub">(eases each play's start/end instead of a hard cut — drag the pins at the trim edges on the waveform above, or set exact values here)</span></div>
+            <div id="editor-scatter-fade-fields" class="editor-fade-fields">
+              <label class="editor-fade-enable">
+                <input id="editor-scatter-fade-enabled" type="checkbox" />
+                <span>Fade</span>
+              </label>
+              <label>
+                <span>In</span>
+                <input id="editor-scatter-fade-in" type="number" min="0" max="10000" step="50" value="0" disabled />
+                <span class="editor-filter-value">ms</span>
+              </label>
+              <label>
+                <span>Out</span>
+                <input id="editor-scatter-fade-out" type="number" min="0" max="10000" step="50" value="0" disabled />
+                <span class="editor-filter-value">ms</span>
+              </label>
+            </div>
+            <div id="editor-schedule-fade-fields" class="editor-fade-fields">
+              <label class="editor-fade-enable">
+                <input id="editor-schedule-fade-enabled" type="checkbox" />
+                <span>Fade</span>
+              </label>
+              <label>
+                <span>In</span>
+                <input id="editor-schedule-fade-in" type="number" min="0" max="10000" step="50" value="0" disabled />
+                <span class="editor-filter-value">ms</span>
+              </label>
+              <label>
+                <span>Out</span>
+                <input id="editor-schedule-fade-out" type="number" min="0" max="10000" step="50" value="0" disabled />
+                <span class="editor-filter-value">ms</span>
+              </label>
+            </div>
+          </div>
           <div id="editor-crossfade-section" class="editor-crossfade">
             <div class="editor-seam-heading">Loop seam</div>
             <canvas id="editor-seam-canvas" class="editor-seam-canvas" title="How the loop plays: the end of the trim crossfades into its start in the middle. Drag an edge of the crossfade to resize it, double-click an edge to reset it, click anywhere else to jump there."></canvas>
@@ -1167,49 +1209,42 @@ ${mixFluctuationMarkup('group')}
             <p class="editor-crossfade-hint">Drag points directly on the waveform above to shape this sound's volume over time instead of one flat level (double-click empty space on the line to add a point, double-click a point to reset it to full, right-click a point to remove it). Attenuates only — never boosts above the sound's own level.</p>
           </div>
           <div id="editor-scatter-section" class="editor-scatter-controls hidden">
-            <label>
-              <span>Gap (min)</span>
-              <input id="editor-scatter-gap-min" type="number" min="0" max="3600" step="1" value="5" />
-              <span class="editor-filter-value">s</span>
-            </label>
-            <label>
-              <span>Gap (max)</span>
-              <input id="editor-scatter-gap-max" type="number" min="0" max="3600" step="1" value="35" />
-              <span class="editor-filter-value">s</span>
-            </label>
-            <label class="editor-scatter-check">
-              <input id="editor-scatter-gap-fully-random" type="checkbox" />
-              <span>Fully random gap — a new random wait (0–2&nbsp;min) before every replay; ignores the min/max above</span>
-            </label>
-            <label class="editor-scatter-check">
-              <input id="editor-scatter-gap-bias-enabled" type="checkbox" />
-              <span>Bias toward a value — this gap wins more often than a plain random pick within the min/max above</span>
-            </label>
-            <label>
-              <span>Gap bias</span>
-              <input id="editor-scatter-gap-bias" type="number" min="0" max="3600" step="1" value="20" />
-              <span class="editor-filter-value">s</span>
-            </label>
+            <div class="editor-fluctuation-axis editor-gap-axis">
+              <span class="editor-fluctuation-enable">Gap <span class="editor-fluctuation-sub">(how long to wait between replays)</span></span>
+              <div class="editor-gap-range">
+                <label>
+                  <span>Min</span>
+                  <input id="editor-scatter-gap-min" type="number" min="0" max="3600" step="1" value="5" />
+                  <span class="editor-filter-value">s</span>
+                </label>
+                <label>
+                  <span>Max</span>
+                  <input id="editor-scatter-gap-max" type="number" min="0" max="3600" step="1" value="35" />
+                  <span class="editor-filter-value">s</span>
+                </label>
+                <label>
+                  <span>Bias</span>
+                  <input id="editor-scatter-gap-bias" type="number" min="0" max="3600" step="1" value="20" />
+                  <span class="editor-filter-value">s</span>
+                </label>
+              </div>
+              <div class="editor-fluctuation-knobs">
+                <label class="editor-fluctuation-fullrandom">
+                  <input id="editor-scatter-gap-fully-random" type="checkbox" />
+                  <span>Fully random <span class="editor-fluctuation-sub">(a new random wait, 0–2 min, before every replay — ignores Min/Max above)</span></span>
+                </label>
+                <label class="editor-fluctuation-fullrandom">
+                  <input id="editor-scatter-gap-bias-enabled" type="checkbox" />
+                  <span>Bias <span class="editor-fluctuation-sub">(this gap wins more often than a plain random pick within Min/Max)</span></span>
+                </label>
+              </div>
+            </div>
             <p id="editor-scatter-group-note" class="editor-scatter-hint hidden"></p>
 ${shotAxisMarkup('editor-scatter-pitch', 'Pitch', '(a random shift every replay)')}
 ${shotAxisMarkup('editor-scatter-volume', 'Volume', '(a random level every replay; never above the sound\'s own)')}
 ${shotAxisMarkup('editor-scatter-pan', 'Pan', '(a random left/right position every replay)')}
 ${shotAxisMarkup('editor-scatter-speed', 'Speed', '(a random tempo every replay, 50–200%)')}
-            <label>
-              <span>Fade in</span>
-              <input id="editor-scatter-fade-in" type="number" min="0" max="10000" step="50" value="0" />
-              <span class="editor-filter-value">ms</span>
-            </label>
-            <label>
-              <span>Fade out</span>
-              <input id="editor-scatter-fade-out" type="number" min="0" max="10000" step="50" value="0" />
-              <span class="editor-filter-value">ms</span>
-            </label>
-            <label>
-              <span>Sync group</span>
-              <input id="editor-scatter-sync-group" type="text" placeholder="e.g. door-effects" />
-            </label>
-            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, pan, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Check "Bias" to make one value inside the range (the middle circle) win more often than a plain random pick. On the bars, drag the outer circles for the range; when they sit together there's no variation. Speed changes each shot's tempo/length with its pitch left alone. Fade in/out eases each shot's start/end instead of a hard cut. Give two or more scatter sounds the same sync group name to make them always fire together - one starts, all start.</p>
+            <p class="editor-scatter-hint">Each replay picks a random gap, pitch, volume, pan, and speed within these ranges — or check "Fully random" to roll the whole range regardless of the min/max. Check "Bias" to make one value inside the range (the middle circle) win more often than a plain random pick. On the bars, drag the outer circles for the range; when they sit together there's no variation. Speed changes each shot's tempo/length with its pitch left alone. Fade (above, near the waveform) eases each shot's start/end instead of a hard cut. Sync group (next to the sound's name) makes two or more scatter sounds always fire together - one starts, all start.</p>
           </div>
           <div id="editor-schedule-section" class="editor-scatter-controls hidden">
             <label class="editor-playmode-option">
@@ -1234,17 +1269,7 @@ ${shotAxisMarkup('editor-schedule-pitch', 'Pitch', '(a random shift every trigge
 ${shotAxisMarkup('editor-schedule-volume', 'Volume', '(a random level every trigger; never above the sound\'s own)')}
 ${shotAxisMarkup('editor-schedule-pan', 'Pan', '(a random left/right position every trigger)')}
 ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigger, 50–200%)')}
-            <label>
-              <span>Fade in</span>
-              <input id="editor-schedule-fade-in" type="number" min="0" max="10000" step="50" value="0" />
-              <span class="editor-filter-value">ms</span>
-            </label>
-            <label>
-              <span>Fade out</span>
-              <input id="editor-schedule-fade-out" type="number" min="0" max="10000" step="50" value="0" />
-              <span class="editor-filter-value">ms</span>
-            </label>
-            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, pan, and speed within these ranges, same as Random Interval — or check "Fully random" to roll the whole range regardless of the circles. Check "Bias" to make the middle circle's value win more often than a plain random pick. When a bar's outer circles sit together there's no variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade in/out eases each trigger's start/end instead of a hard cut.</p>
+            <p class="editor-schedule-hint">Fixed times play once at each listed clock time (24h HH:MM), every day. Recurring interval plays every N minutes, aligned to midnight — 60 lands on the hour, 30 on the hour and half-hour, like a digital clock rather than counting from whenever the app started. Each trigger picks a random pitch, volume, pan, and speed within these ranges, same as Random Interval — or check "Fully random" to roll the whole range regardless of the circles. Check "Bias" to make the middle circle's value win more often than a plain random pick. When a bar's outer circles sit together there's no variation. Speed changes each trigger's tempo/length with its pitch left alone. Fade (above, near the waveform) eases each trigger's start/end instead of a hard cut.</p>
           </div>
           <div class="editor-speed-pitch">
             <label>
@@ -1499,6 +1524,7 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
       panel: container.querySelector('#editor-panel'),
       empty: container.querySelector('#editor-empty'),
       soundName: container.querySelector('#editor-sound-name'),
+      syncGroupRow: container.querySelector('#editor-sync-group-row'),
       canvas: container.querySelector('#editor-canvas'),
       scrollbarTrack: container.querySelector('#editor-scrollbar'),
       scrollbarThumb: container.querySelector('#editor-scrollbar-thumb'),
@@ -1511,6 +1537,11 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
       playModeLoop: container.querySelector('#editor-playmode-loop'),
       playModeScatter: container.querySelector('#editor-playmode-scatter'),
       playModeScheduled: container.querySelector('#editor-playmode-scheduled'),
+      fadeSection: container.querySelector('#editor-fade-section'),
+      scatterFadeFields: container.querySelector('#editor-scatter-fade-fields'),
+      scatterFadeEnabled: container.querySelector('#editor-scatter-fade-enabled'),
+      scheduleFadeFields: container.querySelector('#editor-schedule-fade-fields'),
+      scheduleFadeEnabled: container.querySelector('#editor-schedule-fade-enabled'),
       crossfadeSection: container.querySelector('#editor-crossfade-section'),
       crossfade: container.querySelector('#editor-crossfade'),
       crossfadeValue: container.querySelector('#editor-crossfade-value'),
@@ -1799,6 +1830,9 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
       this.els.crossfade.value = String(Math.round(seconds * 1000))
       this.applyCrossfadeControl()
     })
+    this.seamView.onViewportChange((sourceRange) => {
+      this.scheduleSeamDetailPeaks(sourceRange)
+    })
     this.seamView.onScrub((liveClipTime) => {
       const source = clipToSource(this.liveLayout(), liveClipTime)
       if (this.previewMode === 'saved' && this.bakedPreview) {
@@ -1837,9 +1871,11 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
       if (playMode === 'scatter') {
         this.els.scatterFadeIn.value = String(fadeInMs)
         this.els.scatterFadeOut.value = String(fadeOutMs)
+        this.syncFadeToggle(this.els.scatterFadeEnabled, this.els.scatterFadeIn, this.els.scatterFadeOut)
       } else if (playMode === 'scheduled') {
         this.els.scheduleFadeIn.value = String(fadeInMs)
         this.els.scheduleFadeOut.value = String(fadeOutMs)
+        this.syncFadeToggle(this.els.scheduleFadeEnabled, this.els.scheduleFadeIn, this.els.scheduleFadeOut)
       }
       this.updateSaveButtonState()
     })
@@ -2089,16 +2125,34 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     this.els.scatterGapFullyRandom.addEventListener('change', () => this.applyScatterControls())
     this.els.scatterGapBiasEnabled.addEventListener('change', () => this.applyScatterControls())
     this.els.scatterGapBias.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterFadeIn.addEventListener('input', () => this.applyScatterControls())
-    this.els.scatterFadeOut.addEventListener('input', () => this.applyScatterControls())
+    this.els.scatterFadeEnabled.addEventListener('change', () =>
+      this.toggleFade(this.els.scatterFadeEnabled, this.els.scatterFadeIn, this.els.scatterFadeOut, () => this.applyScatterControls())
+    )
+    this.els.scatterFadeIn.addEventListener('input', () => {
+      this.syncFadeToggle(this.els.scatterFadeEnabled, this.els.scatterFadeIn, this.els.scatterFadeOut)
+      this.applyScatterControls()
+    })
+    this.els.scatterFadeOut.addEventListener('input', () => {
+      this.syncFadeToggle(this.els.scatterFadeEnabled, this.els.scatterFadeIn, this.els.scatterFadeOut)
+      this.applyScatterControls()
+    })
     this.els.scatterSyncGroup.addEventListener('input', () => this.applyScatterControls())
 
     this.els.scheduleTypeTimes.addEventListener('change', () => this.applyScheduleControls())
     this.els.scheduleTypeInterval.addEventListener('change', () => this.applyScheduleControls())
     this.els.scheduleTimes.addEventListener('input', () => this.applyScheduleControls())
     this.els.scheduleInterval.addEventListener('input', () => this.applyScheduleControls())
-    this.els.scheduleFadeIn.addEventListener('input', () => this.applyScheduleControls())
-    this.els.scheduleFadeOut.addEventListener('input', () => this.applyScheduleControls())
+    this.els.scheduleFadeEnabled.addEventListener('change', () =>
+      this.toggleFade(this.els.scheduleFadeEnabled, this.els.scheduleFadeIn, this.els.scheduleFadeOut, () => this.applyScheduleControls())
+    )
+    this.els.scheduleFadeIn.addEventListener('input', () => {
+      this.syncFadeToggle(this.els.scheduleFadeEnabled, this.els.scheduleFadeIn, this.els.scheduleFadeOut)
+      this.applyScheduleControls()
+    })
+    this.els.scheduleFadeOut.addEventListener('input', () => {
+      this.syncFadeToggle(this.els.scheduleFadeEnabled, this.els.scheduleFadeIn, this.els.scheduleFadeOut)
+      this.applyScheduleControls()
+    })
 
     this.els.crossfade.addEventListener('input', () => this.applyCrossfadeControl())
     this.els.seamListen.addEventListener('click', () =>
@@ -3169,6 +3223,30 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     }, 300)
   }
 
+  // Finer peaks for exactly what the "Loop seam" strip's current zoom
+  // shows (v0.1.231) - the same idea as maybeFetchDetailPeaks for the main
+  // trim waveform, keyed off the source-time range SeamView's own
+  // onViewportChange already resolved (it can be two disjoint stretches'
+  // union collapsed into one span, when the view straddles the crossfade
+  // blend - see that file's computeSourceRange).
+  scheduleSeamDetailPeaks(sourceRange) {
+    clearTimeout(this._seamDetailPeaksTimer)
+    const id = this.currentEntry?.id
+    if (!id || !this.seamView || !sourceRange) return
+    const [start, end] = sourceRange
+    if (!(end > start)) return
+    this._seamDetailPeaksTimer = setTimeout(async () => {
+      const width = Math.max(1, Math.round(this.els.seamCanvas.getBoundingClientRect().width))
+      try {
+        const peaks = await this.api.audio.getWaveformPeaks(id, width, start, end)
+        if (!peaks || this.currentEntry?.id !== id) return
+        this.seamView.setDetailPeaks(peaks, start, end)
+      } catch (err) {
+        console.error('Editor: seam detail peaks fetch failed', err)
+      }
+    }, 250)
+  }
+
   // The strip's playhead, in liveLayout() clip time.
   updateSeamPlayhead(sourceTime) {
     if (!this.seamView) return
@@ -3307,8 +3385,12 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     const f = group?.filters?.fluctuation
     if (!f) return null
     const perSound = ['volume', 'pitch', 'pan'].filter((a) => f[a]?.enabled && (f[a].perSound || a === 'pitch'))
-    const sharedPan = Boolean(f.pan?.enabled && !f.pan.perSound)
-    return perSound.length || sharedPan ? { group, perSound, sharedPan } : null
+    // Mirrors groupDrift.js's BUS_CAPABLE_AXES (can't import it - plugin
+    // sandbox) - a shared (non-per-sound) volume or pan drift on the group's
+    // bus switches off that same axis's own drift on the member, so they
+    // move together instead of each also wandering on its own.
+    const sharedAxes = ['volume', 'pan'].filter((a) => f[a]?.enabled && !f[a].perSound)
+    return perSound.length || sharedAxes.length ? { group, perSound, sharedAxes } : null
   }
 
   updateGroupOverrideNotes() {
@@ -3322,8 +3404,9 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
         fluc = `In the Mixer and exports, this sound's ${list(info.perSound)} drift comes from its group ${name} (each sound on its own), not from the bars below.`
         shot = `In the Mixer and exports, the ${list(info.perSound)} range comes from this sound's group ${name}'s drift settings, not from the bars below.`
       }
-      if (info.sharedPan && !info.perSound.includes('pan')) {
-        fluc = `${fluc ? `${fluc} ` : ''}Its group ${name} drifts pan for the whole group, so this sound's own pan drift is switched off there.`
+      const overridden = info.sharedAxes.filter((a) => !info.perSound.includes(a))
+      if (overridden.length) {
+        fluc = `${fluc ? `${fluc} ` : ''}Its group ${name} drifts ${list(overridden)} for the whole group, so this sound's own ${list(overridden)} drift is switched off there.`
       }
     }
     this.els.flucGroupNote.textContent = fluc
@@ -3423,6 +3506,14 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
     this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
+    // Fade and Sync group (owner UI feedback, 2026-09-17): moved up near the
+    // waveform/sound name so they sit close to what they actually affect -
+    // see editor-fade-section's own comment above the markup. Visibility
+    // still follows the exact same playMode rules the sections above do.
+    this.els.fadeSection.classList.toggle('hidden', playMode !== 'scatter' && playMode !== 'scheduled')
+    this.els.scatterFadeFields.classList.toggle('hidden', playMode !== 'scatter')
+    this.els.scheduleFadeFields.classList.toggle('hidden', playMode !== 'scheduled')
+    this.els.syncGroupRow.classList.toggle('hidden', playMode !== 'scatter')
     // Fluctuation is continuous drift on a held loop - it has no meaning for
     // Random Interval / Scheduled one-shots (which have their own per-shot
     // pitch/volume randomization), and the Source classes for those modes
@@ -3516,6 +3607,7 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     this.writeShotAxes('scatter', scatter)
     this.els.scatterFadeIn.value = String(fadeInMs)
     this.els.scatterFadeOut.value = String(fadeOutMs)
+    this.syncFadeToggle(this.els.scatterFadeEnabled, this.els.scatterFadeIn, this.els.scatterFadeOut)
     this.els.scatterSyncGroup.value = syncGroup
     this.updateScatterRangeDisabled()
   }
@@ -3525,6 +3617,26 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     this.els.crossfadeSection.classList.toggle('hidden', playMode === 'scatter' || playMode === 'scheduled')
     this.els.scatterSection.classList.toggle('hidden', playMode !== 'scatter')
     this.els.scheduleSection.classList.toggle('hidden', playMode !== 'scheduled')
+    this.els.fadeSection.classList.toggle('hidden', playMode !== 'scatter' && playMode !== 'scheduled')
+    this.els.scatterFadeFields.classList.toggle('hidden', playMode !== 'scatter')
+    this.els.scheduleFadeFields.classList.toggle('hidden', playMode !== 'scheduled')
+    this.els.syncGroupRow.classList.toggle('hidden', playMode !== 'scatter')
+    // BUG FIX (found while verifying the layout changes above, not reported):
+    // this function - the one that reacts to the Playback mode radios while
+    // a sound is already open, as opposed to setPlayModeControls() which only
+    // runs on a fresh load() - never toggled the Fluctuation section itself,
+    // just the bars/canvases inside it once shown. Switching from Scatter
+    // back to Loop without reloading the sound left Fluctuation permanently
+    // hidden (or the reverse: stuck visible after switching away from Loop),
+    // since only a fresh load ever ran the real check. Same Loop-mode-only
+    // scoping setPlayModeControls already documents.
+    const flucHidden = playMode === 'scatter' || playMode === 'scheduled'
+    this.els.fluctuationSection.classList.toggle('hidden', flucHidden)
+    if (!flucHidden) {
+      this.flucVolBar?.redraw()
+      this.flucPitchBar?.redraw()
+      this.flucPanBar?.redraw()
+    }
     // Volume envelope is Loop-mode-only (v1) - scatter/scheduled shots have
     // their own per-shot randomization instead, same reasoning Fluctuation's
     // own Loop-mode-first scoping used. This only gates drawing/hit-testing
@@ -3550,6 +3662,35 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     if (!enabled) return
     const { fadeInMs, fadeOutMs } = playMode === 'scatter' ? this.currentScatterConfig() : this.currentScheduleConfig()
     this.loopEditorController?.setFades(fadeInMs / 1000, fadeOutMs / 1000)
+  }
+
+  // Fade shot edges (owner UI feedback, 2026-09-17): an explicit on/off
+  // switch, instead of leaving "0 = off" as the only way to turn it off. The
+  // two ms fields stay the real source of truth (dragging the waveform's
+  // fade pins - see onFadesChange above - writes straight into them, same as
+  // before); this just keeps a friendlier checkbox in sync with them from
+  // every direction a value can change (typing, the checkbox itself, or a
+  // pin drag).
+  syncFadeToggle(enabledEl, inInput, outInput) {
+    const on = Number(inInput.value) > 0 || Number(outInput.value) > 0
+    enabledEl.checked = on
+    inInput.disabled = !on
+    outInput.disabled = !on
+  }
+
+  toggleFade(enabledEl, inInput, outInput, apply) {
+    if (enabledEl.checked) {
+      if (Number(inInput.value) <= 0 && Number(outInput.value) <= 0) {
+        inInput.value = '150'
+        outInput.value = '150'
+      }
+    } else {
+      inInput.value = '0'
+      outInput.value = '0'
+    }
+    inInput.disabled = !enabledEl.checked
+    outInput.disabled = !enabledEl.checked
+    apply()
   }
 
   applyScatterControls() {
@@ -3606,6 +3747,7 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
     this.writeShotAxes('schedule', schedule)
     this.els.scheduleFadeIn.value = String(fadeInMs)
     this.els.scheduleFadeOut.value = String(fadeOutMs)
+    this.syncFadeToggle(this.els.scheduleFadeEnabled, this.els.scheduleFadeIn, this.els.scheduleFadeOut)
   }
 
   applyScheduleControls() {
@@ -4221,6 +4363,8 @@ ${shotAxisMarkup('editor-schedule-speed', 'Speed', '(a random tempo every trigge
 
   async loadSound(id) {
     clearTimeout(this.detailPeaksDebounceTimer)
+    clearTimeout(this._seamDetailPeaksTimer)
+    this.seamView?.resetZoom()
     const entry = this.library.find((s) => s.id === id)
     if (!entry) return
     // Solo is scoped to whichever sound was previously open, not the one

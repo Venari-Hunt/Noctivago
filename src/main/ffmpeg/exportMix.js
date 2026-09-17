@@ -950,7 +950,7 @@ async function applyGroupFilters(track, filters, durationSeconds, reporter) {
       '-y', '-i', track.path,
       ...(preReverbChain.length ? ['-af', preReverbChain.join(',')] : []),
       '-t', durationSeconds.toFixed(6),
-      '-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2', preReverbPath
+      ...RF64_AUTO, '-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2', preReverbPath
     ])
     await applyReverbPass(preReverbPath, outPath, f.reverbSizeMs, f.reverbMix)
     reporter?.completePhase(durationSeconds)
@@ -1174,7 +1174,10 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
   fs.writeFileSync(scriptPath, graph.join(';'))
   const mainWavPath = needsIntermediate ? tempPath('wav') : null
   const targetPath = needsIntermediate ? mainWavPath : outputPath
-  const targetCodecArgs = needsIntermediate ? ['-c:a', 'pcm_s16le'] : (FORMAT_CODECS[format] ?? FORMAT_CODECS.wav)
+  // RF64_AUTO: see FORMAT_CODECS.wav's own comment - this intermediate is
+  // the same full-export-duration PCM WAV that can cross the classic WAV
+  // format's ~4.29GiB ceiling on a long export.
+  const targetCodecArgs = needsIntermediate ? [...RF64_AUTO, '-c:a', 'pcm_s16le'] : (FORMAT_CODECS[format] ?? FORMAT_CODECS.wav)
   const targetSampleRate = needsIntermediate ? 44100 : outputSampleRate(format)
   const toCleanup = [scriptPath]
   try {
@@ -1262,8 +1265,19 @@ async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilte
   await finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
 }
 
+// BUG FIX (owner-reported, real 9-hour export): the classic WAV format's
+// RIFF chunk sizes are 32-bit, a ~4.29GiB ceiling - past it, ffmpeg doesn't
+// even error, it silently writes a wrapped/invalid size field ("Filesize
+// ... invalid for wav, output file will be broken"), producing a WAV a
+// player reads as truncated (or worse). Verified directly against the real
+// bundled ffmpeg: an intentionally oversized plain WAV wrapped its own
+// duration from 3200s down to ~2796s; the same write with -rf64 auto came
+// back exact. -rf64 auto only switches the header to the extended RF64
+// format once a file actually needs to exceed the classic limit - a normal
+// export under ~4GiB gets a byte-identical plain WAV, so this is free.
+const RF64_AUTO = ['-rf64', 'auto']
 const FORMAT_CODECS = {
-  wav: ['-c:a', 'pcm_s16le'],
+  wav: [...RF64_AUTO, '-c:a', 'pcm_s16le'],
   mp3: ['-c:a', 'libmp3lame', '-b:a', '192k'],
   opus: ['-c:a', 'libopus', '-b:a', '128k'],
   flac: ['-c:a', 'flac'],
