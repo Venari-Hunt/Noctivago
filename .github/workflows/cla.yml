@@ -33,7 +33,16 @@ jobs:
         with:
           path-to-signatures: "signatures/cla.json"
           path-to-document: "https://github.com/Venari-Hunt/Noctivago/blob/master/CLA.md"
-          branch: "master"
+          # Deliberately NOT "master": this action commits the updated
+          # signatures file straight to this branch via the GitHub Contents
+          # API, with no status checks of its own. master requires the
+          # "CLAAssistant"/"test" checks on every push, so that commit was
+          # always rejected ("2 of 2 required status checks are expected")
+          # and signatures/cla.json never actually recorded a signature -
+          # confirmed by the file still reading `signedContributors: []`
+          # after two real contributors had signed. cla-signatures is a
+          # plain, unprotected branch that exists solely to hold this file.
+          branch: "cla-signatures"
           # 'claude' is the account behind the "Co-Authored-By: Claude
           # Sonnet 5" trailer this project's commits carry - an attribution
           # line, not an independent outside contributor, so it doesn't need
