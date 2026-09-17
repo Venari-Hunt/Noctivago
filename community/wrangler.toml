@@ -5,9 +5,7 @@ compatibility_date = "2026-09-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "noctivago-community"
-# Replace with the id printed by `npx wrangler d1 create noctivago-community`.
-# Local `wrangler dev` works with this placeholder.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "b46e46c9-a055-41a4-ac7f-c1f131e0eca5"
 
 [[r2_buckets]]
 binding = "BUCKET"
