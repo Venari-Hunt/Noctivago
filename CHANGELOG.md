@@ -6,6 +6,14 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.224 — Credits and scene details in the export info file
+
+- The info file an export writes now has a **Credits** section: every Freesound sound with its author, license and link, plus sounds added from a link. Creative Commons Attribution sounds are flagged as needing credit, and sounds with an unknown license are listed so you can check them.
+- **Files you downloaded from freesound.org yourself are recognized** from Freesound's own file names (`12345__author__sound-name.wav`), both for new imports and for sounds already in your library. The app looks up their license when you export, and new imports get the sound's real name instead of the file name.
+- The info file also describes **how the scene is set up**: each sound's volume, whether it loops, plays at random intervals or on a clock, its pan, pitch, speed, drift and per-play randomization, notable effects, Sound Groups, and whole-mix processing.
+- The ready-to-paste AI prompt now asks for a description that keeps the credits exactly as written.
+- Sounds imported from Freesound in the app also keep the author's description and tags.
+
 ## v0.1.223 — Remix changes reliably reach the Mixer
 
 - **Fixed: the Mixer could erase a sound's Remix settings for the loaded preset.** If the sound had been added to the mix during the session, changing any volume in the Mixer wiped the pan (or any other Remix edit) you had just saved for that preset. Settings you already lost this way need to be set again once.
