@@ -1,4 +1,5 @@
 node_modules/
+.wrangler/
 out/
 dist/
 .claude/settings.local.json
@@ -6,3 +7,6 @@ dist/
 # checked in - same reasoning ffmpeg-static's own binary isn't checked in
 # either, just fetched on install.
 resources/bin/
+
+# Local Worker secrets (wrangler dev)
+.dev.vars

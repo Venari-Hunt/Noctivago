@@ -70,6 +70,25 @@ export async function searchSounds({ query, page = 1, pageSize = 15, sort = 'sco
   }
 }
 
+// Looks up one sound's current preview URL by id - used when a community
+// preset lists a Freesound sound instead of carrying its audio
+// (presetPortable.js's finalizeImport). Freesound's own ids are stable, so a
+// shared preset can re-fetch the exact same preview the author imported.
+export async function getPreviewUrl(freesoundId) {
+  if (!isFreesoundAvailable()) throw new Error('Freesound import is not configured in this build.')
+  const id = Number(freesoundId)
+  if (!Number.isInteger(id) || id <= 0) throw new Error('Invalid Freesound id.')
+  const url = new URL(`${API_BASE}/sounds/${id}/`)
+  url.searchParams.set('fields', 'id,previews')
+  url.searchParams.set('token', __FREESOUND_API_KEY__)
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(res.status === 404 ? 'That sound was removed from Freesound.' : `Freesound returned ${res.status}.`)
+  const body = await res.json()
+  const previewUrl = body.previews?.['preview-hq-mp3'] || body.previews?.['preview-lq-mp3']
+  if (!previewUrl) throw new Error('Freesound has no preview for that sound.')
+  return previewUrl
+}
+
 // Appends the token as a query param rather than an Authorization header -
 // the one auth shape that works identically for every caller of this
 // function: ffmpeg's own -i URL fetch (freesound/download.js) can't set

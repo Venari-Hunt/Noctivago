@@ -4,13 +4,12 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import * as library from './library.js'
 import * as presets from './presets.js'
+import * as community from './community/client.js'
 import {
   buildPortableBundle,
   writePortableBundle,
-  readPortablePresetFile,
-  analyzePortablePreset,
+  prepareImport,
   importLocatedSound,
-  stashImportBundle,
   clearImportSession,
   finalizeImport
 } from './presetPortable.js'
@@ -115,6 +114,18 @@ export function registerIpcHandlers() {
     })
   )
   ipcMain.handle('library:addFolderSounds', (_event, folderPath, options) => library.addFolderSounds(folderPath, options))
+  // Community presets (src/main/community/client.js).
+  ipcMain.handle('community:getProfile', () => community.getProfile())
+  ipcMain.handle('community:list', (_event, params) => community.listPresets(params))
+  ipcMain.handle('community:listMine', () => community.listMyPresets())
+  ipcMain.handle('community:download', (_event, id) => community.downloadPreset(id))
+  ipcMain.handle('community:publish', (event, payload) =>
+    community.publishPreset(payload, (update) => {
+      if (!event.sender.isDestroyed()) event.sender.send('community:publishProgress', update)
+    })
+  )
+  ipcMain.handle('community:delete', (_event, id) => community.deletePreset(id))
+  ipcMain.handle('community:report', (_event, id, reason) => community.reportPreset(id, reason))
   ipcMain.handle('freesound:isAvailable', () => isFreesoundAvailable())
   ipcMain.handle('freesound:search', (_event, params) => searchSounds(params))
   ipcMain.handle('ytdlp:isSearchAvailable', () => isYouTubeSearchAvailable())
@@ -197,26 +208,11 @@ export function registerIpcHandlers() {
     })
     if (result.canceled || result.filePaths.length === 0) return { ok: false, canceled: true }
 
-    let read
     try {
-      read = readPortablePresetFile(fs.readFileSync(result.filePaths[0]))
+      return prepareImport(fs.readFileSync(result.filePaths[0]))
     } catch (err) {
       return { ok: false, error: `Could not read that file: ${err.message}` }
     }
-    if (!read.ok) return read
-
-    const analysis = analyzePortablePreset(read.manifest, read.bundle)
-    if (!analysis.ok) return analysis
-
-    let importSessionId = null
-    if (read.bundle && read.bundle.size > 0) {
-      try {
-        importSessionId = stashImportBundle(read.bundle)
-      } catch (err) {
-        return { ok: false, error: `Could not unpack that preset: ${err.message}` }
-      }
-    }
-    return { ...analysis, importSessionId }
   })
 
   ipcMain.handle('presets:resolveImportedSound', async (_event, portableSound) => {

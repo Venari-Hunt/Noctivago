@@ -69,6 +69,10 @@ jobs:
           # itch.io - it's a free, re-issuable key rather than a real
           # credential, so being in a public binary was already accepted.
           FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+          # Community presets API (community/, a Cloudflare Worker) - a public
+          # URL, so a repo *variable* rather than a secret. Unset = the
+          # Community tab shows "not available".
+          COMMUNITY_API_URL: ${{ vars.COMMUNITY_API_URL }}
       # NOTE: there used to be a NOCTIVAGO_UPDATE_TOKEN baked in here too (a
       # narrowly-scoped PAT so electron-updater could read releases from what
       # was then a private repo) and a whole SECOND build below, made

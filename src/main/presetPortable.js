@@ -5,6 +5,8 @@ import crypto from 'node:crypto'
 import * as library from './library.js'
 import { listPresets, savePreset } from './presets.js'
 import { createZip, readZip, looksLikeZip } from './zip.js'
+import { isFreesoundAvailable, getPreviewUrl } from './freesound/client.js'
+import { remapGroups, isFreesoundSource, pickOverridable } from './presetPortableCore.js'
 
 // Portable preset files (.ncvpreset) - a preset plus everything needed to
 // reproduce it on another machine.
@@ -16,6 +18,14 @@ import { createZip, readZip, looksLikeZip } from './zip.js'
 //                    same manifest) plus `audio/<file>` for every sound whose
 //                    audio was available at export time - so import can pull
 //                    those in automatically (Phase 2).
+//
+// Additive manifest fields (v0.1.219, community presets; older apps ignore
+// them):
+//   sounds[].overrides  the preset's own per-sound override bag (presets.js)
+//   sounds[].source     the library entry's `source` (Freesound attribution).
+//                       With `skipFreesoundAudio` a Freesound sound ships
+//                       without its audio and is re-downloaded by id.
+//   groups[]            Sound Groups, members as indexes into sounds[].
 //
 // A local preset is only { soundId, volume } (see presets.js); the per-sound
 // DSP settings (trim/filters/EQ/playMode/…) live on the library entry. The
@@ -47,7 +57,10 @@ function portableSettingsFor(entry) {
 // soundId no longer resolves are dropped; sounds whose audio file is missing
 // on disk are kept in the manifest but contribute no file (they'll show as
 // "needs file" on import). Returns null if the preset id is unknown.
-export function buildPortableBundle(presetId) {
+//
+// skipFreesoundAudio (community uploads): a sound imported from Freesound
+// contributes no file - the recipient re-downloads it by id instead.
+export function buildPortableBundle(presetId, { skipFreesoundAudio = false } = {}) {
   const preset = listPresets().find((p) => p.id === presetId)
   if (!preset) return null
 
@@ -55,12 +68,15 @@ export function buildPortableBundle(presetId) {
   const usedNames = new Set()
   const portableSounds = []
   const files = []
+  const indexBySoundId = new Map()
 
   for (const item of preset.sounds) {
     const entry = byId.get(item.soundId)
     if (!entry) continue
 
-    const sourcePath = library.getPlaybackPathForId(entry.id)
+    const source = entry.source ?? null
+    const refetchable = skipFreesoundAudio && isFreesoundSource(source)
+    const sourcePath = refetchable ? null : library.getPlaybackPathForId(entry.id)
     let bundleName = null
     if (sourcePath) {
       // Name the bundled file after the sound's *original* file where we know
@@ -77,9 +93,10 @@ export function buildPortableBundle(presetId) {
       }
       usedNames.add(candidate.toLowerCase())
       bundleName = candidate
-      files.push({ zipName: `${AUDIO_DIR}/${candidate}`, sourcePath })
+      files.push({ zipName: `${AUDIO_DIR}/${candidate}`, sourcePath, soundIndex: portableSounds.length })
     }
 
+    indexBySoundId.set(entry.id, portableSounds.length)
     portableSounds.push({
       name: entry.name,
       fileName: path.basename(entry.originalPath || ''),
@@ -87,9 +104,19 @@ export function buildPortableBundle(presetId) {
       fileSizeBytes: entry.fileSizeBytes ?? null,
       durationSeconds: entry.durationSeconds ?? null,
       volume: item.volume ?? entry.volume ?? 0.7,
-      settings: portableSettingsFor(entry)
+      settings: portableSettingsFor(entry),
+      overrides: item.overrides ?? null,
+      source
     })
   }
+
+  const groups = (preset.groups ?? [])
+    .map((g) => ({
+      name: g.name,
+      filters: g.filters ?? null,
+      soundIndexes: (g.soundIds ?? []).map((id) => indexBySoundId.get(id)).filter((i) => i !== undefined)
+    }))
+    .filter((g) => g.soundIndexes.length > 0)
 
   const manifest = {
     format: PORTABLE_FORMAT,
@@ -102,23 +129,31 @@ export function buildPortableBundle(presetId) {
     // exported noctivago file." null when the preset has none (matches
     // presets.js's own normalizeWholeMix truthiness convention).
     wholeMix: preset.wholeMix ?? null,
+    groups,
     sounds: portableSounds
   }
   return { manifest, files }
 }
 
-// Writes the bundle to outputPath. Always a zip now (even config-only - one
-// file inside); Phase-1 raw-JSON files still import fine (see below).
-export function writePortableBundle({ manifest, files }, outputPath) {
+// Packs a bundle into a zip Buffer. `files[].data` (already-loaded bytes,
+// e.g. a community upload's transcoded audio) wins over `sourcePath`.
+export function packPortableBundle({ manifest, files }) {
   const entries = [{ name: MANIFEST_NAME, data: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8') }]
   let totalBytes = 0
   for (const f of files) {
-    const data = fs.readFileSync(f.sourcePath)
+    const data = f.data ?? fs.readFileSync(f.sourcePath)
     totalBytes += data.length
     entries.push({ name: f.zipName, data })
   }
-  fs.writeFileSync(outputPath, createZip(entries))
-  return { soundCount: manifest.sounds.length, audioCount: files.length, totalBytes }
+  return { buffer: createZip(entries), totalBytes }
+}
+
+// Writes the bundle to outputPath. Always a zip now (even config-only - one
+// file inside); Phase-1 raw-JSON files still import fine (see below).
+export function writePortableBundle(bundle, outputPath) {
+  const { buffer, totalBytes } = packPortableBundle(bundle)
+  fs.writeFileSync(outputPath, buffer)
+  return { soundCount: bundle.manifest.sounds.length, audioCount: bundle.files.length, totalBytes }
 }
 
 // Only honours entries directly inside `audio/` with a known audio extension
@@ -199,9 +234,14 @@ function matchExistingSound(portableSound, librarySounds) {
   return candidates.find((s) => s.name === portableSound.name) ?? candidates[0]
 }
 
+function matchFreesoundSound(source, librarySounds) {
+  const want = Number(source.freesoundId)
+  return librarySounds.find((e) => isFreesoundSource(e.source) && Number(e.source.freesoundId) === want) ?? null
+}
+
 // Validates a parsed manifest and annotates each sound with how it will be
 // resolved: matched to an existing library entry, available from the bundle,
-// or needs the user to locate the file.
+// re-downloadable from Freesound, or needs the user to locate the file.
 export function analyzePortablePreset(manifest, bundle = null) {
   if (!manifest || manifest.format !== PORTABLE_FORMAT || !Array.isArray(manifest.sounds)) {
     return { ok: false, error: "That file isn't a Noctívago preset." }
@@ -214,6 +254,7 @@ export function analyzePortablePreset(manifest, bundle = null) {
   }
 
   const librarySounds = library.listSounds()
+  const freesoundReady = isFreesoundAvailable()
   const sounds = manifest.sounds.map((s) => {
     // When the bundle carries this sound's audio, use it - it comes with the
     // sender's exact per-sound settings (trim/filters/EQ/play mode/volume).
@@ -225,7 +266,15 @@ export function analyzePortablePreset(manifest, bundle = null) {
     // .ncvpreset, or a sound whose file was missing when the sender exported).
     const bundleKey = String(s.bundleName || s.fileName || '').toLowerCase()
     const fromBundle = Boolean(bundle && bundleKey && bundle.has(bundleKey))
-    const match = fromBundle ? null : matchExistingSound(s, librarySounds)
+    const source = isFreesoundSource(s.source) ? s.source : null
+    const settings = s.settings && typeof s.settings === 'object' ? s.settings : {}
+    // The exact same Freesound sound already in the library is a safe match
+    // (unlike a filename match). The sender's settings then ride along as
+    // preset overrides, so the recipient's own copy stays untouched.
+    const freesoundMatch = fromBundle || !source ? null : matchFreesoundSound(source, librarySounds)
+    const match = fromBundle ? null : freesoundMatch ?? matchExistingSound(s, librarySounds)
+    let overrides = s.overrides && typeof s.overrides === 'object' ? { ...s.overrides } : null
+    if (freesoundMatch) overrides = { ...pickOverridable(settings), ...(overrides ?? {}) }
     return {
       name: s.name ?? '(unnamed)',
       fileName: s.fileName ?? '',
@@ -233,10 +282,13 @@ export function analyzePortablePreset(manifest, bundle = null) {
       fileSizeBytes: s.fileSizeBytes ?? null,
       durationSeconds: s.durationSeconds ?? null,
       volume: typeof s.volume === 'number' ? s.volume : 0.7,
-      settings: s.settings && typeof s.settings === 'object' ? s.settings : {},
+      settings,
+      overrides,
+      source,
       matchedSoundId: match ? match.id : null,
       matchedName: match ? match.name : null,
-      fromBundle
+      fromBundle,
+      fromFreesound: Boolean(!fromBundle && !match && source && freesoundReady)
     }
   })
 
@@ -248,6 +300,7 @@ export function analyzePortablePreset(manifest, bundle = null) {
     // export from before Preset Remix existed - null either way, same as a
     // preset that just never had whole-mix settings.
     wholeMix: manifest.wholeMix ?? null,
+    groups: Array.isArray(manifest.groups) ? manifest.groups : [],
     sounds
   }
 }
@@ -261,7 +314,8 @@ export function importLocatedSound(filePath, portableSound, { keepCopy = false }
   const entry = library.addSound({
     path: filePath,
     name: portableSound?.name || path.parse(filePath).name,
-    keepCopy
+    keepCopy,
+    source: isFreesoundSource(portableSound?.source) ? portableSound.source : null
   })
   library.applyImportedSettings(entry.id, portableSound?.settings || {})
   // The preset carries the per-sound mix volume separately from the shaping
@@ -271,6 +325,25 @@ export function importLocatedSound(filePath, portableSound, { keepCopy = false }
     library.updateVolume(entry.id, portableSound.volume)
   }
   return { soundId: entry.id, reused: false }
+}
+
+// Re-downloads a Freesound sound a preset listed without its audio, then
+// applies the sender's settings like any other freshly-added sound.
+async function importFreesoundSound(portableSound) {
+  const { source } = portableSound
+  const freesoundId = Number(source.freesoundId)
+  const previewUrl = await getPreviewUrl(freesoundId)
+  const entry = await library.addSoundFromFreesound({
+    freesoundId,
+    name: portableSound.name,
+    username: source.username ?? null,
+    license: source.license ?? null,
+    pageUrl: source.pageUrl ?? `https://freesound.org/s/${freesoundId}/`,
+    previewUrl
+  })
+  library.applyImportedSettings(entry.id, portableSound.settings || {})
+  if (typeof portableSound.volume === 'number') library.updateVolume(entry.id, portableSound.volume)
+  return entry.id
 }
 
 // --- bundle import sessions ------------------------------------------------
@@ -318,24 +391,67 @@ export function sweepImportSessions() {
   }
 }
 
-// "Create preset" from the import dialog. Resolves every sound (existing
-// match, the user's manual Locate, or the bundle), saves the preset, and
-// tears down the temp session.
-export function finalizeImport({ importSessionId, name, sounds, wholeMix }) {
-  const resolved = []
-  for (const s of sounds || []) {
-    let soundId = s.matchedSoundId
-    if (!soundId && s.fromBundle && importSessionId) {
-      const bundledPath = importSessionFile(importSessionId, s.bundleName || s.fileName)
-      if (bundledPath) {
-        soundId = importLocatedSound(bundledPath, s, { keepCopy: true }).soundId
-      }
+// Reads a preset file buffer (a local pick or a community download),
+// analyzes it and stashes its audio - the shared tail of every import.
+export function prepareImport(fileBuffer) {
+  const read = readPortablePresetFile(fileBuffer)
+  if (!read.ok) return read
+
+  const analysis = analyzePortablePreset(read.manifest, read.bundle)
+  if (!analysis.ok) return analysis
+
+  let importSessionId = null
+  if (read.bundle && read.bundle.size > 0) {
+    try {
+      importSessionId = stashImportBundle(read.bundle)
+    } catch (err) {
+      return { ok: false, error: `Could not unpack that preset: ${err.message}` }
     }
-    if (soundId) resolved.push({ soundId, volume: s.volume })
   }
-  if (importSessionId) clearImportSession(importSessionId)
+  return { ...analysis, importSessionId }
+}
+
+// "Create preset" from the import dialog. Resolves every sound (existing
+// match, the user's manual Locate, the bundle, or a Freesound re-download),
+// saves the preset with its overrides and Sound Groups, and tears down the
+// temp session.
+export async function finalizeImport({ importSessionId, name, sounds, wholeMix, groups }) {
+  const resolved = []
+  const soundIdByIndex = new Map()
+  let failedCount = 0
+  try {
+    for (const [index, s] of (sounds || []).entries()) {
+      let soundId = s.matchedSoundId ?? null
+      try {
+        if (!soundId && s.fromBundle && importSessionId) {
+          const bundledPath = importSessionFile(importSessionId, s.bundleName || s.fileName)
+          if (bundledPath) {
+            soundId = importLocatedSound(bundledPath, s, { keepCopy: true }).soundId
+          }
+        }
+        if (!soundId && s.fromFreesound && isFreesoundSource(s.source)) {
+          soundId = await importFreesoundSound(s)
+        }
+      } catch {
+        soundId = null
+      }
+      if (!soundId) {
+        failedCount += 1
+        continue
+      }
+      soundIdByIndex.set(index, soundId)
+      resolved.push({ soundId, volume: s.volume, overrides: s.overrides ?? null })
+    }
+  } finally {
+    if (importSessionId) clearImportSession(importSessionId)
+  }
 
   if (resolved.length === 0) return { ok: false, error: 'None of the sounds could be added.' }
-  const preset = savePreset({ name: name || 'Imported preset', sounds: resolved, wholeMix: wholeMix ?? null })
-  return { ok: true, preset, soundCount: resolved.length }
+  const preset = savePreset({
+    name: name || 'Imported preset',
+    sounds: resolved,
+    wholeMix: wholeMix ?? null,
+    groups: remapGroups(groups, soundIdByIndex)
+  })
+  return { ok: true, preset, soundCount: resolved.length, failedCount }
 }

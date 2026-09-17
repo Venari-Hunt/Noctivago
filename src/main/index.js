@@ -16,6 +16,7 @@ import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
 import { initThumbar } from './thumbar.js'
 import { initSleepTimer } from './sleepTimer.js'
 import { sweepImportSessions } from './presetPortable.js'
+import { sweepCommunityTmp } from './community/bundle.js'
 import { sweepExportTempDir } from './ffmpeg/exportMix.js'
 import { initWatchFolders, startWatching, stopWatching } from './watchFolders.js'
 
@@ -260,6 +261,7 @@ app.whenReady().then(() => {
   initThumbar(win)
   initSleepTimer(win)
   sweepImportSessions()
+  sweepCommunityTmp()
   sweepExportTempDir()
   setTrayEnabled(getSettings().minimizeToTrayEnabled)
   initWatchFolders(win)
