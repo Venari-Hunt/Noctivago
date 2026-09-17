@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.230 — Remix: clearer Random Interval / Scheduled layout
+
+- **Each Pitch/Volume/Pan/Speed bar (and the new Gap card) now has its own visible box**, so it's clear which "Fully random" and "Bias" checkboxes belong to which one, and the section names are easier to spot at a glance.
+- **Fade in/out moved up next to the waveform** (which already shows the same fade as draggable pins at the trim edges), with a plain "Fade" switch instead of "0 = off" being the only way to turn it off.
+- **Sync group moved up next to the sound's own name**, since it names the sound rather than randomizing it.
+- **Fixed: switching Playback mode (Loop / Random Interval / Scheduled) without reloading the sound could leave the Fluctuation section stuck showing or stuck hidden.** Found while making the changes above, not reported.
+
 ## v0.1.229 — Fixed: resuming a sound could play it with stale settings
 
 - **Fixed: a paused sound could resume with the wrong settings, or silently keep an out-of-date saved clip, instead of what Remix showed.** Pausing a sound (turning it off, switching presets, or Pause All) never actually let go of its player — only specific edits were set up to reach it while paused. Anything else that changed its settings in the meantime had no way back in, so playing it again could sound like an older version, or in some cases not update its audio at all, until something unrelated (like a Sound Group change) forced everything to recheck itself. Every sound now rechecks its own settings the moment it's played, the same way it already double-checks which Sound Group it belongs to.

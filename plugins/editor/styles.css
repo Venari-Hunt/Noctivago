@@ -58,13 +58,46 @@
   color: var(--text-dim);
 }
 
+.editor-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
 .editor-panel h3 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Owner UI feedback (2026-09-17): Sync group used to sit at the very bottom
+   of the Random Interval panel, far from the sound it names - moved up next
+   to the sound's own name/search bar since it's an identity field, not a
+   per-play randomization range. Only shown in Random Interval mode - see
+   setPlayModeControls()/applyPlayModeControl(). */
+.editor-sync-group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.editor-sync-group-row input {
+  width: 140px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 12px;
 }
 
 /* Hover marquee for a truncated sound title - mirrors the Mixer's own
@@ -324,6 +357,58 @@
   color: var(--text-dim);
 }
 
+/* Owner UI feedback (2026-09-17): Fade in/out used to sit at the very bottom
+   of the Random Interval/Scheduled panel, far from the waveform above, which
+   already shows the exact same fade as a pair of draggable pins at the trim
+   edges (see LoopEditor/waveform.js, wired through onFadesChange). Moved
+   right under the Playback mode picker so it's next to what it visually
+   controls, with an explicit on/off switch instead of "0 = off" being the
+   only way to turn it off. */
+.editor-fade-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.editor-fade-heading {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.editor-fade-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.editor-fade-fields label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.editor-fade-fields input[type='number'] {
+  width: 64px;
+}
+
+.editor-fade-fields input:disabled {
+  opacity: 0.4;
+}
+
+.editor-fade-enable {
+  font-weight: 600;
+  color: var(--text);
+}
+
 .editor-scatter-controls {
   display: flex;
   flex-direction: column;
@@ -369,6 +454,20 @@
 
 .editor-scatter-controls input[type='number'] {
   width: 64px;
+}
+
+/* The Gap card's Min/Max/Bias row - nested inside .editor-gap-axis (an
+   .editor-fluctuation-axis, see that class for the card styling), which is
+   itself inside .editor-scatter-controls, so its labels already inherit that
+   section's own label/input styling below. */
+.editor-gap-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.editor-gap-range label {
+  flex: 1 1 130px;
 }
 
 .editor-scatter-hint {
@@ -1004,17 +1103,33 @@
   line-height: 1.4;
 }
 
+/* Owner UI feedback (2026-09-17, screenshot): each bar's own toggles read as
+   "thrown around" with no visual boundary, and the whole shape repeated on
+   every bar with nothing telling you which controls belonged to which one.
+   Giving the axis its own bordered card (nested inside the section's own
+   surface, one shade lighter) makes the grouping visible at a glance - fixes
+   every bar this markup is used for at once (Sound mode's Fluctuation axes,
+   and every Random Interval / Scheduled per-play bar and the Gap card
+   below), rather than a one-off fix per instance. */
 .editor-fluctuation-axis {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
+/* Same feedback: the axis name ("Pitch", "Volume drift"...) was the same
+   size/weight as every other label around it, so scanning for which bar you
+   wanted meant reading all of them. Bumped to read as a heading. */
 .editor-fluctuation-enable {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text);
 }
 
