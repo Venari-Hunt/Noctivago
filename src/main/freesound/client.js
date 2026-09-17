@@ -1,4 +1,5 @@
 import log from 'electron-log/main'
+import { clampPageSize } from '../../shared/pageSize.js'
 
 // Freesound APIv2 - text search + preview download, both covered by the
 // simplest "Token" auth shape (an app-wide key requested once at
@@ -11,7 +12,6 @@ import log from 'electron-log/main'
 // per-user login flow.
 const API_BASE = 'https://freesound.org/apiv2'
 const SEARCH_FIELDS = 'id,name,username,previews,duration,license,tags,avg_rating,num_ratings,description'
-const MAX_PAGE_SIZE = 30
 
 export function isFreesoundAvailable() {
   return Boolean(__FREESOUND_API_KEY__)
@@ -25,7 +25,7 @@ export async function searchSounds({ query, page = 1, pageSize = 15, sort = 'sco
   const url = new URL(`${API_BASE}/search/text/`)
   url.searchParams.set('query', q)
   url.searchParams.set('fields', SEARCH_FIELDS)
-  url.searchParams.set('page_size', String(Math.min(Math.max(Math.round(pageSize) || 15, 1), MAX_PAGE_SIZE)))
+  url.searchParams.set('page_size', String(clampPageSize(pageSize, 15)))
   url.searchParams.set('page', String(Math.max(Math.round(page) || 1, 1)))
   url.searchParams.set('sort', sort)
   url.searchParams.set('token', __FREESOUND_API_KEY__)

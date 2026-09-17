@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import log from 'electron-log/main'
 import { resolveYtDlpPath, isYtDlpAvailable } from './ytDlpPath.js'
 import { getSettings } from '../settings.js'
+import { clampPageSize } from '../../shared/pageSize.js'
 
 // YouTube search for the Browse Sounds tab (research pass 2026-09-15,
 // see the Board / CLAUDE.md): the official YouTube Data API's quota is
@@ -28,7 +29,6 @@ import { getSettings } from '../settings.js'
 // interactive ambient-sound search realistically reaches (a handful of
 // pages), and keeps this module fully stateless between calls.
 const SEARCH_TIMEOUT_MS = 25_000
-const MAX_PAGE_SIZE = 30
 
 export function isYouTubeSearchAvailable() {
   return isYtDlpAvailable()
@@ -39,7 +39,7 @@ export async function searchYouTube({ query, page = 1, pageSize = 12 } = {}) {
   const q = (query ?? '').trim()
   if (!q) return { ok: true, results: [], hasMore: false }
 
-  const size = Math.min(Math.max(Math.round(pageSize) || 12, 1), MAX_PAGE_SIZE)
+  const size = clampPageSize(pageSize, 12)
   const pageNum = Math.max(Math.round(page) || 1, 1)
   const start = (pageNum - 1) * size + 1
   const end = pageNum * size
