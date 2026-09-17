@@ -12,7 +12,8 @@ import { runFfmpegToFile } from '../ffmpeg/runFfmpeg.js'
 //     Loop points, envelopes and schedules are in seconds, so a re-encode
 //     leaves them valid.
 
-export const MAX_UPLOAD_BYTES = 95 * 1024 * 1024
+// Must match community/src/validate.js's maxBundleBytes.
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const OPUS_BITRATE = '96k'
 
 function tmpRoot() {

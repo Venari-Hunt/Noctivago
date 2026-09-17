@@ -197,6 +197,14 @@ async function savePreset(request, env, id) {
   const bytes = new Uint8Array(await file.arrayBuffer())
   if (!looksLikeZip(bytes)) return json({ ok: false, error: "That isn't a Noctívago preset file." }, 400)
 
+  // Storage budget: the total after this upload (minus the bundle it
+  // replaces) must stay under maxTotalBytes. Checked before touching R2.
+  const usage = await env.DB.prepare('SELECT COALESCE(SUM(size_bytes), 0) AS total FROM presets').first()
+  const replaced = id ? (await env.DB.prepare('SELECT size_bytes FROM presets WHERE id = ?').bind(id).first())?.size_bytes ?? 0 : 0
+  if (usage.total - replaced + bytes.length > LIMITS.maxTotalBytes) {
+    return json({ ok: false, error: 'Community storage is full right now - uploads are paused. Try again later.' }, 507)
+  }
+
   const presetId = id ?? crypto.randomUUID().replace(/-/g, '')
   const now = new Date().toISOString()
   await env.BUCKET.put(bundleKey(presetId), bytes, { httpMetadata: { contentType: 'application/zip' } })

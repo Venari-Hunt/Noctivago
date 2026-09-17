@@ -234,7 +234,7 @@ Owner request: users upload presets from the app, and other users browse and imp
 - **Why Cloudflare:** R2 has 10 GB free and charges no egress. Supabase's free tier has 1 GB of storage and 5 GB of egress, and it pauses a project after a week of inactivity. Uploading audio made egress cost the deciding factor.
 - **Identity:** no accounts. Each install generates a random 32-byte author key (`src/main/community/client.js`, stored in its own `community` electron-store) and sends it as `X-Author-Key`. The server stores only its SHA-256, and only that key can update or delete its own uploads.
 - **Abuse limits:** 10 uploads and 30 reports per day, counted per salted IP hash. After 3 distinct reporters, a preset is hidden automatically. `/v1/admin/*` routes (Bearer `ADMIN_TOKEN`) list, hide, unhide, or delete presets.
-- **Upload cap:** 95 MB, because a free-plan Worker can't receive a request body over 100 MB.
+- **Upload caps:** 50 MB per preset (a free-plan Worker can't receive a body over 100 MB anyway). Uploads are refused once stored bundles total 8 GB (`maxTotalBytes`, checked before any R2 write). R2 is the only part that can bill and has no spending cap; the owner explicitly worried about surprise charges, so this keeps it inside the 10 GB free tier. Workers and D1 are on the free plan, which just stops at its limits.
 - **Deploy:** the owner does it once; steps are in `community/README.md`. Until then, `COMMUNITY_API_URL` (a repo *variable*, read at build time into `__COMMUNITY_API_URL__`) is empty, and the Community plugin doesn't register its tab.
 - **Local server for unpackaged builds:** set `NOCTIVAGO_COMMUNITY_URL`.
 
