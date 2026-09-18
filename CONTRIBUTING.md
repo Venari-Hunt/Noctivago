@@ -20,7 +20,8 @@ npm run dev
 ```
 
 `npm run dev` first builds any plugin written in JSX (`plugins/<id>/src/`)
-into its `main.js`. While editing one, run `npm run dev:plugins` in a
+into its `main.js`, plus any React "islands" (`plugins/<id>/src/islands/*.jsx`,
+like Remix's filter sliders) into `plugins/<id>/islands/`. While editing one, run `npm run dev:plugins` in a
 second terminal to rebuild on save, then reload the app
 window. See `docs/plugins.md` and the `plugins/hello-react/` example.
 
