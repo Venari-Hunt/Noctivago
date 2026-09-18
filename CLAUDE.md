@@ -25,4 +25,4 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `docs/releasing.md` — releases, auto-update, itch.io.
 - `CHANGELOG.md` — dated release history (what exists). Old version numbers in docs are provenance, not things to re-verify.
 
-**Doc site:** `Venari-Hunt/noctivago-docs` (plain HTML, push to `main`). Each release that changes a user-facing feature updates its page and What's new (`node tools/build-changelog.mjs <this repo>/CHANGELOG.md`) before the tag. Batching is OK, but never past the next major release.
+**Doc site:** `Venari-Hunt/noctivago-docs` (plain HTML, push to `main`). Update it whenever possible: any user-facing change updates its page, and each release updates What's new (`node tools/build-changelog.mjs <this repo>/CHANGELOG.md`) before the tag. Batch only if it's truly expensive, and never past the next major release.
