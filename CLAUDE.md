@@ -1,46 +1,28 @@
 # Noctívago
 
-Windows desktop ambient sound mixer. Electron + React (older screens still plain JS/DOM, moving over as they're rewritten). Every screen is split into `domain/` (rules, no DOM) + `components/` (small React components) — see CONTRIBUTING.md.
-
-See `CONTRIBUTING.md` for build/run instructions and code conventions if you're working on the codebase.
+Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM). Every screen = `domain/` (rules, no DOM) + `components/` (small React components). Conventions and build/run: `CONTRIBUTING.md`.
 
 ## Architecture
 
-- `src/main/` — Electron main process.
-  - `index.js` — window creation, custom `sound://` protocol (serves either the original file or a rendered loop clip, see docs/playback.md) and `plugin://` protocol (serves plugin files, see docs/plugins.md). Under `npm run dev` with more than one display connected, `devWindowPosition()` opens the dev window on the highest-numbered display rather than the default (primary, centered) position, so a dev session doesn't pop a window over whatever's already in use on the primary display — computed *before* window creation (passed as `x`/`y` to the `BrowserWindow` constructor) rather than moved after the fact, to avoid a visible flash on the primary display first. Gated on `!app.isPackaged`, so a real installed build is never affected.
-  - `ipc.js` — IPC handlers.
-  - `library.js` — registered sound files, persisted via `electron-store`.
-  - `presets.js` — saved mixes.
-  - `ffmpeg/` — ffmpeg integration (see docs/playback.md). `runFfmpeg.js` is the reusable spawn wrapper; `ffmpegPath.js` resolves the bundled binary; `loopClip.js` and `waveformPeaks.js` are its two current consumers.
-  - `plugins/` — `registry.js` (scans + caches bundled/user plugin manifests), `protocol.js` (`plugin://` handler + path-traversal guard), `invoke.js` (dispatches `plugin:invoke` IPC to a plugin's own main-process module), `store.js` (the Plugins tab's list/install/update/uninstall, see docs/plugins.md).
-- `src/preload/index.js` — contextBridge API exposed to the renderer as `window.noctivago` (namespaces: `library`, `presets`, `audio`, `plugins`, `pluginStore`).
-- `src/shared/constants.js` — plain constants imported by both main and renderer (e.g. `MAX_BUFFER_CLIP_SECONDS`).
-- `src/renderer/` — the UI. Mostly plain JS/DOM today; new screens are React in the `domain/` + `components/` layout.
-  - `core/TabHost.js` — tab bar + lazily-mounted `<section>` per tab.
-  - `core/PluginLoader.js` — discovers plugins via IPC, dynamically `import()`s each one, registers its tab(s).
-  - `tabs/mixer/index.js` — the entire sound mixer, registered as the first tab via `mount(container)`.
-  - `audio/AudioEngine.js`, `audio/SoundSource.js` (streaming playback), `audio/BufferSoundSource.js` (buffer/gapless playback), `audio/clipMeter.js` (pre-limiter level/clip meter taps, painted by `ui/levelMeters.js`; see docs/playback.md).
-  - `ui/*.js` — SoundList, SoundRow, PresetsModal (mixer-specific, used only by `tabs/mixer/`).
-  - `main.js` — a tiny bootstrap: creates the `TabHost`, registers the Mixer tab synchronously, then calls `loadPlugins()`.
+- `src/main/` — main process.
+  - `index.js` — window, `sound://` (original file or baked loop clip) and `plugin://` protocols. In dev with 2+ displays, opens on the highest-numbered one (`devWindowPosition()`).
+  - `ipc.js` IPC handlers · `library.js` sounds (electron-store) · `presets.js` saved mixes.
+  - `ffmpeg/` — `runFfmpeg.js` spawn wrapper, `ffmpegPath.js`, `loopClip.js`, `waveformPeaks.js`, `exportMix.js`.
+  - `plugins/` — `registry.js` manifests, `protocol.js` path guard, `invoke.js` plugin main-process calls, `store.js` plugin store.
+- `src/preload/index.js` — `window.noctivago` (`library`, `presets`, `audio`, `plugins`, `pluginStore`).
+- `src/shared/` — code/constants used by main and renderer.
+- `src/renderer/` — `main.js` bootstrap; `core/TabHost.js`, `core/PluginLoader.js`; `tabs/mixer/` the Mixer; `audio/` engine, sources, clip meters; `ui/` Mixer-only widgets.
+- `plugins/<id>/` — Remix (`editor/`), Export, Composite, Browse Sounds, Community, plugin store.
 
-## Documentation map
+## Docs (read only the one a task touches)
 
-This file is loaded automatically into every session, so it stays short on purpose. Everything else lives in `docs/` — read the specific file on demand when a task actually touches that area, not preemptively:
+- `docs/playback.md` — stream/buffer playback, crossfades, scatter/scheduled, waveforms, clip meters, why ffmpeg.
+- `docs/plugins.md` — plugin architecture, React build, store, Remix.
+- `docs/presets.md` — per-preset sound overrides.
+- `docs/freesound-and-browse.md` — Freesound + Browse Sounds.
+- `docs/community-presets.md` — Cloudflare backend, `.ncvpreset`.
+- `docs/watch-folders.md` — watched-folder import.
+- `docs/releasing.md` — releases, auto-update, itch.io.
+- `CHANGELOG.md` — dated release history (what exists). Old version numbers in docs are provenance, not things to re-verify.
 
-- `docs/playback.md` — stream vs. buffer playback, loop crossfades, scatter/scheduled one-shot randomization, waveform peaks + canvas rendering, why ffmpeg (not more JS), the app icon build.
-- `docs/plugins.md` — the plugin architecture (manifest shape, `plugin://` loading, main/renderer trust split) and the Remix plugin (trim/filters/EQ/Doppler/Speed-Pitch/Fluctuation/pan/loop-seam editing, its Sound/Preset/Group modes, bus processing).
-- `docs/presets.md` — per-preset sound overrides (`OVERRIDABLE_SOUND_KEYS`, the merge logic, default-preset bootstrapping).
-- `docs/freesound-and-browse.md` — Freesound API auth/import and the Browse Sounds plugin (Freesound + YouTube search, per-source toggles, sticky preview bar).
-- `docs/community-presets.md` — the community preset-sharing backend (Cloudflare Worker/D1/R2) and the `.ncvpreset` transfer format.
-- `docs/watch-folders.md` — auto-import from watched folders, recursive subfolder tagging.
-- `docs/releasing.md` — `npm run release:win`, GitHub Releases, in-app auto-update, itch.io.
-
-**Keep the public doc site current.** The user docs live in a separate repo, `Venari-Hunt/noctivago-docs` (https://venari-hunt.github.io/noctivago-docs/, plain HTML, push straight to `main`). Every release that adds or changes a user-facing feature updates the matching page there, plus the What's new page (`node tools/build-changelog.mjs <this repo>/CHANGELOG.md`), before the release tag is pushed. If a release's docs update would be expensive, batch it, but never past the next major release.
-
-`CHANGELOG.md` is the dated release history. The `docs/` files describe current architecture and why it's shaped that way, not a log of how it got there — when a doc references an old version number, that's provenance for a design decision, not something that needs re-verifying.
-
-## Status
-
-Noctívago implements: a mix/preset model (per-sound "include in mix" toggle, global play/pause, global volume, per-preset sound overrides), the ffmpeg-based buffer-mode/waveform system (with an automatic self-crossfade on every baked loop clip), Opus/mp3/wav/ogg/flac/m4a format support, a plugin architecture (tab shell, `plugin://` loading, fail-soft per-plugin loading), the Remix plugin (trim, filters, parametric EQ, Doppler, Speed/Pitch/Reverse, scatter/scheduled randomization, Fluctuation, Volume envelope, Noise gate/reduction, whole-mix and Sound Group bus processing with occlusion), export/rendering to a file, live per-sound/per-group/whole-mix clip meters, in-app rename, an app-wide double-click-resets-any-slider convention, a dedicated Browse Sounds tab for Freesound search/preview/import with attribution (more sources planned), and CI-built installers with in-app update checking.
-
-See `CHANGELOG.md` for the detailed, dated release history.
+**Doc site:** `Venari-Hunt/noctivago-docs` (plain HTML, push to `main`). Each release that changes a user-facing feature updates its page and What's new (`node tools/build-changelog.mjs <this repo>/CHANGELOG.md`) before the tag. Batching is OK, but never past the next major release.
