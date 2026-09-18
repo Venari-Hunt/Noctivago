@@ -59,8 +59,18 @@ platform) exists; if not, run `node node_modules/ffmpeg-static/install.js`.
   files outside its own directory — the `plugin://` protocol enforces this
   with a path-traversal guard. If a plugin needs something core already
   has (e.g. `AudioEngine.js`, waveform drawing code), it keeps its own
-  copy rather than reaching across the boundary. See the "Plugins" section
-  of `CLAUDE.md` for the full plugin API and security model.
+  copy rather than reaching across the boundary. See `docs/plugins.md`
+  for the full plugin API and security model.
+- **A plugin is one screen, split into `domain/` and `components/`.**
+  Required for plugins in this repo; recommended for store plugins.
+  - `domain/`: the plugin's rules and behavior (what the feature does),
+    plus its utilities. No DOM, so it can be tested and debugged alone.
+  - `components/`: the interface, as small components that each do one
+    thing, rather than one giant file. React is the natural fit here.
+  - Anything used only by that screen stays inside the plugin.
+
+  Older plugins (Remix's 6,000-line `index.js`) predate this and move over
+  as they're rewritten, not in one big pass.
 - **ffmpeg is the answer for anything that needs to process a whole audio
   file** (loop clips, waveforms, exports) rather than decoding it fully
   into memory client-side — see `CLAUDE.md`'s "Why ffmpeg, not more JS"
