@@ -1,7 +1,7 @@
 # Contributing to Noctívago
 
-Thanks for considering a contribution! Noctívago is an Electron + vanilla
-JS/DOM ambient sound mixer for Windows — see `CLAUDE.md` for the full
+Thanks for considering a contribution! Noctívago is an Electron + React
+ambient sound mixer for Windows (older screens are still plain JS/DOM) — see `CLAUDE.md` for the full
 architecture writeup.
 
 ## Before you open a pull request
@@ -45,10 +45,23 @@ platform) exists; if not, run `node node_modules/ffmpeg-static/install.js`.
 
 ## Code conventions
 
-- **No UI framework.** The renderer is plain JS/DOM — see `src/renderer/`.
-  New UI should follow the existing module patterns (`ui/*.js`,
-  `tabs/*/index.js`) rather than introducing a framework or a new
-  rendering abstraction.
+- **Every screen is split into `domain/` and `components/`.** This applies
+  to the whole project: the Mixer, Settings, dialogs and every plugin.
+  - `domain/`: the screen's rules and behavior (what the feature does),
+    plus its utilities. No DOM, so it can be tested and debugged alone.
+  - `components/`: the interface, as small React components that each do
+    one thing, rather than one giant file. Canvas-heavy pieces (waveform,
+    meters, EQ graph) stay imperative drawing code inside a component.
+  - Anything used by only one screen stays in that screen's folder.
+    Logic shared by several screens goes in `src/shared/` (main + renderer)
+    or `src/renderer/domain/` (renderer only).
+  - The main process has no screens; its modules (`library.js`,
+    `presets.js`, `ffmpeg/`) are already split by concern. Keep them that
+    way rather than growing one file.
+
+  Older code (the Mixer's 2,400-line `tabs/mixer/index.js`, Remix's
+  6,000-line `index.js`) predates this and moves over as each screen is
+  rewritten, not in one big pass. New screens start in this layout.
 - **No comments explaining *what* code does.** Well-named identifiers
   should make that clear on their own. A comment is only worth adding
   when it explains a non-obvious *why* — a hidden constraint, a workaround
@@ -61,16 +74,8 @@ platform) exists; if not, run `node node_modules/ffmpeg-static/install.js`.
   has (e.g. `AudioEngine.js`, waveform drawing code), it keeps its own
   copy rather than reaching across the boundary. See `docs/plugins.md`
   for the full plugin API and security model.
-- **A plugin is one screen, split into `domain/` and `components/`.**
-  Required for plugins in this repo; recommended for store plugins.
-  - `domain/`: the plugin's rules and behavior (what the feature does),
-    plus its utilities. No DOM, so it can be tested and debugged alone.
-  - `components/`: the interface, as small components that each do one
-    thing, rather than one giant file. React is the natural fit here.
-  - Anything used only by that screen stays inside the plugin.
-
-  Older plugins (Remix's 6,000-line `index.js`) predate this and move over
-  as they're rewritten, not in one big pass.
+  Plugins follow the same `domain/` + `components/` layout. It's required
+  for plugins in this repo and recommended for community store plugins.
 - **ffmpeg is the answer for anything that needs to process a whole audio
   file** (loop clips, waveforms, exports) rather than decoding it fully
   into memory client-side — see `CLAUDE.md`'s "Why ffmpeg, not more JS"
