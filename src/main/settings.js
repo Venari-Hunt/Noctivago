@@ -55,6 +55,9 @@ const store = new Store({
     // parallelMixdown, the old blackVideoExport) - a small file, but still an
     // extra artifact the owner didn't ask to always get.
     exportInfoFile: false,
+    // Custom AI prompt for the end of info.txt; '' means use the Export
+    // plugin's built-in default (DEFAULT_INFO_PROMPT).
+    exportInfoPrompt: '',
     // "Add from link" (v0.1.121) already handles a plain direct audio URL
     // via ffmpeg's own http client; when that fails (e.g. a YouTube watch
     // page, not a raw media file), library.js falls back to yt-dlp - see
@@ -201,6 +204,7 @@ export function getSettings() {
     parallelMixdown: store.get('parallelMixdown'),
     exportVideoMode: resolveExportVideoMode(),
     exportInfoFile: store.get('exportInfoFile'),
+    exportInfoPrompt: store.get('exportInfoPrompt'),
     ytDlpCookiesBrowser: store.get('ytDlpCookiesBrowser'),
     sleepTimerMinutes: store.get('sleepTimerMinutes'),
     sleepTimerAction: store.get('sleepTimerAction'),
@@ -323,6 +327,11 @@ export function setExportVideoMode(mode) {
 
 export function setExportInfoFileEnabled(enabled) {
   store.set('exportInfoFile', Boolean(enabled))
+  return getSettings()
+}
+
+export function setExportInfoPrompt(prompt) {
+  store.set('exportInfoPrompt', typeof prompt === 'string' ? prompt : '')
   return getSettings()
 }
 

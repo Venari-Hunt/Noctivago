@@ -22,7 +22,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -85,6 +85,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setParallelMixdownEnabled', (_event, enabled) => setParallelMixdownEnabled(enabled))
   ipcMain.handle('settings:setExportVideoMode', (_event, mode) => setExportVideoMode(mode))
   ipcMain.handle('settings:setExportInfoFileEnabled', (_event, enabled) => setExportInfoFileEnabled(enabled))
+  ipcMain.handle('settings:setExportInfoPrompt', (_event, prompt) => setExportInfoPrompt(prompt))
   ipcMain.handle('settings:setExportLoopVideoPath', (_event, filePath) => setExportLoopVideoPath(filePath))
   ipcMain.handle('settings:setExportVideoBackground', (_event, mode) => setExportVideoBackground(mode))
   ipcMain.handle('settings:setExportVisualizationOptions', (_event, options) => setExportVisualizationOptions(options))

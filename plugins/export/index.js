@@ -124,7 +124,20 @@ const VIDEO_MODE_LABELS = {
 // (has the preset/library data already in memory) and handed to
 // export:writeInfoFile as a plain string, since the renderer has no direct
 // fs access - see ipc.js's own comment on that handler.
-function buildInfoFileText({ presetName, durationSeconds, format, videoMode, videoBackground, loopVideoName, imageName, imageMotion, visualizationSummary, soundInfoList, fadeInSeconds, fadeOutSeconds, sceneLines, creditLines }) {
+// The AI prompt at the bottom of info.txt. Owner-editable from the Export tab
+// (settings.exportInfoPrompt); a blank field falls back to this default, so
+// clearing the box is how you get it back.
+const DEFAULT_INFO_PROMPT =
+  'This ambient mix was made with Noctívago, a desktop ambient sound mixer for Windows ' +
+  '(https://venar1.itch.io/noctivago). Using the ambient mix details above, write everything needed to ' +
+  'upload this as a YouTube video: (1) a title under 100 characters, (2) a 2-3 paragraph description ' +
+  'mentioning the mood/setting and the included sounds (use "How the scene is set up" to describe what the ' +
+  'listener hears, in plain words, without technical terms), followed by the Credits section above copied ' +
+  'exactly as written, then one short line saying the mix was made with Noctívago (include the link above), ' +
+  'then 3-5 hashtags to close the description with, written for people searching for ' +
+  'ambient/relaxing/sleep/focus audio, and (3) a list of 10-15 relevant YouTube tags (comma-separated).'
+
+function buildInfoFileText({ presetName, durationSeconds, format, videoMode, videoBackground, loopVideoName, imageName, imageMotion, visualizationSummary, soundInfoList, fadeInSeconds, fadeOutSeconds, sceneLines, creditLines, prompt }) {
   const lines = [presetName, '']
   lines.push(`Length: ${formatDuration(durationSeconds)}`)
   lines.push(`Format: ${String(format).toUpperCase()}`)
@@ -160,14 +173,7 @@ function buildInfoFileText({ presetName, durationSeconds, format, videoMode, vid
   lines.push('')
   lines.push('Paste this whole file into an AI assistant to get a ready-to-use YouTube upload:')
   lines.push('')
-  lines.push(
-    'Using the ambient mix details above, write everything needed to upload this as a YouTube video: ' +
-      '(1) a title under 100 characters, (2) a 2-3 paragraph description mentioning the mood/setting and the ' +
-      'included sounds (use "How the scene is set up" to describe what the listener hears, in plain words, ' +
-      'without technical terms), followed by the Credits section above copied exactly as written, then 3-5 ' +
-      'hashtags to close the description with, written for people searching for ' +
-      'ambient/relaxing/sleep/focus audio, and (3) a list of 10-15 relevant YouTube tags (comma-separated).'
-  )
+  lines.push(prompt?.trim() || DEFAULT_INFO_PROMPT)
   return lines.join('\n')
 }
 
@@ -385,6 +391,10 @@ export default class ExportPlugin {
           <input id="export-info-file" type="checkbox" />
           <span>Also write an info file (preset name, length, format, sounds + tags) next to the export — raw material for writing a YouTube/social description by hand or with an AI's help.</span>
         </label>
+        <div id="export-info-prompt-row" class="export-info-prompt-row" hidden>
+          <p class="export-hint">AI prompt at the end of the info file. Leave empty to use the default (shown faded).</p>
+          <textarea id="export-info-prompt" rows="6"></textarea>
+        </div>
 
         <!-- Highpass/Lowpass/Gain used to live here too ("whole-mix
              processing"), but the owner asked directly for them to be
@@ -457,6 +467,8 @@ export default class ExportPlugin {
       vizSize: container.querySelector('#export-viz-size'),
       vizFps: container.querySelector('#export-viz-fps'),
       infoFile: container.querySelector('#export-info-file'),
+      infoPromptRow: container.querySelector('#export-info-prompt-row'),
+      infoPrompt: container.querySelector('#export-info-prompt'),
       fadeIn: container.querySelector('#export-fade-in'),
       fadeOut: container.querySelector('#export-fade-out'),
       run: container.querySelector('#export-run'),
@@ -502,6 +514,11 @@ export default class ExportPlugin {
     })
     this.els.infoFile.addEventListener('change', () => {
       this.api.settings.setExportInfoFileEnabled(this.els.infoFile.checked)
+      this.els.infoPromptRow.hidden = !this.els.infoFile.checked
+    })
+    this.els.infoPrompt.placeholder = DEFAULT_INFO_PROMPT
+    this.els.infoPrompt.addEventListener('change', () => {
+      this.api.settings.setExportInfoPrompt(this.els.infoPrompt.value)
     })
     this.els.videoBackground.addEventListener('change', () => {
       this.api.settings.setExportVideoBackground(this.els.videoBackground.value)
@@ -568,6 +585,8 @@ export default class ExportPlugin {
         this.els.parallelMixdown.checked = Boolean(settings.parallelMixdown)
         this.els.videoMode.value = settings.exportVideoMode ?? 'audio-only'
         this.els.infoFile.checked = Boolean(settings.exportInfoFile)
+        this.els.infoPromptRow.hidden = !this.els.infoFile.checked
+        this.els.infoPrompt.value = settings.exportInfoPrompt ?? ''
         this.setLoopVideoPath(settings.exportLoopVideoPath ?? null)
         this.setImagePath(settings.exportImagePath ?? null)
         this.els.imageMotion.value = settings.exportImageMotion ?? 'none'
@@ -927,7 +946,8 @@ export default class ExportPlugin {
             fadeInSeconds,
             fadeOutSeconds,
             sceneLines: buildSceneSection({ sounds: sceneSounds, groups: preset.groups ?? [], wholeMix: preset.wholeMix ?? null }),
-            creditLines: buildCreditsSection(credits)
+            creditLines: buildCreditsSection(credits),
+            prompt: this.els.infoPrompt.value
           })
           const infoResult = await this.api.export.writeInfoFile({ outputPath, content: infoContent })
           msg += infoResult.ok ? `\n✓ Info file: ${infoResult.infoPath}` : `\n✗ Info file failed: ${infoResult.error}`

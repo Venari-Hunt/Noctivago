@@ -53,6 +53,8 @@ Sources are recorded in `library.js`:
 
 `buildCreditsSection(credits)` adds the attribution reminder, a check-these list for unknown licenses, and the authors' own descriptions. `plugins/export/index.js` collects each sound's effective entry and volume, resolves credits before writing `info.txt`, and appends both sections. The AI prompt now asks for a plain-words scene description followed by the Credits section copied exactly.
 
+**Editable prompt (v0.1.234).** The prompt text lives in `DEFAULT_INFO_PROMPT` (`plugins/export/index.js`) and credits Noctívago with its itch.io link. A textarea under the info-file checkbox overrides it; the value persists as `settings.exportInfoPrompt`, and blank or whitespace-only falls back to the default, so there is no separate reset button.
+
 **Verified.**
 - 157 tests and a clean build.
 - Live via CDP in a throwaway profile:
