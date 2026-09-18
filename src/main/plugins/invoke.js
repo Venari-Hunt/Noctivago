@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { getPlugin } from './registry.js'
+import { getPlugin, isPluginLoaded } from './registry.js'
 
 const loadedModules = new Map()
 
@@ -14,6 +14,9 @@ async function loadMainProcessModule(pluginId) {
 
   const plugin = getPlugin(pluginId)
   if (!plugin) throw new Error(`Unknown plugin "${pluginId}"`)
+  // A switched-off or restricted plugin's Node code must not run just
+  // because another plugin asked for it.
+  if (!isPluginLoaded(pluginId)) throw new Error(`Plugin "${pluginId}" isn't enabled`)
   if (!plugin.manifest.mainProcess) {
     throw new Error(`Plugin "${pluginId}" has no mainProcess module declared in its manifest`)
   }

@@ -23,9 +23,17 @@ export default class HelloWorldPlugin {
         `
       }
     })
+
+    this.removeSettingsPage = this.app.settings.addPage({
+      title: 'Hello',
+      mount: (container) => {
+        container.innerHTML = '<p>A plugin added this page with <code>app.settings.addPage()</code>.</p>'
+      }
+    })
   }
 
   async onunload() {
     this.unregister?.()
+    this.removeSettingsPage?.()
   }
 }

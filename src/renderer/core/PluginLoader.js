@@ -1,3 +1,5 @@
+import { addPluginSettingsPage } from '../settings/domain/pluginSettingsPages.js'
+
 // Discovers and loads every enabled plugin (bundled + user-installed, see
 // src/main/plugins/registry.js) into the given TabHost. Each plugin is
 // loaded independently, wrapped in its own try/catch — a broken plugin logs
@@ -30,6 +32,7 @@ export async function loadPlugins(tabHost) {
 
       const appApi = {
         tabs: { register: (tabDef) => tabHost.register(tabDef) },
+        settings: { addPage: (page) => addPluginSettingsPage(id, page) },
         noctivago: window.noctivago,
         plugin: { id, manifest }
       }

@@ -274,56 +274,8 @@
       </div>
     </div>
 
-    <div id="settings-modal" class="modal hidden">
-      <div class="modal-card">
-        <h2>Settings</h2>
-        <label class="checkbox-row">
-          <input id="settings-auto-update-enabled" type="checkbox" />
-          Automatically check for updates
-        </label>
-        <div class="settings-row">
-          <button id="settings-check-now" class="btn" type="button">Check for updates…</button>
-          <button id="settings-whats-new" class="btn" type="button">What's new</button>
-          <span id="settings-check-status" class="settings-check-status"></span>
-        </div>
-        <label class="settings-row">
-          Check for updates every
-          <input id="settings-auto-update-interval" type="text" inputmode="numeric" placeholder="hh:mm:ss" class="settings-interval-input" />
-        </label>
-        <label class="checkbox-row">
-          <input id="settings-auto-install-updates" type="checkbox" />
-          Automatically download, install, and restart when an update is found (shows a 5-second countdown you can cancel, instead of the "Download?" prompt)
-        </label>
-        <label class="checkbox-row">
-          <input id="settings-minimize-to-tray-enabled" type="checkbox" />
-          Keep playing in the background when closed (minimizes to the system tray instead of quitting — click the tray icon to bring the window back, right-click it for play/pause and quit)
-        </label>
-        <label class="checkbox-row">
-          <input id="settings-eagerly-bake-on-import" type="checkbox" />
-          Prepare seamless looping right when a sound is added (instead of waiting until it's first played)
-        </label>
-        <label>
-          <span>YouTube/video downloads — sign in as</span>
-          <select id="settings-ytdlp-cookies-browser">
-            <option value="none">Don't sign in (works for most sites, not YouTube)</option>
-            <option value="chrome">Chrome</option>
-            <option value="edge">Edge</option>
-            <option value="firefox">Firefox</option>
-            <option value="brave">Brave</option>
-          </select>
-        </label>
-        <p class="modal-hint">YouTube currently blocks anonymous downloads. Picking a browser here lets "Add from link" read that browser's YouTube sign-in to get past it — reads cookies only, never your password. Requires being signed in to YouTube in that browser already.</p>
-        <h3 class="settings-section-heading">Watched folders</h3>
-        <p class="modal-hint">Audio files added to these folders later are automatically imported into your library.</p>
-        <ul id="watched-folder-list" class="preset-list"></ul>
-        <div class="settings-row">
-          <button id="add-watched-folder" class="btn" type="button">Add watched folder…</button>
-        </div>
-        <div class="modal-actions">
-          <button id="settings-close" class="btn" type="button">Close</button>
-        </div>
-      </div>
-    </div>
+    <!-- Rendered by settings/index.jsx -->
+    <div id="settings-modal" class="modal hidden"></div>
 
     <div id="update-modal" class="modal hidden">
       <div class="modal-card">

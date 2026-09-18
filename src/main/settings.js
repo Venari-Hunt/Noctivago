@@ -154,7 +154,14 @@ const store = new Store({
     // opt out. On by default (preserves that existing behavior); the
     // Presets modal's own checkbox is the only UI for this, not the
     // Settings menu, per the owner's own request for where it should live.
-    presetAutosaveEnabled: true
+    presetAutosaveEnabled: true,
+    // Plugin ids switched off in Settings > Core/Community plugins. Read by
+    // plugins/registry.js at launch; changes apply after a restart.
+    disabledPlugins: [],
+    // Obsidian's Restricted mode: while on, third-party community plugins
+    // don't load or install (official ones still do, see
+    // shared/pluginEnablement.js).
+    restrictedMode: true
   }
 })
 
@@ -225,7 +232,9 @@ export function getSettings() {
     exportImageMotion: store.get('exportImageMotion'),
     globalVolumePosition: store.get('globalVolumePosition'),
     lastActivePresetId: store.get('lastActivePresetId'),
-    presetAutosaveEnabled: store.get('presetAutosaveEnabled')
+    presetAutosaveEnabled: store.get('presetAutosaveEnabled'),
+    disabledPlugins: store.get('disabledPlugins'),
+    restrictedMode: store.get('restrictedMode')
   }
 }
 
@@ -407,5 +416,16 @@ export function setLastActivePresetId(id) {
 
 export function setPresetAutosaveEnabled(enabled) {
   store.set('presetAutosaveEnabled', Boolean(enabled))
+  return getSettings()
+}
+
+export function setPluginEnabled(id, enabled) {
+  const others = store.get('disabledPlugins').filter((d) => d !== id)
+  store.set('disabledPlugins', enabled ? others : [...others, id])
+  return getSettings()
+}
+
+export function setRestrictedMode(on) {
+  store.set('restrictedMode', Boolean(on))
   return getSettings()
 }

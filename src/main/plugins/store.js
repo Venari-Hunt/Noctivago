@@ -1,8 +1,10 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import { getPlugins, userPluginsDir, invalidatePlugins } from './registry.js'
+import { getPlugins, userPluginsDir, invalidatePlugins, ORIGIN_FILE } from './registry.js'
 import { parseCatalog, checkReleaseManifest, releaseAssetNames, compareVersions, releaseFileUrl } from '../../shared/pluginStore.js'
+import { isOfficialRepo, canInstallFromStore } from '../../shared/pluginEnablement.js'
+import { getSettings } from '../settings.js'
 
 // The in-app plugin store, Obsidian-style: a reviewed list file names each
 // community plugin's GitHub repo, and installing downloads that repo's latest
@@ -58,7 +60,7 @@ function installedById() {
   return map
 }
 
-// Returns { plugins: [{ id, name, author, description, repo, installed }] }.
+// Returns { plugins: [{ id, name, author, description, repo, official, installed }] }.
 // installed is null or { version, source: 'user' | 'bundled' }.
 export async function listCatalog() {
   const entries = parseCatalog(await downloadJson(listUrl()))
@@ -67,7 +69,7 @@ export async function listCatalog() {
   return {
     plugins: entries.map((e) => {
       const local = installed.get(e.id)
-      return { ...e, installed: local ? { version: local.version, source: local.source } : null }
+      return { ...e, official: isOfficialRepo(e.repo), installed: local ? { version: local.version, source: local.source } : null }
     })
   }
 }
@@ -96,6 +98,9 @@ export async function install(id) {
   if (!entry) throw new Error(`"${id}" isn't in the plugin list`)
   const local = installedById().get(id)
   if (local?.source === 'bundled') throw new Error(`"${id}" is built into Noctívago and can't be replaced`)
+  if (!canInstallFromStore(entry.repo, { restrictedMode: getSettings().restrictedMode })) {
+    throw new Error('Turn off Restricted mode in Settings > Community plugins to install third-party plugins')
+  }
 
   const manifest = await latestManifest(entry)
   const files = releaseAssetNames(manifest)
@@ -109,6 +114,7 @@ export async function install(id) {
       fs.writeFileSync(path.join(staging, name), await download(fileUrl(entry.repo, name)))
     }
     fs.writeFileSync(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2))
+    fs.writeFileSync(path.join(staging, ORIGIN_FILE), JSON.stringify({ repo: entry.repo }))
 
     const target = local?.dir ?? path.join(root, id)
     fs.rmSync(target, { recursive: true, force: true })

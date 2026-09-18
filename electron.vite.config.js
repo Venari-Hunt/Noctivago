@@ -36,6 +36,9 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
+    // React's automatic runtime for the core screens written in JSX (Settings
+    // first). esbuild handles JSX on its own; no @vitejs/plugin-react needed.
+    esbuild: { jsx: 'automatic' },
     build: {
       rollupOptions: {
         input: resolve(__dirname, 'src/renderer/index.html')
