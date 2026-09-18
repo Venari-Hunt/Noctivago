@@ -1,6 +1,7 @@
 import { routeDevAudioOutput } from '../core/devAudioOutput.js'
 import { WholeMixChain } from './WholeMixChain.js'
 import { SoundGroupChain } from './SoundGroupChain.js'
+import { ClipMeter } from './clipMeter.js'
 
 export class AudioEngine {
   constructor() {
@@ -19,6 +20,30 @@ export class AudioEngine {
     // routeSound stay O(1) per sound rather than scanning every group.
     this.groupChains = new Map()
     this._soundGroupMembership = new Map()
+
+    // Level/clip meters (see clipMeter.js), all tapped before the limiters.
+    // Per sound: its own gainNode output (wired in routeSound). Per group and
+    // whole mix: the summed signal right before that chain's limiter.
+    this.masterMeter = new ClipMeter(this.context)
+    this.wholeMix.fluctGain.connect(this.masterMeter.input)
+    this.soundMeters = new Map()
+    this.groupMeters = new Map()
+  }
+
+  // Turns every clip light off again - the whole-mix meter's click does
+  // this, so group lights (which have no meter of their own to click) can be
+  // cleared too.
+  resetAllMeters() {
+    this.masterMeter.reset()
+    for (const meter of this.soundMeters.values()) meter.reset()
+    for (const meter of this.groupMeters.values()) meter.reset()
+  }
+
+  // Called when a sound's source is thrown away for good, so its meter
+  // doesn't linger.
+  removeSoundMeter(soundId) {
+    this.soundMeters.get(soundId)?.dispose()
+    this.soundMeters.delete(soundId)
   }
 
   async resume() {
@@ -38,6 +63,8 @@ export class AudioEngine {
       if (!wantedIds.has(id)) {
         chain.dispose()
         this.groupChains.delete(id)
+        this.groupMeters.get(id)?.dispose()
+        this.groupMeters.delete(id)
       }
     }
     this._soundGroupMembership = new Map()
@@ -46,6 +73,9 @@ export class AudioEngine {
       if (!chain) {
         chain = new SoundGroupChain(this.context, this.masterGain)
         this.groupChains.set(group.id, chain)
+        const meter = new ClipMeter(this.context)
+        chain.panStage.output.connect(meter.input)
+        this.groupMeters.set(group.id, meter)
       }
       chain.set(group.filters ?? null)
       for (const soundId of group.soundIds ?? []) this._soundGroupMembership.set(soundId, group.id)
@@ -80,5 +110,12 @@ export class AudioEngine {
     source.gainNode.disconnect()
     source.gainNode.connect(desired)
     source._groupRoute = desired
+    // disconnect() above also dropped the meter tap - put it back.
+    let meter = this.soundMeters.get(soundId)
+    if (!meter) {
+      meter = new ClipMeter(this.context)
+      this.soundMeters.set(soundId, meter)
+    }
+    source.gainNode.connect(meter.input)
   }
 }

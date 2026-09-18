@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.233 — Clipping lights in the Mixer
+
+- **Every sound in the Mixer now has a small live level meter, and the whole mix has one next to the Volume slider.** If a sound (or the whole mix) gets loud enough to clip, its meter turns red and stays red until you click it, so you can tell which sound was responsible even if it only clipped for a moment while you weren't looking. Clicking the whole-mix meter clears every red light at once.
+- **A Sound Group's badge on each of its sounds turns red when the group as a whole clips**, even if none of its sounds clip on their own — for example when a group's own volume or EQ boosts the combined sound too far.
+
 ## v0.1.232 — Fixed a real crash on very long exports
 
 - **Fixed: a very long, dense export (matching real reports around 9 hours) could die outright right after its most expensive step, discarding all the work already done.** A whole-mix or Sound Group reverb pass reads an intermediate file's exact length before running — for a normal export that's a tiny, instant check, but on a long enough export that intermediate can be several gigabytes, and the check was reading the *entire* file into memory just to look at its first few bytes. It now reads only the header it actually needs.

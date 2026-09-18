@@ -12,9 +12,11 @@ import { openContextMenu } from '../../core/ContextMenu.js'
 import { MAX_BUFFER_CLIP_SECONDS, applySoundOverride } from '../../../shared/constants.js'
 import { effectiveMemberFluctuation, applyGroupShotOverride, groupDriftMemberKey } from '../../../shared/groupDrift.js'
 import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
+import { startLevelMeters } from '../../ui/levelMeters.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
+startLevelMeters(engine)
 
 // Bulk-apply an effect preset to several selected sounds at once (Board
 // backlog: Noctívago-shaped echo of Audacity's Macros). Duplicated from
@@ -1242,6 +1244,7 @@ async function removeSound(id) {
   const wasInMix = state.included.has(id)
   state.sources.get(id)?.dispose()
   state.sources.delete(id)
+  engine.removeSoundMeter(id)
   state.playing.delete(id)
   state.included.delete(id)
   state.volumes.delete(id)

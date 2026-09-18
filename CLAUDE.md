@@ -19,7 +19,7 @@ See `CONTRIBUTING.md` for build/run instructions and code conventions if you're 
   - `core/TabHost.js` — tab bar + lazily-mounted `<section>` per tab.
   - `core/PluginLoader.js` — discovers plugins via IPC, dynamically `import()`s each one, registers its tab(s).
   - `tabs/mixer/index.js` — the entire sound mixer, registered as the first tab via `mount(container)`.
-  - `audio/AudioEngine.js`, `audio/SoundSource.js` (streaming playback), `audio/BufferSoundSource.js` (buffer/gapless playback).
+  - `audio/AudioEngine.js`, `audio/SoundSource.js` (streaming playback), `audio/BufferSoundSource.js` (buffer/gapless playback), `audio/clipMeter.js` (pre-limiter level/clip meter taps, painted by `ui/levelMeters.js`; see docs/playback.md).
   - `ui/*.js` — SoundList, SoundRow, PresetsModal (mixer-specific, used only by `tabs/mixer/`).
   - `main.js` — a tiny bootstrap: creates the `TabHost`, registers the Mixer tab synchronously, then calls `loadPlugins()`.
 
@@ -39,6 +39,6 @@ This file is loaded automatically into every session, so it stays short on purpo
 
 ## Status
 
-Noctívago implements: a mix/preset model (per-sound "include in mix" toggle, global play/pause, global volume, per-preset sound overrides), the ffmpeg-based buffer-mode/waveform system (with an automatic self-crossfade on every baked loop clip), Opus/mp3/wav/ogg/flac/m4a format support, a plugin architecture (tab shell, `plugin://` loading, fail-soft per-plugin loading), the Remix plugin (trim, filters, parametric EQ, Doppler, Speed/Pitch/Reverse, scatter/scheduled randomization, Fluctuation, Volume envelope, Noise gate/reduction, whole-mix and Sound Group bus processing with occlusion), export/rendering to a file, in-app rename, an app-wide double-click-resets-any-slider convention, a dedicated Browse Sounds tab for Freesound search/preview/import with attribution (more sources planned), and CI-built installers with in-app update checking.
+Noctívago implements: a mix/preset model (per-sound "include in mix" toggle, global play/pause, global volume, per-preset sound overrides), the ffmpeg-based buffer-mode/waveform system (with an automatic self-crossfade on every baked loop clip), Opus/mp3/wav/ogg/flac/m4a format support, a plugin architecture (tab shell, `plugin://` loading, fail-soft per-plugin loading), the Remix plugin (trim, filters, parametric EQ, Doppler, Speed/Pitch/Reverse, scatter/scheduled randomization, Fluctuation, Volume envelope, Noise gate/reduction, whole-mix and Sound Group bus processing with occlusion), export/rendering to a file, live per-sound/per-group/whole-mix clip meters, in-app rename, an app-wide double-click-resets-any-slider convention, a dedicated Browse Sounds tab for Freesound search/preview/import with attribution (more sources planned), and CI-built installers with in-app update checking.
 
 See `CHANGELOG.md` for the detailed, dated release history.
