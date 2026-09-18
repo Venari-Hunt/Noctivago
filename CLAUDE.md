@@ -1,6 +1,6 @@
 # Noctívago
 
-Windows desktop ambient sound mixer. Electron + vanilla JS/DOM (no UI framework).
+Windows desktop ambient sound mixer. Electron + React (older screens still plain JS/DOM, moving over as they're rewritten). Every screen is split into `domain/` (rules, no DOM) + `components/` (small React components) — see CONTRIBUTING.md.
 
 See `CONTRIBUTING.md` for build/run instructions and code conventions if you're working on the codebase.
 
@@ -15,7 +15,7 @@ See `CONTRIBUTING.md` for build/run instructions and code conventions if you're 
   - `plugins/` — `registry.js` (scans + caches bundled/user plugin manifests), `protocol.js` (`plugin://` handler + path-traversal guard), `invoke.js` (dispatches `plugin:invoke` IPC to a plugin's own main-process module), `store.js` (the Plugins tab's list/install/update/uninstall, see docs/plugins.md).
 - `src/preload/index.js` — contextBridge API exposed to the renderer as `window.noctivago` (namespaces: `library`, `presets`, `audio`, `plugins`, `pluginStore`).
 - `src/shared/constants.js` — plain constants imported by both main and renderer (e.g. `MAX_BUFFER_CLIP_SECONDS`).
-- `src/renderer/` — plain JS/DOM UI, no framework.
+- `src/renderer/` — the UI. Mostly plain JS/DOM today; new screens are React in the `domain/` + `components/` layout.
   - `core/TabHost.js` — tab bar + lazily-mounted `<section>` per tab.
   - `core/PluginLoader.js` — discovers plugins via IPC, dynamically `import()`s each one, registers its tab(s).
   - `tabs/mixer/index.js` — the entire sound mixer, registered as the first tab via `mount(container)`.
