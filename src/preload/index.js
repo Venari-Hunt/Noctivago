@@ -162,6 +162,9 @@ const api = {
   },
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),
+    describe: () => ipcRenderer.invoke('plugins:describe'),
+    setEnabled: (id, enabled) => ipcRenderer.invoke('plugins:setEnabled', id, enabled),
+    setRestrictedMode: (on) => ipcRenderer.invoke('plugins:setRestrictedMode', on),
     invoke: (pluginId, method, ...args) => ipcRenderer.invoke('plugin:invoke', pluginId, method, args)
   },
   pluginStore: {

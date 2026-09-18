@@ -11,8 +11,8 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
   - `plugins/` — `registry.js` manifests, `protocol.js` path guard, `invoke.js` plugin main-process calls, `store.js` plugin store.
 - `src/preload/index.js` — `window.noctivago` (`library`, `presets`, `audio`, `plugins`, `pluginStore`).
 - `src/shared/` — code/constants used by main and renderer.
-- `src/renderer/` — `main.js` bootstrap; `core/TabHost.js`, `core/PluginLoader.js`; `tabs/mixer/` the Mixer; `audio/` engine, sources, clip meters; `ui/` Mixer-only widgets.
-- `plugins/<id>/` — Remix (`editor/`), Export, Composite, Browse Sounds, Community, plugin store.
+- `src/renderer/` — `main.js` bootstrap; `core/TabHost.js`, `core/PluginLoader.js`; `settings/` the Settings window (React; plugin toggles, Restricted mode, store Browse); `tabs/mixer/` the Mixer; `audio/` engine, sources, clip meters; `ui/` Mixer-only widgets.
+- `plugins/<id>/` — Remix (`editor/`), Export, Composite, Browse Sounds, Community.
 
 ## Docs (read only the one a task touches)
 

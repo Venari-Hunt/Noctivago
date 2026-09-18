@@ -89,6 +89,14 @@ export interface PluginApp {
     /** Adds a tab. Returns a function that removes it again. */
     register(tab: TabDefinition): () => void
   }
+  settings: {
+    /**
+     * Adds this plugin's page to the Settings window sidebar, listed under
+     * Core or Community plugins. One page per plugin; adding again replaces
+     * it. Returns a function that removes it.
+     */
+    addPage(page: SettingsPageDefinition): () => void
+  }
   /** The same API core uses (`window.noctivago`). */
   noctivago: NoctivagoApi
   plugin: {
@@ -128,6 +136,16 @@ export interface TabDefinition {
   onDestroy?(): void
 }
 
+/** A plugin's Settings page. Framework-free, like a tab. */
+export interface SettingsPageDefinition {
+  /** Sidebar label. Defaults to the plugin id. */
+  title: string
+  /** Called each time the page is opened. Render into `container`. */
+  mount(container: HTMLElement): void
+  /** Called when the page is left or Settings closes. The container is emptied afterwards. */
+  unmount?(container: HTMLElement): void
+}
+
 // ---------------------------------------------------------------------------
 // window.noctivago (src/preload/index.js)
 // ---------------------------------------------------------------------------
@@ -149,6 +167,8 @@ export interface StoreListing {
   description: string
   /** GitHub "owner/repo"; files come from its latest release. */
   repo: string
+  /** Published from the Venari-Hunt account; installs even in Restricted mode. */
+  official: boolean
   installed: { version: string; source: 'user' | 'bundled' } | null
 }
 
@@ -255,11 +275,28 @@ export interface NoctivagoApi {
     suggestLoopPoints(id: string, options?: Payload): Promise<any>
   }
   plugins: {
+    /** The plugins loaded this session (enabled, and not blocked by Restricted mode). */
     list(): Promise<Array<{ id: string; manifest: PluginManifest }>>
+    /** Every installed plugin, for Settings > Core/Community plugins. */
+    describe(): Promise<
+      Array<{
+        id: string
+        manifest: PluginManifest
+        kind: 'core' | 'community'
+        repo: string | null
+        official: boolean
+        /** What the saved settings say; applies on restart. */
+        state: 'enabled' | 'disabled' | 'restricted'
+        /** Whether it's running this session. */
+        loaded: boolean
+      }>
+    >
+    setEnabled(id: string, enabled: boolean): Promise<any>
+    setRestrictedMode(on: boolean): Promise<any>
     /** Calls an exported function of a plugin's `mainProcess` module. */
     invoke(pluginId: string, method: string, ...args: any[]): Promise<any>
   }
-  /** The community plugin list, and installs into <userData>/plugins (used by the Plugins tab). */
+  /** The community plugin list, and installs into <userData>/plugins (used by Settings > Community plugins). */
   pluginStore: {
     list(): Promise<{ plugins: StoreListing[] }>
     /** The latest release's version, and whether it has a mainProcess module. */

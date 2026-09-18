@@ -3,8 +3,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateManifest } from '../../shared/pluginManifest.js'
+import { pluginKind, pluginLoadState, isOfficialRepo } from '../../shared/pluginEnablement.js'
+import { getSettings } from '../settings.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// Written by the plugin store next to an installed plugin's manifest:
+// { repo } - the GitHub repo it came from, which decides whether it counts
+// as official under Restricted mode. A hand-dropped folder has none.
+export const ORIGIN_FILE = '.origin.json'
 
 // Bundled ("official") plugins ship in the repo's plugins/ folder. In a
 // packaged build they're copied to resources/plugins via electron-builder's
@@ -19,6 +26,15 @@ export function userPluginsDir() {
   const dir = path.join(app.getPath('userData'), 'plugins')
   fs.mkdirSync(dir, { recursive: true })
   return dir
+}
+
+function readOriginRepo(pluginDir) {
+  try {
+    const { repo } = JSON.parse(fs.readFileSync(path.join(pluginDir, ORIGIN_FILE), 'utf-8'))
+    return typeof repo === 'string' ? repo : null
+  } catch {
+    return null
+  }
 }
 
 function scanDir(dir, source) {
@@ -37,7 +53,8 @@ function scanDir(dir, source) {
         console.error(`Skipping plugin at ${pluginDir}: invalid manifest.json - ${errors.join('; ')}`)
         continue
       }
-      found.push({ id: manifest.id, dir: pluginDir, manifest, source })
+      const repo = source === 'user' ? readOriginRepo(pluginDir) : null
+      found.push({ id: manifest.id, dir: pluginDir, manifest, source, repo })
     } catch (err) {
       console.error(`Failed to read plugin manifest at ${manifestPath}`, err)
     }
@@ -67,6 +84,45 @@ export function getPlugins() {
 
 export function invalidatePlugins() {
   cachedPlugins = null
+}
+
+function enablementOptions() {
+  const { disabledPlugins, restrictedMode } = getSettings()
+  return { disabledIds: disabledPlugins, restrictedMode }
+}
+
+// Frozen the first time the renderer asks (at launch): toggles, Restricted
+// mode and store installs apply after a restart, so what the renderer loaded
+// and what main-process calls allow never disagree.
+let loadedIds = null
+
+// The plugins the renderer loads this session.
+export function getLoadablePlugins() {
+  if (!loadedIds) {
+    const options = enablementOptions()
+    loadedIds = new Set(getPlugins().filter((p) => pluginLoadState(p, options) === 'enabled').map((p) => p.id))
+  }
+  return getPlugins().filter((p) => loadedIds.has(p.id))
+}
+
+export function isPluginLoaded(id) {
+  return Boolean(loadedIds?.has(id))
+}
+
+// Every installed plugin, for Settings > Core/Community plugins. `state` is
+// what the saved settings say now; `loaded` is what's running this session,
+// so the page can tell when a restart is needed.
+export function describePlugins() {
+  const options = enablementOptions()
+  return getPlugins().map((p) => ({
+    id: p.id,
+    manifest: p.manifest,
+    kind: pluginKind(p),
+    repo: p.repo,
+    official: p.source === 'bundled' || isOfficialRepo(p.repo),
+    state: pluginLoadState(p, options),
+    loaded: isPluginLoaded(p.id)
+  }))
 }
 
 export function getPluginDir(id) {
