@@ -2,6 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { validateManifest } from '../../shared/pluginManifest.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -30,8 +31,9 @@ function scanDir(dir, source) {
     if (!fs.existsSync(manifestPath)) continue
     try {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
-      if (!manifest.id || !manifest.main) {
-        console.error(`Skipping plugin at ${pluginDir}: manifest missing required "id" or "main"`)
+      const { ok, errors } = validateManifest(manifest)
+      if (!ok) {
+        console.error(`Skipping plugin at ${pluginDir}: invalid manifest.json - ${errors.join('; ')}`)
         continue
       }
       found.push({ id: manifest.id, dir: pluginDir, manifest, source })

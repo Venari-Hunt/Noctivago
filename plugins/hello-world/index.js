@@ -1,4 +1,10 @@
+// The JSDoc types below point at the plugin contract (types/plugin.d.ts), so
+// an editor gives autocomplete for app.tabs / app.noctivago here.
 export default class HelloWorldPlugin {
+  /**
+   * @param {import('../../types/plugin').PluginApp} app
+   * @param {import('../../types/plugin').PluginManifest} manifest
+   */
   constructor(app, manifest) {
     this.app = app
     this.manifest = manifest
