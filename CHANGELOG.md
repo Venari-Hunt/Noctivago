@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.234 — Edit the info file's AI prompt
+
+- **The AI prompt at the end of the export's info file can now be edited on the Export tab.** Tick "Also write an info file" and a text box appears under it. Leave it empty to use the built-in prompt (shown faded in the box), or type your own and it's used exactly as written. Your prompt is remembered between sessions; clear the box to go back to the default.
+- **The default prompt now mentions the mix was made with Noctívago**, and asks the AI to add a short "made with Noctívago" line with the download link to the YouTube description.
+
 ## v0.1.233 — Clipping lights in the Mixer
 
 - **Every sound in the Mixer now has a small live level meter, and the whole mix has one next to the Volume slider.** If a sound (or the whole mix) gets loud enough to clip, its meter turns red and stays red until you click it, so you can tell which sound was responsible even if it only clipped for a moment while you weren't looking. Clicking the whole-mix meter clears every red light at once.

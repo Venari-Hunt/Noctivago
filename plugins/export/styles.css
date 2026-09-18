@@ -55,6 +55,27 @@
   flex: 1;
 }
 
+.export-info-prompt-row {
+  margin: 4px 0 16px 24px;
+}
+
+.export-info-prompt-row .export-hint {
+  margin-bottom: 6px;
+}
+
+.export-info-prompt-row textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+
 .export-tab input[type='range'] {
   flex: 1;
 }

@@ -18,6 +18,7 @@ const api = {
     setParallelMixdownEnabled: (enabled) => ipcRenderer.invoke('settings:setParallelMixdownEnabled', enabled),
     setExportVideoMode: (mode) => ipcRenderer.invoke('settings:setExportVideoMode', mode),
     setExportInfoFileEnabled: (enabled) => ipcRenderer.invoke('settings:setExportInfoFileEnabled', enabled),
+    setExportInfoPrompt: (prompt) => ipcRenderer.invoke('settings:setExportInfoPrompt', prompt),
     setExportLoopVideoPath: (filePath) => ipcRenderer.invoke('settings:setExportLoopVideoPath', filePath),
     setExportVideoBackground: (mode) => ipcRenderer.invoke('settings:setExportVideoBackground', mode),
     setExportVisualizationOptions: (options) => ipcRenderer.invoke('settings:setExportVisualizationOptions', options),
