@@ -14,3 +14,4 @@ resources/bin/
 # Build output of scripts/build-plugins.mjs (plugins written in JSX) -
 # regenerated from plugins/<id>/src/ by every dev/build run.
 plugins/*/main.js
+plugins/*/islands/
