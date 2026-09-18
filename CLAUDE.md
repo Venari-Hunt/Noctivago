@@ -35,6 +35,8 @@ This file is loaded automatically into every session, so it stays short on purpo
 - `docs/watch-folders.md` — auto-import from watched folders, recursive subfolder tagging.
 - `docs/releasing.md` — `npm run release:win`, GitHub Releases, in-app auto-update, itch.io.
 
+**Keep the public doc site current.** The user docs live in a separate repo, `Venari-Hunt/noctivago-docs` (https://venari-hunt.github.io/noctivago-docs/, plain HTML, push straight to `main`). Every release that adds or changes a user-facing feature updates the matching page there, plus the What's new page (`node tools/build-changelog.mjs <this repo>/CHANGELOG.md`), before the release tag is pushed. If a release's docs update would be expensive, batch it, but never past the next major release.
+
 `CHANGELOG.md` is the dated release history. The `docs/` files describe current architecture and why it's shaped that way, not a log of how it got there — when a doc references an old version number, that's provenance for a design decision, not something that needs re-verifying.
 
 ## Status
