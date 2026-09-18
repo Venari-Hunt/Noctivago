@@ -15,7 +15,7 @@ function bundledPluginsDir() {
 }
 
 // User-installed plugins, parallel to Obsidian's .obsidian/plugins/.
-function userPluginsDir() {
+export function userPluginsDir() {
   const dir = path.join(app.getPath('userData'), 'plugins')
   fs.mkdirSync(dir, { recursive: true })
   return dir
@@ -25,7 +25,8 @@ function scanDir(dir, source) {
   const found = []
   if (!fs.existsSync(dir)) return found
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
+    // Dot-folders are the plugin store's in-progress downloads (store.js).
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue
     const pluginDir = path.join(dir, entry.name)
     const manifestPath = path.join(pluginDir, 'manifest.json')
     if (!fs.existsSync(manifestPath)) continue
@@ -48,18 +49,24 @@ let cachedPlugins = null
 
 // Scans both plugin roots and merges into one id -> plugin list. Bundled
 // plugins win on id collision, so a dropped-in user folder can't shadow a
-// trusted bundled plugin's identity. Cached for the session — plugins aren't
-// hot-reloaded in v1.
+// trusted bundled plugin's identity. Cached until the plugin store changes a
+// folder (invalidatePlugins) — the renderer still only picks up installs on
+// the next launch; plugins aren't hot-reloaded.
 export function getPlugins() {
   if (!cachedPlugins) {
     const user = scanDir(userPluginsDir(), 'user')
     const bundled = scanDir(bundledPluginsDir(), 'bundled')
     const byId = new Map()
-    for (const plugin of user) byId.set(plugin.id, plugin)
+    // Bundled first, so installed plugins' tabs come after the built-in ones.
     for (const plugin of bundled) byId.set(plugin.id, plugin)
+    for (const plugin of user) if (!byId.has(plugin.id)) byId.set(plugin.id, plugin)
     cachedPlugins = [...byId.values()]
   }
   return cachedPlugins
+}
+
+export function invalidatePlugins() {
+  cachedPlugins = null
 }
 
 export function getPluginDir(id) {

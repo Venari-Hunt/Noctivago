@@ -12,8 +12,8 @@ See `CONTRIBUTING.md` for build/run instructions and code conventions if you're 
   - `library.js` — registered sound files, persisted via `electron-store`.
   - `presets.js` — saved mixes.
   - `ffmpeg/` — ffmpeg integration (see docs/playback.md). `runFfmpeg.js` is the reusable spawn wrapper; `ffmpegPath.js` resolves the bundled binary; `loopClip.js` and `waveformPeaks.js` are its two current consumers.
-  - `plugins/` — `registry.js` (scans + caches bundled/user plugin manifests), `protocol.js` (`plugin://` handler + path-traversal guard), `invoke.js` (dispatches `plugin:invoke` IPC to a plugin's own main-process module).
-- `src/preload/index.js` — contextBridge API exposed to the renderer as `window.noctivago` (namespaces: `library`, `presets`, `audio`, `plugins`).
+  - `plugins/` — `registry.js` (scans + caches bundled/user plugin manifests), `protocol.js` (`plugin://` handler + path-traversal guard), `invoke.js` (dispatches `plugin:invoke` IPC to a plugin's own main-process module), `store.js` (the Plugins tab's list/install/update/uninstall, see docs/plugins.md).
+- `src/preload/index.js` — contextBridge API exposed to the renderer as `window.noctivago` (namespaces: `library`, `presets`, `audio`, `plugins`, `pluginStore`).
 - `src/shared/constants.js` — plain constants imported by both main and renderer (e.g. `MAX_BUFFER_CLIP_SECONDS`).
 - `src/renderer/` — plain JS/DOM UI, no framework.
   - `core/TabHost.js` — tab bar + lazily-mounted `<section>` per tab.

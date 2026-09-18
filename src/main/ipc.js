@@ -22,6 +22,7 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getPlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
+import * as pluginStore from './plugins/store.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
@@ -580,4 +581,10 @@ export function registerIpcHandlers() {
   ipcMain.handle('plugins:list', () => getPlugins().map((p) => ({ id: p.id, manifest: p.manifest })))
 
   ipcMain.handle('plugin:invoke', (_event, pluginId, method, args) => invokePlugin(pluginId, method, args))
+
+  ipcMain.handle('pluginStore:list', () => pluginStore.listCatalog())
+  ipcMain.handle('pluginStore:checkLatest', (_event, id) => pluginStore.checkLatest(id))
+  ipcMain.handle('pluginStore:install', (_event, id) => pluginStore.install(id))
+  ipcMain.handle('pluginStore:uninstall', (_event, id) => pluginStore.uninstall(id))
+  ipcMain.handle('pluginStore:restartApp', () => pluginStore.restartApp())
 }

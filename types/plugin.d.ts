@@ -141,6 +141,17 @@ export interface TabDefinition {
 export type Unsubscribe = () => void
 type Payload = Record<string, any>
 
+/** One community-plugins.json entry, plus what's installed locally under that id. */
+export interface StoreListing {
+  id: string
+  name: string
+  author: string
+  description: string
+  /** GitHub "owner/repo"; files come from its latest release. */
+  repo: string
+  installed: { version: string; source: 'user' | 'bundled' } | null
+}
+
 /** A sound in the library. Only the fields most plugins need are listed. */
 export interface LibrarySound {
   id: string
@@ -247,6 +258,16 @@ export interface NoctivagoApi {
     list(): Promise<Array<{ id: string; manifest: PluginManifest }>>
     /** Calls an exported function of a plugin's `mainProcess` module. */
     invoke(pluginId: string, method: string, ...args: any[]): Promise<any>
+  }
+  /** The community plugin list, and installs into <userData>/plugins (used by the Plugins tab). */
+  pluginStore: {
+    list(): Promise<{ plugins: StoreListing[] }>
+    /** The latest release's version, and whether it has a mainProcess module. */
+    checkLatest(id: string): Promise<{ version: string; mainProcess: boolean; minAppVersion: string | null; updateAvailable: boolean }>
+    install(id: string): Promise<{ version: string }>
+    uninstall(id: string): Promise<{ ok: true }>
+    /** Relaunches the app; installs and removals take effect on restart. */
+    restartApp(): Promise<void>
   }
   export: {
     pickDestination(options?: Payload): Promise<any>

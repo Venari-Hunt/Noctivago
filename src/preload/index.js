@@ -164,6 +164,13 @@ const api = {
     list: () => ipcRenderer.invoke('plugins:list'),
     invoke: (pluginId, method, ...args) => ipcRenderer.invoke('plugin:invoke', pluginId, method, args)
   },
+  pluginStore: {
+    list: () => ipcRenderer.invoke('pluginStore:list'),
+    checkLatest: (id) => ipcRenderer.invoke('pluginStore:checkLatest', id),
+    install: (id) => ipcRenderer.invoke('pluginStore:install', id),
+    uninstall: (id) => ipcRenderer.invoke('pluginStore:uninstall', id),
+    restartApp: () => ipcRenderer.invoke('pluginStore:restartApp')
+  },
   export: {
     pickDestination: (options) => ipcRenderer.invoke('export:pickDestination', options),
     pickVideoFile: () => ipcRenderer.invoke('export:pickVideoFile'),
