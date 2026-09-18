@@ -19,6 +19,11 @@ npm install
 npm run dev
 ```
 
+`npm run dev` first builds any plugin written in JSX (`plugins/<id>/src/`)
+into its `main.js`. While editing one, run `npm run dev:plugins` in a
+second terminal to rebuild on save, then reload the app
+window. See `docs/plugins.md` and the `plugins/hello-react/` example.
+
 Two environment quirks show up in fresh shells on some Windows setups
 (both needed before `npm`/`node`/Electron will work):
 
