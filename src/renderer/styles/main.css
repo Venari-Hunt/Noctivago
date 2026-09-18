@@ -1231,3 +1231,42 @@ main {
   color: var(--danger);
 }
 
+
+/* Live level/clip meters (ui/levelMeters.js): a thin peak bar whose width is
+   the --level custom property, turning red and staying red once it clips
+   until clicked - Audition's clip-light convention. */
+.level-meter {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.level-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--level, 0%);
+  background: var(--accent);
+}
+
+.level-meter.clipped {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+.level-meter.clipped .level-meter-fill {
+  background: var(--danger);
+}
+
+.level-meter-master {
+  width: 60px;
+}
+
+.sound-row-group-badge.clipped {
+  box-shadow: 0 0 0 2px var(--danger);
+}

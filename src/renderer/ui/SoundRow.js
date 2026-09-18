@@ -377,7 +377,11 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     groupBadge.className = 'sound-row-group-badge'
     groupBadge.textContent = groupName
     groupBadge.title = `In the "${groupName}" sound group - click to change`
-    if (groupId) Object.assign(groupBadge.style, groupBadgeColors(groupId))
+    if (groupId) {
+      Object.assign(groupBadge.style, groupBadgeColors(groupId))
+      // Lit red by ui/levelMeters.js when the group's own bus clips.
+      groupBadge.dataset.meterGroup = groupId
+    }
     groupBadge.addEventListener('click', (evt) => {
       evt.stopPropagation()
       callbacks.onContextMenu(entry.id, evt)
@@ -453,6 +457,13 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     volumeWrap.className = 'volume-slider-wrap'
     volumeWrap.appendChild(volumeSlider)
     controlsRow.appendChild(volumeWrap)
+
+    // Live level + clip light, driven by ui/levelMeters.js.
+    const meter = document.createElement('span')
+    meter.className = 'level-meter'
+    meter.dataset.meterSound = entry.id
+    meter.innerHTML = '<span class="level-meter-fill"></span>'
+    controlsRow.appendChild(meter)
 
     const muteBtn = document.createElement('button')
     muteBtn.className = 'btn btn-svg-icon' + (muted ? ' btn-svg-icon-active' : '')
