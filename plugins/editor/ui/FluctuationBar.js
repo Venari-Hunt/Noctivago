@@ -15,6 +15,16 @@
 // (rect.width/height), and the bitmap is resized to the rendered size x
 // devicePixelRatio before every draw so nothing renders stretched/blurry
 // (the exact bug class that hit the EQ graph and trim waveform before).
+//
+// Owner bug (2026-09-17, "keeps happening"): min/max labels showed up
+// upside-down and mirrored, overlapping the bias label. Two causes, both
+// handled here: (1) most bars are created while their section is hidden, so
+// the first draw used the 260px fallback width and nothing redrew it once
+// shown - the stale bitmap got stretched to full width. A ResizeObserver now
+// redraws whenever the rendered size changes (including hidden -> shown).
+// (2) the flipped copy is a GPU-compositing glitch some Windows drivers have
+// with accelerated 2D canvases; willReadFrequently keeps these tiny canvases
+// on the CPU rasterizer, so there is no GPU texture to flip.
 
 const HANDLE_RADIUS = 7
 const GRAB_SLOP = 11
@@ -25,7 +35,7 @@ function clamp(v, lo, hi) {
 }
 
 export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, format, onChange }) {
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   const fmt = format ?? ((v) => String(Math.round(v * 100) / 100))
   let values = { ...defaults }
   let enabled = true
@@ -210,6 +220,8 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
   canvas.addEventListener('dblclick', onDblClick)
   const onResize = () => draw()
   window.addEventListener('resize', onResize)
+  const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null
+  resizeObserver?.observe(canvas)
 
   draw()
 
@@ -243,6 +255,7 @@ export function createFluctuationBar(canvas, { valueMin, valueMax, defaults, for
       canvas.removeEventListener('pointercancel', onPointerUp)
       canvas.removeEventListener('dblclick', onDblClick)
       window.removeEventListener('resize', onResize)
+      resizeObserver?.disconnect()
     }
   }
 }
