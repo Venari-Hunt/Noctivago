@@ -7,6 +7,7 @@ import { resolveFfmpegPath } from './ffmpegPath.js'
 import { buildPanFilter, normalizePan, parseChannelCount } from './panFilter.js'
 import { getOrCreateReverbIR } from './reverbIR.js'
 import { hasVolumeEnvelope, renderVolumeEnvelopeWav } from './volumeEnvelope.js'
+import { buildSpectralRepairFilter } from './spectralRepair.js'
 
 const pending = new Map()
 
@@ -861,8 +862,12 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // still the flat neutral default" so a freshly-toggled-on-but-untouched
   // envelope doesn't force the slow path for nothing.
   const envelopeActive = hasVolumeEnvelope(filters?.volumeEnvelope)
+  // Spectral repair boxes are timed against the trimmed region (afftfilt's
+  // pts), so they force the single linear pre-processing read too - same
+  // reason as noise reduction above.
+  const spectralChain = buildSpectralRepairFilter(filters?.spectralRepairs, loopStart, loopEnd)
 
-  if (!speedPitchChain && !reverbActive && !noiseChain && !envelopeActive) {
+  if (!speedPitchChain && !reverbActive && !noiseChain && !envelopeActive && !spectralChain) {
     try {
       await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, pan: filters?.pan, outputPath })
       return { ok: true }
@@ -905,7 +910,9 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     // Noise reduction runs first - it should subtract the sampled noise
     // profile from the raw trimmed source, before highpass/EQ/gate colour it
     // (afftdn's profile was measured against that same unshaped signal).
-    const preChain = [noiseChain, filterChain, speedPitchChain].filter(Boolean).join(',')
+    // Spectral repair next, still before anything that shifts time
+    // (speed/pitch/reverse), since its boxes are in source time.
+    const preChain = [noiseChain, spectralChain, filterChain, speedPitchChain].filter(Boolean).join(',')
     await runFfmpegToFile([
       '-y',
       '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,

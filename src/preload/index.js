@@ -158,6 +158,7 @@ const api = {
     getWaveformPeaks: (id, targetWidth, windowStart, windowEnd) =>
       ipcRenderer.invoke('audio:getWaveformPeaks', id, targetWidth, windowStart, windowEnd),
     getBandEnergy: (id, options) => ipcRenderer.invoke('audio:getBandEnergy', id, options),
+    getSpectrogram: (id, options) => ipcRenderer.invoke('audio:getSpectrogram', id, options),
     suggestLoopPoints: (id, options) => ipcRenderer.invoke('audio:suggestLoopPoints', id, options)
   },
   plugins: {
