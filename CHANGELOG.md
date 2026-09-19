@@ -6,6 +6,15 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.235 — Plugins you choose, a new Settings window, and a Clip report
+
+- **Remix, Export, Composite, Browse Sounds and Community are now plugins you download.** If you already use them, nothing changes: the app installs them for you on first launch after this update. A fresh install starts with just the Mixer and an "Add the extras" card that installs them in one click.
+- **Settings is a new window with a sidebar**, like Obsidian's: General, Library, Community plugins, and a page for each plugin that has options. Every plugin has an on/off switch, so you can turn one off without uninstalling it.
+- **Browse plugins** from Settings → Community plugins: search, sort by downloads, name or last update, read each plugin's description, and install, update or remove it. "Check for updates" plus "Update all" keep them current, and each plugin only updates to a version your app can run.
+- **Restricted mode** (on by default) blocks plugins from anyone but us. Turn it off in Settings → Community plugins to install third-party plugins.
+- **Click a red clip light to see what clipped.** The Clip report shows which sound, Sound Group or the whole mix went over, by how much, and offers a one-click fix (lower that sound, the group, or every sound in the mix by the same amount), with Undo. Clicking the whole-mix meter while it isn't red still clears every light.
+- **Fixed: a Fluctuation bar's min/max labels could show up stretched, mirrored or upside-down** in Remix. If you still see this after updating, please tell us.
+
 ## v0.1.234 — Edit the info file's AI prompt
 
 - **The AI prompt at the end of the export's info file can now be edited on the Export tab.** Tick "Also write an info file" and a text box appears under it. Leave it empty to use the built-in prompt (shown faded in the box), or type your own and it's used exactly as written. Your prompt is remembered between sessions; clear the box to go back to the default.
