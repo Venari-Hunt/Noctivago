@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.237 — Spectral repair
+
+- **Remove a sound hiding inside another one.** Remix (update it to 1.1.0 from Settings → Community plugins) has a new Spectral repair panel under the EQ: it shows the sound as a spectrogram (time across, pitch up), and you drag a box around a cough, a bird chirp or a phone buzz to turn just that down. Everything outside the box stays as it was. It's applied when you Save; switch the preview to Saved audio to hear it.
+
 ## v0.1.236 — Smaller files for recordings and downloads
 
 - **Recordings, links, YouTube downloads, Browse Sounds imports and new Composites now take about a third to half the disk space.** They're saved as lossless FLAC instead of WAV, so they sound exactly the same. Sounds already in your library are left as they are.

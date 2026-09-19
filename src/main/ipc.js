@@ -17,6 +17,7 @@ import { renderLoopClip, probeDurationSeconds } from './ffmpeg/loopClip.js'
 import { extractWaveformPeaks } from './ffmpeg/waveformPeaks.js'
 import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { suggestLoopPoints } from './ffmpeg/loopSuggest.js'
+import { extractSpectrogram } from './ffmpeg/spectrogram.js'
 import { exportMix } from './ffmpeg/exportMix.js'
 import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
@@ -290,6 +291,17 @@ export function registerIpcHandlers() {
       return await computeBandEnergy(inputPath, { loopStart, loopEnd, freqs })
     } catch (err) {
       console.error('Band energy analysis failed', id, err)
+      return null
+    }
+  })
+
+  ipcMain.handle('audio:getSpectrogram', async (_event, id, { windowStart, windowEnd, columns, rows }) => {
+    const inputPath = library.getPlaybackPathForId(id)
+    if (!inputPath) return null
+    try {
+      return await extractSpectrogram({ inputPath, windowStart, windowEnd, columns, rows })
+    } catch (err) {
+      console.error('Spectrogram failed', id, err)
       return null
     }
   })

@@ -276,6 +276,23 @@ export interface NoctivagoApi {
     renderLoopClip(id: string, points: Payload): Promise<any>
     getWaveformPeaks(id: string, targetWidth: number, windowStart?: number, windowEnd?: number): Promise<any>
     getBandEnergy(id: string, options?: Payload): Promise<any>
+    /**
+     * Spectrogram of [windowStart, windowEnd) seconds: `values[column * rows + row]`
+     * is 0..255 brightness, row 0 the lowest of `rows` log-spaced bands between
+     * minHz and maxHz. Null if the sound can't be read. (App 0.1.237+.)
+     */
+    getSpectrogram(
+      id: string,
+      options: { windowStart: number; windowEnd: number; columns: number; rows: number }
+    ): Promise<{
+      columns: number
+      rows: number
+      minHz: number
+      maxHz: number
+      windowStart: number
+      windowEnd: number
+      values: Uint8Array
+    } | null>
     suggestLoopPoints(id: string, options?: Payload): Promise<any>
   }
   plugins: {
