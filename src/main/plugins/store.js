@@ -2,7 +2,18 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { getPlugins, userPluginsDir, invalidatePlugins, ORIGIN_FILE } from './registry.js'
-import { parseCatalog, normalizeStats, checkReleaseManifest, releaseAssetNames, compareVersions, releaseFileUrl, readmeUrl } from '../../shared/pluginStore.js'
+import {
+  parseCatalog,
+  normalizeStats,
+  checkReleaseManifest,
+  releaseAssetNames,
+  compareVersions,
+  releaseFileUrl,
+  readmeUrl,
+  versionsUrl,
+  supportsApp,
+  pickCompatibleVersion
+} from '../../shared/pluginStore.js'
 import { isOfficialRepo, canInstallFromStore } from '../../shared/pluginEnablement.js'
 import { getSettings } from '../settings.js'
 
@@ -20,8 +31,9 @@ const README_MAX_BYTES = 200 * 1024
 
 // Dev-only overrides, so the store can be exercised against a local server:
 // NOCTIVAGO_PLUGIN_LIST_URL replaces the list, NOCTIVAGO_PLUGIN_STATS_URL the
-// stats, NOCTIVAGO_PLUGIN_RELEASE_BASE replaces https://github.com (files and
-// README.md are then read from <base>/<repo>/<file>).
+// stats, NOCTIVAGO_PLUGIN_RELEASE_BASE replaces https://github.com (latest
+// release files, README.md and versions.json are then read from
+// <base>/<repo>/<file>, an older release's files from <base>/<repo>/<tag>/<file>).
 function devOverride(name) {
   return !app.isPackaged && process.env[name]
 }
@@ -34,14 +46,20 @@ function statsUrl() {
   return devOverride('NOCTIVAGO_PLUGIN_STATS_URL') || STATS_URL
 }
 
-function fileUrl(repo, fileName) {
+function fileUrl(repo, fileName, tag = null) {
   const base = devOverride('NOCTIVAGO_PLUGIN_RELEASE_BASE')
-  return base ? `${base}/${repo}/${encodeURIComponent(fileName)}` : releaseFileUrl(repo, fileName)
+  if (!base) return releaseFileUrl(repo, fileName, tag)
+  return `${base}/${repo}/${tag ? `${encodeURIComponent(tag)}/` : ''}${encodeURIComponent(fileName)}`
 }
 
 function repoReadmeUrl(repo) {
   const base = devOverride('NOCTIVAGO_PLUGIN_RELEASE_BASE')
   return base ? `${base}/${repo}/README.md` : readmeUrl(repo)
+}
+
+function repoVersionsUrl(repo) {
+  const base = devOverride('NOCTIVAGO_PLUGIN_RELEASE_BASE')
+  return base ? `${base}/${repo}/versions.json` : versionsUrl(repo)
 }
 
 async function request(url) {
@@ -71,8 +89,30 @@ async function downloadJson(url) {
 // trusting a repo string sent from the renderer.
 let catalogById = new Map()
 
-async function latestManifest(entry) {
-  return checkReleaseManifest(await downloadJson(fileUrl(entry.repo, 'manifest.json')), entry.id)
+// The release to install on this app version, Obsidian-style: the latest one,
+// unless its minAppVersion is newer than the running app. Then versions.json
+// names the newest plugin version that still runs here, and its release is
+// used instead (tag = that version). Returns { manifest, tag }; tag is null
+// for the latest release.
+async function resolveRelease(entry) {
+  const latest = checkReleaseManifest(await downloadJson(fileUrl(entry.repo, 'manifest.json')), entry.id)
+  const appVersion = app.getVersion()
+  if (supportsApp(latest, appVersion)) return { manifest: latest, tag: null }
+
+  const tooNew = new Error(`${entry.name} ${latest.version} needs Noctívago ${latest.minAppVersion} or newer. Update Noctívago first.`)
+  let versions
+  try {
+    versions = await downloadJson(repoVersionsUrl(entry.repo))
+  } catch {
+    throw tooNew
+  }
+  const tag = pickCompatibleVersion(versions, appVersion)
+  if (!tag) throw tooNew
+  const manifest = checkReleaseManifest(await downloadJson(fileUrl(entry.repo, 'manifest.json', tag)), entry.id)
+  if (manifest.version !== tag || !supportsApp(manifest, appVersion)) {
+    throw new Error(`versions.json in ${entry.repo} points at release ${tag}, but its manifest doesn't match`)
+  }
+  return { manifest, tag }
 }
 
 function installedById() {
@@ -112,13 +152,13 @@ export async function listCatalog() {
   }
 }
 
-// The latest release's manifest, for the detail view: version, mainProcess
-// (shown as a warning before install), and whether it's newer than the copy
-// installed now.
+// The installable release's manifest (the newest one this app can run), for
+// the detail view: version, mainProcess (shown as a warning before install),
+// and whether it's newer than the copy installed now.
 export async function checkLatest(id) {
   const entry = catalogById.get(id)
   if (!entry) throw new Error(`"${id}" isn't in the plugin list`)
-  const manifest = await latestManifest(entry)
+  const { manifest } = await resolveRelease(entry)
   const local = installedById().get(id)
   return {
     version: manifest.version,
@@ -152,7 +192,10 @@ export async function install(id) {
     throw new Error('Turn off Restricted mode in Settings > Community plugins to install third-party plugins')
   }
 
-  const manifest = await latestManifest(entry)
+  const { manifest, tag } = await resolveRelease(entry)
+  if (local && compareVersions(manifest.version, local.version) < 0) {
+    throw new Error(`The installed ${entry.name} ${local.version} is newer than the newest release this app can run`)
+  }
   const files = releaseAssetNames(manifest)
 
   const root = userPluginsDir()
@@ -161,7 +204,7 @@ export async function install(id) {
   fs.mkdirSync(staging, { recursive: true })
   try {
     for (const name of files) {
-      fs.writeFileSync(path.join(staging, name), await download(fileUrl(entry.repo, name)))
+      fs.writeFileSync(path.join(staging, name), await download(fileUrl(entry.repo, name, tag)))
     }
     fs.writeFileSync(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2))
     fs.writeFileSync(path.join(staging, ORIGIN_FILE), JSON.stringify({ repo: entry.repo }))
