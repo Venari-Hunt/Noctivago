@@ -4,7 +4,8 @@
 // The store follows Obsidian's model: one reviewed list file
 // (community-plugins.json in Venari-Hunt/noctivago-plugins) names each
 // plugin's GitHub repo, and the plugin's files are downloaded from that
-// repo's latest GitHub Release, one release asset per file.
+// repo's latest GitHub Release, one release asset per file. When the latest
+// release needs a newer app, the repo's versions.json names an older one.
 
 import { validateManifest } from './pluginManifest.js'
 
@@ -13,6 +14,7 @@ const REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$
 // A release asset name: a plain file name, no folders, not hidden.
 const ASSET_NAME_PATTERN = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 
 // Validates one community-plugins.json entry. Returns a clean copy (only the
 // known fields) or null, so one bad entry drops out instead of breaking the list.
@@ -87,8 +89,36 @@ export function compareVersions(a, b) {
   return 0
 }
 
-export function releaseFileUrl(repo, fileName) {
-  return `https://github.com/${repo}/releases/latest/download/${encodeURIComponent(fileName)}`
+// A file from the plugin's latest release, or from the release tagged `tag`
+// (Obsidian's convention: the tag is the manifest version, no "v").
+export function releaseFileUrl(repo, fileName, tag = null) {
+  const release = tag ? `download/${encodeURIComponent(tag)}` : 'latest/download'
+  return `https://github.com/${repo}/releases/${release}/${encodeURIComponent(fileName)}`
+}
+
+// versions.json on the plugin repo's default branch: { "<plugin version>":
+// "<minAppVersion>" }, Obsidian's shape. Only read when the latest release
+// needs a newer app than the one running.
+export function versionsUrl(repo) {
+  return `https://raw.githubusercontent.com/${repo}/HEAD/versions.json`
+}
+
+// Whether a manifest's minAppVersion lets it run on appVersion.
+export function supportsApp(manifest, appVersion) {
+  return !manifest.minAppVersion || compareVersions(appVersion, manifest.minAppVersion) >= 0
+}
+
+// The newest plugin version in versions.json that runs on appVersion, or
+// null. Malformed entries are skipped.
+export function pickCompatibleVersion(versions, appVersion) {
+  if (!versions || typeof versions !== 'object' || Array.isArray(versions)) return null
+  let best = null
+  for (const [version, minApp] of Object.entries(versions)) {
+    if (!VERSION_PATTERN.test(version) || typeof minApp !== 'string' || !VERSION_PATTERN.test(minApp)) continue
+    if (compareVersions(appVersion, minApp) < 0) continue
+    if (!best || compareVersions(version, best) > 0) best = version
+  }
+  return best
 }
 
 // Validates community-plugin-stats.json, Obsidian's shape:
