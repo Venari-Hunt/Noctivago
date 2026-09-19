@@ -23,6 +23,7 @@ register(
 )
 
 const ffmpeg = path.resolve('node_modules/ffmpeg-static/ffmpeg.exe')
+const needsFfmpeg = { skip: !fs.existsSync(ffmpeg) && 'bundled ffmpeg not installed' }
 
 let dir
 let STORED_AUDIO_EXT, STORED_AUDIO_ARGS, outputFormatArgs
@@ -41,12 +42,12 @@ before(async () => {
   ;({ STORED_AUDIO_EXT, STORED_AUDIO_ARGS } = await import('../src/main/ffmpeg/storedAudio.js'))
   ;({ outputFormatArgs } = await import('../src/main/ffmpeg/composite.js'))
   // A lossy float source, like a recording or a downloaded stream.
-  run(['-f', 'lavfi', '-i', 'anoisesrc=d=5:c=pink:a=0.3,aformat=channel_layouts=stereo', '-c:a', 'libopus', path.join(dir, 'src.webm')])
+  if (!needsFfmpeg.skip) run(['-f', 'lavfi', '-i', 'anoisesrc=d=5:c=pink:a=0.3,aformat=channel_layouts=stereo', '-c:a', 'libopus', path.join(dir, 'src.webm')])
 })
 
 after(() => fs.rmSync(dir, { recursive: true, force: true }))
 
-describe('stored audio format', () => {
+describe('stored audio format', needsFfmpeg, () => {
   test('decodes to exactly what the old 16-bit WAV held, in a smaller file', () => {
     const wav = path.join(dir, 'old.wav')
     const flac = path.join(dir, `new${STORED_AUDIO_EXT}`)
@@ -57,7 +58,7 @@ describe('stored audio format', () => {
   })
 })
 
-describe('outputFormatArgs (Composite)', () => {
+describe('outputFormatArgs (Composite)', needsFfmpeg, () => {
   test('a .flac composite renders FLAC through a .tmp path', () => {
     const out = path.join(dir, 'composite.flac.tmp')
     run(['-i', path.join(dir, 'src.webm'), ...outputFormatArgs('x/composite.flac'), out])
@@ -75,7 +76,7 @@ describe('removing a duplicated sound (library.remove)', () => {
   test('keeps the stored copy the other sound still uses, deletes it with the last one', async () => {
     const lib = await import('../src/main/library.js')
     const original = path.join(dir, 'import-me.wav')
-    run(['-f', 'lavfi', '-i', 'sine=d=1', original])
+    fs.writeFileSync(original, Buffer.alloc(4096))
     const a = lib.addSound({ path: original, name: 'A', keepCopy: true })
     const b = lib.duplicateSound(a.id, { name: 'B' })
     const stored = path.join(dir, 'sounds', a.storedFileName)
