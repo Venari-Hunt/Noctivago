@@ -1,6 +1,5 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { stereoPanMatrix as pluginPanMatrix } from '../plugins/editor/audio/PanStage.js'
 import { buildPanFilter, normalizePan, parseChannelCount, stereoPanMatrix } from '../src/main/ffmpeg/panFilter.js'
 
 const close = (a, b) => Math.abs(a - b) < 1e-9
@@ -73,10 +72,6 @@ describe('pan law strength (v0.1.227)', () => {
       assert.ok(db > prev)
       prev = db
     }
-  })
-
-  test('the Remix plugin copy matches core exactly', () => {
-    for (let p = -1; p <= 1; p += 0.01) assert.deepEqual(pluginPanMatrix(p), stereoPanMatrix(p))
   })
 })
 

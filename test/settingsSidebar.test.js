@@ -12,7 +12,12 @@ const described = [
 
 describe('settings sidebar', () => {
   test('always starts with the Options pages', () => {
-    assert.deepEqual(buildSidebar([]), [{ label: 'Options', items: OPTION_PAGES }])
+    assert.deepEqual(buildSidebar([], described), [{ label: 'Options', items: OPTION_PAGES }])
+  })
+
+  test('hides the Core plugins page when there are no core plugins', () => {
+    const [options] = buildSidebar([], [described[2]])
+    assert.deepEqual(options.items.map((p) => p.id), ['general', 'library', 'community-plugins'])
   })
 
   test('groups plugin pages by kind, sorted by title', () => {

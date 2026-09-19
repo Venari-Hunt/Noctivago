@@ -297,6 +297,8 @@ export interface NoctivagoApi {
     >
     setEnabled(id: string, enabled: boolean): Promise<any>
     setRestrictedMode(on: boolean): Promise<any>
+    /** Hides the Mixer's one-time Recommended plugins card for good. */
+    dismissRecommended(): Promise<any>
     /** Calls an exported function of a plugin's `mainProcess` module. */
     invoke(pluginId: string, method: string, ...args: any[]): Promise<any>
   }

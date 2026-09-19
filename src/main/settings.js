@@ -161,7 +161,12 @@ const store = new Store({
     // Obsidian's Restricted mode: while on, third-party community plugins
     // don't load or install (official ones still do, see
     // shared/pluginEnablement.js).
-    restrictedMode: true
+    restrictedMode: true,
+    // Set once the official plugins that used to ship inside the app were
+    // downloaded for someone who had them built in (plugins/migration.js).
+    pluginSplitMigrated: false,
+    // The Mixer's one-time Recommended plugins card was closed.
+    recommendedPluginsDismissed: false
   }
 })
 
@@ -234,7 +239,9 @@ export function getSettings() {
     lastActivePresetId: store.get('lastActivePresetId'),
     presetAutosaveEnabled: store.get('presetAutosaveEnabled'),
     disabledPlugins: store.get('disabledPlugins'),
-    restrictedMode: store.get('restrictedMode')
+    restrictedMode: store.get('restrictedMode'),
+    pluginSplitMigrated: store.get('pluginSplitMigrated'),
+    recommendedPluginsDismissed: store.get('recommendedPluginsDismissed')
   }
 }
 
@@ -427,5 +434,14 @@ export function setPluginEnabled(id, enabled) {
 
 export function setRestrictedMode(on) {
   store.set('restrictedMode', Boolean(on))
+  return getSettings()
+}
+
+export function setPluginSplitMigrated() {
+  store.set('pluginSplitMigrated', true)
+}
+
+export function dismissRecommendedPlugins() {
+  store.set('recommendedPluginsDismissed', true)
   return getSettings()
 }

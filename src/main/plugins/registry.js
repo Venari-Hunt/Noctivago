@@ -13,12 +13,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // as official under Restricted mode. A hand-dropped folder has none.
 export const ORIGIN_FILE = '.origin.json'
 
-// Bundled ("official") plugins ship in the repo's plugins/ folder. In a
-// packaged build they're copied to resources/plugins via electron-builder's
-// extraResources; in dev they're read straight from the repo (out/main/ is
-// two levels under the repo root: out/main -> out -> repo root).
+// The app ships no plugins: the official ones are downloads from their own
+// repos (see shared/officialPlugins.js). A dev build also loads the test
+// fixtures in the repo's dev-plugins/ folder (hello-world, and
+// broken-plugin-example, which proves a plugin that throws can't take the
+// app down) as core plugins. out/main/ is two levels under the repo root.
 function bundledPluginsDir() {
-  return app.isPackaged ? path.join(process.resourcesPath, 'plugins') : path.join(__dirname, '../../plugins')
+  return app.isPackaged ? null : path.join(__dirname, '../../dev-plugins')
 }
 
 // User-installed plugins, parallel to Obsidian's .obsidian/plugins/.
@@ -39,7 +40,7 @@ function readOriginRepo(pluginDir) {
 
 function scanDir(dir, source) {
   const found = []
-  if (!fs.existsSync(dir)) return found
+  if (!dir || !fs.existsSync(dir)) return found
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     // Dot-folders are the plugin store's in-progress downloads (store.js).
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue

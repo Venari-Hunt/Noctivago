@@ -1,6 +1,5 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
 import { parseFreesoundFileName, describeLicense, creditLine } from '../src/shared/credits.js'
 
 describe('parseFreesoundFileName', () => {
@@ -60,10 +59,4 @@ describe('creditLine', () => {
     assert.equal(creditLine('Storm', { type: 'url', url: 'https://youtu.be/x' }), '"Storm" - from https://youtu.be/x')
     assert.equal(creditLine('Mine', null), null)
   })
-})
-
-test("the Export plugin's copy matches src/shared/credits.js", () => {
-  const shared = fs.readFileSync(new URL('../src/shared/credits.js', import.meta.url), 'utf8')
-  const plugin = fs.readFileSync(new URL('../plugins/export/credits.js', import.meta.url), 'utf8')
-  assert.equal(plugin.split('\n').slice(2).join('\n'), shared)
 })

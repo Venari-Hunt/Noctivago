@@ -34,7 +34,7 @@ The owner's own direction building this: "do it in a way that won't break the so
 
 **Export credits + scene details (v0.1.224)**, owner inbox. The export's `info.txt` gains two sections, so a person or an AI can write a YouTube description with proper credits and an accurate picture of the mix.
 
-**Credits.** `src/shared/credits.js` (Electron-free, `test/credits.test.js`; the plugin copy `plugins/export/credits.js` is asserted identical apart from its 2-line header) provides:
+**Credits.** `src/shared/credits.js` (Electron-free, `test/credits.test.js`; the Export plugin's copy, `src/domain/credits.js` in `noctivago-export`, is checked identical apart from its 2-line header by that repo's `test/coreParity.test.js`) provides:
 - `parseFreesoundFileName`, which reads Freesound's download names `<id>__<username>__<title>`. Usernames may contain single underscores, and a trailing `_optimized` from the owner's re-encode step is dropped.
 - `describeLicense`, which maps CC URLs and names to short labels plus whether attribution is required.
 - `creditLine`.
@@ -46,7 +46,7 @@ Sources are recorded in `library.js`:
 - `detectFreesoundSources()` runs once at startup (`freesoundSourcesDetected` store flag) to backfill existing entries from `originalPath`. That's 25 of the owner's 81 sounds.
 - `resolveCredits(ids)` (IPC `library:resolveCredits`, preload `library.resolveCredits`) fills a Freesound source's missing license/title/description/tags via `freesound/client.js`'s new `getSoundCredits` and saves them. It returns null without a key or on any error, and the export still writes the file.
 
-**Scene section.** `plugins/export/sceneSummary.js` (pure, `test/exportSceneSummary.test.js`) has `buildSceneSection({ sounds: [{entry, volume}], groups, wholeMix })`:
+**Scene section.** `src/domain/sceneSummary.js` in `noctivago-export` (pure, `test/sceneSummary.test.js` there) has `buildSceneSection({ sounds: [{entry, volume}], groups, wholeMix })`:
 - One line per sound: volume, play mode (loop, random interval with its gap, clock times or interval), and group.
 - Then a detail line listing only non-neutral settings: speed/pitch/reverse/Doppler, drift ranges and timing (loop sounds) or per-play ranges (random interval/scheduled), filters, effects, and pan.
 - Then the groups with their bus processing and drift ("each sound on its own"), and whole-mix processing.

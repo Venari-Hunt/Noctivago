@@ -15,6 +15,7 @@ import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeS
 import { startLevelMeters } from '../../ui/levelMeters.js'
 import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipReport.js'
 import { openClipReport } from './components/ClipReport.jsx'
+import { mountRecommendedPlugins } from './components/RecommendedPlugins.jsx'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -2121,6 +2122,7 @@ async function restoreLastActivePreset(settings) {
 
 export function mount(container) {
   container.innerHTML = `
+    <div id="recommended-plugins"></div>
     <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
     <div class="sound-list-controls">
       <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
@@ -2146,6 +2148,7 @@ export function mount(container) {
     <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
   `
   els.soundSearch = container.querySelector('#sound-search')
+  mountRecommendedPlugins(container.querySelector('#recommended-plugins'), window.noctivago)
   els.soundSort = container.querySelector('#sound-sort')
   els.soundGroup = container.querySelector('#sound-group')
   els.bulkSelectToggle = container.querySelector('#bulk-select-toggle')
