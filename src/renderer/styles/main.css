@@ -1804,3 +1804,44 @@ main {
     flex-wrap: wrap;
   }
 }
+
+/* Clip report popover (tabs/mixer/components/ClipReport.jsx): opens from a
+   red clip light. */
+.clip-report-popover {
+  position: fixed;
+  z-index: 45;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  background: var(--surface);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.clip-report p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.clip-report .clip-report-heading {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.clip-report-loudest,
+.clip-report-note {
+  color: var(--text-dim);
+}
+
+.clip-report-done {
+  color: var(--accent);
+}
+
+.clip-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}

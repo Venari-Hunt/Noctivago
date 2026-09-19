@@ -1,16 +1,18 @@
 // Paints the Mixer's level/clip meters from the engine's ClipMeter taps (see
 // audio/clipMeter.js). Elements opt in with a data attribute, so rows can be
 // re-rendered freely - the clip latch lives on the meter, not the element:
-//   data-meter-sound="<soundId>" - a row's level bar; click resets its light
+//   data-meter-sound="<soundId>" - a row's level bar
 //   data-meter-group="<groupId>" - a Sound Group badge; turns red on a clip
-//   data-meter-master            - the whole-mix bar; click resets every light
+//   data-meter-master            - the whole-mix bar
+// Clicking a red light opens the Clip report (onOpenReport); clicking the
+// unlit whole-mix bar still clears every light, as before.
 
 const FLOOR_DB = -60
 const FALL_DB_PER_SECOND = 30
 const FRAME_MS = 33
 
-const SOUND_TITLE = 'Level. Turns red if this sound reaches 0 dB (clipping) and stays red until you click it.'
-const MASTER_TITLE = 'Whole-mix level. Turns red if the mix reaches 0 dB (clipping) and stays red until you click it (clears every clip light).'
+const SOUND_TITLE = 'Level. Turns red if this sound reaches 0 dB (clipping). Click a red light to see why and fix it.'
+const MASTER_TITLE = 'Whole-mix level. Turns red if the mix reaches 0 dB (clipping). Click a red light to see why and fix it; click it unlit to clear every clip light.'
 
 function toDb(peak) {
   return peak > 0 ? 20 * Math.log10(peak) : -Infinity
@@ -21,7 +23,7 @@ function formatDb(peak) {
   return `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`
 }
 
-export function startLevelMeters(engine) {
+export function startLevelMeters(engine, { onOpenReport } = {}) {
   const shownDb = new WeakMap()
 
   function levelPercent(meter, dt, running) {
@@ -51,11 +53,11 @@ export function startLevelMeters(engine) {
 
     for (const el of document.querySelectorAll('[data-meter-sound]')) {
       paintBar(el, engine.soundMeters.get(el.dataset.meterSound), dt, running,
-        (m) => `Clipping: this sound peaked at ${formatDb(m.maxPeak)}. Lower its volume, then click to reset.`, SOUND_TITLE)
+        (m) => `Clipping: this sound peaked at ${formatDb(m.maxPeak)}. Click to see why and fix it.`, SOUND_TITLE)
     }
     for (const el of document.querySelectorAll('[data-meter-master]')) {
       paintBar(el, engine.masterMeter, dt, running,
-        (m) => `Clipping: the whole mix peaked at ${formatDb(m.maxPeak)}. Lower the volume, then click to reset every clip light.`, MASTER_TITLE)
+        (m) => `Clipping: the whole mix peaked at ${formatDb(m.maxPeak)}. Click to see why and fix it.`, MASTER_TITLE)
     }
     for (const el of document.querySelectorAll('[data-meter-group]')) {
       const meter = engine.groupMeters.get(el.dataset.meterGroup)
@@ -63,23 +65,28 @@ export function startLevelMeters(engine) {
       if (el.dataset.baseTitle === undefined) el.dataset.baseTitle = el.title
       el.classList.toggle('clipped', clipped)
       const title = clipped
-        ? `This sound group clipped (peaked at ${formatDb(meter.maxPeak)}). Lower its volume in Remix; click the mix meter up top to reset.`
+        ? `This sound group clipped (peaked at ${formatDb(meter.maxPeak)}). Click to see why and fix it.`
         : el.dataset.baseTitle
       if (el.title !== title) el.title = title
     }
   }
   requestAnimationFrame(tick)
 
-  // Capture phase so the click resets the light without also reaching the
-  // row's own handlers (selection, drag).
+  // Capture phase so the click doesn't also reach the row's own handlers
+  // (selection, drag, or a group badge's own menu).
   document.addEventListener('click', (evt) => {
-    const el = evt.target.closest?.('[data-meter-sound], [data-meter-master]')
+    const el = evt.target.closest?.('[data-meter-sound], [data-meter-master], [data-meter-group].clipped')
     if (!el) return
     // The master meter sits inside the volume <label>; don't let the click
     // also activate its slider.
     evt.preventDefault()
     evt.stopPropagation()
-    if (el.dataset.meterSound !== undefined) engine.soundMeters.get(el.dataset.meterSound)?.reset()
-    else engine.resetAllMeters()
+    let target
+    if (el.dataset.meterSound !== undefined) target = { kind: 'sound', id: el.dataset.meterSound, meter: engine.soundMeters.get(el.dataset.meterSound) }
+    else if (el.dataset.meterGroup !== undefined) target = { kind: 'group', id: el.dataset.meterGroup, meter: engine.groupMeters.get(el.dataset.meterGroup) }
+    else target = { kind: 'mix', meter: engine.masterMeter }
+    if (target.meter?.clipped && onOpenReport) onOpenReport(target, el)
+    else if (target.kind === 'mix') engine.resetAllMeters()
+    else target.meter?.reset()
   }, true)
 }
