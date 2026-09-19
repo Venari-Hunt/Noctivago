@@ -169,6 +169,10 @@ export interface StoreListing {
   repo: string
   /** Published from the Venari-Hunt account; installs even in Restricted mode. */
   official: boolean
+  /** From community-plugin-stats.json; 0 and null when it has no entry yet. */
+  downloads: number
+  /** When the latest release was published, in ms. */
+  updated: number | null
   installed: { version: string; source: 'user' | 'bundled' } | null
 }
 
@@ -301,6 +305,8 @@ export interface NoctivagoApi {
     list(): Promise<{ plugins: StoreListing[] }>
     /** The latest release's version, and whether it has a mainProcess module. */
     checkLatest(id: string): Promise<{ version: string; mainProcess: boolean; minAppVersion: string | null; updateAvailable: boolean }>
+    /** README.md from the plugin's repo, as text ('' when it has none). */
+    readme(id: string): Promise<{ text: string; truncated: boolean }>
     install(id: string): Promise<{ version: string }>
     uninstall(id: string): Promise<{ ok: true }>
     /** Relaunches the app; installs and removals take effect on restart. */

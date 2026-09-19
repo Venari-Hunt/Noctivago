@@ -170,6 +170,7 @@ const api = {
   pluginStore: {
     list: () => ipcRenderer.invoke('pluginStore:list'),
     checkLatest: (id) => ipcRenderer.invoke('pluginStore:checkLatest', id),
+    readme: (id) => ipcRenderer.invoke('pluginStore:readme', id),
     install: (id) => ipcRenderer.invoke('pluginStore:install', id),
     uninstall: (id) => ipcRenderer.invoke('pluginStore:uninstall', id),
     restartApp: () => ipcRenderer.invoke('pluginStore:restartApp')

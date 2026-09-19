@@ -587,6 +587,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('pluginStore:list', () => pluginStore.listCatalog())
   ipcMain.handle('pluginStore:checkLatest', (_event, id) => pluginStore.checkLatest(id))
+  ipcMain.handle('pluginStore:readme', (_event, id) => pluginStore.readme(id))
   ipcMain.handle('pluginStore:install', (_event, id) => pluginStore.install(id))
   ipcMain.handle('pluginStore:uninstall', (_event, id) => pluginStore.uninstall(id))
   ipcMain.handle('pluginStore:restartApp', () => pluginStore.restartApp())

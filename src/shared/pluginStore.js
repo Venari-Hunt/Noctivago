@@ -90,3 +90,24 @@ export function compareVersions(a, b) {
 export function releaseFileUrl(repo, fileName) {
   return `https://github.com/${repo}/releases/latest/download/${encodeURIComponent(fileName)}`
 }
+
+// Validates community-plugin-stats.json, Obsidian's shape:
+// { "<id>": { downloads, updated, "<version>": count, … } }. Returns
+// { "<id>": { downloads, updated } }, keeping only well-formed numbers, so a
+// bad stats file just means no counts are shown.
+export function normalizeStats(json) {
+  const out = {}
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return out
+  for (const [id, raw] of Object.entries(json)) {
+    if (!ID_PATTERN.test(id) || !raw || typeof raw !== 'object') continue
+    const downloads = Number.isFinite(raw.downloads) && raw.downloads >= 0 ? Math.floor(raw.downloads) : 0
+    const updated = Number.isFinite(raw.updated) && raw.updated > 0 ? raw.updated : null
+    out[id] = { downloads, updated }
+  }
+  return out
+}
+
+// README.md from the plugin repo's default branch, for the Browse detail pane.
+export function readmeUrl(repo) {
+  return `https://raw.githubusercontent.com/${repo}/HEAD/README.md`
+}

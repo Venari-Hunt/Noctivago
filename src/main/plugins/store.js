@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { getPlugins, userPluginsDir, invalidatePlugins, ORIGIN_FILE } from './registry.js'
-import { parseCatalog, checkReleaseManifest, releaseAssetNames, compareVersions, releaseFileUrl } from '../../shared/pluginStore.js'
+import { parseCatalog, normalizeStats, checkReleaseManifest, releaseAssetNames, compareVersions, releaseFileUrl, readmeUrl } from '../../shared/pluginStore.js'
 import { isOfficialRepo, canInstallFromStore } from '../../shared/pluginEnablement.js'
 import { getSettings } from '../settings.js'
 
@@ -13,26 +13,47 @@ import { getSettings } from '../settings.js'
 // use github.com/<repo>/releases/latest/download/<file>, which redirects to
 // the asset without touching the rate-limited GitHub API.
 const LIST_URL = 'https://raw.githubusercontent.com/Venari-Hunt/noctivago-plugins/main/community-plugins.json'
+// Download counts per plugin, rebuilt daily by an Action in the same repo.
+const STATS_URL = 'https://raw.githubusercontent.com/Venari-Hunt/noctivago-plugins/main/community-plugin-stats.json'
+// A README bigger than this is cut off rather than rendered.
+const README_MAX_BYTES = 200 * 1024
 
 // Dev-only overrides, so the store can be exercised against a local server:
-// NOCTIVAGO_PLUGIN_LIST_URL replaces the list, NOCTIVAGO_PLUGIN_RELEASE_BASE
-// replaces https://github.com (files are then read from <base>/<repo>/<file>).
+// NOCTIVAGO_PLUGIN_LIST_URL replaces the list, NOCTIVAGO_PLUGIN_STATS_URL the
+// stats, NOCTIVAGO_PLUGIN_RELEASE_BASE replaces https://github.com (files and
+// README.md are then read from <base>/<repo>/<file>).
+function devOverride(name) {
+  return !app.isPackaged && process.env[name]
+}
+
 function listUrl() {
-  return (!app.isPackaged && process.env.NOCTIVAGO_PLUGIN_LIST_URL) || LIST_URL
+  return devOverride('NOCTIVAGO_PLUGIN_LIST_URL') || LIST_URL
+}
+
+function statsUrl() {
+  return devOverride('NOCTIVAGO_PLUGIN_STATS_URL') || STATS_URL
 }
 
 function fileUrl(repo, fileName) {
-  const base = !app.isPackaged && process.env.NOCTIVAGO_PLUGIN_RELEASE_BASE
+  const base = devOverride('NOCTIVAGO_PLUGIN_RELEASE_BASE')
   return base ? `${base}/${repo}/${encodeURIComponent(fileName)}` : releaseFileUrl(repo, fileName)
 }
 
-async function download(url) {
-  let res
+function repoReadmeUrl(repo) {
+  const base = devOverride('NOCTIVAGO_PLUGIN_RELEASE_BASE')
+  return base ? `${base}/${repo}/README.md` : readmeUrl(repo)
+}
+
+async function request(url) {
   try {
-    res = await fetch(url, { cache: 'no-store' })
+    return await fetch(url, { cache: 'no-store' })
   } catch (err) {
     throw new Error(`Couldn't reach ${new URL(url).host} (${err.message})`)
   }
+}
+
+async function download(url) {
+  const res = await request(url)
   if (!res.ok) throw new Error(`Download failed (HTTP ${res.status}) for ${url}`)
   return Buffer.from(await res.arrayBuffer())
 }
@@ -60,16 +81,33 @@ function installedById() {
   return map
 }
 
-// Returns { plugins: [{ id, name, author, description, repo, official, installed }] }.
-// installed is null or { version, source: 'user' | 'bundled' }.
+// Stats are optional: without them the list still loads, just with no counts.
+async function loadStats() {
+  try {
+    return normalizeStats(await downloadJson(statsUrl()))
+  } catch {
+    return {}
+  }
+}
+
+// Returns { plugins: [{ id, name, author, description, repo, official,
+// downloads, updated, installed }] }. installed is null or
+// { version, source: 'user' | 'bundled' }; updated is a ms timestamp or null.
 export async function listCatalog() {
-  const entries = parseCatalog(await downloadJson(listUrl()))
+  const [json, stats] = await Promise.all([downloadJson(listUrl()), loadStats()])
+  const entries = parseCatalog(json)
   catalogById = new Map(entries.map((e) => [e.id, e]))
   const installed = installedById()
   return {
     plugins: entries.map((e) => {
       const local = installed.get(e.id)
-      return { ...e, official: isOfficialRepo(e.repo), installed: local ? { version: local.version, source: local.source } : null }
+      return {
+        ...e,
+        official: isOfficialRepo(e.repo),
+        downloads: stats[e.id]?.downloads ?? 0,
+        updated: stats[e.id]?.updated ?? null,
+        installed: local ? { version: local.version, source: local.source } : null
+      }
     })
   }
 }
@@ -88,6 +126,18 @@ export async function checkLatest(id) {
     minAppVersion: manifest.minAppVersion ?? null,
     updateAvailable: Boolean(local && compareVersions(manifest.version, local.version) > 0)
   }
+}
+
+// The plugin repo's README.md as plain text ('' when it has none). The
+// Settings window renders it as formatted text, never as HTML.
+export async function readme(id) {
+  const entry = catalogById.get(id)
+  if (!entry) throw new Error(`"${id}" isn't in the plugin list`)
+  const res = await request(repoReadmeUrl(entry.repo))
+  if (res.status === 404) return { text: '', truncated: false }
+  if (!res.ok) throw new Error(`Couldn't load the README (HTTP ${res.status})`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  return { text: buf.subarray(0, README_MAX_BYTES).toString('utf-8'), truncated: buf.length > README_MAX_BYTES }
 }
 
 // Installs or updates. Files are downloaded into a staging folder first and
