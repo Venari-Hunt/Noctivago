@@ -26,8 +26,29 @@ export class AudioEngine {
     // whole mix: the summed signal right before that chain's limiter.
     this.masterMeter = new ClipMeter(this.context)
     this.wholeMix.fluctGain.connect(this.masterMeter.input)
+    this.masterMeter.onClipPeak = () => {
+      this.masterMeter.blame = this._peaksOf([...this.soundMeters.keys()])
+    }
     this.soundMeters = new Map()
     this.groupMeters = new Map()
+  }
+
+  // soundId -> that sound's own recent peak, for the Clip report's "who was
+  // loudest when it clipped" list. The worklets post on their own clocks, so
+  // "recent" is the last two ~50ms windows rather than one exact instant.
+  _peaksOf(soundIds) {
+    const peaks = new Map()
+    for (const id of soundIds) {
+      const meter = this.soundMeters.get(id)
+      if (meter) peaks.set(id, meter.recentPeak)
+    }
+    return peaks
+  }
+
+  groupMemberIds(groupId) {
+    const ids = []
+    for (const [soundId, gid] of this._soundGroupMembership) if (gid === groupId) ids.push(soundId)
+    return ids
   }
 
   // Turns every clip light off again - the whole-mix meter's click does
@@ -74,6 +95,9 @@ export class AudioEngine {
         chain = new SoundGroupChain(this.context, this.masterGain)
         this.groupChains.set(group.id, chain)
         const meter = new ClipMeter(this.context)
+        meter.onClipPeak = () => {
+          meter.blame = this._peaksOf(this.groupMemberIds(group.id))
+        }
         chain.panStage.output.connect(meter.input)
         this.groupMeters.set(group.id, meter)
       }

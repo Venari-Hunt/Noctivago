@@ -72,6 +72,12 @@ export class ClipMeter {
     this.peak = 0 // latest ~50ms window
     this.clipped = false // latched until reset()
     this.maxPeak = 0 // loudest since the last reset()
+    this.recentPeak = 0 // loudest of the last two windows (for blame snapshots)
+    this._prevPeak = 0
+    // Called whenever maxPeak rises past 0 dB, so the engine can snapshot
+    // what every feeding sound was doing at that moment (the Clip report).
+    this.onClipPeak = null
+    this.blame = null
     this.node = null
     this._disposed = false
     ensureModule(context)
@@ -85,14 +91,21 @@ export class ClipMeter {
   }
 
   _onPeak(peak) {
+    this.recentPeak = Math.max(peak, this._prevPeak)
+    this._prevPeak = peak
     this.peak = peak
-    if (peak > this.maxPeak) this.maxPeak = peak
-    if (peak >= CLIP_LEVEL) this.clipped = true
+    const newMax = peak > this.maxPeak
+    if (newMax) this.maxPeak = peak
+    if (peak >= CLIP_LEVEL) {
+      this.clipped = true
+      if (newMax) this.onClipPeak?.()
+    }
   }
 
   reset() {
     this.clipped = false
     this.maxPeak = this.peak
+    this.blame = null
   }
 
   dispose() {

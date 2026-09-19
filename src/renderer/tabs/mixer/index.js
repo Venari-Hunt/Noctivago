@@ -13,10 +13,12 @@ import { MAX_BUFFER_CLIP_SECONDS, applySoundOverride } from '../../../shared/con
 import { effectiveMemberFluctuation, applyGroupShotOverride, groupDriftMemberKey } from '../../../shared/groupDrift.js'
 import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
 import { startLevelMeters } from '../../ui/levelMeters.js'
+import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipReport.js'
+import { openClipReport } from './components/ClipReport.jsx'
 
 const api = window.noctivago
 const engine = new AudioEngine()
-startLevelMeters(engine)
+startLevelMeters(engine, { onOpenReport: showClipReport })
 
 // Bulk-apply an effect preset to several selected sounds at once (Board
 // backlog: Noctívago-shaped echo of Audacity's Macros). Duplicated from
@@ -1055,6 +1057,70 @@ function changeVolume(id, volume) {
   // A volume tweak on a sound that's part of the loaded preset is a preset
   // edit too - persist it back (only matters when this id is in state.included).
   if (state.included.has(id)) autosaveActivePreset()
+}
+
+// Sets several sounds' volumes at once without touching mute (unlike
+// changeVolume, which unmutes on a drag). Used by the Clip report's fixes.
+function setSoundVolumes(volumes) {
+  for (const [id, volume] of volumes) {
+    state.volumes.set(id, volume)
+    state.sources.get(id)?.setVolume(effectiveVolume(id))
+    api.library.updateVolume(id, volume)
+  }
+  autosaveActivePreset()
+  render()
+}
+
+// Clip report (Clip Diagnostics Design): a red light's click lands here.
+function showClipReport({ kind, id, meter }, anchor) {
+  const nameOf = (soundId) => state.library.find((s) => s.id === soundId)?.name ?? 'Unknown sound'
+  const memberIds = kind === 'group' ? engine.groupMemberIds(id) : kind === 'mix' ? [...state.included] : []
+  // Peaks caught at the moment it clipped; a sound's current peak if the
+  // snapshot missed it (it started after the clip).
+  const members = memberIds.map((soundId) => ({
+    id: soundId,
+    name: nameOf(soundId),
+    peak: meter.blame?.get(soundId) ?? engine.soundMeters.get(soundId)?.maxPeak ?? 0
+  }))
+  const name = kind === 'sound' ? nameOf(id) : kind === 'group' ? state.groups.find((g) => g.id === id)?.name ?? 'Group' : null
+  const report = buildClipReport({ kind, id, name, maxPeak: meter.maxPeak, members })
+  const reset = () => (kind === 'mix' ? engine.resetAllMeters() : meter.reset())
+  openClipReport(anchor, { report, onFix: (fix) => applyClipFix(fix, reset), onReset: reset })
+}
+
+// Applies a Clip report fix and returns its undo.
+async function applyClipFix(fix, resetLight) {
+  if (fix.kind === 'group') {
+    let before = null
+    await setGroupGainDb(fix.id, (gainDb) => {
+      before = gainDb
+      return lowerGroupGainDb(gainDb, fix.lowerDb).gainDb
+    })
+    resetLight()
+    return () => setGroupGainDb(fix.id, () => before)
+  }
+  const ids = fix.kind === 'sound' ? [fix.id] : [...state.included]
+  const before = new Map(ids.map((id) => [id, state.volumes.get(id) ?? DEFAULT_VOLUME]))
+  setSoundVolumes(new Map([...before].map(([id, v]) => [id, lowerGain(v, fix.lowerDb)])))
+  resetLight()
+  return () => setSoundVolumes(before)
+}
+
+// Same queue as membership edits, so a fix can't race another group write.
+function setGroupGainDb(groupId, nextGainDb) {
+  _groupMembershipQueue = _groupMembershipQueue.then(async () => {
+    const presetId = state.activePresetId
+    if (!presetId) return
+    const updated = state.groups.map((g) =>
+      g.id === groupId ? { ...g, filters: { ...(g.filters ?? {}), gainDb: nextGainDb(g.filters?.gainDb ?? 0) } } : g
+    )
+    const saved = await api.presets.updateGroups(presetId, updated)
+    if (presetId !== state.activePresetId) return
+    state.groups = saved?.groups ?? updated
+    engine.setSoundGroups(state.groups)
+    window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId, joinedSoundId: null } }))
+  })
+  return _groupMembershipQueue
 }
 
 function toggleMute(id) {
