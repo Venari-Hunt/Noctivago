@@ -9,10 +9,14 @@ const loadedModules = new Map()
 // explicitly opts in via `mainProcess`. This is the one place a plugin gets
 // real power (spawn ffmpeg, touch disk); renderer-side plugin code never
 // gets this, only the curated app object passed into it (see TabHost/main.js).
+//
+// Cached per plugin *version*: after a live update the next call imports the
+// new file (a ?v= query makes Node's ESM cache treat it as a new module).
 async function loadMainProcessModule(pluginId) {
-  if (loadedModules.has(pluginId)) return loadedModules.get(pluginId)
-
   const plugin = getPlugin(pluginId)
+  const cached = loadedModules.get(pluginId)
+  if (cached && plugin && cached.version === plugin.manifest.version) return cached.mod
+
   if (!plugin) throw new Error(`Unknown plugin "${pluginId}"`)
   // A switched-off or restricted plugin's Node code must not run just
   // because another plugin asked for it.
@@ -22,8 +26,9 @@ async function loadMainProcessModule(pluginId) {
   }
 
   const entryPath = path.join(plugin.dir, plugin.manifest.mainProcess)
-  const mod = await import(pathToFileURL(entryPath).href)
-  loadedModules.set(pluginId, mod)
+  const href = `${pathToFileURL(entryPath).href}?v=${encodeURIComponent(plugin.manifest.version)}`
+  const mod = await import(href)
+  loadedModules.set(pluginId, { version: plugin.manifest.version, mod })
   return mod
 }
 

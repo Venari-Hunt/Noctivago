@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildSidebar, pluginPageId, OPTION_PAGES } from '../src/renderer/settings/domain/sidebar.js'
-import { splitByKind, needsRestart } from '../src/renderer/settings/domain/pluginGroups.js'
+import { splitByKind } from '../src/renderer/settings/domain/pluginGroups.js'
 import { addPluginSettingsPage, listPluginSettingsPages, subscribePluginSettingsPages } from '../src/renderer/settings/domain/pluginSettingsPages.js'
 
 const described = [
@@ -39,12 +39,6 @@ describe('plugin groups', () => {
     const { core, community } = splitByKind(described)
     assert.deepEqual(core.map((p) => p.id), ['export', 'remix'])
     assert.deepEqual(community.map((p) => p.id), ['rain'])
-  })
-
-  test('needs a restart only when saved state differs from what is running', () => {
-    assert.equal(needsRestart(described), false)
-    assert.equal(needsRestart([{ ...described[0], state: 'disabled' }]), true)
-    assert.equal(needsRestart([{ ...described[2], state: 'enabled' }]), true)
   })
 })
 

@@ -167,6 +167,19 @@ const api = {
     setEnabled: (id, enabled) => ipcRenderer.invoke('plugins:setEnabled', id, enabled),
     setRestrictedMode: (on) => ipcRenderer.invoke('plugins:setRestrictedMode', on),
     dismissRecommended: () => ipcRenderer.invoke('plugins:dismissRecommended'),
+    setAutoUpdate: (on) => ipcRenderer.invoke('plugins:setAutoUpdate', on),
+    takeStartupNotices: () => ipcRenderer.invoke('plugins:takeStartupNotices'),
+    isExportRunning: () => ipcRenderer.invoke('plugins:isExportRunning'),
+    onAutoUpdated: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('plugins:autoUpdated', listener)
+      return () => ipcRenderer.removeListener('plugins:autoUpdated', listener)
+    },
+    onChanged: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('plugins:changed', listener)
+      return () => ipcRenderer.removeListener('plugins:changed', listener)
+    },
     invoke: (pluginId, method, ...args) => ipcRenderer.invoke('plugin:invoke', pluginId, method, args)
   },
   pluginStore: {

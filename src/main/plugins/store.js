@@ -180,10 +180,20 @@ export async function readme(id) {
   return { text: buf.subarray(0, README_MAX_BYTES).toString('utf-8'), truncated: buf.length > README_MAX_BYTES }
 }
 
+// One install at a time: the background updater (autoUpdate.js) and a click
+// in Settings must never write the same staging folder together.
+let installQueue = Promise.resolve()
+
 // Installs or updates. Files are downloaded into a staging folder first and
 // only swapped into place once every one arrived, so a failed download never
 // leaves a half-installed plugin behind.
-export async function install(id) {
+export function install(id) {
+  const run = installQueue.then(() => installNow(id))
+  installQueue = run.catch(() => {})
+  return run
+}
+
+async function installNow(id) {
   const entry = catalogById.get(id)
   if (!entry) throw new Error(`"${id}" isn't in the plugin list`)
   const local = installedById().get(id)
@@ -231,8 +241,8 @@ export function uninstall(id) {
   return { ok: true }
 }
 
-// Plugins are loaded once at startup (and a mainProcess module stays cached
-// in invoke.js), so installs take effect on a full restart.
+// Installs, updates and removals apply live (the renderer re-syncs), so
+// nothing in the UI needs this any more; kept for the plugin API surface.
 export function restartApp() {
   app.relaunch()
   app.quit()

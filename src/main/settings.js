@@ -155,9 +155,12 @@ const store = new Store({
     // Presets modal's own checkbox is the only UI for this, not the
     // Settings menu, per the owner's own request for where it should live.
     presetAutosaveEnabled: true,
-    // Plugin ids switched off in Settings > Core/Community plugins. Read by
-    // plugins/registry.js at launch; changes apply after a restart.
+    // Plugin ids switched off in Settings > Core/Community plugins. The
+    // renderer loads/unloads plugins live when this changes.
     disabledPlugins: [],
+    // Installed plugins update themselves in the background
+    // (plugins/autoUpdate.js) and swap in live when idle.
+    autoUpdatePlugins: true,
     // Obsidian's Restricted mode: while on, third-party community plugins
     // don't load or install (official ones still do, see
     // shared/pluginEnablement.js).
@@ -240,6 +243,7 @@ export function getSettings() {
     presetAutosaveEnabled: store.get('presetAutosaveEnabled'),
     disabledPlugins: store.get('disabledPlugins'),
     restrictedMode: store.get('restrictedMode'),
+    autoUpdatePlugins: store.get('autoUpdatePlugins'),
     pluginSplitMigrated: store.get('pluginSplitMigrated'),
     recommendedPluginsDismissed: store.get('recommendedPluginsDismissed')
   }
@@ -434,6 +438,11 @@ export function setPluginEnabled(id, enabled) {
 
 export function setRestrictedMode(on) {
   store.set('restrictedMode', Boolean(on))
+  return getSettings()
+}
+
+export function setAutoUpdatePluginsEnabled(enabled) {
+  store.set('autoUpdatePlugins', Boolean(enabled))
   return getSettings()
 }
 

@@ -5,7 +5,7 @@ import { Toggle } from './Toggle.jsx'
 import { PluginRow } from './PluginRow.jsx'
 import { BrowseModal } from './BrowseModal.jsx'
 
-export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, pluginsApi, store, optionPageIds, onOpenOptions }) {
+export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, autoUpdate, pluginsApi, store, optionPageIds, onOpenOptions }) {
   const [confirmingUnrestrict, setConfirmingUnrestrict] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [updates, setUpdates] = useState({})
@@ -42,7 +42,7 @@ export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, plug
     try {
       await action()
       setUpdates((u) => ({ ...u, [id]: undefined }))
-      pluginsApi.markChanged()
+      await pluginsApi.applyChanges()
       return true
     } catch (err) {
       setCheckStatus(errorText(err))
@@ -84,6 +84,12 @@ export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, plug
       <SettingItem name="Community plugins" description="Find and install plugins.">
         <button className="btn btn-primary" type="button" onClick={() => setBrowsing(true)}>Browse</button>
       </SettingItem>
+      <SettingItem
+        name="Update plugins automatically"
+        description="Checks shortly after launch and every few hours. An update switches over as soon as that plugin isn't in use, and a notification says what changed."
+      >
+        <Toggle checked={autoUpdate !== false} label="Update plugins automatically" onChange={pluginsApi.setAutoUpdate} />
+      </SettingItem>
       <SettingItem name="Check for updates" description={checkStatus || undefined}>
         {pendingUpdates > 0 && (
           <button className="btn btn-primary" type="button" onClick={updateAll}>Update all</button>
@@ -119,7 +125,7 @@ export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, plug
           optionPageIds={optionPageIds}
           onToggle={pluginsApi.setEnabled}
           onOpenOptions={(id) => { setBrowsing(false); onOpenOptions(id) }}
-          onChanged={() => { pluginsApi.markChanged(); pluginsApi.reload() }}
+          onChanged={() => pluginsApi.applyChanges()}
           onClose={() => setBrowsing(false)}
         />
       )}

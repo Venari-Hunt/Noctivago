@@ -21,7 +21,11 @@ export function registerPluginProtocol() {
     const pluginDir = getPluginDir(id)
     if (!pluginDir) return new Response('Not found', { status: 404 })
 
-    const relativePath = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+    // A leading "@<key>/" segment is a cache-buster: the renderer imports a
+    // plugin as plugin://<id>/@<version>-<n>/main.js so a live reload gets a
+    // fresh ES module (Chromium caches modules by URL for the page's life),
+    // relative imports included. It names no folder.
+    const relativePath = decodeURIComponent(url.pathname).replace(/^\/+/, '').replace(/^@[^/]*\//, '')
     const resolved = path.resolve(pluginDir, relativePath)
 
     // Path-traversal guard: imports can reference sibling files (unlike

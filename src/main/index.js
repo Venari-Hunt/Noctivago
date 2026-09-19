@@ -12,6 +12,7 @@ import { registerPluginProtocol } from './plugins/protocol.js'
 import { startPluginMigration } from './plugins/migration.js'
 import { registerFreesoundPreviewProtocol } from './freesound/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
+import { initPluginAutoUpdate } from './plugins/autoUpdate.js'
 import { getSettings } from './settings.js'
 import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
 import { initThumbar } from './thumbar.js'
@@ -262,6 +263,7 @@ app.whenReady().then(() => {
   bootstrapDefaultPreset()
   const win = createWindow()
   initAutoUpdate(win)
+  initPluginAutoUpdate(win)
   initTray(win)
   initThumbar(win)
   initSleepTimer(win)

@@ -4,7 +4,7 @@ export function CorePluginsPage({ plugins, pluginsApi, optionPageIds, onOpenOpti
   return (
     <>
       <h3 className="settings-page-heading">Core plugins</h3>
-      <p className="settings-page-hint">Features that ship with Noctívago. Switch off the ones you don't use; changes apply after a restart.</p>
+      <p className="settings-page-hint">Features that ship with Noctívago. Switch off the ones you don't use; changes apply right away.</p>
       <ul className="settings-plugin-list">
         {plugins.map((p) => (
           <PluginRow

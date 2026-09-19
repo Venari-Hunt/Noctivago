@@ -21,8 +21,15 @@
 // allows it). Built for the Remix plugin's unsaved-changes leave prompt
 // (Yes/No/Don't ask again) - `onHide` alone can't do this, since it's a
 // fire-and-forget cleanup call, not a gate the switch itself waits on.
+//
+// A live plugin reload (core/PluginLoader.js) unregisters a tab with
+// { keepSlot: true }: a hidden placeholder keeps its place in the tab bar, and
+// registering the same id again puts the new button back there instead of at
+// the end.
 export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
   const tabs = new Map()
+  const slots = new Map()
+  const activateListeners = new Set()
   let activeId = null
 
   // async so a tab can veto leaving it (onBeforeHide, e.g. Remix's unsaved-
@@ -75,6 +82,7 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     }
     activeId = id
     tab.onShow?.()
+    for (const listener of activateListeners) listener(id)
   }
 
   function register({ id, title, mount, mountSticky, onShow, onHide, onBeforeHide, onDestroy }) {
@@ -85,7 +93,10 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     button.className = 'tab-button'
     button.textContent = title
     button.addEventListener('click', () => activate(id))
-    tabBarEl.appendChild(button)
+    const slot = slots.get(id)
+    if (slot?.isConnected) slot.replaceWith(button)
+    else tabBarEl.appendChild(button)
+    slots.delete(id)
 
     const section = document.createElement('section')
     section.className = 'tab-panel hidden'
@@ -107,10 +118,17 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     return () => unregister(id)
   }
 
-  function unregister(id) {
+  function unregister(id, { keepSlot = false } = {}) {
     const tab = tabs.get(id)
     if (!tab) return
     tab.onDestroy?.()
+    if (keepSlot) {
+      const slot = document.createElement('span')
+      slot.hidden = true
+      slot.dataset.tabSlot = id
+      tab.button.replaceWith(slot)
+      slots.set(id, slot)
+    }
     tab.button.remove()
     tab.section.remove()
     tab.stickySection?.remove()
@@ -122,5 +140,21 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     }
   }
 
-  return { register }
+  // A reload that never re-registers the tab (the new version dropped it)
+  // shouldn't leave a placeholder behind.
+  function dropSlot(id) {
+    slots.get(id)?.remove()
+    slots.delete(id)
+  }
+
+  return {
+    register,
+    unregister,
+    dropSlot,
+    getActiveId: () => activeId,
+    onActivate(listener) {
+      activateListeners.add(listener)
+      return () => activateListeners.delete(listener)
+    }
+  }
 }
