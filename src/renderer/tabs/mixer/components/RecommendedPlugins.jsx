@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { recommendedPlugins, installPlugins } from '../domain/recommendedPlugins.js'
 import { errorText } from '../../../settings/domain/errorText.js'
+import { syncPlugins } from '../../../core/PluginLoader.js'
 
 // One-time card at the top of the Mixer: the app starts with only the Mixer,
 // and this offers the official plugins in one click. Closing it (or
@@ -40,6 +41,8 @@ export function RecommendedPlugins({ api }) {
   async function install() {
     setPhase('installing')
     const res = await installPlugins(api, [...chosen], setProgress)
+    // Load them now: new tabs appear without a restart.
+    if (res.installed.length) await syncPlugins()
     setResult(res)
     setPhase('done')
     if (res.installed.length) api.plugins.dismissRecommended()
@@ -92,7 +95,7 @@ export function RecommendedPlugins({ api }) {
       {phase === 'done' && result && (
         <>
           {result.installed.length > 0 && (
-            <p className="recommended-plugins-intro">Installed. Restart Noctívago to load {result.installed.length === 1 ? 'it' : 'them'}.</p>
+            <p className="recommended-plugins-intro">Installed. {result.installed.length === 1 ? 'Its tab is' : 'Their tabs are'} ready in the tab bar.</p>
           )}
           {result.failed.map((f) => (
             <p key={f.id} className="recommended-plugins-error">
@@ -103,13 +106,8 @@ export function RecommendedPlugins({ api }) {
             <p className="recommended-plugins-intro">You can try again from Settings &gt; Community plugins &gt; Browse.</p>
           )}
           <div className="recommended-plugins-actions">
-            {result.installed.length > 0 && (
-              <button type="button" className="btn btn-primary btn-small" onClick={() => api.pluginStore.restartApp()}>
-                Restart now
-              </button>
-            )}
             <button type="button" className="btn btn-small" onClick={close}>
-              {result.installed.length > 0 ? 'Later' : 'Close'}
+              Close
             </button>
           </div>
         </>

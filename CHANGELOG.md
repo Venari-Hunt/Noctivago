@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.238 — Plugins update themselves, no restart needed
+
+- **Plugins now update on their own.** Noctívago checks for plugin updates shortly after it starts and every few hours. You can turn this off in Settings → Community plugins → "Update plugins automatically".
+- **Installing, updating, removing or switching a plugin on or off happens right away.** No more "Restart Noctívago". If you're using the plugin at that moment (its tab is open, you have unsaved changes, or an export is running), the change waits until you're done.
+- **Notifications show what happened in the background:** a plugin updated, an update waiting for you to finish, or a plugin that couldn't start. They stay until you close them, so you won't miss one that happened while you were away.
+
 ## v0.1.237 — Spectral repair
 
 - **Remove a sound hiding inside another one.** Remix (update it to 1.1.0 from Settings → Community plugins) has a new Spectral repair panel under the EQ: it shows the sound as a spectrogram (time across, pitch up), and you drag a box around a cough, a bird chirp or a phone buzz to turn just that down. Everything outside the box stays as it was. It's applied when you Save; switch the preview to Saved audio to hear it.

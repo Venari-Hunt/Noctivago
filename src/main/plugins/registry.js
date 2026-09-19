@@ -68,8 +68,8 @@ let cachedPlugins = null
 // Scans both plugin roots and merges into one id -> plugin list. Bundled
 // plugins win on id collision, so a dropped-in user folder can't shadow a
 // trusted bundled plugin's identity. Cached until the plugin store changes a
-// folder (invalidatePlugins) — the renderer still only picks up installs on
-// the next launch; plugins aren't hot-reloaded.
+// folder (invalidatePlugins); the renderer then re-syncs and swaps plugins
+// in and out live (renderer/core/PluginLoader.js).
 export function getPlugins() {
   if (!cachedPlugins) {
     const user = scanDir(userPluginsDir(), 'user')
@@ -92,27 +92,22 @@ function enablementOptions() {
   return { disabledIds: disabledPlugins, restrictedMode }
 }
 
-// Frozen the first time the renderer asks (at launch): toggles, Restricted
-// mode and store installs apply after a restart, so what the renderer loaded
-// and what main-process calls allow never disagree.
-let loadedIds = null
-
-// The plugins the renderer loads this session.
+// The plugins that should be running right now. Not frozen: toggles,
+// Restricted mode and installs apply live, the renderer re-syncs to this.
 export function getLoadablePlugins() {
-  if (!loadedIds) {
-    const options = enablementOptions()
-    loadedIds = new Set(getPlugins().filter((p) => pluginLoadState(p, options) === 'enabled').map((p) => p.id))
-  }
-  return getPlugins().filter((p) => loadedIds.has(p.id))
+  const options = enablementOptions()
+  return getPlugins().filter((p) => pluginLoadState(p, options) === 'enabled')
 }
 
+// Gate for main-process plugin code: a switched-off or restricted plugin's
+// Node code never runs.
 export function isPluginLoaded(id) {
-  return Boolean(loadedIds?.has(id))
+  return getLoadablePlugins().some((p) => p.id === id)
 }
 
 // Every installed plugin, for Settings > Core/Community plugins. `state` is
-// what the saved settings say now; `loaded` is what's running this session,
-// so the page can tell when a restart is needed.
+// what the saved settings say now; the renderer knows what's actually
+// running (a busy plugin's swap can be waiting).
 export function describePlugins() {
   const options = enablementOptions()
   return getPlugins().map((p) => ({

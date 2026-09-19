@@ -19,13 +19,13 @@ import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { suggestLoopPoints } from './ffmpeg/loopSuggest.js'
 import { extractSpectrogram } from './ffmpeg/spectrogram.js'
 import { exportMix } from './ffmpeg/exportMix.js'
-import { beginExport, endExport } from './exportState.js'
+import { beginExport, endExport, isExportInProgress } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
-import { pluginMigrationSettled } from './plugins/migration.js'
+import { pluginMigrationSettled, takeStartupNotices } from './plugins/migration.js'
 import * as pluginStore from './plugins/store.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode, dismissRecommendedPlugins } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -602,6 +602,11 @@ export function registerIpcHandlers() {
   ipcMain.handle('plugins:setEnabled', (_event, id, enabled) => setPluginEnabled(id, enabled))
   ipcMain.handle('plugins:setRestrictedMode', (_event, on) => setRestrictedMode(on))
   ipcMain.handle('plugins:dismissRecommended', () => dismissRecommendedPlugins())
+  ipcMain.handle('plugins:setAutoUpdate', (_event, on) => setAutoUpdatePluginsEnabled(on))
+  ipcMain.handle('plugins:takeStartupNotices', () => takeStartupNotices())
+  // A plugin is only swapped live while no export is running: Export's own
+  // UI lives in a plugin, and the export must never lose it mid-bake.
+  ipcMain.handle('plugins:isExportRunning', () => isExportInProgress())
 
   ipcMain.handle('plugin:invoke', (_event, pluginId, method, args) => invokePlugin(pluginId, method, args))
 

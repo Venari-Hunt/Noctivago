@@ -66,9 +66,13 @@ export interface PluginManifest {
  * }
  * ```
  *
- * The app constructs it once at startup, then awaits `onload()`. A plugin
- * that throws (in its constructor or `onload`) is logged and skipped; it
- * can't break the app or other plugins.
+ * The app constructs it at startup (or as soon as it's installed or switched
+ * on), then awaits `onload()`. Updates, removals and switching it off happen
+ * live: the app awaits `onunload()`, removes anything it left registered,
+ * and loads the new version. So `onunload()` should undo everything
+ * `onload()` did (listeners, timers, audio). A plugin that throws (in its
+ * constructor or `onload`) is logged, announced, and skipped; it can't break
+ * the app or other plugins. (Live loading: app 0.1.238+.)
  */
 export interface PluginClass {
   new (app: PluginApp, manifest: PluginManifest): PluginInstance
@@ -76,8 +80,15 @@ export interface PluginClass {
 
 export interface PluginInstance {
   onload?(): void | Promise<void>
-  /** Reserved for enable/disable and hot reload; not called by the app yet. */
+  /** Called before the plugin is unloaded: on an update, removal, or switch-off. */
   onunload?(): void | Promise<void>
+  /**
+   * Return true while unloading now would lose something (unsaved edits, a
+   * job in progress). The app then waits and retries instead of swapping in
+   * an update or switching the plugin off. It never unloads a plugin whose
+   * tab is on screen, or while an export runs, whatever this returns.
+   */
+  isBusy?(): boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +107,22 @@ export interface PluginApp {
      * it. Returns a function that removes it.
      */
     addPage(page: SettingsPageDefinition): () => void
+  }
+  notifications: {
+    /**
+     * Shows an in-app notification (bottom-left). Use it whenever the plugin
+     * does something the user didn't just ask for. Without timeoutMs it
+     * stays until dismissed. The title defaults to the plugin's name; a
+     * second call with the same key replaces the first.
+     */
+    show(options: {
+      message: string
+      title?: string
+      tone?: 'info' | 'success' | 'error'
+      key?: string
+      timeoutMs?: number
+      actions?: Array<{ label: string; onClick?: () => void }>
+    }): { close(): void }
   }
   /** The same API core uses (`window.noctivago`). */
   noctivago: NoctivagoApi
@@ -306,9 +333,9 @@ export interface NoctivagoApi {
         kind: 'core' | 'community'
         repo: string | null
         official: boolean
-        /** What the saved settings say; applies on restart. */
+        /** What the saved settings say. Applies live. */
         state: 'enabled' | 'disabled' | 'restricted'
-        /** Whether it's running this session. */
+        /** Same as state === 'enabled'; the renderer knows what's actually running. */
         loaded: boolean
       }>
     >
@@ -316,6 +343,20 @@ export interface NoctivagoApi {
     setRestrictedMode(on: boolean): Promise<any>
     /** Hides the Mixer's one-time Recommended plugins card for good. */
     dismissRecommended(): Promise<any>
+    /** Settings > Community plugins > "Update plugins automatically". */
+    setAutoUpdate(on: boolean): Promise<any>
+    /** What the startup plugin download did without being asked (read once). */
+    takeStartupNotices(): Promise<Array<{ kind: 'migrated'; names: string[] }>>
+    isExportRunning(): Promise<boolean>
+    /** The background updater installed or failed to install updates. */
+    onAutoUpdated(
+      callback: (result: {
+        updated: Array<{ id: string; name: string; from: string; to: string }>
+        failed: Array<{ id: string; name: string; error: string }>
+      }) => void
+    ): () => void
+    /** Plugin folders changed outside the renderer's own actions. */
+    onChanged(callback: (payload: object) => void): () => void
     /** Calls an exported function of a plugin's `mainProcess` module. */
     invoke(pluginId: string, method: string, ...args: any[]): Promise<any>
   }
@@ -328,7 +369,7 @@ export interface NoctivagoApi {
     readme(id: string): Promise<{ text: string; truncated: boolean }>
     install(id: string): Promise<{ version: string }>
     uninstall(id: string): Promise<{ ok: true }>
-    /** Relaunches the app; installs and removals take effect on restart. */
+    /** Relaunches the app. Plugin changes apply live, so this is rarely needed. */
     restartApp(): Promise<void>
   }
   export: {
