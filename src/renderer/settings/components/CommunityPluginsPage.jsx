@@ -5,7 +5,7 @@ import { Toggle } from './Toggle.jsx'
 import { PluginRow } from './PluginRow.jsx'
 import { BrowseModal } from './BrowseModal.jsx'
 
-export function CommunityPluginsPage({ plugins, restrictedMode, pluginsApi, store, optionPageIds, onOpenOptions }) {
+export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, pluginsApi, store, optionPageIds, onOpenOptions }) {
   const [confirmingUnrestrict, setConfirmingUnrestrict] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [updates, setUpdates] = useState({})
@@ -36,19 +36,32 @@ export function CommunityPluginsPage({ plugins, restrictedMode, pluginsApi, stor
     }
   }
 
+  // Returns whether the action worked, so Update all can count failures.
   async function run(id, label, action) {
     setBusy((b) => ({ ...b, [id]: label }))
     try {
       await action()
       setUpdates((u) => ({ ...u, [id]: undefined }))
       pluginsApi.markChanged()
+      return true
     } catch (err) {
       setCheckStatus(errorText(err))
+      return false
     } finally {
       setBusy((b) => ({ ...b, [id]: null }))
       pluginsApi.reload()
     }
   }
+
+  // One at a time: each install swaps a folder and reloads the plugin list.
+  async function updateAll() {
+    const ids = Object.keys(updates).filter((id) => updates[id])
+    let failed = 0
+    for (const id of ids) if (!(await run(id, 'Updating', () => store.install(id)))) failed++
+    setCheckStatus(failed ? `${failed} of ${ids.length} updates failed.` : `Updated ${ids.length} plugin${ids.length === 1 ? '' : 's'}.`)
+  }
+
+  const pendingUpdates = Object.values(updates).filter(Boolean).length
 
   return (
     <>
@@ -72,6 +85,9 @@ export function CommunityPluginsPage({ plugins, restrictedMode, pluginsApi, stor
         <button className="btn btn-primary" type="button" onClick={() => setBrowsing(true)}>Browse</button>
       </SettingItem>
       <SettingItem name="Check for updates" description={checkStatus || undefined}>
+        {pendingUpdates > 0 && (
+          <button className="btn btn-primary" type="button" onClick={updateAll}>Update all</button>
+        )}{' '}
         <button className="btn" type="button" disabled={!plugins.length} onClick={checkForUpdates}>Check for updates</button>
       </SettingItem>
 
@@ -99,6 +115,10 @@ export function CommunityPluginsPage({ plugins, restrictedMode, pluginsApi, stor
         <BrowseModal
           store={store}
           restrictedMode={restrictedMode}
+          described={allPlugins}
+          optionPageIds={optionPageIds}
+          onToggle={pluginsApi.setEnabled}
+          onOpenOptions={(id) => { setBrowsing(false); onOpenOptions(id) }}
           onChanged={() => { pluginsApi.markChanged(); pluginsApi.reload() }}
           onClose={() => setBrowsing(false)}
         />

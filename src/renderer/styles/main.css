@@ -1268,11 +1268,6 @@ main {
 }
 
 /* Settings > Community plugins > Browse (was the Plugins tab, plugins/plugin-store). */
-.plugin-store {
-  padding: 16px;
-  max-width: 900px;
-}
-
 .plugin-store-hint {
   margin: 0 0 12px;
   font-size: 12px;
@@ -1332,36 +1327,6 @@ main {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--bg, #111);
-}
-
-.plugin-store-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.plugin-store-card {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.plugin-store-card-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.plugin-store-card-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
 }
 
 .plugin-store-badge {
@@ -1565,6 +1530,243 @@ main {
 
 .settings-browse-modal {
   z-index: 10;
+}
+
+/* Browse window: list on the left, the chosen plugin on the right. */
+.store-browser-card {
+  width: min(920px, 96vw);
+  height: min(640px, 90vh);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.store-browser {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: 16px;
+}
+
+.store-list-pane,
+.store-detail-pane {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.store-list-pane {
+  padding-right: 4px;
+}
+
+.store-list-pane .plugin-store-toolbar {
+  margin-bottom: 8px;
+}
+
+.plugin-store-toolbar select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.store-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.store-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.store-list-item:hover {
+  background: var(--surface-alt);
+}
+
+.store-list-item.selected {
+  border-color: var(--accent);
+  background: var(--surface-alt);
+}
+
+.store-list-item-title .plugin-store-badge {
+  margin-left: 6px;
+}
+
+.store-list-item-desc {
+  font-size: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.store-detail-pane {
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+
+.store-detail-empty {
+  padding-top: 24px;
+}
+
+.store-detail-back {
+  display: none;
+  margin-bottom: 10px;
+}
+
+.store-detail-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.store-detail-title .plugin-store-badge {
+  font-size: 11px;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+.store-detail > .plugin-store-dim {
+  margin: 0 0 2px;
+}
+
+.store-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.store-detail-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.store-detail-rule {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+/* README text (components/Markdown.jsx). */
+.store-readme {
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.store-readme h3,
+.store-readme h4,
+.store-readme h5,
+.store-readme h6 {
+  margin: 16px 0 6px;
+}
+
+.store-readme p,
+.store-readme ul,
+.store-readme ol,
+.store-readme blockquote {
+  margin: 0 0 10px;
+}
+
+.store-readme ul,
+.store-readme ol {
+  padding-left: 20px;
+}
+
+.store-readme a {
+  color: var(--accent);
+}
+
+.store-readme code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  font-size: 12px;
+}
+
+.store-readme pre {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-alt);
+  overflow-x: auto;
+}
+
+.store-readme pre code {
+  padding: 0;
+  background: none;
+}
+
+.store-readme blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+}
+
+.store-readme hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.store-readme-table {
+  overflow-x: auto;
+  margin: 0 0 10px;
+}
+
+.store-readme table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.store-readme th,
+.store-readme td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+/* Narrow window: one pane at a time, with a Back button on the details. */
+@media (max-width: 640px) {
+  .store-browser {
+    grid-template-columns: 1fr;
+  }
+
+  .store-browser.has-selection .store-list-pane,
+  .store-browser:not(.has-selection) .store-detail-pane {
+    display: none;
+  }
+
+  .store-detail-pane {
+    border-left: none;
+    padding-left: 0;
+  }
+
+  .store-detail-back {
+    display: inline-block;
+  }
 }
 
 .watched-folder-list {

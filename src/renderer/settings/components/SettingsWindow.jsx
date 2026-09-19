@@ -69,6 +69,7 @@ export function SettingsWindow({ noctivago, onClose }) {
         return (
           <CommunityPluginsPage
             plugins={community}
+            allPlugins={described}
             restrictedMode={settings.restrictedMode}
             pluginsApi={pluginsApi}
             store={noctivago.pluginStore}
