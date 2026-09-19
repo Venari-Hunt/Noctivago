@@ -8,21 +8,9 @@ files:
 asarUnpack:
   - node_modules/ffmpeg-static/**
 extraResources:
-  - from: plugins
-    to: plugins
-    # hello-world and broken-plugin-example are developer examples/test
-    # fixtures, not features - they stay in the repo but not in releases.
-    filter:
-      - "**/*"
-      - "!hello-world/**"
-      - "!hello-react/**"
-      - "!broken-plugin-example/**"
-      # JSX source of built plugins - only their generated main.js ships.
-      - "!*/src/**"
   # yt-dlp.exe (scripts/download-ytdlp.mjs's postinstall download) - a plain
   # standalone .exe, never inside node_modules/asar to begin with, so
-  # extraResources (not asarUnpack) is the right mechanism, same as the
-  # plugins/ folder above.
+  # extraResources (not asarUnpack) is the right mechanism.
   - from: resources/bin/yt-dlp.exe
     to: bin/yt-dlp.exe
   # directories.buildResources (above) only feeds build-time assets like the

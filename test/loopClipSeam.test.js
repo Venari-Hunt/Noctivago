@@ -5,7 +5,6 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { loopLayout, clipToSource, sourceToClip } from '../plugins/editor/audio/loopLayout.js'
 
 // loopClip.js imports `app` from electron only to find userData. Under plain
 // `node --test` that import is redirected to a stub whose getPath points at a
@@ -77,15 +76,6 @@ describe('renderLoopClip seam', { skip: !fs.existsSync(ffmpeg) && 'bundled ffmpe
       if (!c.filters) {
         const start = samples[0] / SLOPE
         assert.ok(Math.abs(start - (c.loopStart + c.loopEnd) / 2) < 0.002, `start ${start}`)
-        // The Remix plugin's copy of the layout agrees with the real render
-        // everywhere outside the blend.
-        const layout = loopLayout(c.loopStart, c.loopEnd, c.crossfadeSeconds)
-        for (let k = 0; k < samples.length; k += 997) {
-          const t = k / RATE
-          if (t > layout.blendStart - 0.01 && t < layout.blendEnd + 0.01) continue
-          assert.ok(Math.abs(samples[k] / SLOPE - clipToSource(layout, t)) < 0.002, `t=${t}`)
-          assert.ok(Math.abs(sourceToClip(layout, clipToSource(layout, t)) - t) < 1e-9, `round trip t=${t}`)
-        }
       }
     })
   }

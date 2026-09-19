@@ -52,8 +52,8 @@ describe('validateManifest', () => {
     assert.equal(validateManifest({ ...valid, styles: 42 }).ok, false)
   })
 
-  test('every bundled plugin manifest passes', () => {
-    const root = path.join(HERE, '../plugins')
+  test('every dev-plugins/ fixture manifest passes', () => {
+    const root = path.join(HERE, '../dev-plugins')
     for (const dir of fs.readdirSync(root)) {
       const manifestPath = path.join(root, dir, 'manifest.json')
       if (!fs.existsSync(manifestPath)) continue

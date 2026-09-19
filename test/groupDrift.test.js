@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { busFluctuation, effectiveMemberFluctuation, applyGroupShotOverride, groupDriftMemberKey } from '../src/shared/groupDrift.js'
-import { applyGroupShotOverride as pluginApplyGroupShotOverride, simulateEvents } from '../plugins/export/simulate.js'
 
 const timing = { changeMinSeconds: 2, changeMaxSeconds: 4, transitionSeconds: 1 }
 const axis = (extra) => ({ enabled: true, fullyRandom: false, biasEnabled: true, min: -0.4, max: 0.6, bias: 0.1, ...timing, ...extra })
@@ -99,16 +98,6 @@ describe('applyGroupShotOverride', () => {
     assert.equal(out.pitchFullyRandom, false)
     assert.equal(out.pitchBiasEnabled, false)
   })
-
-  test('the export plugin\'s copy gives identical results', () => {
-    const cases = [
-      null,
-      { volume: axis({ perSound: true }) },
-      { pitch: axis({ fullyRandom: true }), pan: axis({ perSound: true, bias: 5 }) },
-      { volume: axis(), pan: axis() }
-    ]
-    for (const g of cases) assert.deepEqual(pluginApplyGroupShotOverride(scatter, g), applyGroupShotOverride(scatter, g))
-  })
 })
 
 describe('groupDriftMemberKey', () => {
@@ -123,27 +112,5 @@ describe('groupDriftMemberKey', () => {
     // a shared pan drift already did (see the effectiveMemberFluctuation
     // fix above) - this used to be a no-op key (a real gap this closes).
     assert.notEqual(a, groupDriftMemberKey(null))
-  })
-})
-
-describe('per-play pan in the export simulation', () => {
-  const entry = { playMode: 'scatter', loopStart: 0, loopEnd: 1, scatter: { minGapSeconds: 1, maxGapSeconds: 2, minPan: -0.5, maxPan: 0.25 } }
-
-  test('every event carries a pan inside the range', () => {
-    const events = simulateEvents({ entry, durationSeconds: 300 })
-    assert.ok(events.length > 50)
-    assert.ok(events.every((e) => e.panPosition >= -0.5 && e.panPosition <= 0.25))
-    assert.ok(new Set(events.map((e) => e.panPosition.toFixed(3))).size > 10)
-  })
-
-  test('no pan range -> every event centered', () => {
-    const events = simulateEvents({ entry: { ...entry, scatter: { minGapSeconds: 1, maxGapSeconds: 2 } }, durationSeconds: 60 })
-    assert.ok(events.every((e) => e.panPosition === 0))
-  })
-
-  test('fully random volume stays within 0..1 and varies', () => {
-    const events = simulateEvents({ entry: { ...entry, scatter: { minGapSeconds: 1, maxGapSeconds: 2, volumeFullyRandom: true } }, durationSeconds: 300 })
-    assert.ok(events.every((e) => e.volumeScale >= 0 && e.volumeScale <= 1))
-    assert.ok(Math.max(...events.map((e) => e.volumeScale)) - Math.min(...events.map((e) => e.volumeScale)) > 0.5)
   })
 })

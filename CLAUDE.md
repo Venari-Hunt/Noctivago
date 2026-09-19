@@ -12,7 +12,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `src/preload/index.js` — `window.noctivago` (`library`, `presets`, `audio`, `plugins`, `pluginStore`).
 - `src/shared/` — code/constants used by main and renderer.
 - `src/renderer/` — `main.js` bootstrap; `core/TabHost.js`, `core/PluginLoader.js`; `settings/` the Settings window (React; plugin toggles, Restricted mode, store Browse); `tabs/mixer/` the Mixer; `audio/` engine, sources, clip meters; `ui/` Mixer-only widgets.
-- `plugins/<id>/` — Remix (`editor/`), Export, Composite, Browse Sounds, Community.
+- Official plugins (Remix, Export, Composite, Browse Sounds, Community) live in their own repos, `Venari-Hunt/noctivago-<id>`, and install from the store; `dev-plugins/` holds dev-only test fixtures.
 
 ## Docs (read only the one a task touches)
 

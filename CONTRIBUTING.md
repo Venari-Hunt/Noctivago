@@ -19,11 +19,13 @@ npm install
 npm run dev
 ```
 
-`npm run dev` first builds any plugin written in JSX (`plugins/<id>/src/`)
-into its `main.js`, plus any React "islands" (`plugins/<id>/src/islands/*.jsx`,
-like Remix's filter sliders) into `plugins/<id>/islands/`. While editing one, run `npm run dev:plugins` in a
-second terminal to rebuild on save, then reload the app
-window. See `docs/plugins.md` and the `plugins/hello-react/` example.
+The app ships no plugins. The official ones (Remix, Export, Composite,
+Browse Sounds, Community) each live in their own repo,
+`Venari-Hunt/noctivago-<id>`, and install from Settings > Community plugins
+> Browse. To work on one, clone its repo, `npm run build`, and copy
+`manifest.json`, `main.js` and `styles.css` into
+`%APPDATA%\noctivago-dev\plugins\<id>\`. New plugins start from
+`Venari-Hunt/noctivago-sample-plugin`. See `docs/plugins.md`.
 
 Two environment quirks show up in fresh shells on some Windows setups
 (both needed before `npm`/`node`/Electron will work):
@@ -68,7 +70,7 @@ platform) exists; if not, run `node node_modules/ffmpeg-static/install.js`.
   for a specific bug, a subtle invariant.
 - **Don't add speculative abstraction.** Prefer three similar lines over a
   premature helper; don't design for hypothetical future requirements.
-- **Plugins are self-contained.** A plugin (`plugins/<id>/`) cannot import
+- **Plugins are self-contained.** A plugin (its own repo) cannot import
   files outside its own directory — the `plugin://` protocol enforces this
   with a path-traversal guard. If a plugin needs something core already
   has (e.g. `AudioEngine.js`, waveform drawing code), it keeps its own

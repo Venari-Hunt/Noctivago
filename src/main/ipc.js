@@ -22,8 +22,9 @@ import { beginExport, endExport } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
+import { pluginMigrationSettled } from './plugins/migration.js'
 import * as pluginStore from './plugins/store.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode, dismissRecommendedPlugins } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -578,10 +579,16 @@ export function registerIpcHandlers() {
     return { ok: true, entry: library.listSounds().find((s) => s.id === id) }
   })
 
-  ipcMain.handle('plugins:list', () => getLoadablePlugins().map((p) => ({ id: p.id, manifest: p.manifest })))
+  // Waits for the one-time official-plugin download (plugins/migration.js),
+  // so those plugins load this session.
+  ipcMain.handle('plugins:list', async () => {
+    await pluginMigrationSettled()
+    return getLoadablePlugins().map((p) => ({ id: p.id, manifest: p.manifest }))
+  })
   ipcMain.handle('plugins:describe', () => describePlugins())
   ipcMain.handle('plugins:setEnabled', (_event, id, enabled) => setPluginEnabled(id, enabled))
   ipcMain.handle('plugins:setRestrictedMode', (_event, on) => setRestrictedMode(on))
+  ipcMain.handle('plugins:dismissRecommended', () => dismissRecommendedPlugins())
 
   ipcMain.handle('plugin:invoke', (_event, pluginId, method, args) => invokePlugin(pluginId, method, args))
 

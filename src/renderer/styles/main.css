@@ -1845,3 +1845,80 @@ main {
   gap: 6px;
   margin-top: 10px;
 }
+
+/* Recommended plugins card (tabs/mixer/components/RecommendedPlugins.jsx):
+   one-time offer of the official plugins at the top of the Mixer. */
+.recommended-plugins {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.recommended-plugins-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.recommended-plugins h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.recommended-plugins-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.recommended-plugins-close:hover {
+  color: var(--text);
+}
+
+.recommended-plugins-intro,
+.recommended-plugins-error {
+  margin: 6px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.recommended-plugins-error {
+  color: var(--danger);
+}
+
+.recommended-plugins-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.recommended-plugins-list label {
+  display: grid;
+  grid-template-columns: auto 110px 1fr;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.recommended-plugins-name {
+  font-weight: 600;
+}
+
+.recommended-plugins-desc {
+  color: var(--text-dim);
+}
+
+.recommended-plugins-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}

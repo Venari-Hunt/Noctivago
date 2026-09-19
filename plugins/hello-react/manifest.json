@@ -1,9 +1,0 @@
-{
-  "id": "hello-react",
-  "name": "Hello React",
-  "version": "0.1.0",
-  "minAppVersion": "0.2.0",
-  "description": "Example plugin written in React/JSX, built to main.js by scripts/build-plugins.mjs.",
-  "author": "Noctívago",
-  "main": "main.js"
-}

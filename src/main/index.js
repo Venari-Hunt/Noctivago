@@ -9,6 +9,7 @@ import { registerIpcHandlers } from './ipc.js'
 import { getPlaybackPathForId, getLoopClipPathForId, listSounds, migrateLoopClipFormat, detectFreesoundSources } from './library.js'
 import { ensureDefaultPreset, getSoundOverride } from './presets.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
+import { startPluginMigration } from './plugins/migration.js'
 import { registerFreesoundPreviewProtocol } from './freesound/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
 import { getSettings } from './settings.js'
@@ -254,6 +255,8 @@ app.whenReady().then(() => {
   registerFreesoundPreviewProtocol()
   grantMicrophonePermission()
   registerIpcHandlers()
+  // Before initAutoUpdate, which overwrites lastRunVersion.
+  startPluginMigration()
   migrateLoopClipFormat()
   detectFreesoundSources()
   bootstrapDefaultPreset()

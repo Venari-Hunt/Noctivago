@@ -12,13 +12,11 @@
   "private": true,
   "scripts": {
     "postinstall": "node scripts/download-ytdlp.mjs",
-    "dev": "npm run build:plugins && electron-vite dev",
-    "build": "npm run build:plugins && electron-vite build",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
     "build:win": "npm run build && electron-builder --win",
     "release:win": "npm run build && electron-builder --win --publish always",
-    "test": "node --test",
-    "build:plugins": "node scripts/build-plugins.mjs",
-    "dev:plugins": "node scripts/build-plugins.mjs --watch"
+    "test": "node --test"
   },
   "dependencies": {
     "electron-log": "^5.4.4",
