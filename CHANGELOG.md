@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.236 — Smaller files for recordings and downloads
+
+- **Recordings, links, YouTube downloads, Browse Sounds imports and new Composites now take about a third to half the disk space.** They're saved as lossless FLAC instead of WAV, so they sound exactly the same. Sounds already in your library are left as they are.
+- **Fixed: deleting a duplicated sound could break the other copy.** A duplicate shares its audio file with the sound it was copied from, and deleting either one deleted that file, so the other copy went missing. The file is now kept until the last sound using it is deleted.
+
 ## v0.1.235 — Plugins you choose, a new Settings window, and a Clip report
 
 - **Remix, Export, Composite, Browse Sounds and Community are now plugins you download.** If you already use them, nothing changes: the app installs them for you on first launch after this update. A fresh install starts with just the Mixer and an "Add the extras" card that installs them in one click.

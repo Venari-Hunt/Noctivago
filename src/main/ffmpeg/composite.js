@@ -3,6 +3,16 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { runFfmpegToFile } from './runFfmpeg.js'
 import { renderClipToPath } from './loopClip.js'
+import { STORED_AUDIO_ARGS } from './storedAudio.js'
+
+// New composites are FLAC (storedAudio.js). A rebake writes over the stored
+// file in place, so an older .wav composite stays WAV. The container is
+// explicit because ffmpeg writes to a ".tmp" path it can't infer it from.
+export function outputFormatArgs(outputPath) {
+  return path.extname(outputPath).toLowerCase() === '.flac'
+    ? [...STORED_AUDIO_ARGS, '-f', 'flac']
+    : ['-c:a', 'pcm_s16le', '-f', 'wav']
+}
 
 // The Composite feature (a new tab, per the owner's own direction): bakes
 // two or more existing sounds - each already trimmed/filtered/speed-shaped
@@ -112,19 +122,14 @@ export async function renderComposite({ members, outputPath }) {
       `${mixLabels.join('')}amix=inputs=${n}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=disabled[out]`
     )
 
-    // -f wav is required here (not needed when writing straight to a real
-    // .wav path elsewhere in this codebase) because the .tmp-then-rename
-    // safety pattern means ffmpeg's own output path ends in ".tmp", not
-    // ".wav" - without an explicit format, ffmpeg tries to infer the
-    // container from the file extension and fails outright on an
-    // unrecognized one. Caught live: the first real bake attempt failed
-    // with "Unable to choose an output format" before this was added.
+    // outputFormatArgs names the container: the .tmp-then-rename pattern
+    // means ffmpeg can't infer it from the output path.
     const tmpOutPath = `${outputPath}.tmp`
     await runFfmpegToFile([
       '-y', ...inputArgs,
       '-filter_complex', graphParts.join(';'),
       '-map', '[out]',
-      '-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2', '-f', 'wav',
+      ...outputFormatArgs(outputPath), '-ar', '44100', '-ac', '2',
       tmpOutPath
     ])
     fs.renameSync(tmpOutPath, outputPath)

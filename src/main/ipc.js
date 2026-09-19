@@ -41,6 +41,7 @@ import { setThumbarPlaying } from './thumbar.js'
 import { watchNewFolder, unwatchFolder } from './watchFolders.js'
 import { isFreesoundAvailable, searchSounds } from './freesound/client.js'
 import { isYouTubeSearchAvailable, searchYouTube } from './ytdlp/search.js'
+import { STORED_AUDIO_EXT } from './ffmpeg/storedAudio.js'
 
 // Turns a preset name into a valid Windows folder/file name for
 // export:pickDestination's auto-created per-run subfolder - strips
@@ -550,7 +551,7 @@ export function registerIpcHandlers() {
 
     const tmpDir = path.join(app.getPath('userData'), 'export-tmp')
     fs.mkdirSync(tmpDir, { recursive: true })
-    const tmpOutputPath = path.join(tmpDir, `${crypto.randomUUID()}.wav`)
+    const tmpOutputPath = path.join(tmpDir, `${crypto.randomUUID()}${STORED_AUDIO_EXT}`)
     const result = await renderComposite({ members: resolved, outputPath: tmpOutputPath })
     if (!result.ok) return result
 

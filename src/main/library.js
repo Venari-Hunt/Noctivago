@@ -8,7 +8,8 @@ import { runFfmpegToFile } from './ffmpeg/runFfmpeg.js'
 import { resolveFfmpegPath } from './ffmpeg/ffmpegPath.js'
 import { runYtDlp } from './ytdlp/runYtDlp.js'
 import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
-import { downloadPreviewToWav } from './freesound/download.js'
+import { downloadPreviewAudio } from './freesound/download.js'
+import { STORED_AUDIO_EXT, STORED_AUDIO_ARGS } from './ffmpeg/storedAudio.js'
 import { getSoundCredits, trimDescription } from './freesound/client.js'
 import { parseFreesoundFileName } from '../shared/credits.js'
 import { getSettings } from './settings.js'
@@ -613,15 +614,15 @@ export async function addRecordedSound({ name, buffer }) {
   fs.mkdirSync(tmpDir, { recursive: true })
   const id = crypto.randomUUID()
   const webmPath = path.join(tmpDir, `${id}.webm`)
-  const wavPath = path.join(tmpDir, `${id}.wav`)
+  const audioPath = path.join(tmpDir, `${id}${STORED_AUDIO_EXT}`)
   fs.writeFileSync(webmPath, Buffer.from(buffer))
   try {
-    await runFfmpegToFile(['-y', '-i', webmPath, wavPath])
-    return addSound({ path: wavPath, name, keepCopy: true })
+    await runFfmpegToFile(['-y', '-i', webmPath, ...STORED_AUDIO_ARGS, audioPath])
+    return addSound({ path: audioPath, name, keepCopy: true })
   } finally {
     try {
       if (fs.existsSync(webmPath)) fs.unlinkSync(webmPath)
-      if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+      if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath)
     } catch {
       // best-effort cleanup, same as composite:create's own tmp-file handling
     }
@@ -659,19 +660,19 @@ const DOWNLOAD_RW_TIMEOUT_MICROSECONDS = 30_000_000 // 30s
 async function downloadDirectAudio(parsed, { maxSeconds = 0, onProgress } = {}) {
   const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
   fs.mkdirSync(tmpDir, { recursive: true })
-  const wavPath = path.join(tmpDir, `${crypto.randomUUID()}.wav`)
+  const audioPath = path.join(tmpDir, `${crypto.randomUUID()}${STORED_AUDIO_EXT}`)
   const args = ['-y', '-rw_timeout', String(DOWNLOAD_RW_TIMEOUT_MICROSECONDS), '-i', parsed.toString(), '-vn']
   // -t as an output option stops muxing (and pulling the input stream) at
   // maxSeconds - so a link to a 10-hour stream only pulls the first N minutes.
   if (maxSeconds > 0) args.push('-t', String(maxSeconds))
-  args.push(wavPath)
+  args.push(...STORED_AUDIO_ARGS, audioPath)
   await runFfmpegToFile(args, {
     onProgress:
       maxSeconds > 0 && onProgress
         ? (sec) => onProgress({ type: 'progress', percent: Math.max(0, Math.min(100, (sec / maxSeconds) * 100)) })
         : undefined
   })
-  return wavPath
+  return audioPath
 }
 
 // yt-dlp downloads + extracts to a %(ext)s-templated name (its own
@@ -691,7 +692,7 @@ async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress } = {}) {
   const outputTemplate = path.join(tmpDir, `${id}.%(ext)s`)
   const cookiesBrowser = getSettings().ytDlpCookiesBrowser
 
-  const args = ['--no-playlist', '-x', '--audio-format', 'wav', '--ffmpeg-location', resolveFfmpegPath(), '-o', outputTemplate, '--newline']
+  const args = ['--no-playlist', '-x', '--audio-format', 'flac', '--postprocessor-args', 'ExtractAudio:-sample_fmt s16', '--ffmpeg-location', resolveFfmpegPath(), '-o', outputTemplate, '--newline']
   // "*0-N" downloads only the first N seconds of the source rather than the
   // whole thing - verified against the real bundled yt-dlp with -x audio
   // extraction before shipping.
@@ -729,16 +730,16 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
   const cap = Number.isFinite(maxSeconds) && maxSeconds > 0 ? Math.round(maxSeconds) : 0
   if (cap > 0) onProgress?.({ type: 'step', message: `Limiting the download to the first ${Math.round(cap / 60)} min.` })
 
-  let wavPath
+  let audioPath
   let usedYtDlp = false
   try {
     onProgress?.({ type: 'step', message: 'Trying a direct audio download…' })
-    wavPath = await downloadDirectAudio(parsed, { maxSeconds: cap, onProgress })
+    audioPath = await downloadDirectAudio(parsed, { maxSeconds: cap, onProgress })
   } catch (directErr) {
     if (!isYtDlpAvailable()) throw directErr
     try {
       onProgress?.({ type: 'step', message: 'Not a direct audio file — handing it to yt-dlp (YouTube / video sites)…' })
-      wavPath = await downloadViaYtDlp(parsed.toString(), { maxSeconds: cap, onProgress })
+      audioPath = await downloadViaYtDlp(parsed.toString(), { maxSeconds: cap, onProgress })
       usedYtDlp = true
     } catch (ytDlpErr) {
       throw new Error(`Couldn't download that link directly (${directErr.message}), and yt-dlp also failed: ${ytDlpErr.message}`)
@@ -751,14 +752,14 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
     const fallbackName =
       (usedYtDlp ? null : decodeURIComponent(path.basename(parsed.pathname)).replace(/\.[^.]+$/, '')) || 'Downloaded audio'
     return addSound({
-      path: wavPath,
+      path: audioPath,
       name: name || fallbackName,
       keepCopy: true,
       source: { type: 'url', url: parsed.toString(), importedAt: Date.now() }
     })
   } finally {
     try {
-      if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+      if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath)
     } catch {
       // best-effort cleanup, same as addRecordedSound's own
     }
@@ -775,11 +776,11 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
 // needs - see SoundRow.js for where it's surfaced.
 export async function addSoundFromFreesound({ freesoundId, name, username, license, pageUrl, previewUrl, description, tags }, onProgress) {
   onProgress?.({ type: 'step', message: 'Downloading preview from Freesound…' })
-  const wavPath = await downloadPreviewToWav(previewUrl)
+  const audioPath = await downloadPreviewAudio(previewUrl)
   try {
     onProgress?.({ type: 'step', message: 'Adding it to your library…' })
     return addSound({
-      path: wavPath,
+      path: audioPath,
       name: name || 'Freesound sound',
       keepCopy: true,
       source: {
@@ -796,7 +797,7 @@ export async function addSoundFromFreesound({ freesoundId, name, username, licen
     })
   } finally {
     try {
-      if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+      if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath)
     } catch {
       // best-effort cleanup, same as addSoundFromUrl's own
     }
@@ -1135,7 +1136,10 @@ export async function relink(id) {
 export function remove(id) {
   const sounds = store.get('sounds')
   const entry = sounds.find((s) => s.id === id)
-  if (entry && entry.storageMode === 'copied' && entry.storedFileName) {
+  // A duplicate (duplicateSound) shares its original's stored copy, so the
+  // file is only deleted once no other sound uses it.
+  const stillUsed = entry && sounds.some((s) => s.id !== id && s.storageMode === 'copied' && s.storedFileName === entry.storedFileName)
+  if (entry && entry.storageMode === 'copied' && entry.storedFileName && !stillUsed) {
     const filePath = path.join(soundsDir(), entry.storedFileName)
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
   }
