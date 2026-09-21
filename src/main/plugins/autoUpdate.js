@@ -2,6 +2,7 @@ import { getPlugins } from './registry.js'
 import { listCatalog, checkLatest, install } from './store.js'
 import { canInstallFromStore } from '../../shared/pluginEnablement.js'
 import { getSettings } from '../settings.js'
+import { isTransient } from '../../shared/transientErrors.js'
 
 // Keeps installed plugins current without being asked (Settings > Community
 // plugins > "Update plugins automatically", on by default). Checks a little
@@ -20,7 +21,11 @@ function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
 }
 
-// Returns { updated: [{ id, name, from, to }], failed: [{ id, name, error }] }.
+// Returns { updated: [{ id, name, from, to }], failed: [{ id, name, error }],
+// postponed: [{ id, name, error }] }. `postponed` holds the ones that failed
+// for a reason the next check will probably not hit (a 5xx, a rate limit, a
+// dropped connection), already retried inside store.js; `failed` holds the
+// ones that say something real, like a version this app can't run.
 // Plugins not in the store list (hand-dropped folders, dev fixtures) and ones
 // Restricted mode would refuse are skipped.
 export async function updateInstalledPlugins() {
@@ -29,6 +34,7 @@ export async function updateInstalledPlugins() {
   const { restrictedMode } = getSettings()
   const updated = []
   const failed = []
+  const postponed = []
   for (const plugin of getPlugins()) {
     const entry = byId.get(plugin.id)
     if (plugin.source !== 'user' || !entry) continue
@@ -40,16 +46,23 @@ export async function updateInstalledPlugins() {
       const { version } = await install(plugin.id)
       updated.push({ id: plugin.id, name: entry.name, from, to: version })
     } catch (err) {
-      failed.push({ id: plugin.id, name: entry.name, error: err.message })
+      const bucket = isTransient(err) ? postponed : failed
+      bucket.push({ id: plugin.id, name: entry.name, error: err.message })
     }
   }
-  return { updated, failed }
+  return { updated, failed, postponed }
 }
 
 async function check() {
   if (!getSettings().autoUpdatePlugins) return
   try {
     const result = await updateInstalledPlugins()
+    // A blip that survived store.js's own retries gets the same treatment as
+    // the whole list being unreachable below: logged, and left for the next
+    // check. Telling someone their plugin "couldn't update" because GitHub
+    // was briefly slow is noise they can't act on (owner hit exactly this on
+    // 2026-09-21 - a single 504 on a manifest.json).
+    for (const one of result.postponed) console.warn(`Plugin auto-update for "${one.id}" will retry: ${one.error}`)
     if (result.updated.length || result.failed.length) send('plugins:autoUpdated', result)
   } catch (err) {
     // Offline or the list is unreachable: say nothing, try again next time.

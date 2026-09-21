@@ -15,6 +15,7 @@ import {
   pickCompatibleVersion
 } from '../../shared/pluginStore.js'
 import { isOfficialRepo, canInstallFromStore } from '../../shared/pluginEnablement.js'
+import { isTransientStatus, markTransient, RETRY_DELAYS_MS } from '../../shared/transientErrors.js'
 import { getSettings } from '../settings.js'
 
 // The in-app plugin store, Obsidian-style: a reviewed list file names each
@@ -62,12 +63,32 @@ function repoVersionsUrl(repo) {
   return base ? `${base}/${repo}/versions.json` : versionsUrl(repo)
 }
 
+// A request that has stalled this long is treated as a blip and retried.
+// Nothing here is large - a manifest, a list, a plugin's own few files.
+const REQUEST_TIMEOUT_MS = 30 * 1000
+
+// Retries the failures GitHub recovers from on its own (a 5xx, a rate limit,
+// a dropped connection, a stall) before giving up. Without this a single
+// GitHub 504 on a manifest.json was enough to fail a whole background
+// auto-update and put a red notification in front of the user, for a URL
+// that answered fine a second later (seen 2026-09-21).
 async function request(url) {
-  try {
-    return await fetch(url, { cache: 'no-store' })
-  } catch (err) {
-    throw new Error(`Couldn't reach ${new URL(url).host} (${err.message})`)
+  let lastError = null
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) await sleep(RETRY_DELAYS_MS[attempt - 1])
+    try {
+      const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (!isTransientStatus(res.status)) return res
+      lastError = markTransient(new Error(`Download failed (HTTP ${res.status}) for ${url}`))
+    } catch (err) {
+      lastError = markTransient(new Error(`Couldn't reach ${new URL(url).host} (${err.message})`))
+    }
   }
+  throw lastError
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function download(url) {
