@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.242 — A YouTube import that fails now says what is missing
+
+- **Fixed: if antivirus removes the YouTube downloader from the install, importing a link now says so.** The downloader (yt-dlp.exe) ships inside the installer, but antivirus software quarantines it by mistake fairly often. When that happened, a YouTube link failed with a message about the link not being an audio file, which blamed the link instead of the missing file — and Freesound kept working, so nothing pointed at the real cause. Both the Add-from-link dialog and Browse Sounds' YouTube search now name the missing file and tell you to check your antivirus quarantine.
+
 ## v0.1.241 — Sound Group badges you can actually tell apart
 
 - **Fixed: the color-per-Sound-Group badge often gave two groups of the same preset the same color.** Each group's badge was tinted by turning its hidden id into a color at random, with nothing stopping two groups in one preset landing on near-identical shades — the "Rain Inside" preset drew three greens, so the feature looked like it had never worked, while the same version on another machine looked correctly varied. Badge colors are now picked knowing about each other: the groups you can see at once always get clearly different colors, and they stay the same between sessions. Badges are also a little stronger against the background.

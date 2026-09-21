@@ -784,7 +784,21 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
     onProgress?.({ type: 'step', message: 'Trying a direct audio download…' })
     audioPath = await downloadDirectAudio(parsed, { maxSeconds: cap, onProgress })
   } catch (directErr) {
-    if (!isYtDlpAvailable()) throw directErr
+    // yt-dlp.exe ships inside the installer, so "missing" in a real install
+    // means something removed it - in practice an antivirus, which flags it
+    // often enough that yt-dlp documents it themselves. Reporting directErr
+    // here blamed the wrong thing entirely: for a YouTube link that error is
+    // the *direct HTTP download*'s complaint ("that isn't an audio file"),
+    // which reads like the link is bad. Owner hit exactly this shape on a
+    // second PC (2026-09-21) - Freesound imports fine, YouTube fails with
+    // nothing actionable - and it could not be diagnosed remotely because
+    // the failure never named the real cause.
+    if (!isYtDlpAvailable()) {
+      throw new Error(
+        'The YouTube downloader (yt-dlp.exe) is missing from this install, so only direct links to audio files can be imported. ' +
+        'Antivirus software often quarantines it by mistake — check its quarantine and allow it, then reinstall Noctívago.'
+      )
+    }
     try {
       onProgress?.({ type: 'step', message: 'Not a direct audio file — handing it to yt-dlp (YouTube / video sites)…' })
       audioPath = await downloadViaYtDlp(parsed.toString(), {

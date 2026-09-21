@@ -36,7 +36,15 @@ export function isYouTubeSearchAvailable() {
 }
 
 export async function searchYouTube({ query, page = 1, pageSize = 12 } = {}) {
-  if (!isYtDlpAvailable()) return { ok: false, error: 'YouTube search needs yt-dlp, which is missing from this build.' }
+  // Same wording as library.js's addSoundFromUrl - "missing from this build"
+  // pointed at the wrong culprit, since the installer does ship it; on a real
+  // install something removed it, usually antivirus.
+  if (!isYtDlpAvailable()) {
+    return {
+      ok: false,
+      error: 'The YouTube downloader (yt-dlp.exe) is missing from this install. Antivirus software often quarantines it by mistake — check its quarantine and allow it, then reinstall Noctívago.'
+    }
+  }
   const q = (query ?? '').trim()
   if (!q) return { ok: true, results: [], hasMore: false }
 
