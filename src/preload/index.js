@@ -95,6 +95,10 @@ const api = {
     addSound: (payload) => ipcRenderer.invoke('library:addSound', payload),
     addRecordedSound: (payload) => ipcRenderer.invoke('library:addRecordedSound', payload),
     addSoundFromUrl: (payload) => ipcRenderer.invoke('library:addSoundFromUrl', payload),
+    // Stops a link download in flight. A YouTube import can run for minutes
+    // (YouTube throttles long uploads to roughly playback speed), so it has
+    // to be interruptible. Resolves true if something was actually running.
+    cancelAddSoundFromUrl: () => ipcRenderer.invoke('library:cancelAddSoundFromUrl'),
     // Progress while a link downloads: { type:'step'|'status', message } or
     // { type:'progress', percent } (0..100). Returns an unsubscribe fn.
     onAddSoundFromUrlProgress: (callback) => {
