@@ -1,4 +1,4 @@
-import { createSoundRow } from './SoundRow.js'
+import { createSoundRow, assignGroupColorSlots } from './SoundRow.js'
 
 export const SORT_MODES = [
   { value: 'name-asc', label: 'Name (A-Z)' },
@@ -207,6 +207,10 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
   // "No grouping, nothing playing" list to reorder, matching how most file
   // explorers don't support a fully custom order combined with grouping.
   const draggable = viewState.sortMode === 'custom' && viewState.groupMode === 'none' && !nowPlaying
+  // One pass over the preset's whole group list, so the badge colors are
+  // picked knowing about each other (see SoundRow.js's assignGroupColorSlots)
+  // - a per-row decision can't tell that two groups came out the same color.
+  const groupColorSlots = assignGroupColorSlots(playbackState.groups)
 
   function appendRow(entry) {
     const included = playbackState.included.has(entry.id)
@@ -223,9 +227,10 @@ export function renderSoundList(listEl, emptyStateEl, entries, playbackState, vi
     const soundGroup = playbackState.groups?.find((g) => g.soundIds.includes(entry.id)) ?? null
     const groupName = soundGroup?.name ?? null
     const groupId = soundGroup?.id ?? null
+    const groupColorSlot = groupId != null ? (groupColorSlots.get(groupId) ?? null) : null
     const selectMode = Boolean(viewState.selectMode)
     const selected = selectMode && Boolean(viewState.selectedIds?.has(entry.id))
-    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName, groupId, selectMode, selected }, draggable, callbacks, allTags))
+    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName, groupId, groupColorSlot, selectMode, selected }, draggable, callbacks, allTags))
   }
 
   function appendHeader(label) {
