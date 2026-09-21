@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.240 — No more false plugin-update alarms
+
+- **Fixed: a plugin could report "Couldn't update automatically" when nothing was actually wrong.** If GitHub was briefly slow or busy, the background update check gave up on the first try and told you about it. It now waits a moment and tries again, and if it still can't get through it simply waits for the next check instead of interrupting you. Installing or checking for updates yourself still tells you straight away if something fails.
+
 ## v0.1.239 — YouTube downloads you can watch and stop
 
 - **A YouTube download now shows real progress and how long it has left.** It used to sit on one line saying nothing for minutes, which made it look stuck. YouTube deliberately limits how fast long videos download — roughly the speed you would play them at — so a 10-minute clip really does take about five minutes; now you can see that happening.
