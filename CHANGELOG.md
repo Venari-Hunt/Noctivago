@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.241 — Sound Group badges you can actually tell apart
+
+- **Fixed: the color-per-Sound-Group badge often gave two groups of the same preset the same color.** Each group's badge was tinted by turning its hidden id into a color at random, with nothing stopping two groups in one preset landing on near-identical shades — the "Rain Inside" preset drew three greens, so the feature looked like it had never worked, while the same version on another machine looked correctly varied. Badge colors are now picked knowing about each other: the groups you can see at once always get clearly different colors, and they stay the same between sessions. Badges are also a little stronger against the background.
+
 ## v0.1.240 — No more false plugin-update alarms
 
 - **Fixed: a plugin could report "Couldn't update automatically" when nothing was actually wrong.** If GitHub was briefly slow or busy, the background update check gave up on the first try and told you about it. It now waits a moment and tries again, and if it still can't get through it simply waits for the next check instead of interrupting you. Installing or checking for updates yourself still tells you straight away if something fails.

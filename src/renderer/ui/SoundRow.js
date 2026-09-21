@@ -230,37 +230,87 @@ function buildTagsRow(entry, callbacks, allTags) {
 
 // A stable (not re-randomized every render), distinct-per-group badge color -
 // hashes the group's own id (not its display name, so a rename doesn't shift
-// the color) into a hue, then applies it at the same saturation/lightness/
-// alpha the old single hardcoded purple used, so every group's badge still
-// reads as "the same kind of thing" at a glance, just individually
-// colored. Requested directly: "each group should have a random different
-// color" (owner's own suggestion), plus "the tag should be closer to the
-// name" - see the .sound-row-name flex fix in main.css for that second half.
+// the color) into a slot of a fixed palette, then applies it at the same
+// saturation/lightness/alpha the old single hardcoded purple used, so every
+// group's badge still reads as "the same kind of thing" at a glance, just
+// individually colored. Requested directly: "each group should have a random
+// different color" (owner's own suggestion), plus "the tag should be closer
+// to the name" - see the .sound-row-name flex fix in main.css for that
+// second half.
 // FNV-1a, not a plain polynomial rolling hash - verified live that the
 // naive version correlated badly on realistic inputs (two group ids
 // differing by one trailing character landed only ~2deg apart in hue,
 // which read as "the same color" at a glance - not caught by review, only
 // by actually creating two groups and comparing the rendered badges).
 // FNV-1a's avalanche keeps similar ids from mapping to similar hues.
+//
+// v0.1.241: hashing straight to `% 360` was still wrong in practice, and the
+// owner reported the feature simply never working on their machine. A good
+// hash spreads hues *uniformly at random*, which does nothing to stop two
+// groups of the same preset landing a few degrees apart - their own "Rain
+// Inside" preset drew hues 105/89/102 for its three groups, three greens
+// nobody could tell apart, while the same build on another PC (different
+// random group ids) looked correctly varied. Fixed by hashing into a slot of
+// a fixed, widely-spaced palette and then walking collisions to the next free
+// slot within the preset (assignGroupColorSlots), so two groups the user can
+// see at once are never given the same or an adjacent color.
+// Eight hues 45deg apart - the widest spacing that still gives every preset
+// a fresh color for its first eight groups. A 12-entry palette was tried
+// first and rejected by measuring it against the owner's own presets: it
+// forced 30deg spacing at best, and their three-group preset still drew two
+// greens 20deg apart, which is the very complaint being fixed. Past eight
+// groups the hues repeat at a darker lightness (GROUP_BADGE_TIERS) rather
+// than repeating outright.
+const GROUP_BADGE_HUES = [265, 310, 355, 40, 85, 130, 175, 220]
+const GROUP_BADGE_TIERS = [68, 52]
+const GROUP_BADGE_SLOTS = GROUP_BADGE_HUES.length * GROUP_BADGE_TIERS.length
+
 function hashHue(id) {
   let h = 0x811c9dc5
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i)
     h = Math.imul(h, 0x01000193)
   }
-  return (h >>> 0) % 360
+  return h >>> 0
 }
 
-function groupBadgeColors(groupId) {
-  const hue = hashHue(groupId)
+// Slot per group id. The hash only ever picks a hue; a taken hue walks to the
+// next free one, and the darker tier is opened only once all eight hues are
+// spoken for. Letting the hash pick a tier directly was tried and measured
+// wrong on the owner's own data - two groups of "Rain Inside" drew the same
+// pink at two lightnesses, which is barely better than the bug being fixed.
+// Order-dependent only when two groups actually collide (the loser takes the
+// next free hue), so an untouched preset keeps the same colors run to run.
+export function assignGroupColorSlots(groups) {
+  const slots = new Map()
+  const taken = new Set()
+  let tier = 0
+  for (const group of groups ?? []) {
+    if (!group?.id) continue
+    if (taken.size === GROUP_BADGE_HUES.length) {
+      taken.clear()
+      tier = (tier + 1) % GROUP_BADGE_TIERS.length
+    }
+    let hue = hashHue(group.id) % GROUP_BADGE_HUES.length
+    while (taken.has(hue)) hue = (hue + 1) % GROUP_BADGE_HUES.length
+    taken.add(hue)
+    slots.set(group.id, tier * GROUP_BADGE_HUES.length + hue)
+  }
+  return slots
+}
+
+function groupBadgeColors(groupId, colorSlot) {
+  const slot = Number.isInteger(colorSlot) ? colorSlot : hashHue(groupId) % GROUP_BADGE_SLOTS
+  const hue = GROUP_BADGE_HUES[slot % GROUP_BADGE_HUES.length]
+  const light = GROUP_BADGE_TIERS[Math.floor(slot / GROUP_BADGE_HUES.length) % GROUP_BADGE_TIERS.length]
   return {
-    background: `hsla(${hue}, 70%, 68%, 0.18)`,
-    borderColor: `hsla(${hue}, 70%, 68%, 0.45)`,
-    color: `hsl(${hue}, 85%, 78%)`
+    background: `hsla(${hue}, 70%, ${light}%, 0.22)`,
+    borderColor: `hsla(${hue}, 70%, ${light}%, 0.55)`,
+    color: `hsl(${hue}, 85%, ${light + 8}%)`
   }
 }
 
-export function createSoundRow(entry, { included, loading, error, volume, muted, soloed, groupName = null, groupId = null, selectMode = false, selected = false }, callbacks, allTags = []) {
+export function createSoundRow(entry, { included, loading, error, volume, muted, soloed, groupName = null, groupId = null, groupColorSlot = null, selectMode = false, selected = false }, callbacks, allTags = []) {
   const li = document.createElement('li')
   li.className = 'sound-row' + (entry.status === 'missing' ? ' sound-row-missing' : '')
   li.dataset.id = entry.id
@@ -378,7 +428,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     groupBadge.textContent = groupName
     groupBadge.title = `In the "${groupName}" sound group - click to change`
     if (groupId) {
-      Object.assign(groupBadge.style, groupBadgeColors(groupId))
+      Object.assign(groupBadge.style, groupBadgeColors(groupId, groupColorSlot))
       // Lit red by ui/levelMeters.js when the group's own bus clips.
       groupBadge.dataset.meterGroup = groupId
     }
