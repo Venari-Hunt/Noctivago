@@ -257,6 +257,8 @@ export interface NoctivagoApi {
     addSound(payload: Payload): Promise<any>
     addRecordedSound(payload: Payload): Promise<any>
     addSoundFromUrl(payload: Payload): Promise<any>
+    /** Stops a link download in flight; resolves true if one was running. */
+    cancelAddSoundFromUrl(): Promise<boolean>
     onAddSoundFromUrlProgress(callback: (payload: any) => void): Unsubscribe
     addFolderSounds(folderPath: string, options?: Payload): Promise<any>
     addSoundFromFreesound(payload: Payload): Promise<any>

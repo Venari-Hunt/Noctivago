@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { spawn } from 'node:child_process'
 import { getLoopClipPath, deleteLoopClip, renderLoopClip, probeDurationSeconds } from './ffmpeg/loopClip.js'
 import { runFfmpegToFile } from './ffmpeg/runFfmpeg.js'
 import { resolveFfmpegPath } from './ffmpeg/ffmpegPath.js'
@@ -685,7 +686,7 @@ async function downloadDirectAudio(parsed, { maxSeconds = 0, onProgress } = {}) 
 // YouTube's current bot-detection otherwise rejects anonymous extraction
 // outright ("Sign in to confirm you're not a bot"), confirmed directly
 // against the real yt-dlp binary before writing this.
-async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress } = {}) {
+async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress, onChild } = {}) {
   const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
   fs.mkdirSync(tmpDir, { recursive: true })
   const id = crypto.randomUUID()
@@ -702,7 +703,11 @@ async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress } = {}) {
 
   await runYtDlp(args, {
     onProgress: onProgress ? (percent) => onProgress({ type: 'progress', percent }) : undefined,
-    onStatus: onProgress ? (message) => onProgress({ type: 'status', message }) : undefined
+    onStatus: onProgress ? (message) => onProgress({ type: 'status', message }) : undefined,
+    // With --download-sections the transfer is ffmpeg's, not yt-dlp's, so the
+    // section length is what turns ffmpeg's own clock into a real percent.
+    totalSeconds: maxSeconds,
+    onChild
   })
 
   const match = fs.readdirSync(tmpDir).find((f) => f.startsWith(id))
@@ -714,7 +719,50 @@ async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress } = {}) {
 // phase changes, { type:'status', message } for yt-dlp's own verbose lines,
 // and { type:'progress', percent } as the download advances - the IPC
 // handler forwards each straight to the Add-from-link dialog.
+// A URL download is a single global operation (one progress channel, no
+// per-request id - see ipc.js), so one handle is enough to cancel it. Only
+// the yt-dlp stage is held here: it is the one that can run for minutes,
+// because YouTube throttles long uploads to roughly playback speed, while
+// the direct-audio attempt ahead of it either succeeds at full speed or
+// fails within seconds.
+let activeYtDlpChild = null
+let cancelRequested = false
+
+// Killing yt-dlp alone isn't enough. With --download-sections yt-dlp hands
+// the actual transfer to an ffmpeg child, and on Windows child.kill() only
+// ends the process it's given: the orphaned ffmpeg carried on downloading
+// (and kept reporting progress through the inherited pipe) for the rest of
+// the section - seen live on 2026-09-21, half a minute of "cancelled"
+// download still running. taskkill /T takes the whole tree.
+function killTree(child) {
+  if (process.platform !== 'win32') {
+    child.kill()
+    return
+  }
+  spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {
+    // taskkill missing or refused - the direct kill is still better than
+    // leaving the download running.
+    try {
+      child.kill()
+    } catch {
+      // already gone
+    }
+  })
+}
+
+export function cancelAddSoundFromUrl() {
+  cancelRequested = true
+  if (!activeYtDlpChild) return false
+  try {
+    killTree(activeYtDlpChild)
+  } catch {
+    // already gone; the download's own rejection path still runs
+  }
+  return true
+}
+
 export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
+  cancelRequested = false
   let parsed
   try {
     parsed = new URL(url)
@@ -739,10 +787,24 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
     if (!isYtDlpAvailable()) throw directErr
     try {
       onProgress?.({ type: 'step', message: 'Not a direct audio file — handing it to yt-dlp (YouTube / video sites)…' })
-      audioPath = await downloadViaYtDlp(parsed.toString(), { maxSeconds: cap, onProgress })
+      audioPath = await downloadViaYtDlp(parsed.toString(), {
+        maxSeconds: cap,
+        onProgress,
+        onChild: (child) => {
+          activeYtDlpChild = child
+          // Cancelled between the request and the spawn - stop it right away.
+          if (cancelRequested) cancelAddSoundFromUrl()
+        }
+      })
       usedYtDlp = true
     } catch (ytDlpErr) {
-      throw new Error(`Couldn't download that link directly (${directErr.message}), and yt-dlp also failed: ${ytDlpErr.message}`)
+      if (cancelRequested) throw new Error('Download cancelled.')
+      // The direct-audio attempt always fails first for a watch-page URL, so
+      // its message is noise; yt-dlp's is the one that says what went wrong
+      // (a live stream, an unavailable video, a sign-in wall).
+      throw new Error(`Couldn't download that link: ${ytDlpErr.message}`)
+    } finally {
+      activeYtDlpChild = null
     }
   }
 

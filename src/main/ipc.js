@@ -119,6 +119,7 @@ export function registerIpcHandlers() {
       if (!event.sender.isDestroyed()) event.sender.send('library:addSoundFromUrlProgress', update)
     })
   )
+  ipcMain.handle('library:cancelAddSoundFromUrl', () => library.cancelAddSoundFromUrl())
   ipcMain.handle('library:addFolderSounds', (_event, folderPath, options) => library.addFolderSounds(folderPath, options))
   // Community presets (src/main/community/client.js).
   ipcMain.handle('community:getProfile', () => community.getProfile())

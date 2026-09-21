@@ -47,6 +47,10 @@ function handleProgress(update) {
   if (update.type === 'step') els.status.textContent = update.message
 }
 
+// Whether a download is in flight, so Cancel can really stop it rather than
+// just hiding the dialog over a job that keeps running.
+let downloading = false
+
 async function confirmAdd() {
   const url = els.url.value.trim()
   if (!url) return
@@ -54,6 +58,7 @@ async function confirmAdd() {
   const maxSeconds = minutes > 0 ? minutes * 60 : 0
 
   els.confirm.disabled = true
+  downloading = true
   els.status.textContent = 'Starting…'
   els.log.textContent = ''
   els.progress.classList.remove('hidden')
@@ -71,15 +76,17 @@ async function confirmAdd() {
     document.dispatchEvent(new CustomEvent('library:linked'))
   } catch (err) {
     els.progressFill.classList.remove('indeterminate')
-    // Keep the status line short - the full (often very long) ffmpeg/yt-dlp
-    // error goes in the verbose log below it. Strip Electron's own IPC
-    // wrapping ("Error invoking remote method '...': Error: ...") first.
+    // Strip Electron's own IPC wrapping ("Error invoking remote method
+    // '...': Error: ...") and show the message as-is: library.js now returns
+    // one finished sentence per failure. It used to be cut at the first "("
+    // or ".", which threw away the actual reason - a live stream, a removed
+    // video and a sign-in wall all came out reading the same.
     const clean = (err.message || 'Download failed').replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, '')
-    const short = clean.split(/[.(\n]/)[0].trim()
-    els.status.textContent = `Couldn't add that link: ${short}.`
+    els.status.textContent = clean
     appendLog(`ERROR: ${clean}`)
     els.confirm.disabled = false
   } finally {
+    downloading = false
     unsubscribe()
   }
 }
@@ -100,6 +107,9 @@ export function installAddLinkDialog() {
 
   els.confirm.addEventListener('click', confirmAdd)
   els.cancel.addEventListener('click', () => {
+    // Closing used to leave the download running invisibly; a YouTube import
+    // can take minutes, so Cancel has to actually stop it.
+    if (downloading) window.noctivago.library.cancelAddSoundFromUrl()
     els.dialog.classList.add('hidden')
   })
 }

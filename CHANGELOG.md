@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.239 — YouTube downloads you can watch and stop
+
+- **A YouTube download now shows real progress and how long it has left.** It used to sit on one line saying nothing for minutes, which made it look stuck. YouTube deliberately limits how fast long videos download — roughly the speed you would play them at — so a 10-minute clip really does take about five minutes; now you can see that happening.
+- **Cancel actually cancels.** Closing the Add-from-link dialog, or pressing Cancel on a Browse Sounds card, stops the download instead of leaving it running out of sight.
+- **Failed downloads say why.** A live stream, a removed or private video and a sign-in wall used to come out as the same unhelpful message. Each now explains itself in plain words.
+- **Browse Sounds has its own Settings page** (update it to 1.1.0 from Settings → Community plugins), including how much of a video to import — 3 minutes by default instead of 10, so an import finishes in about a minute and a half.
+
 ## v0.1.238 — Plugins update themselves, no restart needed
 
 - **Plugins now update on their own.** Noctívago checks for plugin updates shortly after it starts and every few hours. You can turn this off in Settings → Community plugins → "Update plugins automatically".
