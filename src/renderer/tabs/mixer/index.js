@@ -4,6 +4,7 @@ import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
 import { BufferScheduledSource, StreamScheduledSource } from '../../audio/ScheduledSoundSource.js'
 import { sortForDisplay, SORT_MODES, GROUP_MODES } from './domain/soundList.js'
+import { soundMenuItems, REMOVE_MENU_ITEM, duplicateName } from './domain/soundMenu.js'
 import { renderSoundList } from './components/SoundList.jsx'
 import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
@@ -364,6 +365,8 @@ async function renameSound(id, name) {
 // noctivago:sound-groups-changed so any other live view (Preset Remix, this
 // same Mixer if the edited preset is the active one) picks up the change.
 function openSoundContextMenu(id, evt) {
+  const entry = state.library.find((s) => s.id === id)
+  if (!entry) return
   const items = []
   // Only while the Remix plugin is installed and on; its tab panel is how we
   // know. Remix listens for noctivago:edit-sound, switches to its own tab
@@ -372,24 +375,56 @@ function openSoundContextMenu(id, evt) {
     items.push({ label: 'Edit in Remix', onClick: () => window.dispatchEvent(new CustomEvent('noctivago:edit-sound', { detail: { soundId: id } })) })
     items.push({ separator: true })
   }
-  if (!state.activePresetId) {
-    items.push({ label: 'Load a preset to use Sound Groups', disabled: true })
-    openContextMenu(evt.clientX, evt.clientY, items)
-    return
+  const actions = {
+    toggleIncluded: () => toggleIncluded(id),
+    toggleSolo: () => toggleSolo(id),
+    toggleMute: () => toggleMute(id),
+    resetVolume: () => {
+      changeVolume(id, DEFAULT_VOLUME)
+      render()
+    },
+    duplicate: () => duplicateSoundFromMenu(entry),
+    showInFolder: () => api.library.showInFolder(id),
+    remove: () => removeSound(id)
   }
+  const toItem = (item) => (item.separator ? item : { label: item.label, disabled: item.disabled, onClick: actions[item.action] })
+  const menuState = {
+    status: entry.status,
+    loading: state.loading.has(id),
+    included: state.included.has(id),
+    muted: state.mutedSounds.has(id),
+    soloed: state.soloedSoundId === id,
+    volume: state.volumes.get(id) ?? DEFAULT_VOLUME
+  }
+  items.push(...soundMenuItems(menuState).map(toItem), { separator: true })
+  items.push(...groupMenuItems(id))
+  items.push({ separator: true }, toItem(REMOVE_MENU_ITEM))
+  openContextMenu(evt.clientX, evt.clientY, items)
+}
+
+function groupMenuItems(id) {
+  if (!state.activePresetId) return [{ label: 'Load a preset to use Sound Groups', disabled: true }]
   const presetId = state.activePresetId
   const groups = state.groups
   const currentGroupId = groups.find((g) => g.soundIds.includes(id))?.id ?? null
-
-  for (const g of groups) {
-    items.push({ label: (g.id === currentGroupId ? '✓ ' : '') + g.name, onClick: () => toggleGroupMembership(presetId, g.id, id) })
-  }
+  const items = groups.map((g) => ({ label: (g.id === currentGroupId ? '✓ ' : '') + g.name, onClick: () => toggleGroupMembership(presetId, g.id, id) }))
   if (groups.length > 0) items.push({ separator: true })
   items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(presetId, id) })
   if (currentGroupId) {
     items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(presetId, currentGroupId, id) })
   }
-  openContextMenu(evt.clientX, evt.clientY, items)
+  return items
+}
+
+// Same file, separate settings. Lands right under the original in the
+// custom order, not at the bottom of the library.
+async function duplicateSoundFromMenu(entry) {
+  const copy = await api.library.duplicateSound(entry.id, { name: duplicateName(entry.name, state.library.map((s) => s.name)) })
+  if (!copy) return
+  const order = sortForDisplay(state.library, 'custom').map((e) => e.id)
+  order.splice(order.indexOf(entry.id) + 1, 0, copy.id)
+  await api.library.reorderSounds(order)
+  await refreshList()
 }
 
 // A sound belongs to at most one group per preset - joining group B leaves

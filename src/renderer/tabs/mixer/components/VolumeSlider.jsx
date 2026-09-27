@@ -12,10 +12,13 @@ export function VolumeSlider({ volume, onChange }) {
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
 
+  // Every render, not only when `volume` changes: a drag doesn't re-render,
+  // so the last rendered volume can be stale, and setting it back to that
+  // value (the menu's Reset volume) must still move the thumb.
   useLayoutEffect(() => {
     const target = String(gainToSlider(volume))
     if (ref.current.value !== target) ref.current.value = target
-  }, [volume])
+  })
 
   useEffect(() => {
     const el = ref.current

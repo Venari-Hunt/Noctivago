@@ -130,6 +130,7 @@ const api = {
     duplicateSound: (id, options) => ipcRenderer.invoke('library:duplicateSound', id, options),
     relink: (id) => ipcRenderer.invoke('library:relink', id),
     remove: (id) => ipcRenderer.invoke('library:remove', id),
+    showInFolder: (id) => ipcRenderer.invoke('library:showInFolder', id),
     listWatchedFolders: () => ipcRenderer.invoke('library:listWatchedFolders'),
     pickWatchFolder: () => ipcRenderer.invoke('library:pickWatchFolder'),
     addWatchedFolder: (folderPath, options) => ipcRenderer.invoke('library:addWatchedFolder', folderPath, options),

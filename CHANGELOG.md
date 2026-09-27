@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.249 — More in a sound's right-click menu
+
+- **Right-click a sound in the Mixer for more actions:** Play or Stop it, Solo, Mute, Reset volume, Duplicate (same file, separate settings, placed right under the original), Show file in folder, and Remove from library (kept at the very bottom so it's hard to hit by accident).
+
 ## v0.1.248 — Edit in Remix from the Mixer
 
 - **Right-click a sound in the Mixer and choose "Edit in Remix"** to jump straight to the Remix tab with that sound open. If you have unsaved changes on another sound in Remix, you get the usual prompt first. Needs the Remix plugin (1.2.0 or newer, which updates itself).
