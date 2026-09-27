@@ -1,6 +1,6 @@
 {
   "name": "noctivago",
-  "version": "0.1.250",
+  "version": "0.1.251",
   "description": "Offline ambient sound mixer",
   "main": "./out/main/index.js",
   "author": "jltmdesign",
