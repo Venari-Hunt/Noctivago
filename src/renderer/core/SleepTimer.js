@@ -1,4 +1,5 @@
 import { formatDuration } from '../util/time.js'
+import { setToolbarHandlers, updateToolbar } from '../toolbar/index.jsx'
 
 // Sleep timer - toolbar button + modal. After a set duration the main
 // process (src/main/sleepTimer.js, which owns the actual setTimeout so it
@@ -30,16 +31,14 @@ function refreshDisplay() {
   if (firesAt == null) return
   const text = formatDuration(Math.max(0, Math.ceil((firesAt - Date.now()) / 1000)))
   els.countdownValue.textContent = text
-  els.toolbarRemaining.textContent = text
+  updateToolbar({ sleepRemaining: text })
 }
 
 function applyState(state) {
   const active = Boolean(state && state.active)
   firesAt = active ? state.firesAt : null
 
-  els.toolbarRemaining.classList.toggle('hidden', !active)
-  els.openBtn.classList.toggle('btn-svg-icon-active', active)
-  els.openBtn.title = active ? 'Sleep timer (running)' : 'Sleep timer'
+  updateToolbar({ sleepActive: active })
   els.setup.classList.toggle('hidden', active)
   els.activeBox.classList.toggle('hidden', !active)
   els.startBtn.classList.toggle('hidden', active)
@@ -161,8 +160,6 @@ function beginWarning(action) {
 
 export function installSleepTimer() {
   els = {
-    openBtn: document.getElementById('open-sleep-timer'),
-    toolbarRemaining: document.getElementById('sleep-timer-remaining'),
     modal: document.getElementById('sleep-timer-modal'),
     setup: document.getElementById('sleep-timer-setup'),
     activeBox: document.getElementById('sleep-timer-active'),
@@ -206,8 +203,7 @@ export function installSleepTimer() {
     showModal(els.modal)
   }
 
-  els.openBtn.addEventListener('click', open)
-  els.toolbarRemaining.addEventListener('click', open)
+  setToolbarHandlers({ onOpenSleepTimer: open })
   els.closeBtn.addEventListener('click', () => hideModal(els.modal))
   els.startBtn.addEventListener('click', start)
   els.cancelBtn.addEventListener('click', cancel)

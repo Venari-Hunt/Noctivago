@@ -17,6 +17,7 @@ import { startLevelMeters } from '../../ui/levelMeters.js'
 import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipReport.js'
 import { openClipReport } from './components/ClipReport.jsx'
 import { mountRecommendedPlugins } from './components/RecommendedPlugins.jsx'
+import { setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -118,21 +119,6 @@ const state = {
 const els = {
   soundList: null,
   emptyState: null,
-  globalPlayPause: document.getElementById('global-play-pause'),
-  globalVolume: document.getElementById('global-volume'),
-  globalMute: document.getElementById('global-mute'),
-  activePresetIndicator: document.getElementById('active-preset-indicator'),
-  activePresetName: document.getElementById('active-preset-name'),
-  addSoundBtn: document.getElementById('add-sound'),
-  addSoundMenu: document.getElementById('add-sound-menu'),
-  addSoundFileItem: document.getElementById('add-sound-file'),
-  addSoundFolderPresetItem: document.getElementById('add-sound-folder-preset'),
-  addSoundFolderTagItem: document.getElementById('add-sound-folder-tag'),
-  addSoundWatchFolderItem: document.getElementById('add-sound-watch-folder'),
-  addSoundRecordItem: document.getElementById('add-sound-record'),
-  addSoundLinkItem: document.getElementById('add-sound-link'),
-  openPresetsBtn: document.getElementById('open-presets'),
-
   addSoundDialog: document.getElementById('add-sound-dialog'),
   addSoundName: document.getElementById('add-sound-name'),
   addSoundKeepCopy: document.getElementById('add-sound-keep-copy'),
@@ -207,29 +193,8 @@ function hideModal(el) {
   el.classList.add('hidden')
 }
 
-// Play (triangle) / Pause (two bars) - the one pair of icons universal
-// enough to convert from text with no ambiguity (per the icon-conversion
-// survey this was scoped from), mirrored by Remix's own sticky Play/Pause
-// button. `title` keeps the "all" scope (vs. a single sound) available on
-// hover even though the glyph itself doesn't say it.
-const PLAY_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
-const PAUSE_ICON_SVG =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
-
-// Speaker (unmuted) / speaker-with-X (muted) - mirrored by components/icons.jsx's
-// per-sound mute button and the Remix plugin's preview-volume mute button,
-// same icon pair everywhere a volume slider exists (requested directly:
-// "everywhere there is a volume slider there should be an icon beside it
-// so you can click it to mute/unmute it and the icon should react on it").
-const VOLUME_ICON_SVG =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><path d="M16 8a5 5 0 0 1 0 8"/></svg>'
-const MUTE_ICON_SVG =
-  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/><line x1="16" y1="9" x2="22" y2="15"/><line x1="22" y1="9" x2="16" y2="15"/></svg>'
-
 function refreshGlobalButton() {
-  const playing = state.playing.size > 0
-  els.globalPlayPause.innerHTML = playing ? PAUSE_ICON_SVG : PLAY_ICON_SVG
-  els.globalPlayPause.title = playing ? 'Pause all' : 'Play all'
+  updateToolbar({ playing: state.playing.size > 0 })
 }
 
 const EMPTY_LIBRARY_TEXT = 'No sounds yet. Click "Add Sound" to import one.'
@@ -1345,17 +1310,16 @@ async function toggleGlobalPlayback() {
   }
 }
 
-els.globalPlayPause.addEventListener('click', toggleGlobalPlayback)
+// The master volume slider's 0-100 position, persisted in settings.
+let globalVolumePosition = 50
 
 function updateGlobalMuteIcon() {
-  els.globalMute.innerHTML = state.globalMuted ? MUTE_ICON_SVG : VOLUME_ICON_SVG
-  els.globalMute.title = state.globalMuted ? 'Unmute' : 'Mute'
-  els.globalMute.classList.toggle('btn-svg-icon-active', state.globalMuted)
+  updateToolbar({ muted: state.globalMuted })
 }
 
 function applyGlobalVolume() {
   // Bipolar slider - centre (50) is unity gain, see core/volumeScale.js.
-  const volume = state.globalMuted ? 0 : positionToGain(Number(els.globalVolume.value) / 100)
+  const volume = state.globalMuted ? 0 : positionToGain(globalVolumePosition / 100)
   const now = engine.context.currentTime
   engine.masterGain.gain.cancelScheduledValues(now)
   engine.masterGain.gain.linearRampToValueAtTime(volume, now + 0.05)
@@ -1366,7 +1330,8 @@ function applyGlobalVolume() {
 // doesn't silently "trap" a manual volume change behind an easy-to-miss
 // separate button.
 let globalVolumeSaveTimer = null
-els.globalVolume.addEventListener('input', () => {
+function onGlobalVolumeInput(position) {
+  globalVolumePosition = position
   if (state.globalMuted) {
     state.globalMuted = false
     updateGlobalMuteIcon()
@@ -1382,50 +1347,26 @@ els.globalVolume.addEventListener('input', () => {
   clearTimeout(globalVolumeSaveTimer)
   globalVolumeSaveTimer = setTimeout(() => {
     globalVolumeSaveTimer = null
-    api.settings.setGlobalVolumePosition(Number(els.globalVolume.value))
+    api.settings.setGlobalVolumePosition(globalVolumePosition)
   }, VOLUME_SAVE_DEBOUNCE_MS)
-})
+}
 
-els.globalMute.addEventListener('click', () => {
+function toggleGlobalMute() {
   state.globalMuted = !state.globalMuted
   updateGlobalMuteIcon()
   applyGlobalVolume()
-})
+}
 
 updateGlobalMuteIcon()
 
-function closeAddSoundMenu() {
-  els.addSoundMenu.classList.add('hidden')
-  els.addSoundBtn.setAttribute('aria-expanded', 'false')
-}
-
-els.addSoundBtn.addEventListener('click', (evt) => {
-  evt.stopPropagation()
-  const isOpen = !els.addSoundMenu.classList.contains('hidden')
-  if (isOpen) closeAddSoundMenu()
-  else {
-    els.addSoundMenu.classList.remove('hidden')
-    els.addSoundBtn.setAttribute('aria-expanded', 'true')
-  }
-})
-
-document.addEventListener('click', (evt) => {
-  if (!els.addSoundMenu.contains(evt.target) && evt.target !== els.addSoundBtn) closeAddSoundMenu()
-})
-
-document.addEventListener('keydown', (evt) => {
-  if (evt.key === 'Escape') closeAddSoundMenu()
-})
-
-els.addSoundFileItem.addEventListener('click', async () => {
-  closeAddSoundMenu()
+async function addSoundFile() {
   const file = await api.library.pickFile()
   if (!file) return
   pickedFile = file
   els.addSoundName.value = file.name
   els.addSoundKeepCopy.checked = false
   showModal(els.addSoundDialog)
-})
+}
 
 els.addSoundCancel.addEventListener('click', () => {
   pickedFile = null
@@ -1445,23 +1386,7 @@ els.addSoundConfirm.addEventListener('click', async () => {
   await refreshList()
 })
 
-els.addSoundWatchFolderItem.addEventListener('click', () => {
-  closeAddSoundMenu()
-  openWatchFolderPicker()
-})
-
-els.addSoundRecordItem.addEventListener('click', () => {
-  closeAddSoundMenu()
-  openRecordDialog()
-})
-
-els.addSoundLinkItem.addEventListener('click', () => {
-  closeAddSoundMenu()
-  openAddLinkDialog()
-})
-
-els.addSoundFolderPresetItem.addEventListener('click', async () => {
-  closeAddSoundMenu()
+async function addFolderAsPreset() {
   const folder = await api.library.pickFolder()
   if (!folder) return
   pickedFolder = folder
@@ -1473,7 +1398,7 @@ els.addSoundFolderPresetItem.addEventListener('click', async () => {
   els.addFolderPresetTagName.textContent = folderName
   els.addFolderPresetStatus.textContent = ''
   showModal(els.addFolderPresetDialog)
-})
+}
 
 els.addFolderPresetCancel.addEventListener('click', () => {
   pickedFolder = null
@@ -1519,8 +1444,7 @@ els.addFolderPresetConfirm.addEventListener('click', async () => {
   }
 })
 
-els.addSoundFolderTagItem.addEventListener('click', async () => {
-  closeAddSoundMenu()
+async function addFolderAsTag() {
   const folder = await api.library.pickFolder()
   if (!folder) return
   pickedFolderForTag = folder
@@ -1529,7 +1453,17 @@ els.addSoundFolderTagItem.addEventListener('click', async () => {
   els.addFolderTagKeepCopy.checked = false
   els.addFolderTagStatus.textContent = ''
   showModal(els.addFolderTagDialog)
-})
+}
+
+// The toolbar "+" menu's items, by ADD_SOUND_ITEMS id (toolbar/domain/toolbar.js).
+const ADD_SOUND_ACTIONS = {
+  file: addSoundFile,
+  'folder-preset': addFolderAsPreset,
+  'folder-tag': addFolderAsTag,
+  'watch-folder': openWatchFolderPicker,
+  record: openRecordDialog,
+  link: openAddLinkDialog
+}
 
 els.addFolderTagCancel.addEventListener('click', () => {
   pickedFolderForTag = null
@@ -1601,10 +1535,7 @@ function updateActivePresetButtonState(presets) {
 // the preset in hand and don't all round-trip through refreshPresetList),
 // plus updateActivePresetButtonState above for renames / external edits.
 function setActivePresetIndicator(name) {
-  const has = Boolean(name)
-  els.activePresetIndicator.classList.toggle('has-preset', has)
-  els.activePresetName.textContent = has ? name : 'No preset'
-  els.activePresetIndicator.title = has ? `Editing preset "${name}"` : 'No preset loaded'
+  updateToolbar({ presetName: name || null })
 }
 
 async function exportPreset(preset) {
@@ -1633,12 +1564,13 @@ async function openPresetsModal() {
   showModal(els.presetsModal)
 }
 
-els.openPresetsBtn.addEventListener('click', openPresetsModal)
-// The top-bar active-preset indicator (v0.1.165) doubles as a shortcut into
-// the Presets modal - it reads as a button, and "which preset am I on → tap
-// → load a different one" is the natural next action. Works whether or not a
-// preset is currently loaded (the "No preset" state opens it to pick one).
-els.activePresetIndicator.addEventListener('click', openPresetsModal)
+setToolbarHandlers({
+  onPlayPause: toggleGlobalPlayback,
+  onVolumeInput: onGlobalVolumeInput,
+  onMuteToggle: toggleGlobalMute,
+  onOpenPresets: openPresetsModal,
+  onAddSound: (id) => ADD_SOUND_ACTIONS[id]()
+})
 
 els.presetsClose.addEventListener('click', () => hideModal(els.presetsModal))
 
@@ -2207,7 +2139,8 @@ export function mount(container) {
   // actually resume playback - see restoreLastActivePreset's own doc
   // comment for why the ordering matters.
   api.settings.get().then(async (settings) => {
-    els.globalVolume.value = String(settings.globalVolumePosition)
+    globalVolumePosition = settings.globalVolumePosition
+    updateToolbar({ volumePosition: globalVolumePosition })
     applyGlobalVolume()
     presetAutosaveUserEnabled = settings.presetAutosaveEnabled
     els.presetAutosaveToggle.checked = presetAutosaveUserEnabled

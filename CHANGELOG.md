@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.245 — Top bar rebuilt, same as before
+
+- **The top bar (preset name, Play all, volume, mute, sleep timer, Presets, Settings, "+") is rebuilt on React.** Nothing about how it looks or works changes; it is groundwork so the bar can grow without the older code getting in the way.
+
 ## v0.1.244 — Renaming or tagging a sound no longer gets interrupted
 
 - **Fixed: a rename or a tag you are typing on a sound card survives the list refreshing.** The Mixer redraws its list whenever something changes, like a sound starting or stopping, and that used to throw away whatever you were typing mid-edit. The sound cards are rebuilt on React now, so they update in place and keep your edit. Nothing else about the cards changes.
