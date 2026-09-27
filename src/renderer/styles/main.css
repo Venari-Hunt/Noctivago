@@ -764,7 +764,7 @@ main {
   font-weight: 600;
   padding: 0 6px;
   border-radius: 4px;
-  /* Colors are set inline per group (SoundRow.js groupBadgeColors) so each
+  /* Colors are set inline per group (tabs/mixer/domain/soundRow.js groupBadgeColors) so each
      Sound Group keeps its own stable color; this is only the fallback. */
   background: rgba(187, 154, 247, 0.18);
   color: #c6adf9;

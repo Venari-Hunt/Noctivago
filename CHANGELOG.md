@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.244 — Renaming or tagging a sound no longer gets interrupted
+
+- **Fixed: a rename or a tag you are typing on a sound card survives the list refreshing.** The Mixer redraws its list whenever something changes, like a sound starting or stopping, and that used to throw away whatever you were typing mid-edit. The sound cards are rebuilt on React now, so they update in place and keep your edit. Nothing else about the cards changes.
+
 ## v0.1.243 — New look: true black with yellow accents
 
 - **New: an OLED-friendly black theme with yellow accents.** The background is now true black and everything that's on, selected or primary (Play, In Mix, Solo, toggles, the current tab) is yellow; the old blue is gone.

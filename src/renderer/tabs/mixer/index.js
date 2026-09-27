@@ -3,7 +3,8 @@ import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
 import { BufferScheduledSource, StreamScheduledSource } from '../../audio/ScheduledSoundSource.js'
-import { renderSoundList, sortForDisplay, SORT_MODES, GROUP_MODES } from '../../ui/SoundList.js'
+import { sortForDisplay, SORT_MODES, GROUP_MODES } from './domain/soundList.js'
+import { renderSoundList } from './components/SoundList.jsx'
 import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
@@ -215,7 +216,7 @@ const PLAY_ICON_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="cur
 const PAUSE_ICON_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'
 
-// Speaker (unmuted) / speaker-with-X (muted) - mirrored by SoundRow.js's
+// Speaker (unmuted) / speaker-with-X (muted) - mirrored by components/icons.jsx's
 // per-sound mute button and the Remix plugin's preview-volume mute button,
 // same icon pair everywhere a volume slider exists (requested directly:
 // "everywhere there is a volume slider there should be an icon beside it
@@ -1232,7 +1233,7 @@ function applyGroupSolo(groupId, memberIds) {
   render()
 }
 
-// "Test fire" button, scatter and scheduled sounds (SoundRow.js gates it on
+// "Test fire" button, scatter and scheduled sounds (components/SoundRow.jsx gates it on
 // entry.playMode being one of those two) - requested directly for scatter
 // ("an override play button on the mixer tab for audios that are played at
 // random intervals... to play the audio once when pressed so you can test
@@ -2435,7 +2436,7 @@ document.addEventListener('library:linked', refreshList)
       else releaseGroupSolo()
     }
     // v0.1.147: each Mixer row now shows a group-membership badge
-    // (SoundRow.js's groupName), so a membership change needs to actually
+    // (components/SoundRow.jsx's group badge), so a membership change needs to actually
     // re-render the list - previously this listener only ever fed the
     // right-click context menu (computed fresh on each open), so a missing
     // render() here was invisible.

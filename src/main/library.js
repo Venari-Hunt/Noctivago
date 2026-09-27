@@ -576,13 +576,13 @@ export function addSound({ path: sourcePath, name, keepCopy, source = null }) {
     // tags: user-assignable, free-text. dateCreated reads the *source* file's
     // own filesystem birthtime (stat'd above, before any copy) - falls back
     // to "now" on filesystems/mounts that don't report a real birthtime.
-    // sortIndex backs the Mixer's "Custom order" sort mode (see SoundList.js)
+    // sortIndex backs the Mixer's "Custom order" sort mode (see tabs/mixer/domain/soundList.js)
     // - starts at insertion order (now), reassigned to clean sequential
     // integers across the whole library whenever the user actually drags to
     // reorder (see reorderSounds below).
     // Attribution metadata for an import that isn't just a local file - only
     // Freesound sets this today (see addSoundFromFreesound below), null for
-    // every other import path. Shown as a badge in the Mixer (SoundRow.js)
+    // every other import path. Shown as a badge in the Mixer (tabs/mixer/components/SoundRow.jsx)
     // since a CC-BY sound legally needs its author/license kept visible, not
     // just imported silently.
     source,
@@ -849,7 +849,7 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
 // shape addSoundFromUrl above already uses, then funnels through the exact
 // same addSound(keepCopy: true) path every other import does. The only new
 // thing is `source`, carrying the attribution a CC-BY (or similar) sound
-// needs - see SoundRow.js for where it's surfaced.
+// needs - see tabs/mixer/components/SoundRow.jsx for where it's surfaced.
 export async function addSoundFromFreesound({ freesoundId, name, username, license, pageUrl, previewUrl, description, tags }, onProgress) {
   onProgress?.({ type: 'step', message: 'Downloading preview from Freesound…' })
   const audioPath = await downloadPreviewAudio(previewUrl)
