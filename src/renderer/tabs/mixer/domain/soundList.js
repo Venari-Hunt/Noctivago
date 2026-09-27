@@ -1,4 +1,5 @@
 import { assignGroupColorSlots } from './soundRow.js'
+import { DEFAULT_VOLUME } from '../../../core/volumeScale.js'
 
 export const SORT_MODES = [
   { value: 'name-asc', label: 'Name (A-Z)' },
@@ -156,7 +157,7 @@ function splitNowPlaying(sortedEntries, playbackState) {
     else rest.push(entry)
   }
   if (playing.length === 0 && inMix.length === 0) return null
-  playing.sort((a, b) => (playbackState.volumes.get(b.id) ?? 0.7) - (playbackState.volumes.get(a.id) ?? 0.7))
+  playing.sort((a, b) => (playbackState.volumes.get(b.id) ?? DEFAULT_VOLUME) - (playbackState.volumes.get(a.id) ?? DEFAULT_VOLUME))
   return { playing, inMix, rest }
 }
 
@@ -187,7 +188,7 @@ export function buildSoundListSections(entries, playbackState, viewState) {
         included: playbackState.included.has(entry.id),
         loading: playbackState.loading.has(entry.id),
         error: playbackState.errors.get(entry.id) ?? null,
-        volume: playbackState.volumes.get(entry.id) ?? 0.7,
+        volume: playbackState.volumes.get(entry.id) ?? DEFAULT_VOLUME,
         muted: playbackState.mutedSounds.has(entry.id),
         soloed: playbackState.soloedSoundId === entry.id,
         groupName: soundGroup?.name ?? null,

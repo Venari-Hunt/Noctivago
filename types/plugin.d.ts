@@ -282,6 +282,8 @@ export interface NoctivagoApi {
     duplicateSound(id: string, options?: Payload): Promise<any>
     relink(id: string): Promise<any>
     remove(id: string): Promise<any>
+    /** Opens Explorer with the sound's file selected. False if the file is missing. */
+    showInFolder(id: string): Promise<boolean>
     listWatchedFolders(): Promise<any[]>
     pickWatchFolder(): Promise<any>
     addWatchedFolder(folderPath: string, options?: Payload): Promise<any>

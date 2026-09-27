@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog } from 'electron'
+import { app, ipcMain, dialog, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -159,6 +159,14 @@ export function registerIpcHandlers() {
   ipcMain.handle('library:duplicateSound', (_event, id, options) => library.duplicateSound(id, options))
   ipcMain.handle('library:relink', (_event, id) => library.relink(id))
   ipcMain.handle('library:remove', (_event, id) => library.remove(id))
+  // Opens Explorer with the sound's file selected: the original for a linked
+  // sound, the library copy for a copied one.
+  ipcMain.handle('library:showInFolder', (_event, id) => {
+    const filePath = library.getPlaybackPathForId(id)
+    if (!filePath) return false
+    shell.showItemInFolder(filePath)
+    return true
+  })
   ipcMain.handle('library:listWatchedFolders', () => library.listWatchedFolders())
   ipcMain.handle('library:pickWatchFolder', () => library.pickWatchFolder())
   ipcMain.handle('library:addWatchedFolder', async (_event, folderPath, options) => {
