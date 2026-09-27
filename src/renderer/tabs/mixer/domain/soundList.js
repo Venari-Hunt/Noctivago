@@ -1,4 +1,4 @@
-import { createSoundRow, assignGroupColorSlots } from './SoundRow.js'
+import { assignGroupColorSlots } from './soundRow.js'
 
 export const SORT_MODES = [
   { value: 'name-asc', label: 'Name (A-Z)' },
@@ -126,30 +126,6 @@ function groupEntries(sortedEntries, groupMode, soundGroups) {
   return [{ label: null, entries: sortedEntries }]
 }
 
-function buildRow(entry, rowState, draggable, callbacks, allTags) {
-  const row = createSoundRow(entry, rowState, callbacks, allTags)
-  if (!draggable) return row
-
-  row.draggable = true
-  row.classList.add('sound-row-draggable')
-  row.addEventListener('dragstart', (evt) => {
-    evt.dataTransfer.setData('text/plain', entry.id)
-    evt.dataTransfer.effectAllowed = 'move'
-    row.classList.add('dragging')
-  })
-  row.addEventListener('dragend', () => row.classList.remove('dragging'))
-  row.addEventListener('dragover', (evt) => {
-    evt.preventDefault()
-    evt.dataTransfer.dropEffect = 'move'
-  })
-  row.addEventListener('drop', (evt) => {
-    evt.preventDefault()
-    const draggedId = evt.dataTransfer.getData('text/plain')
-    if (draggedId && draggedId !== entry.id) callbacks.onReorderDrop(draggedId, entry.id)
-  })
-  return row
-}
-
 // Splits into three ordered groups - Now Playing (actually audible),
 // Current Mix (included but not currently playing, e.g. paused via the
 // global toggle), Everything Else - restoring the old "what's actually
@@ -180,88 +156,55 @@ function splitNowPlaying(sortedEntries, playbackState) {
   return { playing, inMix, rest }
 }
 
-// allTags is every tag used anywhere in the *full* library (not just
-// entries, which may already be search/tag-filtered down by the caller) -
-// drives the "+ tag" input's autocomplete in SoundRow.js. Defaults to []
-// for callers that don't have/need it, so this stays an additive parameter.
-export function renderSoundList(listEl, emptyStateEl, entries, playbackState, viewState, callbacks, allTags = []) {
-  listEl.innerHTML = ''
-
-  if (entries.length === 0) {
-    emptyStateEl.classList.remove('hidden')
-    listEl.classList.add('hidden')
-    return
-  }
-
-  emptyStateEl.classList.add('hidden')
-  listEl.classList.remove('hidden')
-
+// The list as sections of rows, each row carrying everything its card shows.
+// A tag-grouped entry can appear in several sections, so row keys include
+// the section.
+export function buildSoundListSections(entries, playbackState, viewState) {
   const sorted = sortForDisplay(entries, viewState.sortMode)
   const nowPlaying = viewState.groupMode === 'none' ? splitNowPlaying(sorted, playbackState) : null
   // Disabled while grouped (explicitly, or by the automatic Now Playing
-  // split below): a row can end up in a different section than where it was
-  // dragged from/to (a tag-grouped entry can appear in more than one
-  // section, see groupEntries; a Now-Playing row could move to Everything
-  // Else on the very next render if it stops playing), which makes "which
-  // row did you actually drag" ambiguous - simpler to require a single flat
-  // "No grouping, nothing playing" list to reorder, matching how most file
-  // explorers don't support a fully custom order combined with grouping.
+  // split): a row can end up in a different section than where it was
+  // dragged from/to (a tag-grouped entry can appear in several sections; a
+  // Now-Playing row moves to Everything Else once it stops), which makes
+  // "which row did you actually drag" ambiguous.
   const draggable = viewState.sortMode === 'custom' && viewState.groupMode === 'none' && !nowPlaying
   // One pass over the preset's whole group list, so the badge colors are
-  // picked knowing about each other (see SoundRow.js's assignGroupColorSlots)
-  // - a per-row decision can't tell that two groups came out the same color.
+  // picked knowing about each other - a per-row decision can't tell that two
+  // groups came out the same color.
   const groupColorSlots = assignGroupColorSlots(playbackState.groups)
+  const selectMode = Boolean(viewState.selectMode)
 
-  function appendRow(entry) {
-    const included = playbackState.included.has(entry.id)
-    const loading = playbackState.loading.has(entry.id)
-    const error = playbackState.errors.get(entry.id) ?? null
-    const volume = playbackState.volumes.get(entry.id) ?? 0.7
-    const muted = playbackState.mutedSounds.has(entry.id)
-    const soloed = playbackState.soloedSoundId === entry.id
-    // Which Sound Group (if any) this sound belongs to, so SoundRow.js can
-    // show it as a visible badge - previously the only way to see this was
-    // to right-click the sound and check which group had a checkmark
-    // (reported directly: "you don't have any way to know if an audio is in
-    // a group unless you go ahead and right click it").
+  function row(entry, sectionLabel) {
     const soundGroup = playbackState.groups?.find((g) => g.soundIds.includes(entry.id)) ?? null
-    const groupName = soundGroup?.name ?? null
-    const groupId = soundGroup?.id ?? null
-    const groupColorSlot = groupId != null ? (groupColorSlots.get(groupId) ?? null) : null
-    const selectMode = Boolean(viewState.selectMode)
-    const selected = selectMode && Boolean(viewState.selectedIds?.has(entry.id))
-    listEl.appendChild(buildRow(entry, { included, loading, error, volume, muted, soloed, groupName, groupId, groupColorSlot, selectMode, selected }, draggable, callbacks, allTags))
+    return {
+      key: `${sectionLabel ?? ''}/${entry.id}`,
+      entry,
+      state: {
+        included: playbackState.included.has(entry.id),
+        loading: playbackState.loading.has(entry.id),
+        error: playbackState.errors.get(entry.id) ?? null,
+        volume: playbackState.volumes.get(entry.id) ?? 0.7,
+        muted: playbackState.mutedSounds.has(entry.id),
+        soloed: playbackState.soloedSoundId === entry.id,
+        groupName: soundGroup?.name ?? null,
+        groupId: soundGroup?.id ?? null,
+        groupColorSlot: soundGroup ? (groupColorSlots.get(soundGroup.id) ?? null) : null,
+        selectMode,
+        selected: selectMode && Boolean(viewState.selectedIds?.has(entry.id))
+      }
+    }
   }
+  const section = (label, list) => ({ label, rows: list.map((entry) => row(entry, label)) })
 
-  function appendHeader(label) {
-    const header = document.createElement('li')
-    header.className = 'sound-group-header'
-    header.textContent = label
-    listEl.appendChild(header)
+  if (viewState.groupMode !== 'none') {
+    const sections = groupEntries(sorted, viewState.groupMode, playbackState.groups).map((g) => section(g.label, g.entries))
+    return { sections, draggable }
   }
-
-  if (viewState.groupMode === 'none') {
-    if (!nowPlaying) {
-      for (const entry of sorted) appendRow(entry)
-      return
-    }
-    if (nowPlaying.playing.length > 0) {
-      appendHeader('Now Playing')
-      for (const entry of nowPlaying.playing) appendRow(entry)
-    }
-    if (nowPlaying.inMix.length > 0) {
-      appendHeader('Current Mix')
-      for (const entry of nowPlaying.inMix) appendRow(entry)
-    }
-    if (nowPlaying.rest.length > 0) {
-      appendHeader('Everything Else')
-      for (const entry of nowPlaying.rest) appendRow(entry)
-    }
-    return
-  }
-
-  for (const group of groupEntries(sorted, viewState.groupMode, playbackState.groups)) {
-    appendHeader(group.label)
-    for (const entry of group.entries) appendRow(entry)
-  }
+  if (!nowPlaying) return { sections: [section(null, sorted)], draggable }
+  const sections = [
+    section('Now Playing', nowPlaying.playing),
+    section('Current Mix', nowPlaying.inMix),
+    section('Everything Else', nowPlaying.rest)
+  ].filter((s) => s.rows.length > 0)
+  return { sections, draggable }
 }

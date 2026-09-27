@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { assignGroupColorSlots } from '../src/renderer/ui/SoundRow.js'
+import { assignGroupColorSlots } from '../src/renderer/tabs/mixer/domain/soundRow.js'
 
 // v0.1.241 regression: the badge color used to be a hash straight onto the
 // 360-degree hue circle, which spreads uniformly but does nothing to keep two
