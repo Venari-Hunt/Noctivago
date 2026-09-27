@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.252 — Icons in the right-click menu
+
+- **Every option in a sound's right-click menu now has an icon** (play, solo, mute, rename, tags, folder, trash and so on), so you can spot the one you want at a glance. Presets and Sound Groups that already hold the sound show a check mark.
+
 ## v0.1.251 — Yellow app icon
 
 - **New icon colors:** the app icon, taskbar icon and tray icon are now a black bat on the app's yellow, matching the rest of the app instead of the old blue.

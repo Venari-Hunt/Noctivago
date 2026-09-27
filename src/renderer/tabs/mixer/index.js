@@ -377,7 +377,7 @@ async function openSoundContextMenu(id, evt) {
   // know. Remix listens for noctivago:edit-sound, switches to its own tab
   // and opens the sound in Sound mode.
   if (document.querySelector('.tab-panel[data-tab-id="remix"]')) {
-    items.push({ label: 'Edit in Remix', onClick: () => window.dispatchEvent(new CustomEvent('noctivago:edit-sound', { detail: { soundId: id } })) })
+    items.push({ label: 'Edit in Remix', icon: 'remix', onClick: () => window.dispatchEvent(new CustomEvent('noctivago:edit-sound', { detail: { soundId: id } })) })
     items.push({ separator: true })
   }
   const actions = {
@@ -394,7 +394,7 @@ async function openSoundContextMenu(id, evt) {
     showInFolder: () => api.library.showInFolder(id),
     remove: () => removeSound(id)
   }
-  const toItem = (item) => (item.separator ? item : { label: item.label, disabled: item.disabled, onClick: actions[item.action] })
+  const toItem = (item) => (item.separator ? item : { label: item.label, icon: item.icon, disabled: item.disabled, onClick: actions[item.action] })
   const menuState = {
     status: entry.status,
     loading: state.loading.has(id),
@@ -404,7 +404,7 @@ async function openSoundContextMenu(id, evt) {
     volume: state.volumes.get(id) ?? DEFAULT_VOLUME
   }
   items.push(...soundMenuItems(menuState).map(toItem), { separator: true })
-  items.push({ label: 'Presets', submenu: presetSubmenu(presets, entry, menuState), disabled: presets.length === 0 }, { separator: true })
+  items.push({ label: 'Presets', icon: 'preset', submenu: presetSubmenu(presets, entry, menuState), disabled: presets.length === 0 }, { separator: true })
   items.push(...groupMenuItems(id))
   items.push({ separator: true }, toItem(REMOVE_MENU_ITEM))
   openContextMenu(evt.clientX, evt.clientY, items)
@@ -413,6 +413,7 @@ async function openSoundContextMenu(id, evt) {
 function presetSubmenu(presets, entry, menuState) {
   return presetMenuItems(presets, entry.id, state.activePresetId, menuState.included).map((item) => ({
     label: item.label,
+    icon: item.icon,
     disabled: item.presetId === state.activePresetId && (entry.status === 'missing' || menuState.loading),
     onClick: () => toggleSoundInPreset(item.presetId, entry.id)
   }))
@@ -442,15 +443,15 @@ function startRowEdit(id, field) {
 }
 
 function groupMenuItems(id) {
-  if (!state.activePresetId) return [{ label: 'Load a preset to use Sound Groups', disabled: true }]
+  if (!state.activePresetId) return [{ label: 'Load a preset to use Sound Groups', icon: 'group', disabled: true }]
   const presetId = state.activePresetId
   const groups = state.groups
   const currentGroupId = groups.find((g) => g.soundIds.includes(id))?.id ?? null
-  const items = groups.map((g) => ({ label: (g.id === currentGroupId ? '✓ ' : '') + g.name, onClick: () => toggleGroupMembership(presetId, g.id, id) }))
+  const items = groups.map((g) => ({ label: g.name, icon: g.id === currentGroupId ? 'check' : 'group', onClick: () => toggleGroupMembership(presetId, g.id, id) }))
   if (groups.length > 0) items.push({ separator: true })
-  items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(presetId, id) })
+  items.push({ label: 'New group with this sound…', icon: 'add', onClick: () => openCreateGroupDialog(presetId, id) })
   if (currentGroupId) {
-    items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(presetId, currentGroupId, id) })
+    items.push({ label: 'Remove from group', icon: 'leave', onClick: () => toggleGroupMembership(presetId, currentGroupId, id) })
   }
   return items
 }

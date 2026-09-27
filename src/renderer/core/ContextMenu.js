@@ -5,6 +5,8 @@
 // Single active instance at a time (a second call closes whatever's open) -
 // this app never needs two context menus open at once.
 
+import { menuIconSvg } from './menuIcons.js'
+
 let activeMenu = null
 let activeSubmenu = null
 let outsideHandler = null
@@ -53,6 +55,7 @@ function buildMenu(x, y, items, { isSubmenu = false } = {}) {
   menu.className = 'context-menu'
   menu.style.left = `${x}px`
   menu.style.top = `${y}px`
+  const hasIcons = items.some((item) => item.icon)
 
   for (const item of items) {
     if (item.separator) {
@@ -62,7 +65,18 @@ function buildMenu(x, y, items, { isSubmenu = false } = {}) {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.className = 'context-menu-item'
-    btn.textContent = item.label
+    // Once any item in this menu has an icon, every item gets the slot
+    // (blank when it has none) so the labels line up.
+    if (hasIcons) {
+      const icon = document.createElement('span')
+      icon.className = 'context-menu-icon'
+      icon.innerHTML = menuIconSvg(item.icon)
+      btn.appendChild(icon)
+    }
+    const label = document.createElement('span')
+    label.className = 'context-menu-label'
+    label.textContent = item.label
+    btn.appendChild(label)
     btn.disabled = Boolean(item.disabled)
     if (item.submenu) {
       btn.classList.add('context-menu-item-submenu')
@@ -88,9 +102,9 @@ function buildMenu(x, y, items, { isSubmenu = false } = {}) {
   return menu
 }
 
-// items: array of { separator: true }, { label, onClick, disabled }, or
-// { label, submenu: items, disabled } - one level deep, opens on hover or
-// click.
+// items: array of { separator: true }, { label, icon, onClick, disabled },
+// or { label, icon, submenu: items, disabled } - icon is a menuIcons.js
+// name; submenus are one level deep, open on hover or click.
 export function openContextMenu(x, y, items) {
   closeContextMenu()
 

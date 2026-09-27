@@ -1040,7 +1040,9 @@ main {
 }
 
 .context-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   height: var(--control-h);
   text-align: left;
@@ -1053,6 +1055,10 @@ main {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.context-menu-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1061,10 +1067,22 @@ main {
   background: var(--surface-hover);
 }
 
+.context-menu-icon {
+  flex: none;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--text-dim);
+}
+
+.context-menu-item:hover:not(:disabled) .context-menu-icon {
+  color: var(--text);
+}
+
 .context-menu-item-submenu::after {
   content: '▸';
-  float: right;
-  margin-left: 12px;
+  margin-left: auto;
+  padding-left: 12px;
   color: var(--text-dim);
 }
 

@@ -9,25 +9,26 @@ export function soundMenuItems(sound) {
   const missing = sound.status === 'missing'
   const busy = missing || sound.loading
   return [
-    { label: sound.included ? 'Stop (remove from mix)' : 'Play (add to mix)', action: 'toggleIncluded', disabled: busy },
-    { label: sound.soloed ? 'Unsolo' : 'Solo', action: 'toggleSolo', disabled: busy },
-    { label: sound.muted ? 'Unmute' : 'Mute', action: 'toggleMute', disabled: busy },
-    { label: 'Reset volume', action: 'resetVolume', disabled: busy || sound.volume === DEFAULT_VOLUME },
+    { label: sound.included ? 'Stop (remove from mix)' : 'Play (add to mix)', icon: sound.included ? 'stop' : 'play', action: 'toggleIncluded', disabled: busy },
+    { label: sound.soloed ? 'Unsolo' : 'Solo', icon: 'solo', action: 'toggleSolo', disabled: busy },
+    { label: sound.muted ? 'Unmute' : 'Mute', icon: sound.muted ? 'unmute' : 'mute', action: 'toggleMute', disabled: busy },
+    { label: 'Reset volume', icon: 'reset', action: 'resetVolume', disabled: busy || sound.volume === DEFAULT_VOLUME },
     { separator: true },
-    { label: 'Rename…', action: 'rename' },
-    { label: 'Edit tags…', action: 'editTags' },
-    { label: 'Duplicate', action: 'duplicate', disabled: missing },
-    { label: 'Show file in folder', action: 'showInFolder', disabled: missing }
+    { label: 'Rename…', icon: 'rename', action: 'rename' },
+    { label: 'Edit tags…', icon: 'tag', action: 'editTags' },
+    { label: 'Duplicate', icon: 'duplicate', action: 'duplicate', disabled: missing },
+    { label: 'Show file in folder', icon: 'folder', action: 'showInFolder', disabled: missing }
   ]
 }
 
-// The "Presets" submenu: every preset, ticked when it holds the sound.
+// The "Presets" submenu: every preset, with a check icon when it holds
+// the sound.
 // The loaded preset's sounds are the mix, so its tick follows inMix and
 // clicking it is the same as Play/Stop.
 export function presetMenuItems(presets, soundId, activePresetId, inMix) {
   return presets.map((p) => {
     const member = p.id === activePresetId ? inMix : (p.sounds ?? []).some((s) => s.soundId === soundId)
-    return { label: (member ? '✓ ' : '') + p.name + (p.id === activePresetId ? ' (loaded)' : ''), presetId: p.id, member }
+    return { label: p.name + (p.id === activePresetId ? ' (loaded)' : ''), icon: member ? 'check' : undefined, presetId: p.id, member }
   })
 }
 
@@ -40,7 +41,7 @@ export function togglePresetSound(sounds, soundId, volume) {
 
 // Always the menu's last item, after the Sound Group section, so it's the
 // hardest one to hit by accident.
-export const REMOVE_MENU_ITEM = { label: 'Remove from library', action: 'remove' }
+export const REMOVE_MENU_ITEM = { label: 'Remove from library', icon: 'trash', action: 'remove' }
 
 // "Rain" → "Rain (copy)", "Rain (copy)" → "Rain (copy 2)", skipping names
 // already in the library.

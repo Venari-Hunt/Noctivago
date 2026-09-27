@@ -57,11 +57,11 @@ test('presets are ticked when they hold the sound; the loaded one follows the mi
   ]
   const items = presetMenuItems(presets, 's1', 'b', false)
   assert.deepEqual(
-    items.map((i) => [i.label, i.member]),
+    items.map((i) => [i.label, i.member, i.icon]),
     [
-      ['✓ Rain', true],
-      ['Cabin (loaded)', false],
-      ['Forest', false]
+      ['Rain', true, 'check'],
+      ['Cabin (loaded)', false, undefined],
+      ['Forest', false, undefined]
     ]
   )
 })
