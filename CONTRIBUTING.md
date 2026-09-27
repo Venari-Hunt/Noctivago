@@ -64,8 +64,9 @@ platform) exists; if not, run `node node_modules/ffmpeg-static/install.js`.
   Older code (the Mixer's 2,500-line `tabs/mixer/index.js`, Remix's
   6,000-line `index.js`) predates this and moves over as each screen is
   rewritten, not in one big pass. New screens start in this layout. The
-  Mixer's sound cards (`tabs/mixer/components/SoundRow.jsx`) have moved;
-  the top bar in `index.html` is next.
+  Mixer's sound cards (`tabs/mixer/components/SoundRow.jsx`) and the top
+  bar (`toolbar/`) have moved; icons shared between screens live in
+  `src/renderer/components/icons.jsx`.
 - **No comments explaining *what* code does.** Well-named identifiers
   should make that clear on their own. A comment is only worth adding
   when it explains a non-obvious *why* — a hidden constraint, a workaround

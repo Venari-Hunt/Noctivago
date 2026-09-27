@@ -1,5 +1,5 @@
 import { VolumeSlider } from './VolumeSlider.jsx'
-import { LinkIcon, MuteIcon, VolumeIcon } from './icons.jsx'
+import { LinkIcon, MuteIcon, VolumeIcon } from '../../../components/icons.jsx'
 
 export function MissingControls({ onRelink }) {
   return (

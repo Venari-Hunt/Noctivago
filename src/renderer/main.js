@@ -8,8 +8,10 @@ import { installSleepTimer } from './core/SleepTimer.js'
 import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { installRecordDialog } from './core/RecordDialog.js'
 import { installAddLinkDialog } from './core/AddLinkDialog.js'
+import { mountToolbar, updateToolbar } from './toolbar/index.jsx'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
+mountToolbar(document.getElementById('toolbar'))
 installSliderDoubleClickReset()
 installNumberBoxStepper()
 installWatchFolderDialog()
@@ -26,7 +28,7 @@ installSettingsMenu()
 // flip back to the plain title moments after launch.
 window.noctivago.isPackaged().then((isPackaged) => {
   document.title = isPackaged ? 'Noctívago' : 'Noctívago (Dev)'
-  if (!isPackaged) document.getElementById('dev-badge').classList.remove('hidden')
+  updateToolbar({ isDev: !isPackaged })
 })
 
 const tabHost = createTabHost(

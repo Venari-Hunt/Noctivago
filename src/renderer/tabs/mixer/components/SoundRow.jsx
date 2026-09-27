@@ -3,7 +3,7 @@ import { formatMeta, groupBadgeColors } from '../domain/soundRow.js'
 import { SoundName } from './SoundName.jsx'
 import { SoundTags } from './SoundTags.jsx'
 import { MissingControls, SoundControls } from './SoundControls.jsx'
-import { PlayIcon, TrashIcon } from './icons.jsx'
+import { PlayIcon, TrashIcon } from '../../../components/icons.jsx'
 
 // Composite and Freesound sounds play like any other; the badge says where
 // they came from, and for Freesound keeps the license attribution visible.

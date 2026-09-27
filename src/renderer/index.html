@@ -7,57 +7,8 @@
   </head>
   <body>
     <div id="app">
-      <header class="toolbar">
-        <div class="toolbar-group toolbar-preset">
-        <span id="dev-badge" class="dev-badge hidden" title="This is a development build - separate data from any installed copy">DEV</span>
-        <span id="active-preset-indicator" class="active-preset-indicator" title="No preset loaded">
-          <svg class="active-preset-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-          <span id="active-preset-name" class="active-preset-name">No preset</span>
-        </span>
-        </div>
-        <div class="toolbar-group toolbar-transport">
-        <button id="global-play-pause" class="btn btn-primary btn-svg-icon" type="button" title="Play all">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        </button>
-        <label class="global-volume-label">
-          Volume
-          <span class="volume-slider-wrap">
-            <input id="global-volume" type="range" min="0" max="100" value="50" class="global-volume" />
-          </span>
-          <span class="level-meter level-meter-master" data-meter-master><span class="level-meter-fill"></span></span>
-        </label>
-        <button id="global-mute" class="btn btn-svg-icon" type="button" title="Mute">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="3 9 3 15 8 15 13 20 13 4 8 9 3 9" fill="currentColor" stroke="none"/>
-            <path d="M16 8a5 5 0 0 1 0 8"/>
-          </svg>
-        </button>
-        <div class="sleep-timer-wrapper">
-          <button id="open-sleep-timer" class="btn btn-svg-icon" type="button" title="Sleep timer">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          </button>
-          <span id="sleep-timer-remaining" class="sleep-timer-remaining hidden"></span>
-        </div>
-        </div>
-        <div class="toolbar-group toolbar-actions">
-        <button id="open-presets" class="btn btn-icon-text" type="button">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-          Presets
-        </button>
-        <button id="open-settings" class="btn btn-icon" type="button" title="Settings">⚙</button>
-        <div class="add-sound-menu-wrapper">
-          <button id="add-sound" class="btn btn-icon" type="button" title="Add sound" aria-haspopup="true" aria-expanded="false">+</button>
-          <div id="add-sound-menu" class="dropdown-menu hidden">
-            <button id="add-sound-file" class="dropdown-item" type="button">Add file…</button>
-            <button id="add-sound-folder-preset" class="dropdown-item" type="button">Add folder as preset…</button>
-            <button id="add-sound-folder-tag" class="dropdown-item" type="button">Add folder as tag…</button>
-            <button id="add-sound-watch-folder" class="dropdown-item" type="button">Watch a folder…</button>
-            <button id="add-sound-record" class="dropdown-item" type="button">Record audio…</button>
-            <button id="add-sound-link" class="dropdown-item" type="button">Add from link…</button>
-          </div>
-        </div>
-        </div>
-      </header>
+      <!-- Rendered by toolbar/index.jsx -->
+      <header id="toolbar" class="toolbar"></header>
       <nav id="tab-bar" class="tab-bar"></nav>
       <div id="tab-sticky-bar" class="tab-sticky-bar hidden"></div>
       <main id="tab-content"></main>
