@@ -14,6 +14,12 @@ export const MAX_BUFFER_CLIP_SECONDS = 600
 // (library.js) so the default can't drift between them.
 export const DEFAULT_SOUND_VOLUME = 1
 
+// Volume slider range (renderer/core/volumeScale.js). Full right is +6 dB
+// (2x); the quiet side tapers in dB down to VOLUME_MIN_DB, then silence.
+// Main clamps the saved master volume to the same range.
+export const VOLUME_MAX_GAIN = 2
+export const VOLUME_MIN_DB = -60
+
 // Sound Group "occlusion" (v0.1.182): a single 0..1 knob approximating "this
 // group is behind a wall/door from the listener". Real game-audio occlusion
 // isn't just quieter - it's muffled AND echoey (lowpass pulled down while

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { gainToSlider, sliderToGain, DEFAULT_VOLUME } from '../../../core/volumeScale.js'
+import { gainToSlider, sliderToGain, DEFAULT_VOLUME, SLIDER_STEPS } from '../../../core/volumeScale.js'
 
-// Bipolar: the centre (50) is unity gain (core/volumeScale.js). Uncontrolled
+// Bipolar: the centre is unity gain (core/volumeScale.js). Uncontrolled
 // on purpose - the Mixer doesn't re-render while dragging, and a controlled
 // input would snap back. The native listener (not onChange) also catches the
 // app-wide double-click reset (core/sliderReset.js), which sets .value and
@@ -27,7 +27,7 @@ export function VolumeSlider({ volume, onChange }) {
   // The wrapper carries the centre-tick marker (::after).
   return (
     <span className="volume-slider-wrap">
-      <input ref={ref} type="range" min="0" max="100" className="sound-row-volume" defaultValue={gainToSlider(DEFAULT_VOLUME)} />
+      <input ref={ref} type="range" min="0" max={SLIDER_STEPS} className="sound-row-volume" defaultValue={gainToSlider(DEFAULT_VOLUME)} />
     </span>
   )
 }

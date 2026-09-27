@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.246 — Finer control over how quiet a sound is
+
+- **Changed: the left half of every volume slider (each sound and the master volume) now gives you much more room at the quiet end.** It used to spend most of its travel on the first small drop and squeeze everything quieter into the last few millimetres. Now every bit of travel lowers the volume by the same amount you hear, all the way down to near-silence, and the slider moves in finer steps. The centre is still the sound's own level and the right half still boosts, same as before. Your saved volumes sound exactly as they did; only the slider's position for them moves.
+
 ## v0.1.245 — Top bar rebuilt, same as before
 
 - **The top bar (preset name, Play all, volume, mute, sleep timer, Presets, Settings, "+") is rebuilt on React.** Nothing about how it looks or works changes; it is groundwork so the bar can grow without the older code getting in the way.

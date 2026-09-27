@@ -1,5 +1,6 @@
 import Store from 'electron-store'
 import { VIZ_FPS_OPTIONS, DEFAULT_VIZ_FPS } from './ffmpeg/visualizationVideo.js'
+import { VOLUME_MAX_GAIN } from '../shared/constants.js'
 
 // Matches autoUpdate.js's original hardcoded RECHECK_INTERVAL_MS (4 hours) -
 // now the default rather than the only option, per a direct request for a
@@ -137,10 +138,12 @@ const store = new Store({
     // owner was asleep). The master (global) volume slider was never
     // persisted at all - every launch silently reset it to the HTML
     // default (50 = unity gain), regardless of what it had been turned down
-    // to. 0-100, matches the <input>'s own value attribute (see
-    // core/volumeScale.js for the bipolar position->gain mapping). Written
-    // debounced on every drag (mirrors per-sound volume's own
-    // VOLUME_SAVE_DEBOUNCE_MS pattern in tabs/mixer/index.js).
+    // to. Linear gain, like per-sound volume (1 = unity; see
+    // core/volumeScale.js for the slider mapping). Written debounced on every
+    // drag (mirrors per-sound volume's own VOLUME_SAVE_DEBOUNCE_MS pattern in
+    // tabs/mixer/index.js). null = never set; see legacyGlobalVolumeGain.
+    globalVolumeGain: null,
+    // Pre-v0.1.246: the slider's 0-100 position, read once to migrate.
     globalVolumePosition: 50,
     // Companion fix, same report: which preset (if any) was actively loaded
     // - restored on next launch so a Sound Group's EQ/filters and any
@@ -238,7 +241,7 @@ export function getSettings() {
     exportVisualizationFps: store.get('exportVisualizationFps'),
     exportImagePath: store.get('exportImagePath'),
     exportImageMotion: store.get('exportImageMotion'),
-    globalVolumePosition: store.get('globalVolumePosition'),
+    globalVolumeGain: store.get('globalVolumeGain') ?? legacyGlobalVolumeGain(store.get('globalVolumePosition')),
     lastActivePresetId: store.get('lastActivePresetId'),
     presetAutosaveEnabled: store.get('presetAutosaveEnabled'),
     disabledPlugins: store.get('disabledPlugins'),
@@ -414,10 +417,20 @@ export function setWasPlayingOnClose(wasPlaying) {
   return getSettings()
 }
 
-export function setGlobalVolumePosition(position) {
-  const clamped = Math.round(Math.max(0, Math.min(100, Number(position))))
-  if (Number.isFinite(clamped)) store.set('globalVolumePosition', clamped)
+export function setGlobalVolumeGain(gain) {
+  const clamped = Math.max(0, Math.min(VOLUME_MAX_GAIN, Number(gain)))
+  if (Number.isFinite(clamped)) store.set('globalVolumeGain', clamped)
   return getSettings()
+}
+
+// Until v0.1.246 the master volume was saved as the slider's 0-100 position,
+// linear in gain on each side of 50. The slider's quiet side is now a dB
+// taper, so the old position would mean a different loudness; convert it
+// with the old mapping so an upgrade keeps the mix exactly as loud.
+function legacyGlobalVolumeGain(position) {
+  const p = Math.max(0, Math.min(100, Number(position ?? 50))) / 100
+  if (!Number.isFinite(p)) return 1
+  return p <= 0.5 ? p / 0.5 : 1 + ((p - 0.5) / 0.5) * (VOLUME_MAX_GAIN - 1)
 }
 
 export function setLastActivePresetId(id) {

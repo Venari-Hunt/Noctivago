@@ -12,7 +12,7 @@ import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
 import { openContextMenu } from '../../core/ContextMenu.js'
 import { MAX_BUFFER_CLIP_SECONDS, applySoundOverride } from '../../../shared/constants.js'
 import { effectiveMemberFluctuation, applyGroupShotOverride, groupDriftMemberKey } from '../../../shared/groupDrift.js'
-import { positionToGain, gainToSlider, DEFAULT_VOLUME } from '../../core/volumeScale.js'
+import { DEFAULT_VOLUME } from '../../core/volumeScale.js'
 import { startLevelMeters } from '../../ui/levelMeters.js'
 import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipReport.js'
 import { openClipReport } from './components/ClipReport.jsx'
@@ -68,7 +68,7 @@ const state = {
   // (global or per-sound), not a destructive "set volume to 0" - unmuting
   // always restores exactly whatever the slider was already showing.
   // Session-only, unlike the global volume slider's own position (see
-  // settings.js's globalVolumePosition) - muting on launch would be an odd
+  // settings.js's globalVolumeGain) - muting on launch would be an odd
   // surprise of its own, so only the volume level itself is remembered.
   globalMuted: false,
   mutedSounds: new Set(),
@@ -1310,16 +1310,15 @@ async function toggleGlobalPlayback() {
   }
 }
 
-// The master volume slider's 0-100 position, persisted in settings.
-let globalVolumePosition = 50
+// The master volume as linear gain (1 = unity), persisted in settings.
+let globalVolumeGain = 1
 
 function updateGlobalMuteIcon() {
   updateToolbar({ muted: state.globalMuted })
 }
 
 function applyGlobalVolume() {
-  // Bipolar slider - centre (50) is unity gain, see core/volumeScale.js.
-  const volume = state.globalMuted ? 0 : positionToGain(globalVolumePosition / 100)
+  const volume = state.globalMuted ? 0 : globalVolumeGain
   const now = engine.context.currentTime
   engine.masterGain.gain.cancelScheduledValues(now)
   engine.masterGain.gain.linearRampToValueAtTime(volume, now + 0.05)
@@ -1330,8 +1329,8 @@ function applyGlobalVolume() {
 // doesn't silently "trap" a manual volume change behind an easy-to-miss
 // separate button.
 let globalVolumeSaveTimer = null
-function onGlobalVolumeInput(position) {
-  globalVolumePosition = position
+function onGlobalVolumeInput(gain) {
+  globalVolumeGain = gain
   if (state.globalMuted) {
     state.globalMuted = false
     updateGlobalMuteIcon()
@@ -1340,14 +1339,14 @@ function onGlobalVolumeInput(position) {
 
   // BUG FIX (reported directly, "actively harmful": a restart/autoupdate
   // could bring a quieted-down mix back to full, sharp volume while the
-  // owner was asleep) - this slider's position was never persisted at all,
+  // owner was asleep) - this slider's level was never persisted at all,
   // so every launch silently reset it to the HTML default (unity). Debounced
   // the same way per-sound volume already is (see VOLUME_SAVE_DEBOUNCE_MS
   // above), so a drag doesn't flood settings.js with writes.
   clearTimeout(globalVolumeSaveTimer)
   globalVolumeSaveTimer = setTimeout(() => {
     globalVolumeSaveTimer = null
-    api.settings.setGlobalVolumePosition(globalVolumePosition)
+    api.settings.setGlobalVolumeGain(globalVolumeGain)
   }, VOLUME_SAVE_DEBOUNCE_MS)
 }
 
@@ -2139,8 +2138,8 @@ export function mount(container) {
   // actually resume playback - see restoreLastActivePreset's own doc
   // comment for why the ordering matters.
   api.settings.get().then(async (settings) => {
-    globalVolumePosition = settings.globalVolumePosition
-    updateToolbar({ volumePosition: globalVolumePosition })
+    globalVolumeGain = settings.globalVolumeGain
+    updateToolbar({ volumeGain: globalVolumeGain })
     applyGlobalVolume()
     presetAutosaveUserEnabled = settings.presetAutosaveEnabled
     els.presetAutosaveToggle.checked = presetAutosaveUserEnabled
