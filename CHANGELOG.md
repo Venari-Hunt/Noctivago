@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.247 — Playing sounds are easy to find when grouped by Sound Group
+
+- **With "Group: Sound Group" chosen, sounds in your mix that aren't in any Sound Group now get their own "Playing (ungrouped)" section at the top of the list.** Before, they were mixed in with the rest of your library under "Ungrouped" at the bottom. Sounds you've paused with the main Play/Pause stay in the section too.
+
 ## v0.1.246 — Finer control over how quiet a sound is
 
 - **Changed: the left half of every volume slider (each sound and the master volume) now gives you much more room at the quiet end.** It used to spend most of its travel on the first small drop and squeeze everything quieter into the last few millimetres. Now every bit of travel lowers the volume by the same amount you hear, all the way down to near-silence, and the slider moves in finer steps. The centre is still the sound's own level and the right half still boosts, same as before. Your saved volumes sound exactly as they did; only the slider's position for them moves.

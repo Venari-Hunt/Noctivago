@@ -63,7 +63,7 @@ function formatDateGroupLabel(ms) {
 // one tag arbitrarily. Groups themselves are ordered independently of
 // sortMode (alphabetically, or newest-date-first); sortMode still governs
 // the order of entries *within* each group.
-function groupEntries(sortedEntries, groupMode, soundGroups) {
+function groupEntries(sortedEntries, groupMode, playbackState) {
   if (groupMode === 'alphabetical') {
     const buckets = new Map()
     for (const entry of sortedEntries) {
@@ -109,17 +109,21 @@ function groupEntries(sortedEntries, groupMode, soundGroups) {
     // AudioEngine.js's SoundGroupChain - unlike Tags above, no entry appears
     // twice), plus an "Ungrouped" bucket for everything else, sorted last -
     // same convention alphabetical/tags already use for their own catch-all.
+    // Ungrouped sounds in the mix go to a "Playing (ungrouped)" bucket on top
+    // instead, so they aren't buried in the rest of the library. In the mix
+    // rather than audible, so a global pause doesn't make the section vanish.
     const buckets = new Map()
     for (const entry of sortedEntries) {
-      const group = soundGroups?.find((g) => g.soundIds.includes(entry.id)) ?? null
-      const key = group?.id ?? '__ungrouped'
-      if (!buckets.has(key)) buckets.set(key, { label: group?.name ?? 'Ungrouped', entries: [] })
+      const group = playbackState.groups?.find((g) => g.soundIds.includes(entry.id)) ?? null
+      const inMix = playbackState.playing.has(entry.id) || playbackState.included.has(entry.id)
+      const key = group?.id ?? (inMix ? '__playing' : '__ungrouped')
+      const label = group?.name ?? (inMix ? 'Playing (ungrouped)' : 'Ungrouped')
+      if (!buckets.has(key)) buckets.set(key, { label, entries: [] })
       buckets.get(key).entries.push(entry)
     }
+    const rank = (key) => (key === '__playing' ? -1 : key === '__ungrouped' ? 1 : 0)
     return [...buckets.entries()]
-      .sort(([keyA, a], [keyB, b]) =>
-        keyA === '__ungrouped' ? 1 : keyB === '__ungrouped' ? -1 : a.label.localeCompare(b.label)
-      )
+      .sort(([keyA, a], [keyB, b]) => rank(keyA) - rank(keyB) || a.label.localeCompare(b.label))
       .map(([, { label, entries }]) => ({ label, entries }))
   }
 
@@ -197,7 +201,7 @@ export function buildSoundListSections(entries, playbackState, viewState) {
   const section = (label, list) => ({ label, rows: list.map((entry) => row(entry, label)) })
 
   if (viewState.groupMode !== 'none') {
-    const sections = groupEntries(sorted, viewState.groupMode, playbackState.groups).map((g) => section(g.label, g.entries))
+    const sections = groupEntries(sorted, viewState.groupMode, playbackState).map((g) => section(g.label, g.entries))
     return { sections, draggable }
   }
   if (!nowPlaying) return { sections: [section(null, sorted)], draggable }

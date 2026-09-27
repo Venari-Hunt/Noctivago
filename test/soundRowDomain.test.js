@@ -46,3 +46,19 @@ test('custom order is draggable only while nothing splits the list into sections
   assert.equal(playing.draggable, false)
   assert.deepEqual(playing.sections.map((s) => s.label), ['Now Playing', 'Everything Else'])
 })
+
+test('Sound Group view puts ungrouped sounds in the mix in their own section on top', () => {
+  const entries = [
+    { id: 'a', name: 'A' },
+    { id: 'b', name: 'B' },
+    { id: 'c', name: 'C' },
+    { id: 'd', name: 'D' }
+  ]
+  const groups = [{ id: 'g', name: 'Rain', soundIds: ['c'] }]
+  const state = playback({ groups, playing: new Set(['b', 'c']), included: new Set(['a', 'b', 'c']) })
+  const { sections } = buildSoundListSections(entries, state, { sortMode: 'name-asc', groupMode: 'sound-group' })
+  assert.deepEqual(
+    sections.map((s) => [s.label, s.rows.map((r) => r.entry.id)]),
+    [['Playing (ungrouped)', ['a', 'b']], ['Rain', ['c']], ['Ungrouped', ['d']]]
+  )
+})
