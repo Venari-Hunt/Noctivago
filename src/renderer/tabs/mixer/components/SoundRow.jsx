@@ -108,7 +108,7 @@ function useRowDrag(entry, draggable, callbacks) {
 
 // One card: name line, meta + tags, controls (see main.css's three-line
 // .sound-row layout).
-export function SoundRow({ entry, state, draggable, callbacks, allTags }) {
+export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequest }) {
   const missing = entry.status === 'missing'
   const drag = useRowDrag(entry, draggable, callbacks)
   const className = [
@@ -139,7 +139,11 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags }) {
         </label>
       )}
       <div className="sound-row-name-row">
-        <SoundName name={entry.name} onRename={(name) => callbacks.onRename(entry.id, name)} />
+        <SoundName
+          name={entry.name}
+          editToken={editRequest?.field === 'name' ? editRequest.token : 0}
+          onRename={(name) => callbacks.onRename(entry.id, name)}
+        />
         <SourceBadges entry={entry} />
         {state.groupName && (
           <GroupBadge key={state.groupName} name={state.groupName} id={state.groupId} colorSlot={state.groupColorSlot} onOpenMenu={openMenu} />
@@ -149,7 +153,12 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags }) {
       <div className="sound-row-info">
         <span className="sound-row-meta">{formatMeta(entry)}</span>
         {state.error && <span className="sound-row-error">{state.error}</span>}
-        <SoundTags tags={entry.tags ?? []} allTags={allTags} onChange={(tags) => callbacks.onTagsChange(entry.id, tags)} />
+        <SoundTags
+          tags={entry.tags ?? []}
+          allTags={allTags}
+          editToken={editRequest?.field === 'tags' ? editRequest.token : 0}
+          onChange={(tags) => callbacks.onTagsChange(entry.id, tags)}
+        />
       </div>
       {missing ? (
         <MissingControls onRelink={() => callbacks.onRelink(entry.id)} />

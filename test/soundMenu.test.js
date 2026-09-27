@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { soundMenuItems, duplicateName } from '../src/renderer/tabs/mixer/domain/soundMenu.js'
+import { soundMenuItems, presetMenuItems, togglePresetSound, duplicateName } from '../src/renderer/tabs/mixer/domain/soundMenu.js'
 import { DEFAULT_VOLUME } from '../src/renderer/core/volumeScale.js'
 
 const base = { status: 'ok', loading: false, included: false, muted: false, soloed: false, volume: DEFAULT_VOLUME }
@@ -41,4 +41,33 @@ test('duplicate names count up and skip taken ones', () => {
   assert.equal(duplicateName('Rain', ['Rain', 'Rain (copy)']), 'Rain (copy 2)')
   assert.equal(duplicateName('Rain (copy)', ['Rain', 'Rain (copy)']), 'Rain (copy 2)')
   assert.equal(duplicateName('Rain (copy 2)', ['Rain (copy)', 'Rain (copy 2)', 'Rain (copy 3)']), 'Rain (copy 4)')
+})
+
+test('rename and edit tags stay available for a missing file', () => {
+  const items = byAction(soundMenuItems({ ...base, status: 'missing' }))
+  assert.equal(items.rename.disabled, undefined)
+  assert.equal(items.editTags.disabled, undefined)
+})
+
+test('presets are ticked when they hold the sound; the loaded one follows the mix', () => {
+  const presets = [
+    { id: 'a', name: 'Rain', sounds: [{ soundId: 's1' }] },
+    { id: 'b', name: 'Cabin', sounds: [{ soundId: 's1' }] },
+    { id: 'c', name: 'Forest', sounds: [] }
+  ]
+  const items = presetMenuItems(presets, 's1', 'b', false)
+  assert.deepEqual(
+    items.map((i) => [i.label, i.member]),
+    [
+      ['✓ Rain', true],
+      ['Cabin (loaded)', false],
+      ['Forest', false]
+    ]
+  )
+})
+
+test('toggling a sound in and out of a preset', () => {
+  const sounds = [{ soundId: 's1', volume: 0.5, overrides: { pan: 1 } }]
+  assert.deepEqual(togglePresetSound(sounds, 's2', 0.8), [...sounds, { soundId: 's2', volume: 0.8, overrides: null }])
+  assert.deepEqual(togglePresetSound(sounds, 's1', 0.8), [])
 })

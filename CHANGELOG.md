@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.250 — Rename, tags and presets from the right-click menu
+
+- **Right-click a sound in the Mixer to Rename it or Edit its tags** — opens the same inline editors as double-clicking the name or clicking "+ tag".
+- **New "Presets" submenu in the same menu:** every preset is listed with a ✓ next to the ones that already contain the sound. Click one to add the sound to that preset or take it out, without loading it first. The loaded preset's entry works like Play/Stop.
+
 ## v0.1.249 — More in a sound's right-click menu
 
 - **Right-click a sound in the Mixer for more actions:** Play or Stop it, Solo, Mute, Reset volume, Duplicate (same file, separate settings, placed right under the original), Show file in folder, and Remove from library (kept at the very bottom so it's hard to hit by accident).

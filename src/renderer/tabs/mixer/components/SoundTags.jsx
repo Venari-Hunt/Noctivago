@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { applyTagSuggestion, matchingTags, mergeTypedTags } from '../domain/soundRow.js'
 
 // Comma-separated, with Obsidian-style autocomplete from every tag already
@@ -80,8 +80,13 @@ function TagInput({ tags, allTags, onDone }) {
   )
 }
 
-export function SoundTags({ tags, allTags, onChange }) {
+// editToken: a new non-zero value opens the tag input (the right-click
+// menu's Edit tags…).
+export function SoundTags({ tags, allTags, editToken, onChange }) {
   const [adding, setAdding] = useState(false)
+  useEffect(() => {
+    if (editToken) setAdding(true)
+  }, [editToken])
 
   return (
     <div className="sound-row-tags">
