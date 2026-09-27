@@ -2123,11 +2123,11 @@ async function restoreLastActivePreset(settings) {
 export function mount(container) {
   container.innerHTML = `
     <div id="recommended-plugins"></div>
-    <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
     <div class="sound-list-controls">
+      <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
       <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
       <select id="sound-group" class="sound-group-select" title="Group by"></select>
-      <button id="bulk-select-toggle" class="btn btn-small" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
+      <button id="bulk-select-toggle" class="btn" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
     </div>
     <div id="bulk-select-bar" class="bulk-select-bar hidden">
       <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
