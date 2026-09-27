@@ -364,19 +364,27 @@ async function renameSound(id, name) {
 // noctivago:sound-groups-changed so any other live view (Preset Remix, this
 // same Mixer if the edited preset is the active one) picks up the change.
 function openSoundContextMenu(id, evt) {
+  const items = []
+  // Only while the Remix plugin is installed and on; its tab panel is how we
+  // know. Remix listens for noctivago:edit-sound, switches to its own tab
+  // and opens the sound in Sound mode.
+  if (document.querySelector('.tab-panel[data-tab-id="remix"]')) {
+    items.push({ label: 'Edit in Remix', onClick: () => window.dispatchEvent(new CustomEvent('noctivago:edit-sound', { detail: { soundId: id } })) })
+    items.push({ separator: true })
+  }
   if (!state.activePresetId) {
-    openContextMenu(evt.clientX, evt.clientY, [{ label: 'Load a preset to use Sound Groups', disabled: true }])
+    items.push({ label: 'Load a preset to use Sound Groups', disabled: true })
+    openContextMenu(evt.clientX, evt.clientY, items)
     return
   }
   const presetId = state.activePresetId
   const groups = state.groups
   const currentGroupId = groups.find((g) => g.soundIds.includes(id))?.id ?? null
 
-  const items = groups.map((g) => ({
-    label: (g.id === currentGroupId ? '✓ ' : '') + g.name,
-    onClick: () => toggleGroupMembership(presetId, g.id, id)
-  }))
-  if (items.length > 0) items.push({ separator: true })
+  for (const g of groups) {
+    items.push({ label: (g.id === currentGroupId ? '✓ ' : '') + g.name, onClick: () => toggleGroupMembership(presetId, g.id, id) })
+  }
+  if (groups.length > 0) items.push({ separator: true })
   items.push({ label: 'New group with this sound…', onClick: () => openCreateGroupDialog(presetId, id) })
   if (currentGroupId) {
     items.push({ label: 'Remove from group', onClick: () => toggleGroupMembership(presetId, currentGroupId, id) })
