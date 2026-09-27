@@ -8,7 +8,7 @@ export function Transport({ state, handlers }) {
       <button className="btn btn-primary btn-svg-icon" type="button" title={playButtonTitle(state.playing)} onClick={handlers.onPlayPause}>
         {state.playing ? <PauseAllIcon /> : <PlayAllIcon />}
       </button>
-      <GlobalVolume position={state.volumePosition} onInput={handlers.onVolumeInput} />
+      <GlobalVolume gain={state.volumeGain} onInput={handlers.onVolumeInput} />
       <button
         className={'btn btn-svg-icon' + (state.muted ? ' btn-svg-icon-active' : '')}
         type="button"

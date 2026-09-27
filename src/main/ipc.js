@@ -25,7 +25,7 @@ import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { pluginMigrationSettled, takeStartupNotices } from './plugins/migration.js'
 import * as pluginStore from './plugins/store.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumePosition, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumeGain, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
 import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
@@ -96,7 +96,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setExportImagePath', (_event, filePath) => setExportImagePath(filePath))
   ipcMain.handle('settings:setExportImageMotion', (_event, motion) => setExportImageMotion(motion))
   ipcMain.handle('settings:setYtDlpCookiesBrowser', (_event, browser) => setYtDlpCookiesBrowser(browser))
-  ipcMain.handle('settings:setGlobalVolumePosition', (_event, position) => setGlobalVolumePosition(position))
+  ipcMain.handle('settings:setGlobalVolumeGain', (_event, gain) => setGlobalVolumeGain(gain))
   ipcMain.handle('settings:setLastActivePresetId', (_event, id) => setLastActivePresetId(id))
   ipcMain.handle('settings:setPresetAutosaveEnabled', (_event, enabled) => setPresetAutosaveEnabled(enabled))
 

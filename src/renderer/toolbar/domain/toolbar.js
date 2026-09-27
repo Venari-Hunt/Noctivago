@@ -6,8 +6,8 @@ export const INITIAL_TOOLBAR_STATE = {
   isDev: false,
   presetName: null,
   playing: false,
-  // Bipolar slider position, 0-100 - the centre is unity gain (core/volumeScale.js).
-  volumePosition: 50,
+  // Master volume as linear gain; the slider maps it (core/volumeScale.js).
+  volumeGain: 1,
   muted: false,
   sleepActive: false,
   sleepRemaining: ''

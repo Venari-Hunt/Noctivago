@@ -25,7 +25,7 @@ const api = {
     setExportImagePath: (filePath) => ipcRenderer.invoke('settings:setExportImagePath', filePath),
     setExportImageMotion: (motion) => ipcRenderer.invoke('settings:setExportImageMotion', motion),
     setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser),
-    setGlobalVolumePosition: (position) => ipcRenderer.invoke('settings:setGlobalVolumePosition', position),
+    setGlobalVolumeGain: (gain) => ipcRenderer.invoke('settings:setGlobalVolumeGain', gain),
     setLastActivePresetId: (id) => ipcRenderer.invoke('settings:setLastActivePresetId', id),
     setPresetAutosaveEnabled: (enabled) => ipcRenderer.invoke('settings:setPresetAutosaveEnabled', enabled)
   },
