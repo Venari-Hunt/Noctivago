@@ -201,9 +201,11 @@ describe('pickBiasedValue', () => {
     }
     // A uniform pick would land in this 20-wide window ~20% of the time
     // regardless of bias; the biased pick should land there much more often
-    // since values are meant to sit near bias most of the time.
+    // since values are meant to sit near bias most of the time. The real rate
+    // is ~36.8%; a 0.35 bar sat 2.3 standard deviations below it and failed
+    // CI about once in a hundred runs.
     const fraction = inWindow / n
-    assert.ok(fraction > 0.35, `only ${fraction * 100}% of draws fell in the near-bias window (uniform baseline would be ~20%)`)
+    assert.ok(fraction > 0.3, `only ${fraction * 100}% of draws fell in the near-bias window (uniform baseline would be ~20%)`)
   })
 
   test('handles an off-center bias reaching both edges', () => {
