@@ -31,8 +31,8 @@ const RENDER_SIZE = Math.min(SIZE, 1000)
 // at RENDER_SIZE instead of a fixed 512 - the viewBox stays 0 0 256 256, so
 // this is a lossless vector scale-up, not an upscale of a raster source.
 const SVG = `<svg width="${RENDER_SIZE}" height="${RENDER_SIZE}" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="128" cy="128" r="124" fill="#7aa2f7"/>
-  <g fill="#ffffff">
+  <circle cx="128" cy="128" r="124" fill="#ffc933"/>
+  <g fill="#000000">
     <ellipse cx="128" cy="150" rx="10" ry="16"/>
     <circle cx="128" cy="120" r="13"/>
     <polygon points="118,110 122,84 128,112"/>

@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.251 — Yellow app icon
+
+- **New icon colors:** the app icon, taskbar icon and tray icon are now a black bat on the app's yellow, matching the rest of the app instead of the old blue.
+
 ## v0.1.250 — Rename, tags and presets from the right-click menu
 
 - **Right-click a sound in the Mixer to Rename it or Edit its tags** — opens the same inline editors as double-clicking the name or clicking "+ tag".
