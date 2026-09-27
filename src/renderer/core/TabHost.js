@@ -151,6 +151,8 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     register,
     unregister,
     dropSlot,
+    activate,
+    has: (id) => tabs.has(id),
     getActiveId: () => activeId,
     onActivate(listener) {
       activateListeners.add(listener)

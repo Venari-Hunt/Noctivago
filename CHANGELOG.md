@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.248 — Edit in Remix from the Mixer
+
+- **Right-click a sound in the Mixer and choose "Edit in Remix"** to jump straight to the Remix tab with that sound open. If you have unsaved changes on another sound in Remix, you get the usual prompt first. Needs the Remix plugin (1.2.0 or newer, which updates itself).
+
 ## v0.1.247 — Playing sounds are easy to find when grouped by Sound Group
 
 - **With "Group: Sound Group" chosen, sounds in your mix that aren't in any Sound Group now get their own "Playing (ungrouped)" section at the top of the list.** Before, they were mixed in with the rest of your library under "Ungrouped" at the bottom. Sounds you've paused with the main Play/Pause stay in the section too.

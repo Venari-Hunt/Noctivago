@@ -100,7 +100,11 @@ async function load(id, manifest) {
             if (!record.tabIds.delete(tabDef.id)) return
             tabHost.unregister(tabDef.id, { keepSlot: record.keepSlots })
           }
-        }
+        },
+        // Brings one of this plugin's own tabs to the front (e.g. Remix
+        // answering the Mixer's "Edit in Remix"). Resolves once the switch is
+        // done, or vetoed by the current tab's onBeforeHide.
+        show: (tabId) => (record.tabIds.has(tabId) ? tabHost.activate(tabId) : Promise.resolve())
       },
       settings: {
         addPage: (page) => {
