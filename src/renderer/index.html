@@ -8,11 +8,14 @@
   <body>
     <div id="app">
       <header class="toolbar">
+        <div class="toolbar-group toolbar-preset">
         <span id="dev-badge" class="dev-badge hidden" title="This is a development build - separate data from any installed copy">DEV</span>
         <span id="active-preset-indicator" class="active-preset-indicator" title="No preset loaded">
           <svg class="active-preset-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
           <span id="active-preset-name" class="active-preset-name">No preset</span>
         </span>
+        </div>
+        <div class="toolbar-group toolbar-transport">
         <button id="global-play-pause" class="btn btn-primary btn-svg-icon" type="button" title="Play all">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </button>
@@ -35,7 +38,8 @@
           </button>
           <span id="sleep-timer-remaining" class="sleep-timer-remaining hidden"></span>
         </div>
-        <span class="spacer"></span>
+        </div>
+        <div class="toolbar-group toolbar-actions">
         <button id="open-presets" class="btn btn-icon-text" type="button">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
           Presets
@@ -51,6 +55,7 @@
             <button id="add-sound-record" class="dropdown-item" type="button">Record audio…</button>
             <button id="add-sound-link" class="dropdown-item" type="button">Add from link…</button>
           </div>
+        </div>
         </div>
       </header>
       <nav id="tab-bar" class="tab-bar"></nav>

@@ -439,13 +439,16 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     nameRow.appendChild(groupBadge)
   }
 
+  // Per-row actions pinned to the top-right corner, so they sit in the same
+  // spot on every card instead of trailing the slider row.
+  const actions = document.createElement('div')
+  actions.className = 'sound-row-actions'
+  nameRow.appendChild(actions)
+
   li.appendChild(nameRow)
 
-  // Everything below the name - meta/tags plus every button and slider -
-  // shares this second row, so the name above never has to shrink to make
-  // room for them.
   const controlsRow = document.createElement('div')
-  controlsRow.className = 'sound-row-controls'
+  controlsRow.className = entry.status === 'missing' ? 'sound-row-controls-missing' : 'sound-row-controls'
 
   const meta = document.createElement('span')
   meta.className = 'sound-row-meta'
@@ -461,7 +464,7 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
 
   info.appendChild(buildTagsRow(entry, callbacks, allTags))
 
-  controlsRow.appendChild(info)
+  li.appendChild(info)
 
   if (entry.status === 'missing') {
     const missingLabel = document.createElement('span')
@@ -553,22 +556,23 @@ export function createSoundRow(entry, { included, loading, error, volume, muted,
     // is not needing to add it first just to hear it.
     if (entry.playMode === 'scatter' || entry.playMode === 'scheduled') {
       const testFireBtn = document.createElement('button')
-      testFireBtn.className = 'btn btn-svg-icon'
+      testFireBtn.className = 'btn btn-small btn-svg-icon'
       testFireBtn.type = 'button'
       testFireBtn.title = 'Play one shot now (test this configuration)'
       testFireBtn.innerHTML = TEST_FIRE_ICON_SVG
       testFireBtn.addEventListener('click', () => callbacks.onTestFire(entry.id))
-      controlsRow.appendChild(testFireBtn)
+      actions.appendChild(testFireBtn)
     }
   }
 
   const removeBtn = document.createElement('button')
-  removeBtn.className = 'btn btn-small btn-danger btn-icon-text'
+  removeBtn.className = 'btn btn-small btn-svg-icon sound-row-remove'
   removeBtn.type = 'button'
+  removeBtn.title = 'Remove from library'
   removeBtn.innerHTML =
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg> Remove'
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg>'
   removeBtn.addEventListener('click', () => callbacks.onRemove(entry.id))
-  controlsRow.appendChild(removeBtn)
+  actions.appendChild(removeBtn)
 
   li.appendChild(controlsRow)
 

@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.243 — New look: true black with yellow accents
+
+- **New: an OLED-friendly black theme with yellow accents.** The background is now true black and everything that's on, selected or primary (Play, In Mix, Solo, toggles, the current tab) is yellow; the old blue is gone.
+- **Changed: the top bar has three fixed zones.** Your preset sits on the left, playback controls (Play, volume, Mute, sleep timer) in the middle, and Presets, Settings and Add on the right. In a narrow window the playback controls move to their own full-width row instead of wrapping wherever they fit.
+- **Changed: every sound card has the same layout.** Name and a quiet Remove button on top, length and tags below, then In Mix, volume, level meter, Mute and Solo in fixed columns, so the sliders and buttons line up down the whole list.
+- **Changed: buttons, text boxes and dropdowns share one size and shape.** Search, sort and grouping now sit together on one row above the list.
+
 ## v0.1.242 — A YouTube import that fails now says what is missing
 
 - **Fixed: if antivirus removes the YouTube downloader from the install, importing a link now says so.** The downloader (yt-dlp.exe) ships inside the installer, but antivirus software quarantines it by mistake fairly often. When that happened, a YouTube link failed with a message about the link not being an audio file, which blamed the link instead of the missing file — and Freesound kept working, so nothing pointed at the real cause. Both the Add-from-link dialog and Browse Sounds' YouTube search now name the missing file and tell you to check your antivirus quarantine.
