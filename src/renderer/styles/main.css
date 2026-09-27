@@ -1061,6 +1061,13 @@ main {
   background: var(--surface-hover);
 }
 
+.context-menu-item-submenu::after {
+  content: '▸';
+  float: right;
+  margin-left: 12px;
+  color: var(--text-dim);
+}
+
 .context-menu-item:disabled {
   color: var(--text-dim);
   cursor: default;

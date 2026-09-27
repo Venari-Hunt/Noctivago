@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { marqueeDurationSeconds } from '../domain/soundRow.js'
 
 // .sound-row-name is nowrap + ellipsis (main.css), so scrollWidth past
@@ -46,8 +46,13 @@ function RenameInput({ name, onDone }) {
   )
 }
 
-export function SoundName({ name, onRename }) {
+// editToken: a new non-zero value opens the editor (the right-click menu's
+// Rename…).
+export function SoundName({ name, editToken, onRename }) {
   const [editing, setEditing] = useState(false)
+  useEffect(() => {
+    if (editToken) setEditing(true)
+  }, [editToken])
 
   if (editing) {
     return (

@@ -4,7 +4,7 @@ import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
 import { BufferScheduledSource, StreamScheduledSource } from '../../audio/ScheduledSoundSource.js'
 import { sortForDisplay, SORT_MODES, GROUP_MODES } from './domain/soundList.js'
-import { soundMenuItems, REMOVE_MENU_ITEM, duplicateName } from './domain/soundMenu.js'
+import { soundMenuItems, presetMenuItems, togglePresetSound, REMOVE_MENU_ITEM, duplicateName } from './domain/soundMenu.js'
 import { renderSoundList } from './components/SoundList.jsx'
 import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
@@ -79,6 +79,9 @@ const state = {
   // itself. Session-only, like mute itself.
   soloedSoundId: null,
   soloMutedIds: new Set(),
+  // Set for one render by the right-click menu's Rename… / Edit tags… (see
+  // startRowEdit).
+  editRequest: null,
   // Group solo (v0.1.148) - the merged Remix tab's Group-mode "hear just
   // this group" button. Independent of soloedSoundId/soloMutedIds above
   // (a single-sound solo and a group solo are mutually exclusive, never
@@ -256,7 +259,8 @@ function render() {
       onContextMenu: openSoundContextMenu,
       onToggleSelect: toggleSelectSound
     },
-    allTags
+    allTags,
+    state.editRequest
   )
   refreshGlobalButton()
 }
@@ -364,9 +368,10 @@ async function renameSound(id, name) {
 // the Preset Remix plugin's "Sound Groups" section) and broadcast
 // noctivago:sound-groups-changed so any other live view (Preset Remix, this
 // same Mixer if the edited preset is the active one) picks up the change.
-function openSoundContextMenu(id, evt) {
+async function openSoundContextMenu(id, evt) {
   const entry = state.library.find((s) => s.id === id)
   if (!entry) return
+  const presets = await api.presets.list()
   const items = []
   // Only while the Remix plugin is installed and on; its tab panel is how we
   // know. Remix listens for noctivago:edit-sound, switches to its own tab
@@ -383,6 +388,8 @@ function openSoundContextMenu(id, evt) {
       changeVolume(id, DEFAULT_VOLUME)
       render()
     },
+    rename: () => startRowEdit(id, 'name'),
+    editTags: () => startRowEdit(id, 'tags'),
     duplicate: () => duplicateSoundFromMenu(entry),
     showInFolder: () => api.library.showInFolder(id),
     remove: () => removeSound(id)
@@ -397,9 +404,41 @@ function openSoundContextMenu(id, evt) {
     volume: state.volumes.get(id) ?? DEFAULT_VOLUME
   }
   items.push(...soundMenuItems(menuState).map(toItem), { separator: true })
+  items.push({ label: 'Presets', submenu: presetSubmenu(presets, entry, menuState), disabled: presets.length === 0 }, { separator: true })
   items.push(...groupMenuItems(id))
   items.push({ separator: true }, toItem(REMOVE_MENU_ITEM))
   openContextMenu(evt.clientX, evt.clientY, items)
+}
+
+function presetSubmenu(presets, entry, menuState) {
+  return presetMenuItems(presets, entry.id, state.activePresetId, menuState.included).map((item) => ({
+    label: item.label,
+    disabled: item.presetId === state.activePresetId && (entry.status === 'missing' || menuState.loading),
+    onClick: () => toggleSoundInPreset(item.presetId, entry.id)
+  }))
+}
+
+// The loaded preset's sounds are the mix, so that one goes through the
+// normal add/remove (autosave writes it back). Any other preset is written
+// directly.
+async function toggleSoundInPreset(presetId, soundId) {
+  if (presetId === state.activePresetId) {
+    await toggleIncluded(soundId)
+    return
+  }
+  const preset = (await api.presets.list()).find((p) => p.id === presetId)
+  if (!preset) return
+  const volume = state.volumes.get(soundId) ?? DEFAULT_VOLUME
+  await api.presets.updateSounds(presetId, togglePresetSound(preset.sounds ?? [], soundId, volume))
+}
+
+// Rename… / Edit tags… open the row's own inline editor. The request rides
+// one render; SoundRow opens the editor when its token changes.
+let rowEditToken = 0
+function startRowEdit(id, field) {
+  state.editRequest = { id, field, token: ++rowEditToken }
+  render()
+  state.editRequest = null
 }
 
 function groupMenuItems(id) {
