@@ -18,6 +18,7 @@ import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
 import { applyOcclusionToFilters, MAX_BUFFER_CLIP_SECONDS } from '../../shared/constants.js'
 import { mapPool } from './mapPool.js'
+import { planBatches, EVENT_BATCH_SIZE, EVENT_BATCH_SIZE_LIGHT } from './batchPlan.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -67,24 +68,8 @@ import { mapPool } from './mapPool.js'
 // below for why and how step 3 itself gets split into independent
 // per-loop-sound passes in that case.
 
-// EVENT_BATCH_SIZE branches of rubberband+volume+fade+adelay go into one
-// ffmpeg graph per batch. rubberband's cost is proportional to a shot's
-// duration and ffmpeg runs a graph's branches on one thread, so this is
-// bounded on purpose - a documented "took all my RAM and never finished"
-// bug (v0.1.85) came from putting every event's rubberband into a single
-// graph. 25 branches were measured safe (~40s/500MB); this keeps a margin.
-// Unlike the pre-rewrite version each batch graph is now only `apad`'d to
-// its own span, not the whole export length, so peak memory per batch is
-// meaningfully lower than even that measurement.
-const EVENT_BATCH_SIZE = 20
-// When a sound's shots need NO rubberband at all - no per-shot pitch AND no
-// per-shot speed variation (see eventsNeedRubberband) - each event branch is
-// just volume + fade + adelay, which is cheap enough to pack far more of
-// into one graph. A dense Random Interval sound with plain shots then
-// produces ~15x fewer batch tracks, which is what actually collapses the
-// "Merging N track groups" phase on a long export (measured: a batch of 300
-// plain branches over a 20-min span peaks ~270 MB, one ffmpeg pass ~90s).
-const EVENT_BATCH_SIZE_LIGHT = 300
+// Batch sizing (EVENT_BATCH_SIZE, EVENT_BATCH_SIZE_LIGHT, the span cap) and
+// planBatches live in batchPlan.js.
 // Below this a pitch shift is inaudible - skip the (expensive) rubberband
 // node entirely, matching how eqNodeType elsewhere treats a true no-op as
 // "skip the node," not "run it at neutral settings."
@@ -93,9 +78,6 @@ const IDENTITY_PITCH_EPSILON_SEMITONES = 0.02
 // pitchStretch.js's IDENTITY_SPEED_EPSILON) - a batch of shots all within
 // this of 1.0x, with no pitch variation either, needs no rubberband.
 const IDENTITY_SPEED_EPSILON = 0.005
-// A little slack past the last event's own end so a batch's final shot
-// (plus any fade-out tail) isn't clipped by the batch track's own length.
-const BATCH_TAIL_MARGIN_SECONDS = 0.25
 
 const INTERMEDIATE_EXT = 'flac'
 const INTERMEDIATE_CODEC = ['-c:a', 'flac', '-ar', '44100', '-ac', '2']
@@ -279,11 +261,6 @@ function makeReporter(onProgress, totalWorkSeconds) {
   }
 }
 
-// Chronological events -> contiguous batches, each with the real time span it
-// occupies (first event's offset .. last event's offset + its own
-// pitch-adjusted shot length + a little tail slack). Computed up front from
-// the event list alone (no rendering needed) so the progress reporter can be
-// weighted before any ffmpeg runs.
 // True if any event in the list needs a rubberband pass (per-shot pitch or
 // per-shot speed differs from neutral) - the same test eventBranchChain
 // applies per event. A sound where this is false gets the big
@@ -295,22 +272,6 @@ function eventsNeedRubberband(events) {
       Math.abs(e.pitchSemitones ?? 0) >= IDENTITY_PITCH_EPSILON_SEMITONES ||
       Math.abs((e.speedFactor ?? 1) - 1) >= IDENTITY_SPEED_EPSILON
   )
-}
-
-function planBatches(events, shotDurationSeconds, batchSize = EVENT_BATCH_SIZE) {
-  const batches = []
-  for (let i = 0; i < events.length; i += batchSize) {
-    const slice = events.slice(i, i + batchSize)
-    const start = slice[0].offsetSeconds
-    let end = start
-    for (const evt of slice) {
-      const shotLen = Number.isFinite(evt.shotDurationSeconds) ? evt.shotDurationSeconds : shotDurationSeconds
-      end = Math.max(end, evt.offsetSeconds + shotLen + (evt.fadeOutMs ?? 0) / 1000)
-    }
-    end += BATCH_TAIL_MARGIN_SECONDS
-    batches.push({ events: slice, start, span: Math.max(0.05, end - start) })
-  }
-  return batches
 }
 
 // Renders one sound's [loopStart, loopEnd) as a single short FLAC shot clip.
