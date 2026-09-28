@@ -39,6 +39,6 @@ export function tooLargeMessage(sounds, totalBytes, maxBytes) {
   const limit = Math.round(maxBytes / 1024 / 1024)
   return (
     `This preset is ${formatMB(totalBytes)} after compression; the limit is ${limit} MB. ` +
-    `Heaviest: ${names}. Shorten or remove those and try again.`
+    `Heaviest: ${names}. Cut them to 15 s, shorten or remove them, then try again.`
   )
 }

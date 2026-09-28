@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.255 — Cut long sounds when a shared preset is too large
+
+- **When a preset is too large to share, each long sound in the size list gets a "Cut to 15 s" button.** Click it and the upload keeps only 15 seconds from the middle of the part the preset plays; the list shows the new size right away. Your own copy of the sound is not changed. Needs Community plugin 1.2.0.
+
 ## v0.1.254 — Pinned taskbar icon stays visible after updates
 
 - **Updating no longer leaves a pinned taskbar icon blank.** The installer now tells Windows to refresh its icons, so a pinned Noctívago shows the current icon right away (this bit some people after the v0.1.251 icon change).
