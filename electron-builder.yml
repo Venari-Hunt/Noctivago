@@ -44,6 +44,8 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # Refreshes pinned taskbar icons after install (see the file for why).
+  include: resources/installer.nsh
 publish:
   provider: github
   owner: Venari-Hunt

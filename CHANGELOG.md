@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.254 — Pinned taskbar icon stays visible after updates
+
+- **Updating no longer leaves a pinned taskbar icon blank.** The installer now tells Windows to refresh its icons, so a pinned Noctívago shows the current icon right away (this bit some people after the v0.1.251 icon change).
+
 ## v0.1.253 — See what a community upload is doing
 
 - **Sharing a preset to the community now shows a progress bar** that runs through compressing each sound and uploading, instead of only a line of text.
