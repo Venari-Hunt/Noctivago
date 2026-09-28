@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.253 — See what a community upload is doing
+
+- **Sharing a preset to the community now shows a progress bar** that runs through compressing each sound and uploading, instead of only a line of text.
+- **You see each sound's size before and after compression**, so you know what the upload weighs.
+- **When a preset is too large to share, the message names the heaviest sounds** and highlights them in the list, so you know which ones to shorten or remove.
+
 ## v0.1.252 — Icons in the right-click menu
 
 - **Every option in a sound's right-click menu now has an icon** (play, solo, mute, rename, tags, folder, trash and so on), so you can spot the one you want at a glance. Presets and Sound Groups that already hold the sound show a check mark.

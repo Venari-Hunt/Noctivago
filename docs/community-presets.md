@@ -21,7 +21,8 @@ Owner request: users upload presets from the app, and other users browse and imp
 - **Freesound sounds:** `buildPortableBundle(id, { skipFreesoundAudio })` omits their audio. On import, such a sound resolves in one of two ways:
   - It matches a library entry with the same `source.freesoundId`. The sender's overridable settings then become that preset's overrides, so the recipient's baseline is untouched.
   - Otherwise it's `fromFreesound`: the import downloads it with `freesound/client.js`'s new `getPreviewUrl(id)` plus the existing `addSoundFromFreesound`.
-- **Size:** `community/bundle.js` re-encodes every uploaded sound to Opus 96k. Loop points, envelopes and schedules are in seconds, so they stay valid. A 6-second WAV went from 1.0 MB to about 80 KB.
+- **Size:** `community/bundle.js` re-encodes every uploaded sound to Opus 96k (`src/main/community/bundle.js`). Loop points, envelopes and schedules are in seconds, so they stay valid. A 6-second WAV went from 1.0 MB to about 80 KB.
+- **Upload progress and sizes (v0.1.253, Community plugin 1.1.0):** `community:publishProgress` events carry `{ message, phase, fraction, sounds }`. `fraction` is one 0..1 bar across both phases: compression fills the first 70%, weighted by each file's original size; the upload fills the rest (`uploadReport.js`, Electron-free and unit-tested). The upload shows real progress because `client.js` encodes the FormData up front and hands fetch a 256 KB-chunk stream with an explicit `content-length` (`duplex: 'half'`). `sounds` is `[{ name, freesound, beforeBytes, afterBytes }]`, returned on success and failure too. A preset over the 50 MB limit now compresses every sound before failing, so the error and the plugin's size list can name the three heaviest.
 - **Shared import path:** `prepareImport(buffer)` does read → analyze → stash for both a local pick and a community download.
 
 **App side.**
