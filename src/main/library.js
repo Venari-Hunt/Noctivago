@@ -9,6 +9,7 @@ import { runFfmpegToFile } from './ffmpeg/runFfmpeg.js'
 import { resolveFfmpegPath } from './ffmpeg/ffmpegPath.js'
 import { runYtDlp } from './ytdlp/runYtDlp.js'
 import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
+import { downloadChunked } from './ytdlp/chunkedDownload.js'
 import { downloadPreviewAudio } from './freesound/download.js'
 import { STORED_AUDIO_EXT, STORED_AUDIO_ARGS } from './ffmpeg/storedAudio.js'
 import { getSoundCredits, trimDescription } from './freesound/client.js'
@@ -715,6 +716,44 @@ async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress, onChild } = {
   return path.join(tmpDir, match)
 }
 
+// Fast path first (ytdlp/chunkedDownload.js): fetches the audio in 1 MB
+// pieces, which YouTube doesn't throttle, then converts it here. Throws if
+// it doesn't apply; addSoundFromUrl then runs downloadViaYtDlp as before.
+async function downloadViaChunks(url, { maxSeconds = 0, onProgress, onChild, signal } = {}) {
+  const tmpDir = path.join(app.getPath('userData'), 'download-tmp')
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const id = crypto.randomUUID()
+  const partialPath = path.join(tmpDir, `${id}.part`)
+  const audioPath = path.join(tmpDir, `${id}${STORED_AUDIO_EXT}`)
+  try {
+    await downloadChunked(url, partialPath, {
+      maxSeconds,
+      cookiesBrowser: getSettings().ytDlpCookiesBrowser,
+      onChild,
+      signal,
+      onProgress: onProgress ? (fraction) => onProgress({ type: 'progress', percent: Math.round(fraction * 95) }) : undefined
+    })
+    const args = ['-y', '-i', partialPath, '-vn']
+    if (maxSeconds > 0) args.push('-t', String(maxSeconds))
+    args.push(...STORED_AUDIO_ARGS, audioPath)
+    await runFfmpegToFile(args)
+    return audioPath
+  } catch (err) {
+    try {
+      fs.rmSync(audioPath, { force: true })
+    } catch {
+      // best-effort
+    }
+    throw err
+  } finally {
+    try {
+      fs.rmSync(partialPath, { force: true })
+    } catch {
+      // best-effort
+    }
+  }
+}
+
 // onProgress (optional) is fed { type:'step', message } for the coarse
 // phase changes, { type:'status', message } for yt-dlp's own verbose lines,
 // and { type:'progress', percent } as the download advances - the IPC
@@ -726,6 +765,7 @@ async function downloadViaYtDlp(url, { maxSeconds = 0, onProgress, onChild } = {
 // the direct-audio attempt ahead of it either succeeds at full speed or
 // fails within seconds.
 let activeYtDlpChild = null
+let activeDownloadAbort = null
 let cancelRequested = false
 
 // Killing yt-dlp alone isn't enough. With --download-sections yt-dlp hands
@@ -752,7 +792,8 @@ function killTree(child) {
 
 export function cancelAddSoundFromUrl() {
   cancelRequested = true
-  if (!activeYtDlpChild) return false
+  activeDownloadAbort?.abort()
+  if (!activeYtDlpChild) return Boolean(activeDownloadAbort)
   try {
     killTree(activeYtDlpChild)
   } catch {
@@ -799,26 +840,36 @@ export async function addSoundFromUrl({ name, url, maxSeconds }, onProgress) {
         'Antivirus software often quarantines it by mistake — check its quarantine and allow it, then reinstall Noctívago.'
       )
     }
+    const trackChild = (child) => {
+      activeYtDlpChild = child
+      // Cancelled between the request and the spawn - stop it right away.
+      if (cancelRequested) cancelAddSoundFromUrl()
+    }
+    onProgress?.({ type: 'step', message: 'Not a direct audio file — handing it to yt-dlp (YouTube / video sites)…' })
+    activeDownloadAbort = new AbortController()
     try {
-      onProgress?.({ type: 'step', message: 'Not a direct audio file — handing it to yt-dlp (YouTube / video sites)…' })
-      audioPath = await downloadViaYtDlp(parsed.toString(), {
-        maxSeconds: cap,
-        onProgress,
-        onChild: (child) => {
-          activeYtDlpChild = child
-          // Cancelled between the request and the spawn - stop it right away.
-          if (cancelRequested) cancelAddSoundFromUrl()
-        }
-      })
+      audioPath = await downloadViaChunks(parsed.toString(), { maxSeconds: cap, onProgress, onChild: trackChild, signal: activeDownloadAbort.signal })
       usedYtDlp = true
-    } catch (ytDlpErr) {
+    } catch (fastErr) {
       if (cancelRequested) throw new Error('Download cancelled.')
-      // The direct-audio attempt always fails first for a watch-page URL, so
-      // its message is noise; yt-dlp's is the one that says what went wrong
-      // (a live stream, an unavailable video, a sign-in wall).
-      throw new Error(`Couldn't download that link: ${ytDlpErr.message}`)
+      console.warn(`[addSoundFromUrl] fast download didn't apply, using plain yt-dlp: ${fastErr.message}`)
     } finally {
+      activeDownloadAbort = null
       activeYtDlpChild = null
+    }
+    if (!audioPath) {
+      try {
+        audioPath = await downloadViaYtDlp(parsed.toString(), { maxSeconds: cap, onProgress, onChild: trackChild })
+        usedYtDlp = true
+      } catch (ytDlpErr) {
+        if (cancelRequested) throw new Error('Download cancelled.')
+        // The direct-audio attempt always fails first for a watch-page URL, so
+        // its message is noise; yt-dlp's is the one that says what went wrong
+        // (a live stream, an unavailable video, a sign-in wall).
+        throw new Error(`Couldn't download that link: ${ytDlpErr.message}`)
+      } finally {
+        activeYtDlpChild = null
+      }
     }
   }
 

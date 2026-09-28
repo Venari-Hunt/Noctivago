@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.257 — Much faster YouTube imports
+
+- **Adding a sound from YouTube is now dozens of times faster.** Ten minutes of an 8-hour rain video used to take about 5 minutes to download; now it takes around 10 to 15 seconds. Works in Add from link and Browse Sounds. If the fast way doesn't work for a link, the app quietly uses the old one.
+
 ## v0.1.256 — Faster community uploads
 
 - **Sharing a preset to the community compresses several sounds at once**, so the compressing step is about 3 times faster on a preset with many big sounds (12 large files went from about 7 minutes to 2).
