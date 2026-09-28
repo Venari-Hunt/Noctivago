@@ -139,12 +139,12 @@ export async function downloadPreset(id) {
 }
 
 // Shares (presetId, no remoteId) or re-publishes (remoteId) a local preset.
-export async function publishPreset({ presetId, remoteId = null, name, author, description, tags, rightsConfirmed }, onProgress) {
+export async function publishPreset({ presetId, remoteId = null, name, author, description, tags, rightsConfirmed, cutSounds }, onProgress) {
   if (!isCommunityAvailable()) return { ok: false, error: 'Community presets are not available in this build.' }
   const authorName = String(author ?? '').trim()
   if (authorName) store.set('authorName', authorName.slice(0, 40))
 
-  const built = await buildCommunityBundle(presetId, { onProgress })
+  const built = await buildCommunityBundle(presetId, { onProgress, cutSounds })
   if (!built.ok) return built
 
   const meta = {

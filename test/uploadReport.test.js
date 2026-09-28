@@ -62,7 +62,7 @@ describe('tooLargeMessage', () => {
     )
     assert.equal(
       msg,
-      'This preset is 60.0 MB after compression; the limit is 50 MB. Heaviest: "Fire" (40.0 MB), "Rain" (20.0 MB). Shorten or remove those and try again.'
+      'This preset is 60.0 MB after compression; the limit is 50 MB. Heaviest: "Fire" (40.0 MB), "Rain" (20.0 MB). Cut them to 15 s, shorten or remove them, then try again.'
     )
   })
 })
