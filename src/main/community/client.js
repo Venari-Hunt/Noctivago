@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import crypto from 'node:crypto'
 import log from 'electron-log/main'
 import { buildCommunityBundle, MAX_UPLOAD_BYTES } from './bundle.js'
+import { formatMB, uploadFraction } from './uploadReport.js'
 import { prepareImport } from '../presetPortable.js'
 
 // Client for the community presets API (community/ in this repo, a
@@ -47,13 +48,40 @@ export function getProfile() {
   return { available: isCommunityAvailable(), authorName: store.get('authorName') }
 }
 
-async function request(pathname, { method = 'GET', body, headers = {}, auth = false } = {}) {
+// Encodes a FormData up front and hands it to fetch in chunks, calling
+// onSent(sentBytes, totalBytes) as each one goes out, so an upload can show
+// real progress.
+async function progressBody(form, onSent) {
+  const encoded = new Response(form)
+  const contentType = encoded.headers.get('content-type')
+  const bytes = new Uint8Array(await encoded.arrayBuffer())
+  const CHUNK = 256 * 1024
+  let offset = 0
+  const body = new ReadableStream({
+    pull(controller) {
+      if (offset >= bytes.length) return controller.close()
+      const end = Math.min(bytes.length, offset + CHUNK)
+      controller.enqueue(bytes.subarray(offset, end))
+      offset = end
+      onSent(offset, bytes.length)
+    }
+  })
+  return { body, headers: { 'content-type': contentType, 'content-length': String(bytes.length) } }
+}
+
+async function request(pathname, { method = 'GET', body, headers = {}, auth = false, onSent } = {}) {
   if (!isCommunityAvailable()) return { ok: false, error: 'Community presets are not available in this build.' }
   const finalHeaders = { ...headers }
   if (auth) finalHeaders['x-author-key'] = authorKey()
+  const init = { method, body, headers: finalHeaders }
+  if (onSent && body instanceof FormData) {
+    const streamed = await progressBody(body, onSent)
+    Object.assign(init, { body: streamed.body, duplex: 'half' })
+    Object.assign(finalHeaders, streamed.headers)
+  }
   let res
   try {
-    res = await fetch(`${apiBase()}/v1${pathname}`, { method, body, headers: finalHeaders })
+    res = await fetch(`${apiBase()}/v1${pathname}`, init)
   } catch (err) {
     log.warn('Community request failed', pathname, err)
     return { ok: false, error: "Couldn't reach the community server. Check your connection." }
@@ -132,16 +160,27 @@ export async function publishPreset({ presetId, remoteId = null, name, author, d
   form.set('meta', JSON.stringify(meta))
   form.set('bundle', new Blob([built.buffer], { type: 'application/zip' }), 'preset.ncvpreset')
 
-  onProgress?.({ message: `Uploading (${(built.buffer.length / 1024 / 1024).toFixed(1)} MB)…` })
+  const sounds = built.sounds
+  const sendUpdate = (sent, total) =>
+    onProgress?.({
+      message: sent < total ? `Uploading ${formatMB(sent)} of ${formatMB(total)}…` : 'Finishing upload…',
+      phase: 'upload',
+      fraction: uploadFraction(sent, total),
+      sounds
+    })
+  sendUpdate(0, built.buffer.length)
   const result = await request(remoteId ? presetPath(remoteId) : '/presets', {
     method: remoteId ? 'PUT' : 'POST',
     body: form,
-    auth: true
+    auth: true,
+    onSent: sendUpdate
   })
-  if (!result.ok) return result
+  if (!result.ok) return { ...result, sounds }
   return {
     ok: true,
     preset: result.preset,
+    sounds,
+    totalBytes: built.buffer.length,
     uploadedAudioCount: built.uploadedAudioCount,
     freesoundCount: built.freesoundCount
   }

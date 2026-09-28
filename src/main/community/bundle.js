@@ -4,6 +4,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { buildPortableBundle, packPortableBundle } from '../presetPortable.js'
 import { runFfmpegToFile } from '../ffmpeg/runFfmpeg.js'
+import { compressFraction, tooLargeMessage } from './uploadReport.js'
 
 // Builds the .ncvpreset a community upload sends. Two differences from a
 // local "Export preset" file, both to keep uploads small:
@@ -28,8 +29,13 @@ export function sweepCommunityTmp() {
   }
 }
 
-// onProgress({ message, done, total }) fires once per sound encoded.
-// Returns { ok, buffer, manifest, soundCount, uploadedAudioCount, freesoundCount } or { ok: false, error }.
+// onProgress({ message, phase, fraction, sounds }) fires before each sound is
+// encoded and once packed. `fraction` is the overall 0..1 bar (see
+// uploadReport.js); `sounds` is [{ name, freesound, beforeBytes, afterBytes }]
+// with afterBytes null until that sound is done.
+// Returns { ok, buffer, manifest, sounds, soundCount, uploadedAudioCount, freesoundCount }
+// or { ok: false, error, sounds? }. A too-large preset still encodes every
+// sound first, so the error can name the heaviest ones.
 export async function buildCommunityBundle(presetId, { onProgress } = {}) {
   const bundle = buildPortableBundle(presetId, { skipFreesoundAudio: true })
   if (!bundle) return { ok: false, error: 'Preset not found.' }
@@ -44,6 +50,25 @@ export async function buildCommunityBundle(presetId, { onProgress } = {}) {
     }
   }
 
+  const sounds = manifest.sounds.map((s) => ({
+    name: s.name,
+    freesound: s.source?.type === 'freesound',
+    beforeBytes: null,
+    afterBytes: null
+  }))
+  const sourceSizes = files.map((f) => {
+    let size = 0
+    try {
+      size = fs.statSync(f.sourcePath).size
+    } catch {
+      // unreadable: ffmpeg reports it below
+    }
+    sounds[f.soundIndex].beforeBytes = size
+    return size
+  })
+  const report = (message, phase, fraction) =>
+    onProgress?.({ message, phase, fraction, sounds: sounds.map((s) => ({ ...s })) })
+
   const workDir = path.join(tmpRoot(), crypto.randomUUID())
   fs.mkdirSync(workDir, { recursive: true })
   try {
@@ -51,28 +76,27 @@ export async function buildCommunityBundle(presetId, { onProgress } = {}) {
     let running = 0
     for (const [i, f] of files.entries()) {
       const sound = manifest.sounds[f.soundIndex]
-      onProgress?.({ message: `Compressing "${sound.name}"…`, done: i, total: files.length })
+      report(`Compressing "${sound.name}" (${i + 1} of ${files.length})…`, 'compress', compressFraction(sourceSizes, i))
       const outName = `${path.basename(f.zipName, path.extname(f.zipName))}.opus`
       const outPath = path.join(workDir, `${i}.opus`)
       await runFfmpegToFile(['-y', '-i', f.sourcePath, '-vn', '-map', '0:a:0', '-c:a', 'libopus', '-b:a', OPUS_BITRATE, outPath])
       const data = fs.readFileSync(outPath)
       running += data.length
-      if (running > MAX_UPLOAD_BYTES) {
-        return {
-          ok: false,
-          error: `This preset is too large to share (over ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB after compression). Try shorter sounds.`
-        }
-      }
+      sounds[f.soundIndex].afterBytes = data.length
       sound.bundleName = outName
       packed.push({ zipName: `audio/${outName}`, data })
     }
-    onProgress?.({ message: 'Packing preset…', done: files.length, total: files.length })
+    if (running > MAX_UPLOAD_BYTES) {
+      return { ok: false, error: tooLargeMessage(sounds, running, MAX_UPLOAD_BYTES), sounds }
+    }
+    report('Packing preset…', 'pack', compressFraction(sourceSizes, files.length))
 
     const { buffer } = packPortableBundle({ manifest, files: packed })
     return {
       ok: true,
       buffer,
       manifest,
+      sounds,
       soundCount: manifest.sounds.length,
       uploadedAudioCount: packed.length,
       freesoundCount: manifest.sounds.length - packed.length
