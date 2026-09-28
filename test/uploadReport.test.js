@@ -21,6 +21,11 @@ describe('compressFraction', () => {
     assert.equal(compressFraction([0, 0], 1), 0.5 * COMPRESS_SHARE)
   })
 
+  test('accepts a set of finished indexes, in any order', () => {
+    assert.equal(compressFraction([30, 10], new Set([1])), 0.25 * COMPRESS_SHARE)
+    assert.equal(compressFraction([30, 10], new Set([1, 0])), COMPRESS_SHARE)
+  })
+
   test('nothing to compress is already done', () => {
     assert.equal(compressFraction([], 0), COMPRESS_SHARE)
   })

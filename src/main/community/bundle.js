@@ -3,7 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { buildPortableBundle, packPortableBundle } from '../presetPortable.js'
+import os from 'node:os'
 import { runFfmpegToFile } from '../ffmpeg/runFfmpeg.js'
+import { mapPool } from '../ffmpeg/mapPool.js'
 import { compressFraction, tooLargeMessage } from './uploadReport.js'
 import { applySoundOverride } from '../../shared/constants.js'
 import { CUT_SECONDS, canCut, cutWindow, loopSeconds, shiftForCut } from './cutClip.js'
@@ -21,6 +23,12 @@ import { CUT_SECONDS, canCut, cutWindow, loopSeconds, shiftForCut } from './cutC
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 const OPUS_BITRATE = '96k'
 
+// One Opus encode is single-threaded and light on memory; leave a core free
+// so the app stays responsive.
+function encodeConcurrency() {
+  return Math.max(1, Math.min(8, (os.cpus()?.length ?? 2) - 1))
+}
+
 function tmpRoot() {
   return path.join(app.getPath('userData'), 'community-tmp')
 }
@@ -33,8 +41,8 @@ export function sweepCommunityTmp() {
   }
 }
 
-// onProgress({ message, phase, fraction, sounds }) fires before each sound is
-// encoded and once packed. `fraction` is the overall 0..1 bar (see
+// onProgress({ message, phase, fraction, sounds }) fires once compression
+// starts, after each sound is encoded, and once packed. `fraction` is the overall 0..1 bar (see
 // uploadReport.js); `sounds` is [{ name, freesound, beforeBytes, afterBytes,
 // durationSeconds, cuttable, cut }] with afterBytes null until that sound is
 // done. cutSounds: indexes into that list the user asked to cut to 15 s.
@@ -87,11 +95,14 @@ export async function buildCommunityBundle(presetId, { onProgress, cutSounds = [
   const workDir = path.join(tmpRoot(), crypto.randomUUID())
   fs.mkdirSync(workDir, { recursive: true })
   try {
-    const packed = []
+    // Several sounds compress at once (one ffmpeg each); `packed` keeps the
+    // original order so the bundle is the same either way.
+    const packed = new Array(files.length)
+    const done = new Set()
     let running = 0
-    for (const [i, f] of files.entries()) {
+    report(`Compressing ${files.length} sound${files.length === 1 ? '' : 's'}…`, 'compress', compressFraction(sourceSizes, done))
+    await mapPool(files, encodeConcurrency(), async (f, i) => {
       const sound = manifest.sounds[f.soundIndex]
-      report(`Compressing "${sound.name}" (${i + 1} of ${files.length})…`, 'compress', compressFraction(sourceSizes, i))
       const outName = `${path.basename(f.zipName, path.extname(f.zipName))}.opus`
       const outPath = path.join(workDir, `${i}.opus`)
       const win = sounds[f.soundIndex].cut ? cutWindow(effective[f.soundIndex], sound.durationSeconds) : null
@@ -110,12 +121,14 @@ export async function buildCommunityBundle(presetId, { onProgress, cutSounds = [
       running += data.length
       sounds[f.soundIndex].afterBytes = data.length
       sound.bundleName = outName
-      packed.push({ zipName: `audio/${outName}`, data })
-    }
+      packed[i] = { zipName: `audio/${outName}`, data }
+      done.add(i)
+      report(`Compressed ${done.size} of ${files.length} sounds…`, 'compress', compressFraction(sourceSizes, done))
+    })
     if (running > MAX_UPLOAD_BYTES) {
       return { ok: false, error: tooLargeMessage(sounds, running, MAX_UPLOAD_BYTES), sounds }
     }
-    report('Packing preset…', 'pack', compressFraction(sourceSizes, files.length))
+    report('Packing preset…', 'pack', compressFraction(sourceSizes, done))
 
     const { buffer } = packPortableBundle({ manifest, files: packed })
     return {

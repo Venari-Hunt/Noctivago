@@ -6,12 +6,16 @@
 export const COMPRESS_SHARE = 0.7
 
 // Overall 0..1 while compressing: weighted by each file's original size, so
-// one long sound moves the bar as much as it costs.
-export function compressFraction(sizes, doneCount) {
+// one long sound moves the bar as much as it costs. `done` is how many files
+// from the start are done, or a Set of finished indexes (sounds compress in
+// parallel, so they finish out of order).
+export function compressFraction(sizes, done) {
+  const isDone = typeof done === 'number' ? (i) => i < done : (i) => done.has(i)
+  const doneCount = sizes.filter((_, i) => isDone(i)).length
   const total = sizes.reduce((sum, s) => sum + s, 0)
   if (total <= 0) return sizes.length ? (doneCount / sizes.length) * COMPRESS_SHARE : COMPRESS_SHARE
-  const done = sizes.slice(0, doneCount).reduce((sum, s) => sum + s, 0)
-  return (done / total) * COMPRESS_SHARE
+  const doneBytes = sizes.reduce((sum, s, i) => sum + (isDone(i) ? s : 0), 0)
+  return (doneBytes / total) * COMPRESS_SHARE
 }
 
 export function uploadFraction(sentBytes, totalBytes) {
