@@ -6,6 +6,14 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.260 — Faster long exports
+
+- **Long exports are faster again.** Sounds that play now and then are combined with much less wasted work, and saving to MP3, Opus, FLAC or Ogg now happens while the mix is still being made instead of after it. A 9-hour beach mix went from about 19 minutes to under 16 (a 1-hour version: 2:22 to 1:33). The result sounds the same.
+
+## v0.1.259 — A title bar that matches the app
+
+- **The window has its own dark title bar now** instead of the plain Windows one: the app icon and name on the left, and minimize, maximize and close in matching colors on the right. Dragging, double-click to maximize and Windows snap layouts work as before.
+
 ## v0.1.258 — Faster exports for sounds that play rarely
 
 - **Exports are much faster when a Random Interval or Scheduled sound plays only now and then.** A sound playing every few minutes across a long export used to be prepared as one piece as long as the whole export, which could take many minutes on its own. On a test 9-hour beach mix, the whole export went from 13.5 minutes to just over 2. The result sounds the same.

@@ -83,6 +83,66 @@ export function runFfmpegToFile(args, { onProgress } = {}) {
   })
 }
 
+// Runs two ffmpegs with the first one's stdout piped into the second one's
+// stdin, so both work at once on separate cores. The bundled ffmpeg (6.x)
+// runs a graph and its encoder on one thread, so a long mix-then-encode in
+// one process costs the sum of both; split like this it costs about the
+// slower of the two. `onProgress` follows the producer's output time. If
+// either side fails, the other is stopped and that error is reported.
+export function runFfmpegChain(producerArgs, consumerArgs, { onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const producer = spawn(resolveFfmpegPath(), producerArgs, { windowsHide: true })
+    const consumer = spawn(resolveFfmpegPath(), consumerArgs, { windowsHide: true })
+    const producerTail = captureStderrTail(producer.stderr)
+    const consumerTail = captureStderrTail(consumer.stderr)
+    let failed = null
+    let open = 2
+
+    if (onProgress) {
+      producer.stderr.on('data', (chunk) => {
+        const seconds = latestProgressSeconds(chunk.toString())
+        if (seconds != null) {
+          try {
+            onProgress(seconds)
+          } catch {
+            // a progress-callback throw must never break the render
+          }
+        }
+      })
+    }
+
+    const fail = (err) => {
+      if (failed) return
+      failed = err
+      producer.kill()
+      consumer.kill()
+    }
+    // A consumer that dies early breaks the pipe; the real error is its own
+    // exit code/stderr, reported from 'close'.
+    consumer.stdin.on('error', () => {})
+    producer.stdout.on('error', () => {})
+    producer.stdout.pipe(consumer.stdin)
+
+    // A child that fails to spawn may never emit 'close', so 'error' also
+    // counts as that child being done (once).
+    const watch = (child, getTail) => {
+      let done = false
+      const finish = (err) => {
+        if (done) return
+        done = true
+        if (err) fail(err)
+        if (--open > 0) return
+        if (failed) reject(failed)
+        else resolve()
+      }
+      child.on('error', finish)
+      child.on('close', (code) => finish(code === 0 ? null : ffmpegError(code, getTail())))
+    }
+    watch(producer, producerTail)
+    watch(consumer, consumerTail)
+  })
+}
+
 // Runs ffmpeg with raw input written to its stdin by `feed(write)`, where
 // `write(buffer)` resolves once ffmpeg has room for more (honoring
 // backpressure) and rejects if ffmpeg has already exited. Used where the
