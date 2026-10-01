@@ -34,6 +34,8 @@
   --space-4: 16px;
   --space-5: 24px;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.7);
+  /* Matches titleBarOverlay.height in src/main/index.js. */
+  --title-bar-h: 32px;
 }
 
 * {
@@ -85,6 +87,38 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+}
+
+/* Window title bar (the app draws it - see titleBarOverlay in
+   src/main/index.js). The whole strip drags the window; Windows draws
+   min/max/close over its right end, so the right padding keeps the name
+   clear of them. Sits above modals so the window can still be moved while
+   one is open. */
+.title-bar {
+  position: relative;
+  z-index: 50;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--title-bar-h);
+  padding: 0 calc(100vw - env(titlebar-area-width, calc(100vw - 140px))) 0 var(--space-3);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 12px;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.title-bar-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.title-bar-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* Top bar: three fixed zones - preset on the left, transport (play, volume,
@@ -989,6 +1023,8 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Centers dialogs below the title bar, which stays on top. */
+  padding-top: var(--title-bar-h);
 }
 
 .modal-card {
