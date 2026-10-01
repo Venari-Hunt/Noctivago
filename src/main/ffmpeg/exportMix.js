@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { runFfmpegToFile, runFfmpegPipe, runFfmpegWithStdin } from './runFfmpeg.js'
+import { runFfmpegToFile, runFfmpegPipe, runFfmpegWithStdin, runFfmpegChain } from './runFfmpeg.js'
 import { createVarispeedLooper } from './varispeedCore.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass, probeChannelCount } from './loopClip.js'
 import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
@@ -19,6 +19,7 @@ import { renderImageLoopVideo } from './imageLoopVideo.js'
 import { applyOcclusionToFilters, MAX_BUFFER_CLIP_SECONDS } from '../../shared/constants.js'
 import { mapPool } from './mapPool.js'
 import { planBatches, EVENT_BATCH_SIZE, EVENT_BATCH_SIZE_LIGHT } from './batchPlan.js'
+import { buildLaneGraph } from './trackLanes.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -404,7 +405,7 @@ async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, report
       { onProgress: (sec) => reporter?.tick(sec, span) }
     )
     reporter?.completePhase(span)
-    return { path: trackPath, offset: start }
+    return { path: trackPath, offset: start, duration: span }
   } finally {
     await cleanupFiles([scriptPath])
   }
@@ -440,19 +441,21 @@ async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, report
 // combineTracks itself on a later round, renderGroupBuses) already adelays
 // by whatever .offset says, so a real non-zero value here was already
 // handled correctly - it just never used to reflect reality.
-async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
+// `postChain` (filter fragments) runs on the sum in this same pass; with it
+// the output always starts at 0 and is capped at durationSeconds - the shape
+// of a Sound Group bus, so a group without reverb needs no separate
+// full-length filter pass (see renderGroupBuses).
+async function combineTracks(tracks, { durationSeconds, reporter, postChain = null } = {}) {
   const outPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
-  const minOffset = Math.min(...tracks.map((t) => t.offset))
-  const graph = []
-  const mixLabels = []
-  tracks.forEach((t, i) => {
-    const delayMs = Math.max(0, Math.round((t.offset - minOffset) * 1000))
-    graph.push(`[${i}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${i}]`)
-    mixLabels.push(`[m${i}]`)
-  })
+  const minOffset = postChain ? 0 : Math.min(...tracks.map((t) => t.offset))
+  // Tracks placed in lanes (see trackLanes.js) - amix sums only the lanes.
+  const { graph, labels: mixLabels } = buildLaneGraph(tracks, tracks.map((_, i) => i), { baseOffset: minOffset })
+  const allDated = tracks.every((t) => t.duration > 0)
+  const duration = allDated ? Math.max(...tracks.map((t) => t.offset + t.duration)) - minOffset : undefined
+  const post = postChain?.length ? `,${postChain.join(',')}` : ''
   graph.push(
-    `${mixLabels.join('')}amix=inputs=${tracks.length}:duration=longest:dropout_transition=0:normalize=0[out]`
+    `${mixLabels.join('')}amix=inputs=${mixLabels.length}:duration=longest:dropout_transition=0:normalize=0${post}[out]`
   )
   fs.writeFileSync(scriptPath, graph.join(';'))
   try {
@@ -462,11 +465,13 @@ async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
         ...tracks.flatMap((t) => ['-i', t.path]),
         '-filter_complex_script', scriptPath,
         '-map', '[out]',
+        ...(postChain ? ['-t', durationSeconds.toFixed(6)] : []),
         ...INTERMEDIATE_CODEC, outPath
       ],
       durationSeconds ? { onProgress: (sec) => reporter?.tick(sec, durationSeconds) } : undefined
     )
-    return { path: outPath, offset: minOffset }
+    if (postChain) return { path: outPath, offset: 0 }
+    return { path: outPath, offset: minOffset, duration }
   } finally {
     await cleanupFiles([scriptPath])
   }
@@ -969,20 +974,33 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       // below then folds that offset back in as leading silence so the group
       // bus comes out offset 0 like every other bus. A lone member needs no
       // combine at all - applyGroupFilters honors its offset directly.
-      const combined =
-        bounded.length === 1 ? bounded[0] : await combineTracks(bounded, { durationSeconds, reporter })
-      if (combined !== bounded[0]) ownPaths.push(combined.path)
-      // groupWorkSeconds (exportMix's own progress budget) already reserves
-      // one durationSeconds' worth of work per group for exactly this combine
-      // step - mark it spent here (flat, same as the budget itself is flat)
-      // so the bar actually reflects that reserved chunk instead of leaving
-      // it permanently un-banked while combineTracks's own ticks (above) do
-      // the moment-to-moment moving.
-      reporter?.completePhase(durationSeconds)
-
       const groupFilters = groupsById.get(groupId)?.filters
-      let bus = await applyGroupFilters(combined, groupFilters, durationSeconds, reporter)
-      ownPaths.push(bus.path)
+      const effective = applyOcclusionToFilters(groupFilters)
+      const hasReverb = (effective.reverbSizeMs ?? 0) > 0 && (effective.reverbMix ?? 0) > 0
+      let bus
+      if (bounded.length > 1 && !hasReverb) {
+        // No reverb: the group's filter chain runs inside the combine pass
+        // itself, saving one full-length read + write (measured on a 9 h
+        // neutral group: combine 64 s + filter pass 81 s as two passes).
+        bus = await combineTracks(bounded, { durationSeconds, reporter, postChain: buildGroupFilterChain(effective) })
+        ownPaths.push(bus.path)
+        // Both reserved chunks of the progress budget (combine + filter).
+        reporter?.completePhase(durationSeconds)
+        reporter?.completePhase(durationSeconds)
+      } else {
+        const combined =
+          bounded.length === 1 ? bounded[0] : await combineTracks(bounded, { durationSeconds, reporter })
+        if (combined !== bounded[0]) ownPaths.push(combined.path)
+        // groupWorkSeconds (exportMix's own progress budget) already reserves
+        // one durationSeconds' worth of work per group for exactly this combine
+        // step - mark it spent here (flat, same as the budget itself is flat)
+        // so the bar actually reflects that reserved chunk instead of leaving
+        // it permanently un-banked while combineTracks's own ticks (above) do
+        // the moment-to-moment moving.
+        reporter?.completePhase(durationSeconds)
+        bus = await applyGroupFilters(combined, groupFilters, durationSeconds, reporter)
+        ownPaths.push(bus.path)
+      }
       // The group's own volume and pan Fluctuation (Remix Group mode) - the
       // whole bus drifting, applied after its filter/limiter chain in one
       // pass (volume is attenuation only, so post-limiter is safe; live, the
@@ -1100,7 +1118,7 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
     includeTail: !needsIntermediate
   })
   graph.push(
-    `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
+    `${mixLabels.join('')}amix=inputs=${mixLabels.length}:duration=longest:dropout_transition=0:normalize=0,` +
       `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
   )
 
@@ -1114,18 +1132,25 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
   const targetCodecArgs = needsIntermediate ? [...RF64_AUTO, '-c:a', 'pcm_s16le'] : (FORMAT_CODECS[format] ?? FORMAT_CODECS.wav)
   const targetSampleRate = needsIntermediate ? 44100 : outputSampleRate(format)
   const toCleanup = [scriptPath]
+  const mixArgs = ['-y', ...inputArgs, '-filter_complex_script', scriptPath, '-map', '[out]', '-t', durationSeconds.toFixed(6)]
+  const onProgress = (sec) => reporter?.tick(sec, durationSeconds)
   try {
-    await runFfmpegToFile(
-      [
-        '-y', ...inputArgs,
-        '-filter_complex_script', scriptPath,
-        '-map', '[out]',
-        '-t', durationSeconds.toFixed(6),
-        ...targetCodecArgs, '-ar', String(targetSampleRate), '-ac', '2',
-        targetPath
-      ],
-      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
-    )
+    if (!needsIntermediate && format !== 'wav') {
+      // Mix and encode in two piped processes (see runFfmpegChain): on the
+      // owner's 9 h Beach export the Opus encode alone was ~5 of the final
+      // step's 7.6 min, run after the mix instead of alongside it. NUT
+      // carries float PCM with its own rate/layout and no size limit.
+      await runFfmpegChain(
+        [...mixArgs, '-c:a', 'pcm_f32le', '-ac', '2', '-f', 'nut', 'pipe:1'],
+        ['-y', '-f', 'nut', '-i', 'pipe:0', ...targetCodecArgs, '-ar', String(targetSampleRate), '-ac', '2', targetPath],
+        { onProgress }
+      )
+    } else {
+      await runFfmpegToFile(
+        [...mixArgs, ...targetCodecArgs, '-ar', String(targetSampleRate), '-ac', '2', targetPath],
+        { onProgress }
+      )
+    }
     if (!needsIntermediate) {
       reporter?.completePhase(durationSeconds)
       return
@@ -1187,11 +1212,9 @@ async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilte
     mixLabels.push('[m0]')
     idx = 1
   } else {
-    tracks.forEach((t, i) => {
-      const delayMs = Math.max(0, Math.round(t.offset * 1000))
-      graph.push(`[${i}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${i}]`)
-      mixLabels.push(`[m${i}]`)
-    })
+    const placed = buildLaneGraph(tracks, tracks.map((_, i) => i))
+    graph.push(...placed.graph)
+    mixLabels.push(...placed.labels)
   }
 
   const inputArgs =
@@ -1258,12 +1281,12 @@ async function renderFinalMixdown({
     mixLabels.push(`[m${idx}]`)
     idx += 1
   }
-  for (const track of batchTracks) {
-    inputArgs.push('-i', track.path)
-    const delayMs = Math.max(0, Math.round(track.offset * 1000))
-    graph.push(`[${idx}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${idx}]`)
-    mixLabels.push(`[m${idx}]`)
-    idx += 1
+  if (batchTracks.length > 0) {
+    const placed = buildLaneGraph(batchTracks, batchTracks.map((_, i) => idx + i))
+    for (const track of batchTracks) inputArgs.push('-i', track.path)
+    graph.push(...placed.graph)
+    mixLabels.push(...placed.labels)
+    idx += batchTracks.length
   }
 
   // Nothing ever plays (every sound was a scatter/scheduled one that never
