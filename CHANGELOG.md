@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.262 — Only one copy of the app opens
+
+- **Opening Noctívago while it's already running now brings back the open window** instead of starting a second copy. This covers clicking the pinned taskbar icon while the app sits in the tray or is minimized.
+
 ## v0.1.258 — Faster exports for sounds that play rarely
 
 - **Exports are much faster when a Random Interval or Scheduled sound plays only now and then.** A sound playing every few minutes across a long export used to be prepared as one piece as long as the whole export, which could take many minutes on its own. On a test 9-hour beach mix, the whole export went from 13.5 minutes to just over 2. The result sounds the same.
