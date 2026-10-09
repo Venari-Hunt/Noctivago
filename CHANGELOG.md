@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.261 — Sleep timer can start on its own
+
+- **New in the sleep timer: "Start this timer every time Noctívago opens."** Tick it once and every launch starts a timer with the last minutes (or time of day) and action you used, with no need to open the timer. Untick it in the same place to stop. A timer still running from before you closed the app is resumed instead of being replaced.
+
 ## v0.1.258 — Faster exports for sounds that play rarely
 
 - **Exports are much faster when a Random Interval or Scheduled sound plays only now and then.** A sound playing every few minutes across a long export used to be prepared as one piece as long as the whole export, which could take many minutes on its own. On a test 9-hour beach mix, the whole export went from 13.5 minutes to just over 2. The result sounds the same.
