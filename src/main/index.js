@@ -193,6 +193,13 @@ function createWindow() {
     title: app.isPackaged ? 'Noctívago' : 'Noctívago (Dev)',
     icon: APP_ICON_PATH,
     autoHideMenuBar: true,
+    // Our own title bar (owner, 2026-10-01: the Windows default didn't fit
+    // the theme). The page draws the icon, name and drag area (.title-bar in
+    // main.css); Windows still draws min/max/close over it in our colors, so
+    // snap layouts and the system menu keep working. Height must match
+    // --title-bar-h in main.css.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#000000', symbolColor: '#8f8f8f', height: 32 },
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
