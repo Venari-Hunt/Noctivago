@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { runFfmpegToFile, runFfmpegPipe, runFfmpegWithStdin } from './runFfmpeg.js'
+import { runFfmpegToFile, runFfmpegPipe, runFfmpegWithStdin, runFfmpegChain } from './runFfmpeg.js'
 import { createVarispeedLooper } from './varispeedCore.js'
 import { renderClipToPath, buildEqBandFilter, eqBandStageCount, buildEchoFilter, applyReverbPass, probeChannelCount } from './loopClip.js'
 import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
@@ -18,7 +18,10 @@ import { renderVisualizationVideo } from './visualizationVideo.js'
 import { renderImageLoopVideo } from './imageLoopVideo.js'
 import { applyOcclusionToFilters, MAX_BUFFER_CLIP_SECONDS } from '../../shared/constants.js'
 import { mapPool } from './mapPool.js'
-import { planBatches, EVENT_BATCH_SIZE, EVENT_BATCH_SIZE_LIGHT } from './batchPlan.js'
+import { planBatches, EVENT_BATCH_SIZE_VARIANTS, EVENT_BATCH_SIZE_LIGHT } from './batchPlan.js'
+import { buildLaneGraph, clipTracksToWindow, LANE_SAMPLE_RATE } from './trackLanes.js'
+import { mixToOpusInParallel, planWindows } from './segmentedEncode.js'
+import { OPUS_RATE } from './oggOpus.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -267,11 +270,45 @@ function makeReporter(onProgress, totalWorkSeconds) {
 // EVENT_BATCH_SIZE_LIGHT batches, since its branches are only volume/fade/
 // adelay.
 function eventsNeedRubberband(events) {
-  return events.some(
-    (e) =>
-      Math.abs(e.pitchSemitones ?? 0) >= IDENTITY_PITCH_EPSILON_SEMITONES ||
-      Math.abs((e.speedFactor ?? 1) - 1) >= IDENTITY_SPEED_EPSILON
-  )
+  return events.some((e) => eventVariant(e) !== null)
+}
+
+// Pitched/sped plays share pre-rendered versions of the shot. rubberband was
+// ~85% of a placing batch's time (one pass per play), yet a sound's random
+// pitch only spans a few semitones: rounded to 10 cents (at most 5 cents
+// off a pitch that was random anyway) a ±1.5 semitone range leaves ~30
+// versions however many plays there are. The owner's 9 h Beach export
+// needed ~4,700 rubberband passes before, ~250 after. Speed rounds to its own no-op
+// threshold (0.5%, a few ms on a shot's length).
+const VARIANT_PITCH_STEP_SEMITONES = 0.1
+const VARIANT_SPEED_STEP = IDENTITY_SPEED_EPSILON
+
+// { key, pitch, speed } for a play that needs rubberband, null otherwise.
+function eventVariant(evt) {
+  const rawPitch = evt.pitchSemitones ?? 0
+  const rawSpeed = evt.speedFactor ?? 1
+  const pitchActive = Math.abs(rawPitch) >= IDENTITY_PITCH_EPSILON_SEMITONES
+  const speedActive = Math.abs(rawSpeed - 1) >= IDENTITY_SPEED_EPSILON
+  const pitchSteps = pitchActive ? Math.round(rawPitch / VARIANT_PITCH_STEP_SEMITONES) : 0
+  const speedSteps = speedActive ? Math.round((rawSpeed - 1) / VARIANT_SPEED_STEP) : 0
+  if (pitchSteps === 0 && speedSteps === 0) return null
+  return {
+    key: `${pitchSteps}/${speedSteps}`,
+    pitch: pitchSteps * VARIANT_PITCH_STEP_SEMITONES,
+    speed: 1 + speedSteps * VARIANT_SPEED_STEP
+  }
+}
+
+// One rubberband pass over the shot -> float WAV, same settings the per-play
+// branch used to run inline. Keeps the shot's channel count.
+async function renderShotVariant(shotPath, variant) {
+  const rb = []
+  if (variant.pitch !== 0) rb.push(`pitch=${Math.pow(2, variant.pitch / 12).toFixed(6)}`)
+  if (variant.speed !== 1) rb.push(`tempo=${variant.speed.toFixed(6)}`)
+  rb.push(RUBBERBAND_OPTS)
+  const outPath = tempPath('wav')
+  await runFfmpegToFile(['-y', '-i', shotPath, '-af', `rubberband=${rb.join(':')}`, '-c:a', 'pcm_f32le', outPath])
+  return outPath
 }
 
 // Renders one sound's [loopStart, loopEnd) as a single short FLAC shot clip.
@@ -327,25 +364,10 @@ function batchHasPan(events) {
   return events.some((evt) => Math.abs(evt.panPosition ?? 0) > PAN_EPSILON)
 }
 
+// Per-play pitch/speed is already in the branch's input (renderShotVariant).
 function eventBranchChain(evt, volume, batchStart, panChannels = null) {
-  const semitones = evt.pitchSemitones ?? 0
-  const speedFactor = evt.speedFactor ?? 1
   const gain = (evt.volumeScale ?? 1) * volume
   const parts = []
-  const pitchActive = Math.abs(semitones) >= IDENTITY_PITCH_EPSILON_SEMITONES
-  const speedActive = Math.abs(speedFactor - 1) >= IDENTITY_SPEED_EPSILON
-  if (pitchActive || speedActive) {
-    // One rubberband pass handles both: `pitch` shifts pitch without
-    // touching length (per-shot Pitch range, v0.1.111), `tempo` changes
-    // length/tempo without touching pitch (per-shot Speed range). tempo>1 =
-    // faster/shorter. See RUBBERBAND_OPTS for why there's no longer a
-    // faster-export-only quality switch here.
-    const rbParts = []
-    if (pitchActive) rbParts.push(`pitch=${Math.pow(2, semitones / 12).toFixed(6)}`)
-    if (speedActive) rbParts.push(`tempo=${speedFactor.toFixed(6)}`)
-    rbParts.push(RUBBERBAND_OPTS)
-    parts.push(`rubberband=${rbParts.join(':')}`)
-  }
   parts.push(`volume=${gain.toFixed(6)}`)
   if (evt.fadeInMs > 0) parts.push(`afade=t=in:d=${(evt.fadeInMs / 1000).toFixed(3)}`)
   if (evt.fadeOutMs > 0 && Number.isFinite(evt.shotDurationSeconds)) {
@@ -362,13 +384,25 @@ function eventBranchChain(evt, volume, batchStart, panChannels = null) {
 // needs to sit at in the final mix. asplit+per-branch+amix(normalize=0) is
 // written to a script file and passed via -filter_complex_script so a dense
 // batch can't hit a command-line length limit.
-async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, reporter }) {
+async function renderSlicedBatch({ shotPath, variantPaths, batch, volume, channels = 2, reporter }) {
   const trackPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
   const { events, start, span } = batch
   try {
-    const n = events.length
-    const splitLabels = events.map((_, i) => `[s${i}]`).join('')
+    // One input per shot version the batch uses (plain shot = key null, or a
+    // pitch/speed version), split to every play that uses it.
+    const inputPaths = []
+    const inputOf = new Map()
+    const usesByInput = []
+    events.forEach((evt, i) => {
+      const key = eventVariant(evt)?.key ?? null
+      if (!inputOf.has(key)) {
+        inputOf.set(key, inputPaths.length)
+        inputPaths.push(key === null ? shotPath : variantPaths.get(key))
+        usesByInput.push([])
+      }
+      usesByInput[inputOf.get(key)].push(i)
+    })
     // Optimization (2026-09-16): the stereo conversion used to sit here,
     // *before* the split - so a mono source file (very common for one-shot
     // SFX, and shot clips preserve their source's channel count since
@@ -381,7 +415,12 @@ async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, report
     // one asplit and so always share a layout.
     const panChannels = batchHasPan(events) ? channels : null
     const head = panChannels != null && panChannels !== 1 ? 'aformat=channel_layouts=stereo,' : ''
-    const parts = [`[0:a]${head}asplit=${n}${splitLabels};`]
+    const parts = []
+    usesByInput.forEach((uses, input) => {
+      const labels = uses.map((i) => `[s${i}]`).join('')
+      parts.push(uses.length === 1 ? `[${input}:a]${head}anull${labels};` : `[${input}:a]${head}asplit=${uses.length}${labels};`)
+    })
+    const n = events.length
     const mixLabels = []
     events.forEach((evt, i) => {
       parts.push(`[s${i}]${eventBranchChain(evt, volume, start, panChannels == null ? null : panChannels === 1 ? 1 : 2)}[d${i}];`)
@@ -395,7 +434,7 @@ async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, report
 
     await runFfmpegToFile(
       [
-        '-y', '-i', shotPath,
+        '-y', ...inputPaths.flatMap((p) => ['-i', p]),
         '-filter_complex_script', scriptPath,
         '-map', '[out]',
         '-t', span.toFixed(6),
@@ -404,7 +443,7 @@ async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, report
       { onProgress: (sec) => reporter?.tick(sec, span) }
     )
     reporter?.completePhase(span)
-    return { path: trackPath, offset: start }
+    return { path: trackPath, offset: start, duration: span }
   } finally {
     await cleanupFiles([scriptPath])
   }
@@ -440,19 +479,21 @@ async function renderSlicedBatch({ shotPath, batch, volume, channels = 2, report
 // combineTracks itself on a later round, renderGroupBuses) already adelays
 // by whatever .offset says, so a real non-zero value here was already
 // handled correctly - it just never used to reflect reality.
-async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
+// `postChain` (filter fragments) runs on the sum in this same pass; with it
+// the output always starts at 0 and is capped at durationSeconds - the shape
+// of a Sound Group bus, so a group without reverb needs no separate
+// full-length filter pass (see renderGroupBuses).
+async function combineTracks(tracks, { durationSeconds, reporter, postChain = null } = {}) {
   const outPath = tempPath(INTERMEDIATE_EXT)
   const scriptPath = tempPath('txt')
-  const minOffset = Math.min(...tracks.map((t) => t.offset))
-  const graph = []
-  const mixLabels = []
-  tracks.forEach((t, i) => {
-    const delayMs = Math.max(0, Math.round((t.offset - minOffset) * 1000))
-    graph.push(`[${i}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${i}]`)
-    mixLabels.push(`[m${i}]`)
-  })
+  const minOffset = postChain ? 0 : Math.min(...tracks.map((t) => t.offset))
+  // Tracks placed in lanes (see trackLanes.js) - amix sums only the lanes.
+  const { graph, labels: mixLabels } = buildLaneGraph(tracks, tracks.map((_, i) => i), { baseOffset: minOffset })
+  const allDated = tracks.every((t) => t.duration > 0)
+  const duration = allDated ? Math.max(...tracks.map((t) => t.offset + t.duration)) - minOffset : undefined
+  const post = postChain?.length ? `,${postChain.join(',')}` : ''
   graph.push(
-    `${mixLabels.join('')}amix=inputs=${tracks.length}:duration=longest:dropout_transition=0:normalize=0[out]`
+    `${mixLabels.join('')}amix=inputs=${mixLabels.length}:duration=longest:dropout_transition=0:normalize=0${post}[out]`
   )
   fs.writeFileSync(scriptPath, graph.join(';'))
   try {
@@ -462,11 +503,13 @@ async function combineTracks(tracks, { durationSeconds, reporter } = {}) {
         ...tracks.flatMap((t) => ['-i', t.path]),
         '-filter_complex_script', scriptPath,
         '-map', '[out]',
+        ...(postChain ? ['-t', durationSeconds.toFixed(6)] : []),
         ...INTERMEDIATE_CODEC, outPath
       ],
       durationSeconds ? { onProgress: (sec) => reporter?.tick(sec, durationSeconds) } : undefined
     )
-    return { path: outPath, offset: minOffset }
+    if (postChain) return { path: outPath, offset: 0 }
+    return { path: outPath, offset: minOffset, duration }
   } finally {
     await cleanupFiles([scriptPath])
   }
@@ -969,20 +1012,33 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       // below then folds that offset back in as leading silence so the group
       // bus comes out offset 0 like every other bus. A lone member needs no
       // combine at all - applyGroupFilters honors its offset directly.
-      const combined =
-        bounded.length === 1 ? bounded[0] : await combineTracks(bounded, { durationSeconds, reporter })
-      if (combined !== bounded[0]) ownPaths.push(combined.path)
-      // groupWorkSeconds (exportMix's own progress budget) already reserves
-      // one durationSeconds' worth of work per group for exactly this combine
-      // step - mark it spent here (flat, same as the budget itself is flat)
-      // so the bar actually reflects that reserved chunk instead of leaving
-      // it permanently un-banked while combineTracks's own ticks (above) do
-      // the moment-to-moment moving.
-      reporter?.completePhase(durationSeconds)
-
       const groupFilters = groupsById.get(groupId)?.filters
-      let bus = await applyGroupFilters(combined, groupFilters, durationSeconds, reporter)
-      ownPaths.push(bus.path)
+      const effective = applyOcclusionToFilters(groupFilters)
+      const hasReverb = (effective.reverbSizeMs ?? 0) > 0 && (effective.reverbMix ?? 0) > 0
+      let bus
+      if (bounded.length > 1 && !hasReverb) {
+        // No reverb: the group's filter chain runs inside the combine pass
+        // itself, saving one full-length read + write (measured on a 9 h
+        // neutral group: combine 64 s + filter pass 81 s as two passes).
+        bus = await combineTracks(bounded, { durationSeconds, reporter, postChain: buildGroupFilterChain(effective) })
+        ownPaths.push(bus.path)
+        // Both reserved chunks of the progress budget (combine + filter).
+        reporter?.completePhase(durationSeconds)
+        reporter?.completePhase(durationSeconds)
+      } else {
+        const combined =
+          bounded.length === 1 ? bounded[0] : await combineTracks(bounded, { durationSeconds, reporter })
+        if (combined !== bounded[0]) ownPaths.push(combined.path)
+        // groupWorkSeconds (exportMix's own progress budget) already reserves
+        // one durationSeconds' worth of work per group for exactly this combine
+        // step - mark it spent here (flat, same as the budget itself is flat)
+        // so the bar actually reflects that reserved chunk instead of leaving
+        // it permanently un-banked while combineTracks's own ticks (above) do
+        // the moment-to-moment moving.
+        reporter?.completePhase(durationSeconds)
+        bus = await applyGroupFilters(combined, groupFilters, durationSeconds, reporter)
+        ownPaths.push(bus.path)
+      }
       // The group's own volume and pan Fluctuation (Remix Group mode) - the
       // whole bus drifting, applied after its filter/limiter chain in one
       // pass (volume is attenuation only, so post-limiter is safe; live, the
@@ -1087,7 +1143,7 @@ function buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds
 // dead last. Skipped entirely, single-pass, byte-path unchanged when neither
 // is set - matches the "blessed export loudness" guarantee every other
 // whole-mix addition here has kept.
-async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
+async function finalizeWholeMix({ buildMix, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency = 1 }) {
   const hasReverb = wholeMixHasReverb(wholeMixFilters)
   const hasFluct = hasVolumeFluctuation(wholeMixFilters?.fluctuation)
   const needsIntermediate = hasReverb || hasFluct
@@ -1099,10 +1155,11 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
     includeLimiter: !hasReverb,
     includeTail: !needsIntermediate
   })
-  graph.push(
-    `${mixLabels.join('')}amix=inputs=${idx}:duration=longest:dropout_transition=0:normalize=0,` +
-      `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
-  )
+  const amixLine = (mixLabels, seconds, chain) =>
+    `${mixLabels.join('')}amix=inputs=${mixLabels.length}:duration=longest:dropout_transition=0:normalize=0,` +
+    `apad=whole_dur=${seconds.toFixed(6)}${chain.length ? `,${chain.join(',')}` : ''}[out]`
+  const { inputArgs, graph, mixLabels } = buildMix(null)
+  graph.push(amixLine(mixLabels, durationSeconds, post))
 
   const scriptPath = tempPath('txt')
   fs.writeFileSync(scriptPath, graph.join(';'))
@@ -1114,18 +1171,52 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
   const targetCodecArgs = needsIntermediate ? [...RF64_AUTO, '-c:a', 'pcm_s16le'] : (FORMAT_CODECS[format] ?? FORMAT_CODECS.wav)
   const targetSampleRate = needsIntermediate ? 44100 : outputSampleRate(format)
   const toCleanup = [scriptPath]
+  const mixArgs = ['-y', ...inputArgs, '-filter_complex_script', scriptPath, '-map', '[out]', '-t', durationSeconds.toFixed(6)]
+  const onProgress = (sec) => reporter?.tick(sec, durationSeconds)
   try {
-    await runFfmpegToFile(
-      [
-        '-y', ...inputArgs,
-        '-filter_complex_script', scriptPath,
-        '-map', '[out]',
-        '-t', durationSeconds.toFixed(6),
-        ...targetCodecArgs, '-ar', String(targetSampleRate), '-ac', '2',
-        targetPath
-      ],
-      { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
-    )
+    if (!needsIntermediate && format === 'opus' && encodeConcurrency > 1 && windowsFit(durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, encodeConcurrency)) {
+      // Faster export: the mix and encode cut into time windows, several at
+      // once (see segmentedEncode.js). Each window gets the same whole-mix
+      // chain, with the fades moved to where they fall in that window.
+      const windowPost = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds, includeTail: false })
+      const mixArgsFor = (win) => {
+        const startSample = (win.padStart * LANE_SAMPLE_RATE) / OPUS_RATE
+        const endSample = (win.padEnd * LANE_SAMPLE_RATE) / OPUS_RATE
+        const startSeconds = win.padStart / OPUS_RATE
+        const seconds = (win.padEnd - win.padStart) / OPUS_RATE
+        const built = buildMix({ startSample, endSample })
+        const tail = buildWholeMixTailChain({ durationSeconds: durationSeconds - startSeconds, fadeInSeconds: startSeconds === 0 ? fadeInSeconds : 0, fadeOutSeconds })
+        built.graph.push(amixLine(built.mixLabels, seconds, [...windowPost, ...tail]))
+        const windowScript = tempPath('txt')
+        toCleanup.push(windowScript)
+        fs.writeFileSync(windowScript, built.graph.join(';'))
+        return ['-y', ...built.inputArgs, '-filter_complex_script', windowScript, '-map', '[out]', '-t', seconds.toFixed(6)]
+      }
+      await mixToOpusInParallel({
+        mixArgsFor,
+        codecArgs: targetCodecArgs,
+        durationSeconds,
+        outputPath: targetPath,
+        concurrency: encodeConcurrency,
+        tempPath,
+        onProgress
+      })
+    } else if (!needsIntermediate && format !== 'wav') {
+      // Mix and encode in two piped processes (see runFfmpegChain): on the
+      // owner's 9 h Beach export the Opus encode alone was ~5 of the final
+      // step's 7.6 min, run after the mix instead of alongside it. NUT
+      // carries float PCM with its own rate/layout and no size limit.
+      await runFfmpegChain(
+        [...mixArgs, '-c:a', 'pcm_f32le', '-ac', '2', '-f', 'nut', 'pipe:1'],
+        ['-y', '-f', 'nut', '-i', 'pipe:0', ...targetCodecArgs, '-ar', String(targetSampleRate), '-ac', '2', targetPath],
+        { onProgress }
+      )
+    } else {
+      await runFfmpegToFile(
+        [...mixArgs, ...targetCodecArgs, '-ar', String(targetSampleRate), '-ac', '2', targetPath],
+        { onProgress }
+      )
+    }
     if (!needsIntermediate) {
       reporter?.completePhase(durationSeconds)
       return
@@ -1177,26 +1268,71 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
 // finalizeWholeMix applies whole-mix processing + fades and encodes.
 // Mirrors renderFinalMixdown's own track-gathering shape exactly, minus the
 // -stream_loop tiling this version doesn't need to do inline anymore.
-async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
+async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency = 1 }) {
+  const buildMix = (win) => buildMixInputs({ loopShots: [], tracks, win })
+  await finalizeWholeMix({ buildMix, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency })
+}
+
+// The inputs and graph lines that place every loop shot (tiled from 0 with
+// -stream_loop) and track (at its offset) for one amix. `win` = null places
+// the whole export; { startSample, endSample } (44.1 kHz) only that window,
+// re-based to start at 0: tracks outside it are left out, a track already
+// playing is read from the right point (-ss, sample-exact on these files),
+// and loop shots drop the part before the window.
+function buildMixInputs({ loopShots, tracks, win }) {
+  const inputArgs = []
   const graph = []
   const mixLabels = []
-  let idx = tracks.length
-
+  let idx = 0
+  for (const shot of loopShots) {
+    inputArgs.push('-stream_loop', '-1', '-i', shot.path)
+    // A loop repeats every `frames` samples, so only the phase inside one
+    // loop needs skipping (shot.frames from wavFrameCount; unknown = skip all).
+    const skipSamples = win ? (shot.frames ? Math.round(win.startSample) % shot.frames : win.startSample) : 0
+    const skip = skipSamples > 0
+      ? `aformat=sample_rates=${LANE_SAMPLE_RATE}:channel_layouts=stereo,atrim=start_sample=${skipSamples},asetpts=PTS-STARTPTS`
+      : 'aformat=channel_layouts=stereo'
+    graph.push(`[${idx}:a]${skip},volume=${shot.volume.toFixed(6)}[m${idx}]`)
+    mixLabels.push(`[m${idx}]`)
+    idx += 1
+  }
+  const placedTracks = win
+    ? clipTracksToWindow(tracks, win.startSample, win.endSample)
+    : tracks.map((track, index) => ({ index, seekSamples: 0, offset: track.offset, duration: track.duration }))
+  if (placedTracks.length > 0) {
+    const placed = buildLaneGraph(placedTracks, placedTracks.map((_, i) => idx + i))
+    for (const p of placedTracks) {
+      if (p.seekSamples > 0) inputArgs.push('-ss', (p.seekSamples / LANE_SAMPLE_RATE).toFixed(9))
+      inputArgs.push('-i', tracks[p.index].path)
+    }
+    graph.push(...placed.graph)
+    mixLabels.push(...placed.labels)
+    idx += placedTracks.length
+  }
+  // Nothing plays (every sound was a scatter/scheduled one that never fires
+  // here) - still produce a valid, correctly-long silent file.
   if (idx === 0) {
+    inputArgs.push('-f', 'lavfi', '-i', `anullsrc=r=${LANE_SAMPLE_RATE}:cl=stereo`)
     graph.push('[0:a]anull[m0]')
     mixLabels.push('[m0]')
-    idx = 1
-  } else {
-    tracks.forEach((t, i) => {
-      const delayMs = Math.max(0, Math.round(t.offset * 1000))
-      graph.push(`[${i}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${i}]`)
-      mixLabels.push(`[m${i}]`)
-    })
   }
+  return { inputArgs, graph, mixLabels }
+}
 
-  const inputArgs =
-    tracks.length > 0 ? tracks.flatMap((t) => ['-i', t.path]) : ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo']
-  await finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
+// Windowed mixing (see segmentedEncode.js) gives each window the whole-mix
+// chain on its own. That matches one continuous pass only when the chain
+// forgets the past within a window's 1 s lead-in (true for the filters and
+// limiter, not for Echo's long repeats) and each fade stays inside the
+// first or last window.
+function windowsFit(durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, concurrency) {
+  if (wholeMixFilters?.echoDelayMs > 0 && wholeMixFilters?.echoDecay > 0) return false
+  const windows = planWindows(Math.round(durationSeconds * OPUS_RATE), concurrency)
+  const first = windows[0]
+  const last = windows[windows.length - 1]
+  return (
+    (fadeInSeconds ?? 0) <= first.end / OPUS_RATE &&
+    (fadeOutSeconds ?? 0) <= durationSeconds - last.start / OPUS_RATE
+  )
 }
 
 // BUG FIX (owner-reported, real 9-hour export): the classic WAV format's
@@ -1245,38 +1381,49 @@ async function renderFinalMixdown({
   fadeOutSeconds,
   outputPath,
   format,
-  reporter
+  reporter,
+  encodeConcurrency = 1
 }) {
-  const inputArgs = []
-  const graph = []
-  const mixLabels = []
-  let idx = 0
+  const shots = loopShots.map((shot) => ({ ...shot, frames: wavFrameCount(shot.path, LANE_SAMPLE_RATE) }))
+  const buildMix = (win) => buildMixInputs({ loopShots: shots, tracks: batchTracks, win })
+  await finalizeWholeMix({ buildMix, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency })
+}
 
-  for (const shot of loopShots) {
-    inputArgs.push('-stream_loop', '-1', '-i', shot.path)
-    graph.push(`[${idx}:a]aformat=channel_layouts=stereo,volume=${shot.volume.toFixed(6)}[m${idx}]`)
-    mixLabels.push(`[m${idx}]`)
-    idx += 1
+// Frame count of a plain PCM WAV at `sampleRate`, read from its header, or
+// null for anything else (other rate, RF64, not a WAV). Lets a windowed mix
+// start a looped shot at its phase inside one loop instead of decoding every
+// loop before the window (a late window of a 9 h export decoded ~8 h of each
+// loop sound just to drop it).
+function wavFrameCount(filePath, sampleRate) {
+  let fd
+  try {
+    fd = fs.openSync(filePath, 'r')
+    const head = Buffer.alloc(4096)
+    const n = fs.readSync(fd, head, 0, head.length, 0)
+    if (n < 12 || head.toString('ascii', 0, 4) !== 'RIFF' || head.toString('ascii', 8, 12) !== 'WAVE') return null
+    let pos = 12
+    let blockAlign = 0
+    let rate = 0
+    while (pos + 8 <= n) {
+      const id = head.toString('ascii', pos, pos + 4)
+      const size = head.readUInt32LE(pos + 4)
+      if (id === 'fmt ' && pos + 24 <= n) {
+        rate = head.readUInt32LE(pos + 12)
+        blockAlign = head.readUInt16LE(pos + 20)
+      } else if (id === 'data') {
+        if (rate !== sampleRate || !blockAlign) return null
+        const dataBytes = Math.min(size, fs.fstatSync(fd).size - (pos + 8))
+        const frames = Math.floor(dataBytes / blockAlign)
+        return frames > 0 ? frames : null
+      }
+      pos += 8 + size + (size % 2)
+    }
+    return null
+  } catch {
+    return null
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
   }
-  for (const track of batchTracks) {
-    inputArgs.push('-i', track.path)
-    const delayMs = Math.max(0, Math.round(track.offset * 1000))
-    graph.push(`[${idx}:a]aformat=channel_layouts=stereo,adelay=delays=${delayMs}:all=1[m${idx}]`)
-    mixLabels.push(`[m${idx}]`)
-    idx += 1
-  }
-
-  // Nothing ever plays (every sound was a scatter/scheduled one that never
-  // fires in this window) - still produce a valid, correctly-long silent
-  // file rather than erroring.
-  if (idx === 0) {
-    inputArgs.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo')
-    graph.push(`[0:a]anull[m0]`)
-    mixLabels.push('[m0]')
-    idx = 1
-  }
-
-  await finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
 }
 
 // Optional companion output for the Export tab's video-mode choice
@@ -1452,7 +1599,10 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       const events = sound.events ?? []
       if (events.length === 0) continue // never fires in this window - skip entirely
       const shotDur = Math.max(0.05, (sound.loopEnd ?? 0) - (sound.loopStart ?? 0))
-      const batchSize = eventsNeedRubberband(events) ? EVENT_BATCH_SIZE : EVENT_BATCH_SIZE_LIGHT
+      // Pitched plays read pre-rendered versions (renderShotVariant), so
+      // their branches are light too; each version is one more input, so
+      // those batches stay small enough for the command line.
+      const batchSize = eventsNeedRubberband(events) ? EVENT_BATCH_SIZE_VARIANTS : EVENT_BATCH_SIZE_LIGHT
       eventSounds.push({ sound, batches: planBatches(events, shotDur, batchSize) })
     }
   }
@@ -1560,6 +1710,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
   const batchTrackPaths = []
   const tiledLoopTrackPaths = [] // parallelMixdown's per-sound full-duration tiles
   const groupBusPaths = [] // renderGroupBuses' own intermediates (tiles/combines/filtered buses)
+  let driftJob = null // ungrouped drifting loop sounds' full-length tracks, see below
   try {
     if (fasterExport && concurrency > 1) {
       reporter.step(`Faster export on — up to ${concurrency} passes at once.`)
@@ -1578,6 +1729,30 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         fluctuation: memberFluctuation(sound, groups)
       })
     })
+
+    // Ungrouped drifting loop sounds need only their own clip, so their
+    // full-length drift render starts now and runs alongside the phases
+    // below (awaited before the final mix). Same split as renderGroupBuses.
+    const groupIdSet = new Set((groups ?? []).map((g) => g.id))
+    const driftingLoopShots = loopShots.filter(
+      (s) => !(s.groupId && groupIdSet.has(s.groupId)) && hasLoopFluctuation(s.fluctuation)
+    )
+    if (driftingLoopShots.length > 0) {
+      reporter.step(
+        `Baking drift into ${driftingLoopShots.length} loop sound${driftingLoopShots.length === 1 ? '' : 's'}…`
+      )
+    }
+    driftJob = (async () => {
+      const tracks = new Array(driftingLoopShots.length)
+      await mapPool(driftingLoopShots, mergeConcurrency, async (shot, i) => {
+        const { track, newPaths } = await tileAndDriftLoopShot({ shot, durationSeconds, reporter })
+        tiledLoopTrackPaths.push(...newPaths)
+        tracks[i] = track
+      })
+      return tracks
+    })()
+    // Awaited later; this only stops an early failure counting as unhandled.
+    driftJob.catch(() => {})
 
     const eventShotPathBySound = new Map()
     await mapPool(eventSounds, concurrency, async ({ sound }) => {
@@ -1599,6 +1774,26 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         shotChannelsBySound.set(sound, await probeChannelCount(eventShotPathBySound.get(sound)))
       }
     )
+    // Every distinct pitch/speed version, rendered once (see eventVariant).
+    const variantJobs = []
+    const variantPathsBySound = new Map()
+    for (const { sound } of eventSounds) {
+      const byKey = new Map()
+      for (const evt of sound.events ?? []) {
+        const variant = eventVariant(evt)
+        if (variant && !byKey.has(variant.key)) byKey.set(variant.key, variant)
+      }
+      const paths = new Map()
+      variantPathsBySound.set(sound, paths)
+      for (const variant of byKey.values()) variantJobs.push({ sound, variant, paths })
+    }
+    if (variantJobs.length > 0) reporter.step(`Pitching ${variantJobs.length} shot versions…`)
+    await mapPool(variantJobs, concurrency, async ({ sound, variant, paths }) => {
+      const variantPath = await renderShotVariant(eventShotPathBySound.get(sound), variant)
+      ownedShotPaths.push(variantPath)
+      paths.set(variant.key, variantPath)
+    })
+
     const batchJobs = []
     for (const { sound, batches } of eventSounds) {
       const label = `"${sound.name ?? 'sound'}"`
@@ -1622,6 +1817,7 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
       reporter.step(job.stepLabel)
       const track = await renderSlicedBatch({
         shotPath: job.shotPath,
+        variantPaths: variantPathsBySound.get(job.sound),
         batch: job.batch,
         volume: job.sound.volume ?? 0.7,
         channels: job.channels,
@@ -1664,19 +1860,10 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     // does, and each sound's three passes are fused into one
     // (tileAndDriftLoopShot). Results are written by index rather than pushed
     // so the mix order stays deterministic regardless of completion order.
+    // (2026-10-17) Started back when the loop clips were baked, so it runs
+    // alongside placing instead of after it (it used 2 of 11 cores on Beach).
     const plainLoopShots = ungroupedLoopShots.filter((s) => !hasLoopFluctuation(s.fluctuation))
-    const driftingLoopShots = ungroupedLoopShots.filter((s) => hasLoopFluctuation(s.fluctuation))
-    const fluctuatingLoopTracks = new Array(driftingLoopShots.length)
-    if (driftingLoopShots.length > 0) {
-      reporter.step(
-        `Baking drift into ${driftingLoopShots.length} loop sound${driftingLoopShots.length === 1 ? '' : 's'}…`
-      )
-      await mapPool(driftingLoopShots, mergeConcurrency, async (shot, i) => {
-        const { track, newPaths } = await tileAndDriftLoopShot({ shot, durationSeconds, reporter })
-        tiledLoopTrackPaths.push(...newPaths)
-        fluctuatingLoopTracks[i] = track
-      })
-    }
+    const fluctuatingLoopTracks = await driftJob
     const finalMixTracks = [...tracksForFinalMix, ...fluctuatingLoopTracks]
 
     // Keep the final mixdown's input count under the OS command-line limit
@@ -1718,7 +1905,8 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         fadeOutSeconds,
         outputPath,
         format,
-        reporter
+        reporter,
+        encodeConcurrency: concurrency
       })
     } else {
       reporter.step('Final mixdown + whole-mix processing…')
@@ -1731,7 +1919,8 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         fadeOutSeconds,
         outputPath,
         format,
-        reporter
+        reporter,
+        encodeConcurrency: concurrency
       })
     }
     reporter.step(`Encoding to ${String(format || 'wav').toUpperCase()} — done.`)
@@ -1785,6 +1974,9 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
     }
     return { ok: false, error: err.message }
   } finally {
+    // A failure elsewhere can leave the drift job still writing; let it
+    // finish so its files are in the list below.
+    await driftJob?.catch(() => {})
     await cleanupFiles([...ownedShotPaths, ...batchTrackPaths, ...tiledLoopTrackPaths, ...groupBusPaths])
   }
 }
