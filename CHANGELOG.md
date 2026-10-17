@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.264 — Faster exports with pitched sounds
+
+- **Exports with Random Interval or Scheduled sounds that change pitch each play are much faster.** Each pitch is now prepared once and reused, instead of once for every single play. On a 1-hour beach mix the whole export went from 71 seconds to 43; long exports gain much more. Pitches can differ from before by a tiny, inaudible amount.
+- **Long Opus exports no longer slow down near the end.** The last part of a 9-hour export used to re-read hours of each looping sound before mixing it. The result is identical.
+
 ## v0.1.263 — Faster Opus exports
 
 - **With "Faster export" on, saving to Opus mixes and compresses several stretches of the export at once** instead of one long pass. On a 1-hour beach mix the last step went from 43 seconds to about 20; longer exports gain more. The result sounds the same.
