@@ -22,6 +22,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `docs/freesound-and-browse.md` — Freesound + Browse Sounds.
 - `docs/community-presets.md` — Cloudflare backend, `.ncvpreset`.
 - `docs/watch-folders.md` — watched-folder import.
+- `docs/mobile.md` — phone player plan (React Native + react-native-audio-api, desktop bakes clips).
 - `docs/releasing.md` — releases, auto-update, itch.io.
 - `CHANGELOG.md` — dated release history (what exists). Old version numbers in docs are provenance, not things to re-verify.
 
