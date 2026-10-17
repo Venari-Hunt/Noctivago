@@ -26,7 +26,14 @@ import { invokePlugin } from './plugins/invoke.js'
 import { pluginMigrationSettled, takeStartupNotices } from './plugins/migration.js'
 import * as pluginStore from './plugins/store.js'
 import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setSleepTimerAutoStartEnabled, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumeGain, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
-import { getSleepTimer, startSleepTimer, cancelSleepTimer, runSleepTimerEndAction } from './sleepTimer.js'
+import {
+  getSleepTimer,
+  startSleepTimer,
+  cancelSleepTimer,
+  runSleepTimerEndAction,
+  confirmAutoStart,
+  skipAutoStart
+} from './sleepTimer.js'
 import {
   setAutoUpdateEnabled,
   setAutoUpdateIntervalSeconds,
@@ -108,6 +115,8 @@ export function registerIpcHandlers() {
   })
   ipcMain.handle('sleepTimer:cancel', () => cancelSleepTimer())
   ipcMain.handle('sleepTimer:runEndAction', (_event, action) => runSleepTimerEndAction(action))
+  ipcMain.handle('sleepTimer:confirmAutoStart', () => confirmAutoStart())
+  ipcMain.handle('sleepTimer:skipAutoStart', () => skipAutoStart())
 
   ipcMain.handle('library:list', () => library.listSounds())
   ipcMain.handle('library:resolveCredits', (_event, ids) => library.resolveCredits(Array.isArray(ids) ? ids : []))
