@@ -19,7 +19,9 @@ import { renderImageLoopVideo } from './imageLoopVideo.js'
 import { applyOcclusionToFilters, MAX_BUFFER_CLIP_SECONDS } from '../../shared/constants.js'
 import { mapPool } from './mapPool.js'
 import { planBatches, EVENT_BATCH_SIZE, EVENT_BATCH_SIZE_LIGHT } from './batchPlan.js'
-import { buildLaneGraph } from './trackLanes.js'
+import { buildLaneGraph, clipTracksToWindow, LANE_SAMPLE_RATE } from './trackLanes.js'
+import { mixToOpusInParallel, planWindows } from './segmentedEncode.js'
+import { OPUS_RATE } from './oggOpus.js'
 
 // "Export" (plugins/export/): bakes a whole preset down to one audio file of
 // a chosen length/format, rather than playing it live. The renderer side
@@ -1105,7 +1107,7 @@ function buildWholeMixTailChain({ durationSeconds, fadeInSeconds, fadeOutSeconds
 // dead last. Skipped entirely, single-pass, byte-path unchanged when neither
 // is set - matches the "blessed export loudness" guarantee every other
 // whole-mix addition here has kept.
-async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
+async function finalizeWholeMix({ buildMix, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency = 1 }) {
   const hasReverb = wholeMixHasReverb(wholeMixFilters)
   const hasFluct = hasVolumeFluctuation(wholeMixFilters?.fluctuation)
   const needsIntermediate = hasReverb || hasFluct
@@ -1117,10 +1119,11 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
     includeLimiter: !hasReverb,
     includeTail: !needsIntermediate
   })
-  graph.push(
+  const amixLine = (mixLabels, seconds, chain) =>
     `${mixLabels.join('')}amix=inputs=${mixLabels.length}:duration=longest:dropout_transition=0:normalize=0,` +
-      `apad=whole_dur=${durationSeconds.toFixed(6)}${post.length ? `,${post.join(',')}` : ''}[out]`
-  )
+    `apad=whole_dur=${seconds.toFixed(6)}${chain.length ? `,${chain.join(',')}` : ''}[out]`
+  const { inputArgs, graph, mixLabels } = buildMix(null)
+  graph.push(amixLine(mixLabels, durationSeconds, post))
 
   const scriptPath = tempPath('txt')
   fs.writeFileSync(scriptPath, graph.join(';'))
@@ -1135,7 +1138,34 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
   const mixArgs = ['-y', ...inputArgs, '-filter_complex_script', scriptPath, '-map', '[out]', '-t', durationSeconds.toFixed(6)]
   const onProgress = (sec) => reporter?.tick(sec, durationSeconds)
   try {
-    if (!needsIntermediate && format !== 'wav') {
+    if (!needsIntermediate && format === 'opus' && encodeConcurrency > 1 && windowsFit(durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, encodeConcurrency)) {
+      // Faster export: the mix and encode cut into time windows, several at
+      // once (see segmentedEncode.js). Each window gets the same whole-mix
+      // chain, with the fades moved to where they fall in that window.
+      const windowPost = buildWholeMixPostChain({ wholeMixFilters, durationSeconds, fadeInSeconds, fadeOutSeconds, includeTail: false })
+      const mixArgsFor = (win) => {
+        const startSample = (win.padStart * LANE_SAMPLE_RATE) / OPUS_RATE
+        const endSample = (win.padEnd * LANE_SAMPLE_RATE) / OPUS_RATE
+        const startSeconds = win.padStart / OPUS_RATE
+        const seconds = (win.padEnd - win.padStart) / OPUS_RATE
+        const built = buildMix({ startSample, endSample })
+        const tail = buildWholeMixTailChain({ durationSeconds: durationSeconds - startSeconds, fadeInSeconds: startSeconds === 0 ? fadeInSeconds : 0, fadeOutSeconds })
+        built.graph.push(amixLine(built.mixLabels, seconds, [...windowPost, ...tail]))
+        const windowScript = tempPath('txt')
+        toCleanup.push(windowScript)
+        fs.writeFileSync(windowScript, built.graph.join(';'))
+        return ['-y', ...built.inputArgs, '-filter_complex_script', windowScript, '-map', '[out]', '-t', seconds.toFixed(6)]
+      }
+      await mixToOpusInParallel({
+        mixArgsFor,
+        codecArgs: targetCodecArgs,
+        durationSeconds,
+        outputPath: targetPath,
+        concurrency: encodeConcurrency,
+        tempPath,
+        onProgress
+      })
+    } else if (!needsIntermediate && format !== 'wav') {
       // Mix and encode in two piped processes (see runFfmpegChain): on the
       // owner's 9 h Beach export the Opus encode alone was ~5 of the final
       // step's 7.6 min, run after the mix instead of alongside it. NUT
@@ -1202,24 +1232,68 @@ async function finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeco
 // finalizeWholeMix applies whole-mix processing + fades and encodes.
 // Mirrors renderFinalMixdown's own track-gathering shape exactly, minus the
 // -stream_loop tiling this version doesn't need to do inline anymore.
-async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter }) {
+async function renderFinalMixFromTracks({ tracks, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency = 1 }) {
+  const buildMix = (win) => buildMixInputs({ loopShots: [], tracks, win })
+  await finalizeWholeMix({ buildMix, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency })
+}
+
+// The inputs and graph lines that place every loop shot (tiled from 0 with
+// -stream_loop) and track (at its offset) for one amix. `win` = null places
+// the whole export; { startSample, endSample } (44.1 kHz) only that window,
+// re-based to start at 0: tracks outside it are left out, a track already
+// playing is read from the right point (-ss, sample-exact on these files),
+// and loop shots drop the part before the window.
+function buildMixInputs({ loopShots, tracks, win }) {
+  const inputArgs = []
   const graph = []
   const mixLabels = []
-  let idx = tracks.length
-
-  if (idx === 0) {
-    graph.push('[0:a]anull[m0]')
-    mixLabels.push('[m0]')
-    idx = 1
-  } else {
-    const placed = buildLaneGraph(tracks, tracks.map((_, i) => i))
+  let idx = 0
+  for (const shot of loopShots) {
+    inputArgs.push('-stream_loop', '-1', '-i', shot.path)
+    const skip = win && win.startSample > 0
+      ? `aformat=sample_rates=${LANE_SAMPLE_RATE}:channel_layouts=stereo,atrim=start_sample=${win.startSample},asetpts=PTS-STARTPTS`
+      : 'aformat=channel_layouts=stereo'
+    graph.push(`[${idx}:a]${skip},volume=${shot.volume.toFixed(6)}[m${idx}]`)
+    mixLabels.push(`[m${idx}]`)
+    idx += 1
+  }
+  const placedTracks = win
+    ? clipTracksToWindow(tracks, win.startSample, win.endSample)
+    : tracks.map((track, index) => ({ index, seekSamples: 0, offset: track.offset, duration: track.duration }))
+  if (placedTracks.length > 0) {
+    const placed = buildLaneGraph(placedTracks, placedTracks.map((_, i) => idx + i))
+    for (const p of placedTracks) {
+      if (p.seekSamples > 0) inputArgs.push('-ss', (p.seekSamples / LANE_SAMPLE_RATE).toFixed(9))
+      inputArgs.push('-i', tracks[p.index].path)
+    }
     graph.push(...placed.graph)
     mixLabels.push(...placed.labels)
+    idx += placedTracks.length
   }
+  // Nothing plays (every sound was a scatter/scheduled one that never fires
+  // here) - still produce a valid, correctly-long silent file.
+  if (idx === 0) {
+    inputArgs.push('-f', 'lavfi', '-i', `anullsrc=r=${LANE_SAMPLE_RATE}:cl=stereo`)
+    graph.push('[0:a]anull[m0]')
+    mixLabels.push('[m0]')
+  }
+  return { inputArgs, graph, mixLabels }
+}
 
-  const inputArgs =
-    tracks.length > 0 ? tracks.flatMap((t) => ['-i', t.path]) : ['-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo']
-  await finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
+// Windowed mixing (see segmentedEncode.js) gives each window the whole-mix
+// chain on its own. That matches one continuous pass only when the chain
+// forgets the past within a window's 1 s lead-in (true for the filters and
+// limiter, not for Echo's long repeats) and each fade stays inside the
+// first or last window.
+function windowsFit(durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, concurrency) {
+  if (wholeMixFilters?.echoDelayMs > 0 && wholeMixFilters?.echoDecay > 0) return false
+  const windows = planWindows(Math.round(durationSeconds * OPUS_RATE), concurrency)
+  const first = windows[0]
+  const last = windows[windows.length - 1]
+  return (
+    (fadeInSeconds ?? 0) <= first.end / OPUS_RATE &&
+    (fadeOutSeconds ?? 0) <= durationSeconds - last.start / OPUS_RATE
+  )
 }
 
 // BUG FIX (owner-reported, real 9-hour export): the classic WAV format's
@@ -1268,38 +1342,11 @@ async function renderFinalMixdown({
   fadeOutSeconds,
   outputPath,
   format,
-  reporter
+  reporter,
+  encodeConcurrency = 1
 }) {
-  const inputArgs = []
-  const graph = []
-  const mixLabels = []
-  let idx = 0
-
-  for (const shot of loopShots) {
-    inputArgs.push('-stream_loop', '-1', '-i', shot.path)
-    graph.push(`[${idx}:a]aformat=channel_layouts=stereo,volume=${shot.volume.toFixed(6)}[m${idx}]`)
-    mixLabels.push(`[m${idx}]`)
-    idx += 1
-  }
-  if (batchTracks.length > 0) {
-    const placed = buildLaneGraph(batchTracks, batchTracks.map((_, i) => idx + i))
-    for (const track of batchTracks) inputArgs.push('-i', track.path)
-    graph.push(...placed.graph)
-    mixLabels.push(...placed.labels)
-    idx += batchTracks.length
-  }
-
-  // Nothing ever plays (every sound was a scatter/scheduled one that never
-  // fires in this window) - still produce a valid, correctly-long silent
-  // file rather than erroring.
-  if (idx === 0) {
-    inputArgs.push('-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo')
-    graph.push(`[0:a]anull[m0]`)
-    mixLabels.push('[m0]')
-    idx = 1
-  }
-
-  await finalizeWholeMix({ inputArgs, graph, mixLabels, idx, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter })
+  const buildMix = (win) => buildMixInputs({ loopShots, tracks: batchTracks, win })
+  await finalizeWholeMix({ buildMix, durationSeconds, wholeMixFilters, fadeInSeconds, fadeOutSeconds, outputPath, format, reporter, encodeConcurrency })
 }
 
 // Optional companion output for the Export tab's video-mode choice
@@ -1741,7 +1788,8 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         fadeOutSeconds,
         outputPath,
         format,
-        reporter
+        reporter,
+        encodeConcurrency: concurrency
       })
     } else {
       reporter.step('Final mixdown + whole-mix processing…')
@@ -1754,7 +1802,8 @@ export async function exportMix({ sounds, durationSeconds, format, wholeMixFilte
         fadeOutSeconds,
         outputPath,
         format,
-        reporter
+        reporter,
+        encodeConcurrency: concurrency
       })
     }
     reporter.step(`Encoding to ${String(format || 'wav').toUpperCase()} — done.`)

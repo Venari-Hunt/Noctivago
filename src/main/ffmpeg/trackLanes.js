@@ -84,3 +84,26 @@ export function buildLaneGraph(tracks, inputIndexes, { baseOffset = 0, prefix = 
   })
   return { graph, labels }
 }
+
+// The tracks that sound inside [startSample, endSample) of the timeline,
+// re-based so the window starts at 0. A track already playing when the
+// window opens gets `seekSamples` (read it from that far in) and starts at
+// 0; the rest keep their exact sample offset. Tracks without a duration run
+// to the end of the mix. Pure, for the windowed final mix (exportMix.js).
+export function clipTracksToWindow(tracks, startSample, endSample, sampleRate = LANE_SAMPLE_RATE) {
+  const out = []
+  tracks.forEach((track, index) => {
+    const begin = Math.round(track.offset * sampleRate)
+    const end = track.duration > 0 ? begin + Math.round(track.duration * sampleRate) : Infinity
+    if (end <= startSample || begin >= endSample) return
+    const seekSamples = Math.max(0, startSample - begin)
+    const offsetSamples = Math.max(0, begin - startSample)
+    out.push({
+      index,
+      seekSamples,
+      offset: offsetSamples / sampleRate,
+      duration: end === Infinity ? undefined : (end - begin - seekSamples) / sampleRate
+    })
+  })
+  return out
+}

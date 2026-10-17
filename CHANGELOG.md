@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.263 — Faster Opus exports
+
+- **With "Faster export" on, saving to Opus mixes and compresses several stretches of the export at once** instead of one long pass. On a 1-hour beach mix the last step went from 43 seconds to about 20; longer exports gain more. The result sounds the same.
+
 ## v0.1.260 — Faster long exports
 
 - **Long exports are faster again.** Sounds that play now and then are combined with much less wasted work, and saving to MP3, Opus, FLAC or Ogg now happens while the mix is still being made instead of after it. A 9-hour beach mix went from about 19 minutes to under 16 (a 1-hour version: 2:22 to 1:33). The result sounds the same.

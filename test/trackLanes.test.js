@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planLanes, buildLaneGraph } from '../src/main/ffmpeg/trackLanes.js'
+import { planLanes, buildLaneGraph, clipTracksToWindow } from '../src/main/ffmpeg/trackLanes.js'
 
 test('tracks that do not overlap share one lane, in time order', () => {
   const tracks = [{ offset: 20, duration: 5 }, { offset: 0, duration: 10 }, { offset: 10, duration: 3 }]
@@ -32,4 +32,20 @@ test('an undated track keeps the plain delay', () => {
   const { graph } = buildLaneGraph([{ offset: 2 }], [0])
   assert.match(graph[0], /^\[0:a\]aformat=[^,]+,adelay=delays=88200S:all=1\[ln0_0\]$/)
   assert.equal(graph[1], '[ln0_0]anull[ln0]')
+})
+
+test('clipTracksToWindow keeps overlapping tracks, re-based to the window', () => {
+  const tracks = [
+    { offset: 0, duration: 10 }, // ends before the window
+    { offset: 15, duration: 10 }, // already playing at 20 s
+    { offset: 30, duration: 5 }, // inside
+    { offset: 0 }, // no duration: runs to the end
+    { offset: 60, duration: 5 } // after the window
+  ]
+  const rate = 100
+  assert.deepEqual(clipTracksToWindow(tracks, 20 * rate, 50 * rate, rate), [
+    { index: 1, seekSamples: 500, offset: 0, duration: 5 },
+    { index: 2, seekSamples: 0, offset: 10, duration: 5 },
+    { index: 3, seekSamples: 2000, offset: 0, duration: undefined }
+  ])
 })
