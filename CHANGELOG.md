@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.267 — Auto-started sleep timer asks first
+
+- **When the sleep timer is set to start every time Noctívago opens, it now tells you first.** A notice says what the timer will do and how long it is, and counts down 20 seconds before starting. "Don't start" skips it this time; "Start now" starts it right away.
+
 ## v0.1.266 — Only one copy of the app opens
 
 - **Opening Noctívago while it's already running now brings back the open window** instead of starting a second copy. This covers clicking the pinned taskbar icon while the app sits in the tray or is minimized.

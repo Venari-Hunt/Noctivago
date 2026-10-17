@@ -246,6 +246,8 @@ export interface NoctivagoApi {
     start(payload: Payload): Promise<any>
     cancel(): Promise<any>
     runEndAction(action: string): Promise<any>
+    confirmAutoStart(): Promise<any>
+    skipAutoStart(): Promise<any>
     onElapsed(callback: (payload: any) => void): Unsubscribe
   }
   tray: {

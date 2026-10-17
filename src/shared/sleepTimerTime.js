@@ -26,3 +26,14 @@ export function durationFromPrefs({ sleepTimerMode, sleepTimerMinutes, sleepTime
   const minutes = Number(sleepTimerMinutes)
   return Number.isFinite(minutes) && minutes >= 1 ? minutes * 60 : null
 }
+
+// Seconds -> "45 minutes" / "2 hours" / "1 h 30 min", for sentences (the
+// clock-style formatDuration reads oddly in prose).
+export function durationInWords(seconds) {
+  const totalMinutes = Math.max(1, Math.round(seconds / 60))
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  if (h === 0) return `${m} minute${m === 1 ? '' : 's'}`
+  if (m === 0) return `${h} hour${h === 1 ? '' : 's'}`
+  return `${h} h ${m} min`
+}

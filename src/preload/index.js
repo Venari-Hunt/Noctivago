@@ -68,6 +68,8 @@ const api = {
     start: (payload) => ipcRenderer.invoke('sleepTimer:start', payload),
     cancel: () => ipcRenderer.invoke('sleepTimer:cancel'),
     runEndAction: (action) => ipcRenderer.invoke('sleepTimer:runEndAction', action),
+    confirmAutoStart: () => ipcRenderer.invoke('sleepTimer:confirmAutoStart'),
+    skipAutoStart: () => ipcRenderer.invoke('sleepTimer:skipAutoStart'),
     onElapsed: (callback) => {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('sleep-timer:elapsed', listener)

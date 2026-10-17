@@ -1,5 +1,5 @@
 import { formatDuration } from '../util/time.js'
-import { targetFromTimeOfDay } from '../../shared/sleepTimerTime.js'
+import { targetFromTimeOfDay, durationInWords } from '../../shared/sleepTimerTime.js'
 import { setToolbarHandlers, updateToolbar } from '../toolbar/index.jsx'
 
 // Sleep timer - toolbar button + modal. After a set duration the main
@@ -19,6 +19,7 @@ const WARNING_SECONDS = 30
 let els = null
 let displayInterval = null
 let warningInterval = null
+let noticeInterval = null
 let firesAt = null
 
 function showModal(el) {
@@ -144,6 +145,42 @@ function beginWarning(action) {
   showModal(els.warning)
 }
 
+const AUTO_START_ACTION_TEXT = {
+  stop: 'stop all sounds',
+  displays: 'turn off your displays',
+  sleep: 'put the computer to sleep',
+  shutdown: 'shut down the computer'
+}
+
+async function finishAutoStartNotice(start) {
+  clearInterval(noticeInterval)
+  noticeInterval = null
+  hideModal(els.notice)
+  const sleepTimer = window.noctivago.sleepTimer
+  applyState(await (start ? sleepTimer.confirmAutoStart() : sleepTimer.skipAutoStart()))
+}
+
+// Launch with "Start this timer every time Noctívago opens" ticked: main
+// holds the timer as pending (src/main/sleepTimer.js) until this notice
+// runs out, so it never starts unannounced.
+function beginAutoStartNotice({ startsAt, seconds, action }) {
+  const what = AUTO_START_ACTION_TEXT[action] || AUTO_START_ACTION_TEXT.stop
+  els.noticeMessage.textContent = `When it runs out, Noctívago will ${what}. The timer is set to ${durationInWords(seconds)}.`
+  const tick = () => {
+    const left = Math.ceil((startsAt - Date.now()) / 1000)
+    if (left <= 0) {
+      finishAutoStartNotice(true)
+      return
+    }
+    els.noticeCountdown.textContent = `Starting in ${left} second${left === 1 ? '' : 's'}. You can turn this off in the sleep timer.`
+  }
+  tick()
+  noticeInterval = setInterval(tick, 250)
+  els.noticeNow.onclick = () => finishAutoStartNotice(true)
+  els.noticeSkip.onclick = () => finishAutoStartNotice(false)
+  showModal(els.notice)
+}
+
 export function installSleepTimer() {
   els = {
     modal: document.getElementById('sleep-timer-modal'),
@@ -165,7 +202,12 @@ export function installSleepTimer() {
     warningMessage: document.getElementById('sleep-timer-warning-message'),
     warningCancel: document.getElementById('sleep-timer-warning-cancel'),
     warningNow: document.getElementById('sleep-timer-warning-now'),
-    autoStart: document.getElementById('sleep-timer-autostart')
+    autoStart: document.getElementById('sleep-timer-autostart'),
+    notice: document.getElementById('sleep-timer-autostart-notice'),
+    noticeMessage: document.getElementById('sleep-timer-autostart-message'),
+    noticeCountdown: document.getElementById('sleep-timer-autostart-countdown'),
+    noticeNow: document.getElementById('sleep-timer-autostart-now'),
+    noticeSkip: document.getElementById('sleep-timer-autostart-skip')
   }
 
   const open = async () => {
@@ -224,6 +266,10 @@ export function installSleepTimer() {
   })
 
   // Restore the countdown display if the renderer reloaded while a timer
-  // was running (dev; harmless in production).
-  window.noctivago.sleepTimer.get().then(applyState)
+  // was running (dev; harmless in production), and announce a pending
+  // auto-start.
+  window.noctivago.sleepTimer.get().then((state) => {
+    applyState(state)
+    if (state.pendingAutoStart) beginAutoStartNotice(state.pendingAutoStart)
+  })
 }

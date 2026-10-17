@@ -26,11 +26,18 @@ import { durationFromPrefs } from '../shared/sleepTimerTime.js'
 // Auto-start (owner, 2026-10-06): with the modal's "Start this timer every
 // time Noctívago opens" ticked, launch starts a fresh timer from the last
 // values used - unless a saved one was restored or just fired.
+//
+// Auto-start notice (owner, 2026-10-17): the timer doesn't start silently.
+// Launch only marks it pending for AUTO_START_NOTICE_MS; the renderer shows
+// a notice with a countdown, "Don't start" and "Start now". Main holds the
+// deadline itself so the timer still starts if the renderer is throttled.
 
 const RESTORE_GRACE_MS = 5 * 60 * 1000
+const AUTO_START_NOTICE_MS = 20 * 1000
 
 let timeout = null
 let current = null // { firesAt, action }
+let pendingAutoStart = null // { startsAt, seconds, action, timeout }
 let mainWindow = null
 
 export function initSleepTimer(win) {
@@ -43,12 +50,43 @@ function autoStartSleepTimer() {
   if (!settings.sleepTimerAutoStart) return
   const seconds = durationFromPrefs(settings)
   if (seconds == null) return
-  startSleepTimer(seconds, settings.sleepTimerAction)
-  log.info(`Sleep timer auto-started, ${seconds}s, action: ${settings.sleepTimerAction}`)
+  pendingAutoStart = {
+    startsAt: Date.now() + AUTO_START_NOTICE_MS,
+    seconds,
+    action: settings.sleepTimerAction,
+    timeout: setTimeout(confirmAutoStart, AUTO_START_NOTICE_MS)
+  }
+  log.info(`Sleep timer auto-start pending, ${seconds}s, action: ${settings.sleepTimerAction}`)
+}
+
+function clearPendingAutoStart() {
+  if (pendingAutoStart) clearTimeout(pendingAutoStart.timeout)
+  pendingAutoStart = null
+}
+
+// "Start now", the renderer's countdown reaching zero, or main's own
+// deadline - whichever comes first; the others are no-ops.
+export function confirmAutoStart() {
+  if (!pendingAutoStart) return getSleepTimer()
+  const { seconds, action } = pendingAutoStart
+  clearPendingAutoStart()
+  log.info(`Sleep timer auto-started, ${seconds}s, action: ${action}`)
+  return startSleepTimer(seconds, action)
+}
+
+export function skipAutoStart() {
+  if (pendingAutoStart) log.info('Sleep timer auto-start skipped by the user')
+  clearPendingAutoStart()
+  return getSleepTimer()
 }
 
 export function getSleepTimer() {
-  return current ? { active: true, firesAt: current.firesAt, action: current.action } : { active: false }
+  if (current) return { active: true, firesAt: current.firesAt, action: current.action }
+  if (pendingAutoStart) {
+    const { startsAt, seconds, action } = pendingAutoStart
+    return { active: false, pendingAutoStart: { startsAt, seconds, action } }
+  }
+  return { active: false }
 }
 
 // Sends the elapsed event to the renderer, waiting for it to finish loading
@@ -79,6 +117,7 @@ function armFor(ms) {
 }
 
 export function startSleepTimer(durationSeconds, action) {
+  clearPendingAutoStart() // a manual start replaces a pending auto-start
   cancelSleepTimer()
   const ms = Math.max(1, Math.round(durationSeconds * 1000))
   current = { firesAt: Date.now() + ms, action }
