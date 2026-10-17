@@ -1,4 +1,5 @@
 import { formatDuration } from '../util/time.js'
+import { targetFromTimeOfDay } from '../../shared/sleepTimerTime.js'
 import { setToolbarHandlers, updateToolbar } from '../toolbar/index.jsx'
 
 // Sleep timer - toolbar button + modal. After a set duration the main
@@ -61,21 +62,6 @@ function chosenAction() {
 function chosenMode() {
   const checked = els.setup.querySelector('input[name="sleep-timer-mode"]:checked')
   return checked ? checked.value : 'in'
-}
-
-// "HH:MM" -> the next Date that matches it (today if still ahead, else
-// tomorrow), or null if the string isn't a valid time.
-function targetFromTimeOfDay(hhmm) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm || '').trim())
-  if (!m) return null
-  const h = Number(m[1])
-  const min = Number(m[2])
-  if (h > 23 || min > 59) return null
-  const now = new Date()
-  const target = new Date(now)
-  target.setHours(h, min, 0, 0)
-  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1)
-  return target
 }
 
 // Shows/hides the minutes vs. time-of-day inputs and keeps the "that's in
@@ -178,7 +164,8 @@ export function installSleepTimer() {
     warningTitle: document.getElementById('sleep-timer-warning-title'),
     warningMessage: document.getElementById('sleep-timer-warning-message'),
     warningCancel: document.getElementById('sleep-timer-warning-cancel'),
-    warningNow: document.getElementById('sleep-timer-warning-now')
+    warningNow: document.getElementById('sleep-timer-warning-now'),
+    autoStart: document.getElementById('sleep-timer-autostart')
   }
 
   const open = async () => {
@@ -199,6 +186,7 @@ export function installSleepTimer() {
       if (modeRadio) modeRadio.checked = true
       updateModeUI()
     }
+    els.autoStart.checked = Boolean(settings.sleepTimerAutoStart)
     applyState(state)
     showModal(els.modal)
   }
@@ -207,6 +195,9 @@ export function installSleepTimer() {
   els.closeBtn.addEventListener('click', () => hideModal(els.modal))
   els.startBtn.addEventListener('click', start)
   els.cancelBtn.addEventListener('click', cancel)
+  els.autoStart.addEventListener('change', () => {
+    window.noctivago.settings.setSleepTimerAutoStartEnabled(els.autoStart.checked)
+  })
 
   for (const radio of els.setup.querySelectorAll('input[name="sleep-timer-mode"]')) {
     radio.addEventListener('change', updateModeUI)

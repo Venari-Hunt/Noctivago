@@ -76,6 +76,9 @@ const store = new Store({
     sleepTimerAction: 'stop', // 'stop' | 'displays' | 'sleep' | 'shutdown'
     sleepTimerMode: 'in', // 'in' (a number of minutes) | 'at' (a time of day)
     sleepTimerTimeOfDay: '', // "HH:MM" for the 'at' mode, empty until set
+    // Start a timer with the values above every time the app opens (owner,
+    // 2026-10-06). sleepTimer.js does it on launch.
+    sleepTimerAutoStart: false,
     // A *running* sleep timer, persisted so it survives an app restart /
     // auto-update (owner: "Timer shouldn't be stopped nor lost when you close
     // the app and reopens it"). { firesAt: epoch ms, action } or null.
@@ -228,6 +231,7 @@ export function getSettings() {
     sleepTimerAction: store.get('sleepTimerAction'),
     sleepTimerMode: store.get('sleepTimerMode'),
     sleepTimerTimeOfDay: store.get('sleepTimerTimeOfDay'),
+    sleepTimerAutoStart: store.get('sleepTimerAutoStart'),
     sleepTimerRunState: store.get('sleepTimerRunState'),
     lastRunVersion: store.get('lastRunVersion'),
     lastExportFolder: store.get('lastExportFolder'),
@@ -267,6 +271,11 @@ export function setSleepTimerPrefs({ minutes, action, mode, timeOfDay }) {
   if (['stop', 'displays', 'sleep', 'shutdown'].includes(action)) store.set('sleepTimerAction', action)
   if (mode === 'in' || mode === 'at') store.set('sleepTimerMode', mode)
   if (typeof timeOfDay === 'string' && /^\d{2}:\d{2}$/.test(timeOfDay)) store.set('sleepTimerTimeOfDay', timeOfDay)
+  return getSettings()
+}
+
+export function setSleepTimerAutoStartEnabled(enabled) {
+  store.set('sleepTimerAutoStart', Boolean(enabled))
   return getSettings()
 }
 

@@ -6,9 +6,30 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
-## v0.1.262 — Only one copy of the app opens
+## v0.1.266 — Only one copy of the app opens
 
 - **Opening Noctívago while it's already running now brings back the open window** instead of starting a second copy. This covers clicking the pinned taskbar icon while the app sits in the tray or is minimized.
+
+## v0.1.265 — Sleep timer can start on its own
+
+- **New in the sleep timer: "Start this timer every time Noctívago opens."** Tick it once and every launch starts a timer with the last minutes (or time of day) and action you used, with no need to open the timer. Untick it in the same place to stop. A timer still running from before you closed the app is resumed instead of being replaced.
+
+## v0.1.264 — Faster exports with pitched sounds
+
+- **Exports with Random Interval or Scheduled sounds that change pitch each play are much faster.** Each pitch is now prepared once and reused, instead of once for every single play. On a 1-hour beach mix the whole export went from 71 seconds to 43; long exports gain much more. Pitches can differ from before by a tiny, inaudible amount.
+- **Long Opus exports no longer slow down near the end.** The last part of a 9-hour export used to re-read hours of each looping sound before mixing it. The result is identical.
+
+## v0.1.263 — Faster Opus exports
+
+- **With "Faster export" on, saving to Opus mixes and compresses several stretches of the export at once** instead of one long pass. On a 1-hour beach mix the last step went from 43 seconds to about 20; longer exports gain more. The result sounds the same.
+
+## v0.1.260 — Faster long exports
+
+- **Long exports are faster again.** Sounds that play now and then are combined with much less wasted work, and saving to MP3, Opus, FLAC or Ogg now happens while the mix is still being made instead of after it. A 9-hour beach mix went from about 19 minutes to under 16 (a 1-hour version: 2:22 to 1:33). The result sounds the same.
+
+## v0.1.259 — A title bar that matches the app
+
+- **The window has its own dark title bar now** instead of the plain Windows one: the app icon and name on the left, and minimize, maximize and close in matching colors on the right. Dragging, double-click to maximize and Windows snap layouts work as before.
 
 ## v0.1.258 — Faster exports for sounds that play rarely
 

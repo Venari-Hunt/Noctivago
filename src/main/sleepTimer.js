@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import log from 'electron-log/main'
-import { setSleepTimerRunState, getSleepTimerRunState } from './settings.js'
+import { setSleepTimerRunState, getSleepTimerRunState, getSettings } from './settings.js'
+import { durationFromPrefs } from '../shared/sleepTimerTime.js'
 
 // Sleep timer: after a set duration (or at a chosen time of day), either
 // stop all sounds, turn the displays off (leaving the sound playing), put
@@ -21,6 +22,10 @@ import { setSleepTimerRunState, getSleepTimerRunState } from './settings.js'
 // recent (RESTORE_GRACE_MS - covers a quick crash/update restart); a timer
 // whose moment passed long ago is treated as stale and dropped rather than,
 // say, shutting the machine down the instant the app is reopened hours later.
+//
+// Auto-start (owner, 2026-10-06): with the modal's "Start this timer every
+// time Noctívago opens" ticked, launch starts a fresh timer from the last
+// values used - unless a saved one was restored or just fired.
 
 const RESTORE_GRACE_MS = 5 * 60 * 1000
 
@@ -30,7 +35,16 @@ let mainWindow = null
 
 export function initSleepTimer(win) {
   mainWindow = win
-  restoreSleepTimer()
+  if (!restoreSleepTimer()) autoStartSleepTimer()
+}
+
+function autoStartSleepTimer() {
+  const settings = getSettings()
+  if (!settings.sleepTimerAutoStart) return
+  const seconds = durationFromPrefs(settings)
+  if (seconds == null) return
+  startSleepTimer(seconds, settings.sleepTimerAction)
+  log.info(`Sleep timer auto-started, ${seconds}s, action: ${settings.sleepTimerAction}`)
 }
 
 export function getSleepTimer() {
@@ -82,16 +96,16 @@ export function cancelSleepTimer() {
 }
 
 // Called once at startup (from initSleepTimer) - re-arms a timer that was
-// running when the app last closed.
+// running when the app last closed. Returns true if it re-armed or fired one.
 export function restoreSleepTimer() {
   const saved = getSleepTimerRunState()
-  if (!saved) return
+  if (!saved) return false
   const remaining = saved.firesAt - Date.now()
   if (remaining > 0) {
     current = { firesAt: saved.firesAt, action: saved.action }
     armFor(remaining)
     log.info(`Sleep timer restored, ${Math.round(remaining / 1000)}s left, action: ${saved.action}`)
-    return
+    return true
   }
   // Already elapsed while the app was closed.
   setSleepTimerRunState(null)
@@ -101,14 +115,15 @@ export function restoreSleepTimer() {
   // sleeping-hours convenience it's meant to be.
   if (saved.action === 'displays') {
     log.info('Sleep timer (turn off displays) elapsed while closed, dropped')
-    return
+    return false
   }
   if (remaining > -RESTORE_GRACE_MS) {
     log.info(`Sleep timer elapsed while closed (recently), acting: ${saved.action}`)
     fireElapsed(saved.action)
-  } else {
-    log.info('Sleep timer elapsed while the app was closed (stale), dropped')
+    return true
   }
+  log.info('Sleep timer elapsed while the app was closed (stale), dropped')
+  return false
 }
 
 // Called by the renderer once its own warning countdown has run out (or the

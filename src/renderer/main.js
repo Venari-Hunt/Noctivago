@@ -28,6 +28,7 @@ installSettingsMenu()
 // flip back to the plain title moments after launch.
 window.noctivago.isPackaged().then((isPackaged) => {
   document.title = isPackaged ? 'Noctívago' : 'Noctívago (Dev)'
+  document.getElementById('title-bar-name').textContent = document.title
   updateToolbar({ isDev: !isPackaged })
 })
 

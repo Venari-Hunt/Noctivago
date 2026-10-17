@@ -18,6 +18,11 @@ export const EVENT_BATCH_SIZE = 20
 // then produces ~15x fewer batch tracks (measured: a batch of 300 plain
 // branches over a 20-min span peaks ~270 MB, one ffmpeg pass ~90s).
 export const EVENT_BATCH_SIZE_LIGHT = 300
+// Since pitched plays read pre-rendered versions of the shot (exportMix's
+// renderShotVariant), their branches are as light as plain ones, but each
+// distinct version is its own ffmpeg input. 100 plays keeps a batch to at
+// most 100 input paths on the command line.
+export const EVENT_BATCH_SIZE_VARIANTS = 100
 // A batch's cost is roughly plays x span: every branch's adelay emits
 // silence up to its own play, and amix sums every branch over the whole span.
 // Capping by play count alone let a sparse sound put all its plays into one
