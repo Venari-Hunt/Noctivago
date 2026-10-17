@@ -14,6 +14,7 @@ const api = {
     setWasPlayingOnClose: (wasPlaying) => ipcRenderer.invoke('settings:setWasPlayingOnClose', wasPlaying),
     setEagerlyBakeOnImportEnabled: (enabled) => ipcRenderer.invoke('settings:setEagerlyBakeOnImportEnabled', enabled),
     setSkipRemixLeaveConfirmEnabled: (enabled) => ipcRenderer.invoke('settings:setSkipRemixLeaveConfirmEnabled', enabled),
+    setSleepTimerAutoStartEnabled: (enabled) => ipcRenderer.invoke('settings:setSleepTimerAutoStartEnabled', enabled),
     setFasterExportEnabled: (enabled) => ipcRenderer.invoke('settings:setFasterExportEnabled', enabled),
     setParallelMixdownEnabled: (enabled) => ipcRenderer.invoke('settings:setParallelMixdownEnabled', enabled),
     setExportVideoMode: (mode) => ipcRenderer.invoke('settings:setExportVideoMode', mode),
