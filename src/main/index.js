@@ -14,7 +14,7 @@ import { registerFreesoundPreviewProtocol } from './freesound/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
 import { initPluginAutoUpdate } from './plugins/autoUpdate.js'
 import { getSettings } from './settings.js'
-import { initTray, setTrayEnabled, isAppQuitting } from './tray.js'
+import { initTray, setTrayEnabled, isAppQuitting, showWindow } from './tray.js'
 import { initThumbar } from './thumbar.js'
 import { initSleepTimer } from './sleepTimer.js'
 import { sweepImportSessions } from './presetPortable.js'
@@ -257,7 +257,14 @@ function bootstrapDefaultPreset() {
   ensureDefaultPreset(fallbackSounds)
 }
 
-app.whenReady().then(() => {
+// Only one copy of the app runs at a time. Launching it again (e.g. the
+// pinned taskbar icon while the window sits in the tray) brings the open
+// window back instead of starting a second instance.
+const isFirstInstance = app.requestSingleInstanceLock()
+if (!isFirstInstance) app.quit()
+else app.on('second-instance', showWindow)
+
+if (isFirstInstance) app.whenReady().then(() => {
   registerSoundProtocol()
   registerPluginProtocol()
   registerFreesoundPreviewProtocol()

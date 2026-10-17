@@ -32,7 +32,11 @@ export function isAppQuitting() {
   return isQuitting
 }
 
-function showWindow() {
+// Also used when the app is launched a second time (index.js): brings back
+// a window hidden in the tray or minimized to the taskbar.
+export function showWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
 }

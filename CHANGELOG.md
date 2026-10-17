@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.266 — Only one copy of the app opens
+
+- **Opening Noctívago while it's already running now brings back the open window** instead of starting a second copy. This covers clicking the pinned taskbar icon while the app sits in the tray or is minimized.
+
 ## v0.1.265 — Sleep timer can start on its own
 
 - **New in the sleep timer: "Start this timer every time Noctívago opens."** Tick it once and every launch starts a timer with the last minutes (or time of day) and action you used, with no need to open the timer. Untick it in the same place to stop. A timer still running from before you closed the app is resumed instead of being replaced.
