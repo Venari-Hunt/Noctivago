@@ -8,6 +8,7 @@ import { buildPanFilter, normalizePan, parseChannelCount } from './panFilter.js'
 import { getOrCreateReverbIR } from './reverbIR.js'
 import { hasVolumeEnvelope, renderVolumeEnvelopeWav } from './volumeEnvelope.js'
 import { buildSpectralRepairFilter } from './spectralRepair.js'
+import { eqBandStageCount } from '../../shared/eqBands.js'
 
 const pending = new Map()
 
@@ -300,24 +301,9 @@ export async function buildNoiseReductionChain(inputPath, filters, loopStart, lo
 // effect is proportional to gain) - lowpass/highpass/bandpass/notch have no
 // gain parameter at all and always shape the signal whenever selected, so
 // they're never skipped just for being "neutral."
-// Only the four filter-*shaped* types have a real "slope" (rolloff
-// steepness) concept - peaking/shelf types are gain-shaped, 'off' does
-// nothing. ffmpeg's highpass/lowpass filters have a real `poles` parameter,
-// but bandpass/bandreject don't (fixed two-pole Butterworth) - to keep
-// "Steep" consistent across all four shaped types (and match the exact same
-// cascading technique Web Audio needs, since BiquadFilterNode has no slope
-// parameter either), steep is real repetition: the same single-stage filter
-// string chained STEEP_STAGE_COUNT times in the -af chain, each stage
-// multiplying the rolloff by another ~12dB/octave. Verified directly against
-// the real bundled ffmpeg binary before implementing (four cascaded
-// highpass=f=1000:poles=2 instances measured ~34dB more attenuation than
-// one, on a real test tone). Mirrors SoundSource.js's/PreviewSource.js's
-// identical helper.
-const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
-const STEEP_STAGE_COUNT = 4
-export function eqBandStageCount(band) {
-  return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
-}
+// Steep slope = the same single-stage filter string chained
+// eqBandStageCount(band) times in the -af chain (src/shared/eqBands.js).
+export { eqBandStageCount }
 
 // Exported (2026-09-02) so exportMix.js's whole-mix post-processing chain
 // can build the exact same per-band ffmpeg filter for a preset's Preset
