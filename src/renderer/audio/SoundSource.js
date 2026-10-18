@@ -1,6 +1,7 @@
 import log from 'electron-log/renderer'
 import { createReverbImpulse } from './reverbIR.js'
 import { PanStage } from './PanStage.js'
+import { eqNodeType, eqBandStageCount } from '../../shared/eqBands.js'
 import { SoundFluctuation, fluctuationKey } from '../../shared/modulator.js'
 import { NoiseGate } from './NoiseGate.js'
 import { rampEqualPower } from '../../shared/equalPowerRamp.js'
@@ -40,34 +41,9 @@ const DEFAULT_STREAM_CROSSFADE_SECONDS = 0.2
 const STALL_RECOVERY_DELAY_MS = 8000
 const MAX_RECOVERY_ATTEMPTS = 3
 
-// 'off' is a pseudo-type (not a real BiquadFilterNode type) - see the
-// eqNodes comment in the constructor below for why 'allpass' is the right
-// stand-in. A muted band (see the Remix EQ's per-band Mute/Solo controls)
-// takes the same 'allpass' bypass, independent of whatever real type it's
-// set to - muting is meant to be non-destructive, so it never touches
-// band.type itself, only whether the node actually applies it. Shared by
-// both construction and live updates (setFilters) so they can't drift.
-// Exported so WholeMixChain.js (the Preset Remix whole-mix chain) can build
-// an identically-shaped EQ chain without a third private copy - this is
-// core-to-core, unlike the plugin-side duplicates.
-export function eqNodeType(band) {
-  return band.muted || band.type === 'off' ? 'allpass' : (band.type ?? 'peaking')
-}
-
-// Only the four filter-*shaped* types have a real "slope" (rolloff
-// steepness) concept - peaking/shelf types are gain-shaped, 'off' does
-// nothing. BiquadFilterNode is inherently one fixed 12dB/octave stage with
-// no slope parameter of its own, so "Steep" is real cascading: N identical
-// stages chained in series, each stage multiplying the rolloff by another
-// ~12dB/octave (feasibility confirmed against both Web Audio and the real
-// bundled ffmpeg binary before implementing - see the ranked backlog's
-// slope research). Mirrors PreviewSource.js's identical helper (and
-// EqEditor.js's copy, used for the response-curve preview).
-const SLOPE_CAPABLE_EQ_TYPES = ['lowpass', 'highpass', 'bandpass', 'notch']
-const STEEP_STAGE_COUNT = 4
-export function eqBandStageCount(band) {
-  return band.slope === 'steep' && SLOPE_CAPABLE_EQ_TYPES.includes(band.type) ? STEEP_STAGE_COUNT : 1
-}
+// EQ band rules: src/shared/eqBands.js (shared with the export and the
+// phone player).
+export { eqNodeType, eqBandStageCount }
 
 // Plays the original file by streaming it through an <audio> element, for
 // sounds whose loop region is too long to bake into a buffer clip (see

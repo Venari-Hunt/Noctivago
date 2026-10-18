@@ -24,7 +24,7 @@ const MAX_ECHO_DELAY_SECONDS = 2.0
 // live mix - the same exposure Composite's bake had before v0.1.113. Export's
 // whole-mix post-chain gets the matching ffmpeg `alimiter=limit=0.95` so the
 // two stay in agreement. The EQ chain is built exactly like a sound's own (same
-// eqNodeType / eqBandStageCount helpers, imported from SoundSource so there's
+// eqNodeType / eqBandStageCount helpers, from src/shared/eqBands.js, so there's
 // no drift) - one BiquadFilterNode group per band, rebuilt only when the band
 // topology changes. Neutral by default: HP at 0, LP at 20000, gain 1, no EQ
 // bands - the graph is always wired and `set()` only adjusts it.
