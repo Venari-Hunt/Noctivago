@@ -50,8 +50,8 @@ function clampNum(v, lo, hi, fallback) {
 
 // Resolves an axis's timing fields to the current flat-seconds shape,
 // accepting either the new fields, the pre-v0.1.176 `changeRate`/`transition`
-// (0..1), or nothing. gainEnvelope.js keeps its own copy of this mapping (the
-// main process can't import from src/renderer/) - keep the two in sync.
+// (0..1), or nothing. Also used by the export's baked walks (gainEnvelope.js,
+// pitchEnvelope.js, panDrift.js) and the phone player.
 export function resolveFluctuationTiming(axis) {
   if (Number.isFinite(axis?.changeMinSeconds) || Number.isFinite(axis?.transitionSeconds)) {
     const lo = clampNum(axis.changeMinSeconds, 0.2, 300, 6)

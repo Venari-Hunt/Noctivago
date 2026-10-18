@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { randomSpeedFactor } from '../src/renderer/audio/ScatterSoundSource.js'
+import { randomSpeedFactor } from '../src/shared/shotRules.js'
 
 // Per-play Speed (v0.1.227): the same Fully random / Bias options as the
 // pitch/volume/pan picks.

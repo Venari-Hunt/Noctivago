@@ -2,10 +2,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { app } from 'electron'
+import { resolveFluctuationTiming } from '../../shared/modulator.js'
 
 // Bakes the Remix "Fluctuation" feature's slow random volume drift into an
 // export (v0.1.171). Live playback drives a gain node from a running
-// Modulator (src/renderer/audio/Modulator.js); an export has no live audio
+// Modulator (src/shared/modulator.js); an export has no live audio
 // graph, so instead this renders ONE realization of that same bounded
 // random walk to a short mono/stereo control-signal WAV, which exportMix.js
 // then multiplies against the relevant track (a fluctuating loop sound's own
@@ -14,12 +15,11 @@ import { app } from 'electron'
 // already one baked realization of that mode's own randomization rather than
 // a re-runnable behavior.
 //
-// The walk math below is a deliberate, self-contained copy of Modulator's -
-// the main process never imports from src/renderer/ (see CLAUDE.md), so this
-// mirrors that file the same way the Remix plugin keeps its own bundled
-// copy. If Modulator's mapping (the flat-seconds timing fields + legacy
-// changeRate/transition migration, the pow(r,1.7) bias skew, pickTarget, the
-// fullyRandom uniform pick) changes, change it here too.
+// The timing fields come from the shared resolveFluctuationTiming. The walk
+// itself is an offline copy of Modulator's (fixed sample rate, injectable
+// rng): if Modulator's walk (the pow(r,1.7) bias skew, pickTarget, the
+// fullyRandom uniform pick) changes, change it here, in pitchEnvelope.js and
+// in panDrift.js too.
 
 // Control signal sample rate. Far below audio rate - the drift is slow (even
 // the snappiest allowed settings put the time constant near ~0.07s and a new
@@ -28,41 +28,6 @@ import { app } from 'electron'
 // before the multiply. Keeps the file tiny even for a multi-hour export
 // (~7 MB/hour stereo 16-bit).
 export const GEN_RATE = 1000
-
-function lerp(a, b, t) {
-  return a + (b - a) * Math.max(0, Math.min(1, t))
-}
-
-function num(v, fallback) {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : fallback
-}
-
-// Mirror of Modulator.js's resolveFluctuationTiming - accepts the flat-seconds
-// fields (v0.1.176+), the legacy 0..1 changeRate/transition, or nothing.
-function resolveTiming(axis) {
-  if (Number.isFinite(axis?.changeMinSeconds) || Number.isFinite(axis?.transitionSeconds)) {
-    const lo = num(axis.changeMinSeconds, 6)
-    const hi = num(axis.changeMaxSeconds, 14)
-    return {
-      changeMinSeconds: Math.max(0.1, Math.min(lo, hi)),
-      changeMaxSeconds: Math.max(Math.max(0.1, Math.min(lo, hi)), hi),
-      transitionSeconds: Math.max(0, num(axis.transitionSeconds, 8))
-    }
-  }
-  if (Number.isFinite(axis?.changeRate) || Number.isFinite(axis?.transition)) {
-    const r = num(axis.changeRate, 0.5)
-    const t = num(axis.transition, 0.5)
-    const centre = lerp(20, 1.5, r)
-    const tau = lerp(9, 0.15, t)
-    return {
-      changeMinSeconds: centre * 0.6,
-      changeMaxSeconds: centre * 1.4,
-      transitionSeconds: tau * 3
-    }
-  }
-  return { changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
-}
 
 // Reproduces Modulator's bounded random walk for `durationSeconds`, sampled
 // at GEN_RATE. Returns a Float64Array of 0..1 gain multipliers. `rng` is
@@ -75,7 +40,7 @@ export function sampleVolumeWalk(config, durationSeconds, rng = Math.random) {
   const min = fullyRandom ? 0 : Math.min(config.min, config.max)
   const max = fullyRandom ? 1 : Math.max(config.min, config.max)
   const bias = uniform ? (min + max) / 2 : Math.min(max, Math.max(min, config.bias))
-  const timing = resolveTiming(config)
+  const timing = resolveFluctuationTiming(config)
   const changeMin = timing.changeMinSeconds
   const changeSpan = timing.changeMaxSeconds - timing.changeMinSeconds
   const tau = Math.max(0, timing.transitionSeconds / 3)
