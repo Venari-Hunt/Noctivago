@@ -2,11 +2,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { app } from 'electron'
+import { resolveFluctuationTiming, FLUCTUATION_PITCH_RANGE } from '../../shared/modulator.js'
 
 // Bakes the Remix "Fluctuation" feature's slow random *pitch* drift into an
 // export (v0.1.179) - the companion to gainEnvelope.js, which does the same
 // for the volume axis. Live playback drives an AudioParam `detune` from a
-// running Modulator (src/renderer/audio/Modulator.js); an export has no live
+// running Modulator (src/shared/modulator.js); an export has no live
 // audio graph, so this renders ONE realization of that same bounded random
 // walk and expresses it as an ffmpeg `asendcmd` command file that steps the
 // `rubberband` filter's `pitch` scale factor over time (verified against the
@@ -26,14 +27,10 @@ import { app } from 'electron'
 // so unlike gainEnvelope.js this is only ever applied to a single loop
 // sound's own tiled track.
 //
-// The walk math below is a deliberate, self-contained copy of Modulator's
-// (and mirrors gainEnvelope.js's own copy) - the main process never imports
-// from src/renderer/. If Modulator's mapping changes (the flat-seconds
-// timing + legacy changeRate/transition migration, the pow(r,1.7) bias skew,
-// pickTarget, the fullyRandom uniform pick), change it in all three places.
+// The timing fields and pitch range come from src/shared/modulator.js. The
+// walk itself is an offline copy of Modulator's (see gainEnvelope.js).
 
-// Must match Modulator.js's FLUCTUATION_PITCH_RANGE.
-const PITCH_RANGE_SEMITONES = 6
+const PITCH_RANGE_SEMITONES = FLUCTUATION_PITCH_RANGE
 
 // How often a `rubberband pitch` command is emitted, for a short/typical
 // export. The drift is slow (a new target every 6-14 s by default, glided
@@ -73,36 +70,9 @@ function resolveStepSeconds(durationSeconds) {
   return Math.max(STEP_SECONDS, durationSeconds / MAX_COMMAND_FRAMES)
 }
 
-function lerp(a, b, t) {
-  return a + (b - a) * Math.max(0, Math.min(1, t))
-}
-
 function num(v, fallback) {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
-}
-
-// Mirror of Modulator.js's resolveFluctuationTiming / gainEnvelope.js's resolveTiming.
-function resolveTiming(axis) {
-  if (Number.isFinite(axis?.changeMinSeconds) || Number.isFinite(axis?.transitionSeconds)) {
-    const lo = num(axis.changeMinSeconds, 6)
-    const hi = num(axis.changeMaxSeconds, 14)
-    return {
-      changeMinSeconds: Math.max(0.1, Math.min(lo, hi)),
-      changeMaxSeconds: Math.max(Math.max(0.1, Math.min(lo, hi)), hi),
-      transitionSeconds: Math.max(0, num(axis.transitionSeconds, 8))
-    }
-  }
-  if (Number.isFinite(axis?.changeRate) || Number.isFinite(axis?.transition)) {
-    const r = num(axis.changeRate, 0.5)
-    const t = num(axis.transition, 0.5)
-    return {
-      changeMinSeconds: lerp(20, 1.5, r) * 0.6,
-      changeMaxSeconds: lerp(20, 1.5, r) * 1.4,
-      transitionSeconds: lerp(9, 0.15, t) * 3
-    }
-  }
-  return { changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
 }
 
 // Reproduces Modulator's bounded random walk for `durationSeconds`, sampled
@@ -116,7 +86,7 @@ export function samplePitchWalk(config, durationSeconds, rng = Math.random) {
   const min = fullyRandom ? -PITCH_RANGE_SEMITONES : Math.min(num(config.min, 0), num(config.max, 0))
   const max = fullyRandom ? PITCH_RANGE_SEMITONES : Math.max(num(config.min, 0), num(config.max, 0))
   const bias = fullyRandom ? 0 : uniform ? (min + max) / 2 : Math.min(max, Math.max(min, num(config.bias, 0)))
-  const timing = resolveTiming(config)
+  const timing = resolveFluctuationTiming(config)
   const changeMin = timing.changeMinSeconds
   const changeSpan = timing.changeMaxSeconds - timing.changeMinSeconds
   const tau = Math.max(0, timing.transitionSeconds / 3)

@@ -132,7 +132,7 @@ export function defaultVolumeEnvelope() {
 // flat seconds the user sets directly (v0.1.176 - was a 0..1 percentage);
 // fullyRandom bypasses min/bias/max and roams the whole axis. Pre-v0.1.176
 // saves with changeRate/transition are migrated in normalizeFluctuationAxis
-// (src/renderer/audio/Modulator.js).
+// (src/shared/modulator.js).
 export function defaultFluctuation() {
   return {
     volume: { enabled: false, fullyRandom: false, min: 0.5, max: 1, bias: 0.8, changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 },

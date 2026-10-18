@@ -1,6 +1,6 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
-import { Modulator, normalizeFluctuationAxis } from './Modulator.js'
+import { Modulator, normalizeFluctuationAxis } from '../../shared/modulator.js'
 
 const FILTER_SMOOTHING_SECONDS = 0.02
 // Upper bound a Web Audio DelayNode must declare at creation time - matches

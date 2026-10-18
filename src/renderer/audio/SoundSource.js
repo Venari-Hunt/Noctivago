@@ -1,9 +1,9 @@
 import log from 'electron-log/renderer'
 import { createReverbImpulse } from './reverbIR.js'
 import { PanStage } from './PanStage.js'
-import { SoundFluctuation, fluctuationKey } from './Modulator.js'
+import { SoundFluctuation, fluctuationKey } from '../../shared/modulator.js'
 import { NoiseGate } from './NoiseGate.js'
-import { rampEqualPower } from './equalPowerRamp.js'
+import { rampEqualPower } from '../../shared/equalPowerRamp.js'
 import { createPitchShiftNode } from './pitchShiftNode.js'
 
 const RAMP_SECONDS = 0.15

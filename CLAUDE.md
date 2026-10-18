@@ -11,7 +11,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
   - `phone/` — "Export for phone": `phoneBundle.js` bakes a preset into a phone `.ncvpreset`, rules in `phoneBundleCore.js` (`docs/mobile.md`).
   - `plugins/` — `registry.js` manifests, `protocol.js` path guard, `invoke.js` plugin main-process calls, `store.js` plugin store.
 - `src/preload/index.js` — `window.noctivago` (`library`, `presets`, `audio`, `plugins`, `pluginStore`).
-- `src/shared/` — code/constants used by main and renderer.
+- `src/shared/` — code/constants used by main and renderer. The playback rules the phone player also imports are here, DOM- and Electron-free: `modulator.js` (Fluctuation walk + timing), `shotRules.js` (scatter/scheduled per-shot picks and timing), `equalPowerRamp.js`, `groupDrift.js`, `pan.js` (`test/shotRules.test.js` guards their imports).
 - `src/renderer/` — `main.js` bootstrap; `core/TabHost.js`, `core/PluginLoader.js`; `toolbar/` the top bar (React; state pushed in by the Mixer, sleep timer, main.js); `components/` icons shared across screens; `settings/` the Settings window (React; plugin toggles, Restricted mode, store Browse); `tabs/mixer/` the Mixer; `audio/` engine, sources, clip meters; `ui/` Mixer-only widgets.
 - Official plugins (Remix, Export, Composite, Browse Sounds, Community) live in their own repos, `Venari-Hunt/noctivago-<id>`, and install from the store; `dev-plugins/` holds dev-only test fixtures.
 

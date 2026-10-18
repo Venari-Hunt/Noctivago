@@ -1,6 +1,6 @@
 import { eqNodeType, eqBandStageCount } from './SoundSource.js'
 import { createReverbImpulse } from './reverbIR.js'
-import { Modulator, normalizeFluctuationAxis } from './Modulator.js'
+import { Modulator, normalizeFluctuationAxis } from '../../shared/modulator.js'
 import { applyOcclusionToFilters } from '../../shared/constants.js'
 import { PanStage } from './PanStage.js'
 import { busFluctuation } from '../../shared/groupDrift.js'

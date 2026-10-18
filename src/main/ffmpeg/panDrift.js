@@ -1,4 +1,5 @@
 import { stereoPanMatrix } from '../../shared/pan.js'
+import { resolveFluctuationTiming } from '../../shared/modulator.js'
 
 // Pan drift baking (v0.1.217) - the export counterpart of the live
 // `driftPanStage` (src/renderer/audio/PanStage.js driven by a Modulator).
@@ -19,33 +20,6 @@ function num(v, fallback) {
   return Number.isFinite(n) ? n : fallback
 }
 
-function lerp(a, b, t) {
-  return a + (b - a) * Math.max(0, Math.min(1, t))
-}
-
-// Mirror of Modulator.js's resolveFluctuationTiming.
-function resolveTiming(axis) {
-  if (Number.isFinite(axis?.changeMinSeconds) || Number.isFinite(axis?.transitionSeconds)) {
-    const lo = num(axis.changeMinSeconds, 6)
-    const hi = num(axis.changeMaxSeconds, 14)
-    return {
-      changeMinSeconds: Math.max(0.1, Math.min(lo, hi)),
-      changeMaxSeconds: Math.max(Math.max(0.1, Math.min(lo, hi)), hi),
-      transitionSeconds: Math.max(0, num(axis.transitionSeconds, 8))
-    }
-  }
-  if (Number.isFinite(axis?.changeRate) || Number.isFinite(axis?.transition)) {
-    const r = num(axis.changeRate, 0.5)
-    const t = num(axis.transition, 0.5)
-    return {
-      changeMinSeconds: lerp(20, 1.5, r) * 0.6,
-      changeMaxSeconds: lerp(20, 1.5, r) * 1.4,
-      transitionSeconds: lerp(9, 0.15, t) * 3
-    }
-  }
-  return { changeMinSeconds: 6, changeMaxSeconds: 14, transitionSeconds: 8 }
-}
-
 export function hasPanFluctuation(fluctuation) {
   return Boolean(fluctuation?.pan?.enabled)
 }
@@ -61,7 +35,7 @@ export function samplePanWalk(config, durationSeconds, rng = Math.random) {
   const min = fullyRandom ? -1 : Math.min(rawMin, rawMax)
   const max = fullyRandom ? 1 : Math.max(rawMin, rawMax)
   const bias = fullyRandom ? 0 : uniform ? (min + max) / 2 : Math.min(max, Math.max(min, num(config?.bias, 0)))
-  const timing = resolveTiming(config)
+  const timing = resolveFluctuationTiming(config)
   const changeMin = timing.changeMinSeconds
   const changeSpan = timing.changeMaxSeconds - timing.changeMinSeconds
   const tau = Math.max(0, timing.transitionSeconds / 3)

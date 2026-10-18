@@ -1,86 +1,10 @@
 import log from 'electron-log/renderer'
-import { randomPitchSemitones, randomVolumeScale, randomPanPosition, randomSpeedFactor, fadeSeconds, scheduleShotEnvelope } from './ScatterSoundSource.js'
+import { randomPitchSemitones, randomVolumeScale, randomPanPosition, randomSpeedFactor, fadeSeconds, scheduleShotEnvelope, secondsUntilNextTrigger, scheduleKey } from '../../shared/shotRules.js'
 import { PanStage } from './PanStage.js'
 import { pitchShiftBuffer } from './pitchStretch.js'
 import { createStreamFilterChain, updateStreamFilterChain, disposeStreamFilterChain } from './StreamFilterChain.js'
 
 const RAMP_SECONDS = 0.15
-
-// Real-world wall-clock playback ("a church's bell at 12:00 and 00:00", "an
-// hourly chime, like a digital clock") - the trimmed clip plays once at each
-// scheduled moment, then waits for the next one. The *when* is deterministic
-// clock math (unlike Scatter's random gap), but per direct owner request
-// ("the scheduled audios should have the exact same controls... as the
-// random interval sounds have... it still needs fading, randomization and
-// whatever") each shot's own character - pitch, volume, fade in/out - is
-// randomized exactly the same way, reusing Scatter's own randomPitchSemitones/
-// randomVolumeScale/fadeSeconds/scheduleShotEnvelope (exported from
-// ScatterSoundSource.js) rather than a third copy of that math. Shares the
-// buffer/stream fallback split and the general shot-then-wait shape with
-// ScatterSoundSource, but stays its own file rather than a parametrized
-// variant of it - the trigger-timing logic (deterministic clock vs. random
-// gap) is different enough that forcing a shared base class would cost more
-// than it saves.
-//
-// schedule shape: { type: 'times', times: ['12:00', '00:00'] } for one or
-// more fixed daily HH:MM (24h) triggers, or { type: 'interval',
-// intervalMinutes: 60 } for a recurring interval aligned to midnight (so
-// intervalMinutes: 60 always lands on the hour, 30 on the hour and half-
-// hour, etc - "like a digital clock" rather than counting from whenever the
-// app happened to start).
-function secondsUntilNextTrigger(schedule, now = new Date()) {
-  if (!schedule) return null
-  if (schedule.type === 'interval') {
-    const intervalMs = Math.max(1, schedule.intervalMinutes ?? 60) * 60000
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-    const msSinceMidnight = now.getTime() - startOfDay
-    const msUntilNext = intervalMs - (msSinceMidnight % intervalMs)
-    return msUntilNext / 1000
-  }
-  const times = schedule.times ?? []
-  if (times.length === 0) return null
-  const candidates = times
-    .map((t) => {
-      const [h, m] = t.split(':').map(Number)
-      if (!Number.isFinite(h) || !Number.isFinite(m)) return null
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0)
-      if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1)
-      return d.getTime()
-    })
-    .filter((t) => t !== null)
-  if (candidates.length === 0) return null
-  return (Math.min(...candidates) - now.getTime()) / 1000
-}
-
-function normalizeSchedule(schedule) {
-  return JSON.stringify({
-    type: schedule?.type ?? 'times',
-    times: [...(schedule?.times ?? [])].sort(),
-    intervalMinutes: schedule?.intervalMinutes ?? 60,
-    minPitchSemitones: schedule?.minPitchSemitones ?? 0,
-    maxPitchSemitones: schedule?.maxPitchSemitones ?? 0,
-    pitchFullyRandom: Boolean(schedule?.pitchFullyRandom),
-    pitchBiasEnabled: Boolean(schedule?.pitchBiasEnabled),
-    pitchBiasSemitones: schedule?.pitchBiasSemitones ?? null,
-    minVolume: schedule?.minVolume ?? 1,
-    maxVolume: schedule?.maxVolume ?? 1,
-    volumeFullyRandom: Boolean(schedule?.volumeFullyRandom),
-    volumeBiasEnabled: Boolean(schedule?.volumeBiasEnabled),
-    volumeBias: schedule?.volumeBias ?? null,
-    minPan: schedule?.minPan ?? 0,
-    maxPan: schedule?.maxPan ?? 0,
-    panFullyRandom: Boolean(schedule?.panFullyRandom),
-    panBiasEnabled: Boolean(schedule?.panBiasEnabled),
-    panBias: schedule?.panBias ?? null,
-    minSpeed: schedule?.minSpeed ?? 1,
-    maxSpeed: schedule?.maxSpeed ?? 1,
-    speedFullyRandom: Boolean(schedule?.speedFullyRandom),
-    speedBiasEnabled: Boolean(schedule?.speedBiasEnabled),
-    speedBias: schedule?.speedBias ?? null,
-    fadeInMs: schedule?.fadeInMs ?? 0,
-    fadeOutMs: schedule?.fadeOutMs ?? 0
-  })
-}
 
 // Buffer variant: plays the small, already-baked (trimmed+filtered, no
 // crossfade - same effectiveCrossfadeSeconds reasoning scatter mode uses,
@@ -124,7 +48,7 @@ export class BufferScheduledSource {
   }
 
   hasScheduleConfig(schedule) {
-    return normalizeSchedule(this.schedule) === normalizeSchedule(schedule)
+    return scheduleKey(this.schedule) === scheduleKey(schedule)
   }
 
   _scheduleNext() {
@@ -378,7 +302,7 @@ export class StreamScheduledSource {
   }
 
   hasScheduleConfig(schedule) {
-    return normalizeSchedule(this.schedule) === normalizeSchedule(schedule)
+    return scheduleKey(this.schedule) === scheduleKey(schedule)
   }
 
   _loopEnd() {

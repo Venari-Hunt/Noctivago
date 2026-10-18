@@ -1,4 +1,4 @@
-import { SoundFluctuation, fluctuationKey } from './Modulator.js'
+import { SoundFluctuation, fluctuationKey } from '../../shared/modulator.js'
 import { PanStage } from './PanStage.js'
 
 const RAMP_SECONDS = 0.15
