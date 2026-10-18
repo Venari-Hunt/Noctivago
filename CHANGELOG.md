@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.268 — Export for phone
+
+- **Getting ready for the Noctívago phone app: Export can now save a preset "For phone".** Pick it in the Export tab's Format list (needs Export plugin 1.1.0). It writes a preset file with every sound's Remix settings and all reverb already baked in, so the phone only has to mix. On the Beach preset: 18 sounds in 27 seconds, a 7 MB file. A loop longer than 10 minutes ships as its middle 15 seconds, and the result warns you when a preset may need too much memory for a phone.
+
 ## v0.1.267 — Auto-started sleep timer asks first
 
 - **When the sleep timer is set to start every time Noctívago opens, it now tells you first.** A notice says what the timer will do and how long it is, and counts down 20 seconds before starting. "Don't start" skips it this time; "Start now" starts it right away.

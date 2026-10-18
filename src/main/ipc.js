@@ -19,6 +19,7 @@ import { computeBandEnergy } from './ffmpeg/bandEnergy.js'
 import { suggestLoopPoints } from './ffmpeg/loopSuggest.js'
 import { extractSpectrogram } from './ffmpeg/spectrogram.js'
 import { exportMix } from './ffmpeg/exportMix.js'
+import { exportForPhone } from './phone/phoneBundle.js'
 import { beginExport, endExport, isExportInProgress } from './exportState.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
@@ -538,6 +539,21 @@ export function registerIpcHandlers() {
           palette: settings.exportVisualizationPalette,
           size: settings.exportVisualizationSize,
           fps: settings.exportVisualizationFps
+        }
+      })
+    } finally {
+      endExport()
+    }
+  })
+
+  // "Export for phone" (src/main/phone/phoneBundle.js). Same progress channel
+  // and auto-update guard as export:run.
+  ipcMain.handle('export:runPhone', async (event, { presetId, outputPath }) => {
+    beginExport()
+    try {
+      return await exportForPhone(presetId, outputPath, {
+        onProgress: (payload) => {
+          if (!event.sender.isDestroyed()) event.sender.send('export:progress', payload)
         }
       })
     } finally {

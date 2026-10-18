@@ -25,8 +25,14 @@ const OPUS_BITRATE = '96k'
 
 // One Opus encode is single-threaded and light on memory; leave a core free
 // so the app stays responsive.
-function encodeConcurrency() {
+export function encodeConcurrency() {
   return Math.max(1, Math.min(8, (os.cpus()?.length ?? 2) - 1))
+}
+
+// Also used by "Export for phone" (phone/phoneBundle.js). range: input
+// options placed before -i (e.g. ['-ss', '12', '-t', '15']).
+export function encodeOpus(inputPath, outputPath, range = []) {
+  return runFfmpegToFile(['-y', ...range, '-i', inputPath, '-vn', '-map', '0:a:0', '-c:a', 'libopus', '-b:a', OPUS_BITRATE, outputPath])
 }
 
 function tmpRoot() {
@@ -107,7 +113,7 @@ export async function buildCommunityBundle(presetId, { onProgress, cutSounds = [
       const outPath = path.join(workDir, `${i}.opus`)
       const win = sounds[f.soundIndex].cut ? cutWindow(effective[f.soundIndex], sound.durationSeconds) : null
       const range = win ? ['-ss', win.start.toFixed(3), '-t', String(CUT_SECONDS)] : []
-      await runFfmpegToFile(['-y', ...range, '-i', f.sourcePath, '-vn', '-map', '0:a:0', '-c:a', 'libopus', '-b:a', OPUS_BITRATE, outPath])
+      await encodeOpus(f.sourcePath, outPath, range)
       if (win) {
         const ownLoop = (bag) => ({ loopStart: bag?.loopStart, loopEnd: bag?.loopEnd })
         const baseLoop = ownLoop(sound.settings)

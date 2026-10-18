@@ -8,6 +8,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
   - `index.js` — window, `sound://` (original file or baked loop clip) and `plugin://` protocols. In dev with 2+ displays, opens on the highest-numbered one (`devWindowPosition()`).
   - `ipc.js` IPC handlers · `library.js` sounds (electron-store) · `presets.js` saved mixes.
   - `ffmpeg/` — `runFfmpeg.js` spawn wrapper, `ffmpegPath.js`, `loopClip.js`, `waveformPeaks.js`, `exportMix.js`.
+  - `phone/` — "Export for phone": `phoneBundle.js` bakes a preset into a phone `.ncvpreset`, rules in `phoneBundleCore.js` (`docs/mobile.md`).
   - `plugins/` — `registry.js` manifests, `protocol.js` path guard, `invoke.js` plugin main-process calls, `store.js` plugin store.
 - `src/preload/index.js` — `window.noctivago` (`library`, `presets`, `audio`, `plugins`, `pluginStore`).
 - `src/shared/` — code/constants used by main and renderer.
