@@ -1320,7 +1320,7 @@ function normalizeSpeedPitch(speedPitch) {
 // real baked Doppler clip measured a scrambled double-hump frequency curve
 // instead of the intended monotonic descent, traced to this exact
 // interaction, before this guard existed.
-function effectiveCrossfadeSeconds(entry) {
+export function effectiveCrossfadeSeconds(entry) {
   if (entry.playMode === 'scatter' || entry.playMode === 'scheduled' || entry.speedPitch?.dopplerEnabled) return 0
   return entry.crossfadeSeconds
 }

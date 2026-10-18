@@ -203,6 +203,9 @@ const api = {
     pickVideoFile: () => ipcRenderer.invoke('export:pickVideoFile'),
     pickImageFile: () => ipcRenderer.invoke('export:pickImageFile'),
     run: (payload) => ipcRenderer.invoke('export:run', payload),
+    // "Export for phone" (docs/mobile.md): { presetId, outputPath } ->
+    // { ok, path, soundCount, totalBytes, decodedMB, warnings } or { ok:false, error }.
+    runPhone: (payload) => ipcRenderer.invoke('export:runPhone', payload),
     writeInfoFile: (payload) => ipcRenderer.invoke('export:writeInfoFile', payload),
     writeLogFile: (payload) => ipcRenderer.invoke('export:writeLogFile', payload),
     // Progress updates while an export renders: { type:'step', label, fraction }

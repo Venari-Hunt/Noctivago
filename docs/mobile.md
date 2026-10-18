@@ -15,21 +15,31 @@ An ambient/sleep app is useless if it stops when the phone locks. That rules out
 ### Shape of the solution
 
 1. **Desktop does the heavy lifting.** A new "Export for phone" (a format in the Export plugin; owner, 2026-10-17) writes a normal `.ncvpreset` (format 2 zip) whose `audio/` holds each sound's **baked loop clip** (filters, EQ, echo, reverb, noise reduction, reverse, Doppler already baked by `loopClip.js`) re-encoded to Opus by `community/bundle.js`'s encoder. Freesound sounds are included too (the phone has no Freesound key). The manifest marks the clips as baked, so the phone skips per-sound filters. Loops longer than `MAX_BUFFER_CLIP_SECONDS` (10 min) get cut like the community "Cut to 15 s" path (`cutClip.js`), with a warning.
-2. **The phone only does what must be live:** buffer loops (`loop=true`, sample-accurate), volume, pan, pitch/speed, scatter and scheduled shot timing, Fluctuation, Sound Group chains and the whole-mix chain minus their reverb, master volume.
+2. **The phone only does what must be live:** buffer loops (`loop=true`, sample-accurate), volume, per-play pitch/speed of shots, scatter and scheduled shot timing, Fluctuation (incl. pan drift), Sound Group chains and the whole-mix chain minus their reverb, master volume. A sound's own pan and speed/pitch are in its baked clip, as in the Mixer.
 3. **Reverb is always baked (owner, 2026-10-17).** Spike 0.0.4 measured ~30% of one core with the screen off, almost all of it the live convolver; SoundAura (`../noctivago-mobile/docs/study-soundaura.md`) plays with near-zero CPU because the phone only mixes. Reverb is linear, so Sound Group and whole-mix reverb are applied per sound at export: loops get the wet signal wrapped circularly (seamless), scatter/scheduled shots get their tail appended. The phone runs no convolver.
-3. **Shared rules, one copy.** The timing and modulation rules the desktop engine uses (scatter/scheduled shot picking, `Modulator.js` walks, `groupDrift.js`, `pan.js`, `equalPowerRamp.js`) move to `src/shared/` as DOM-free modules with tests, and the mobile app imports them. The node-wiring code is rewritten for React Native; the rules are not copied.
-4. **New repo** `Venari-Hunt/noctivago-mobile` (like the official plugins). Screens: preset list (import via Android "Open with" / share sheet, or a file picker), player (play/pause, master volume, per-sound volume sliders as the only "edit"), sleep timer. Lock-screen controls via the library's notification system.
+4. **Shared rules, one copy.** The timing and modulation rules the desktop engine uses (scatter/scheduled shot picking, `Modulator.js` walks, `groupDrift.js`, `pan.js`, `equalPowerRamp.js`) move to `src/shared/` as DOM-free modules with tests, and the mobile app imports them. The node-wiring code is rewritten for React Native; the rules are not copied.
+5. **New repo** `Venari-Hunt/noctivago-mobile` (like the official plugins). Screens: preset list (import via Android "Open with" / share sheet, or a file picker), player (play/pause, master volume, per-sound volume sliders as the only "edit"), sleep timer. Lock-screen controls via the library's notification system.
 
 ### Phases (each ends in something testable)
 
 | # | Phase | Output | Rough size |
 |---|-------|--------|-----------|
 | 0 | **Spike** (go/no-go) | Expo dev build: 2 looped Opus buffers + a biquad + a convolver, screen locked for 30 min. Measure: keeps playing, battery drain, no glitches | 1 session |
-| 1 | Desktop "Export for phone" | A "For phone" choice in the Export plugin's format picker (repo `noctivago-export`); the baking runs in core main behind `api.export`, like the other formats. Output: `.ncvpreset` with baked Opus clips; unit tests | 1 session |
+| 1 | Desktop "Export for phone" (**shipped** v0.1.268 + Export 1.1.0) | A "For phone" choice in the Export plugin's format picker (repo `noctivago-export`); the baking runs in core main behind `api.export`, like the other formats. Output: `.ncvpreset` with baked Opus clips; unit tests | 1 session |
 | 2 | Shared rules to `src/shared/` | Desktop engine imports them; existing tests green | 1 session |
 | 3 | Mobile player MVP (Android) | Import, preset list, play/pause, volumes, lock-screen controls | 2-3 sessions |
 | 4 | Parity pass | Scatter/scheduled, Fluctuation, groups, whole-mix chain, A/B by ear vs desktop | 2 sessions |
 | 5 | Distribution | APK on itch.io + GitHub Releases; Google Play ($25 once) later; iOS ($99/year) only if wanted | 1 session |
+
+### Phone preset file (the contract the phone app reads)
+
+`api.export.runPhone({ presetId, outputPath })` → `src/main/phone/phoneBundle.js` (ffmpeg) + `phoneBundleCore.js` (rules, tested). The file is a normal format-2 `.ncvpreset`, so it also imports on the desktop and sounds the same. What differs:
+
+- `manifest.phone = { version: 1 }` marks it.
+- Every sound has audio (Freesound included): `audio/<name>.opus`, 96 kbps, the clip the Mixer plays (`renderClipToPath`) plus its group and whole-mix reverb.
+- Each sound's `settings` = its effective settings (preset override merged; `overrides` is null) with `loopStart: 0`, `loopEnd` = clip length, `crossfadeSeconds: 0`, `speedPitch: null`, `filters: {}`. Loop mode: loop the whole buffer. Scatter/scheduled: play the whole clip per shot (reverb tail included). `scatter`, `schedule`, `fluctuation`, `playMode`, `volume` are live.
+- `groups[].filters` and `wholeMix`: occlusion folded into the lowpass, `occlusion`/`reverbMix`/`reverbSizeMs` zeroed. Everything else in them is live.
+- Measured on Beach (18 sounds, whole-mix reverb added for the test): 27 s, 7.1 MB, ~244 MB decoded on the phone; loop seams after the reverb wrap stay within the audio's normal step size.
 
 **Builds without Android Studio:** Expo's EAS cloud build produces the APK (and iOS builds) without a local Android SDK or a Mac. The free tier is enough for occasional builds. It needs an Expo account.
 

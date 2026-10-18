@@ -385,6 +385,8 @@ export interface NoctivagoApi {
     pickVideoFile(): Promise<any>
     pickImageFile(): Promise<any>
     run(payload: Payload): Promise<any>
+    /** "Export for phone": { presetId, outputPath } -> a .ncvpreset of baked Opus clips (0.1.268+). */
+    runPhone(payload: Payload): Promise<any>
     writeInfoFile(payload: Payload): Promise<any>
     writeLogFile(payload: Payload): Promise<any>
     onProgress(callback: (payload: any) => void): Unsubscribe
