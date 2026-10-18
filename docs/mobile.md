@@ -53,3 +53,31 @@ An ambient/sleep app is useless if it stops when the phone locks. That rules out
 
 - Which phone(s) to target first (Android, iPhone, both).
 - An Expo account for cloud builds (free sign-up at expo.dev, owner's email).
+
+## Phone Mixer (plan, 2026-10-18)
+
+The player (phases 0-5) is done and public. Owner, 2026-10-18: the phone needs the desktop's Mixer and Settings too ("you can't upload your own sounds"). Scope (owner's pick): **Mixer + Settings first; Remix (trim, filters, EQ) is a later stage.**
+
+### How others do it
+
+- SoundAura (open source, studied in the mobile repo's `docs/study-soundaura.md`) and 508.dev Soundboard (F-Droid) let you add your own files and loop them plainly; no conversion step.
+- `react-native-audio-api` decodes MP3, WAV, FLAC, OGG, Opus, AAC and M4A, which covers the desktop's import formats. It also has `OfflineAudioContext`, so phone-side baking (seamless-loop crossfade now, Remix filters later) can reuse the same audio nodes.
+- Mic recording: `expo-audio` (`useAudioRecorder`, save to the document directory, not cache).
+
+### Phases
+
+| # | Phase | Output |
+|---|-------|--------|
+| 6 | Library + add your own sounds | "Add sounds" (file picker, multi-select), plus Open with / Share for audio files. Files are copied into app storage (no lost-permission surprises). Library screen: search, sort, rename, delete, tags. Over the clip cap (`MAX_BUFFER_CLIP_SECONDS`, 600 s) the app warns and trims. |
+| 7 | Build and save mixes | The current mix: add/remove library sounds, per-sound volume and play, master, Play all. Save as preset, update, rename, delete. Saved presets keep the phone format, so they also import on the desktop. Phone "Export preset" via Share. |
+| 8 | Seamless loops on add | The desktop's "Prepare seamless looping on add", done with `OfflineAudioContext` (crossfade at the seam, rules shared from `src/shared/` where they exist). |
+| 9 | Sound Groups editing | Create/rename/delete a group, add/remove members, its filters (live biquads, already in the engine) and drift. |
+| 10 | More ways in | Mic recording; add from a direct audio link (no YouTube: yt-dlp doesn't run on the phone); Browse Sounds (Freesound); Community tab (same API as the desktop's `src/main/community/client.js`). |
+| 11 | Settings | Updates (check now, install automatically), sleep-timer end actions that make sense on a phone (stop; fade length), defaults for new sounds, What's new, about/licenses. |
+
+Each phase ships on its own (over the air when it is JavaScript only) and gets tested on the owner's phone.
+
+### Risks
+
+- **Memory:** user files can be long; every clip is decoded fully. Cap per clip (600 s) and warn when a mix's decoded total passes ~300 MB, as for exports.
+- **Freesound key:** the desktop bakes an API key into its builds. Putting one in a public APK exposes it the same way; decide before phase 10.
