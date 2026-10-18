@@ -14,7 +14,7 @@ An ambient/sleep app is useless if it stops when the phone locks. That rules out
 
 ### Shape of the solution
 
-1. **Desktop does the heavy lifting.** A new "Export for phone" writes a normal `.ncvpreset` (format 2 zip) whose `audio/` holds each sound's **baked loop clip** (filters, EQ, echo, reverb, noise reduction, reverse, Doppler already baked by `loopClip.js`) re-encoded to Opus by `community/bundle.js`'s encoder. Freesound sounds are included too (the phone has no Freesound key). The manifest marks the clips as baked, so the phone skips per-sound filters. Loops longer than `MAX_BUFFER_CLIP_SECONDS` (10 min) get cut like the community "Cut to 15 s" path (`cutClip.js`), with a warning.
+1. **Desktop does the heavy lifting.** A new "Export for phone" (a format in the Export plugin; owner, 2026-10-17) writes a normal `.ncvpreset` (format 2 zip) whose `audio/` holds each sound's **baked loop clip** (filters, EQ, echo, reverb, noise reduction, reverse, Doppler already baked by `loopClip.js`) re-encoded to Opus by `community/bundle.js`'s encoder. Freesound sounds are included too (the phone has no Freesound key). The manifest marks the clips as baked, so the phone skips per-sound filters. Loops longer than `MAX_BUFFER_CLIP_SECONDS` (10 min) get cut like the community "Cut to 15 s" path (`cutClip.js`), with a warning.
 2. **The phone only does what must be live:** buffer loops (`loop=true`, sample-accurate), volume, pan, pitch/speed, scatter and scheduled shot timing, Fluctuation, Sound Group chains and the whole-mix chain minus their reverb, master volume.
 3. **Reverb is always baked (owner, 2026-10-17).** Spike 0.0.4 measured ~30% of one core with the screen off, almost all of it the live convolver; SoundAura (`../noctivago-mobile/docs/study-soundaura.md`) plays with near-zero CPU because the phone only mixes. Reverb is linear, so Sound Group and whole-mix reverb are applied per sound at export: loops get the wet signal wrapped circularly (seamless), scatter/scheduled shots get their tail appended. The phone runs no convolver.
 3. **Shared rules, one copy.** The timing and modulation rules the desktop engine uses (scatter/scheduled shot picking, `Modulator.js` walks, `groupDrift.js`, `pan.js`, `equalPowerRamp.js`) move to `src/shared/` as DOM-free modules with tests, and the mobile app imports them. The node-wiring code is rewritten for React Native; the rules are not copied.
@@ -25,7 +25,7 @@ An ambient/sleep app is useless if it stops when the phone locks. That rules out
 | # | Phase | Output | Rough size |
 |---|-------|--------|-----------|
 | 0 | **Spike** (go/no-go) | Expo dev build: 2 looped Opus buffers + a biquad + a convolver, screen locked for 30 min. Measure: keeps playing, battery drain, no glitches | 1 session |
-| 1 | Desktop "Export for phone" | `.ncvpreset` with baked Opus clips; unit tests | 1 session |
+| 1 | Desktop "Export for phone" | A "For phone" choice in the Export plugin's format picker (repo `noctivago-export`); the baking runs in core main behind `api.export`, like the other formats. Output: `.ncvpreset` with baked Opus clips; unit tests | 1 session |
 | 2 | Shared rules to `src/shared/` | Desktop engine imports them; existing tests green | 1 session |
 | 3 | Mobile player MVP (Android) | Import, preset list, play/pause, volumes, lock-screen controls | 2-3 sessions |
 | 4 | Parity pass | Scatter/scheduled, Fluctuation, groups, whole-mix chain, A/B by ear vs desktop | 2 sessions |
