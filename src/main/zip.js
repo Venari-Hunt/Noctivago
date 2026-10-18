@@ -9,6 +9,11 @@ import zlib from 'node:zlib'
 // library - no zip64, no encryption, no directory entries.
 
 const LOCAL_SIG = 0x04034b50
+// General-purpose flag bit 11: entry names are UTF-8. Without it, readers
+// that follow the zip spec (the phone app's fflate, Windows Explorer) decode
+// names as CP437/Latin-1, so a name like "Encampment ｜ Forest" or
+// "picolé.opus" no longer matches the manifest.
+const UTF8_NAMES = 0x0800
 const CENTRAL_SIG = 0x02014b50
 const EOCD_SIG = 0x06054b50
 
@@ -41,7 +46,7 @@ export function createZip(entries) {
     const local = Buffer.alloc(30)
     local.writeUInt32LE(LOCAL_SIG, 0)
     local.writeUInt16LE(20, 4) // version needed
-    local.writeUInt16LE(0, 6) // flags
+    local.writeUInt16LE(UTF8_NAMES, 6) // flags
     local.writeUInt16LE(0, 8) // method: stored
     local.writeUInt16LE(0, 10) // mod time
     local.writeUInt16LE(0x21, 12) // mod date (1980-01-01, a valid placeholder)
@@ -56,7 +61,7 @@ export function createZip(entries) {
     central.writeUInt32LE(CENTRAL_SIG, 0)
     central.writeUInt16LE(20, 4) // version made by
     central.writeUInt16LE(20, 6) // version needed
-    central.writeUInt16LE(0, 8) // flags
+    central.writeUInt16LE(UTF8_NAMES, 8) // flags
     central.writeUInt16LE(0, 10) // method
     central.writeUInt16LE(0, 12) // mod time
     central.writeUInt16LE(0x21, 14) // mod date

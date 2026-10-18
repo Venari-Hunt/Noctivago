@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.269 — Phone presets with special characters in file names
+
+- **Fix: a phone preset failed to import on the phone ("missing the audio for…") when a sound's file name had an accent or a special character** (é, ç, ã, a wide "｜" bar). Every preset file now marks its file names as UTF-8, so the phone, Windows Explorer and 7-Zip read them the same way Noctívago does. Export the preset For phone again to get a fixed file; the phone app 0.4.1 also opens the files exported before this fix.
+
 ## v0.1.268 — Export for phone
 
 - **Getting ready for the Noctívago phone app: Export can now save a preset "For phone".** Pick it in the Export tab's Format list (needs Export plugin 1.1.0). It writes a preset file with every sound's Remix settings and all reverb already baked in, so the phone only has to mix. On the Beach preset: 18 sounds in 27 seconds, a 7 MB file. A loop longer than 10 minutes ships as its middle 15 seconds, and the result warns you when a preset may need too much memory for a phone.
