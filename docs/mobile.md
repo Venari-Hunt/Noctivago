@@ -27,7 +27,7 @@ An ambient/sleep app is useless if it stops when the phone locks. That rules out
 | 0 | **Spike** (go/no-go) | Expo dev build: 2 looped Opus buffers + a biquad + a convolver, screen locked for 30 min. Measure: keeps playing, battery drain, no glitches | 1 session |
 | 1 | Desktop "Export for phone" (**shipped** v0.1.268 + Export 1.1.0) | A "For phone" choice in the Export plugin's format picker (repo `noctivago-export`); the baking runs in core main behind `api.export`, like the other formats. Output: `.ncvpreset` with baked Opus clips; unit tests | 1 session |
 | 2 | Shared rules to `src/shared/` (**done** 2026-10-17) | Desktop engine imports them; existing tests green | 1 session |
-| 3 | Mobile player MVP (Android) | Import, preset list, play/pause, volumes, lock-screen controls | 2-3 sessions |
+| 3 | Mobile player MVP (Android) (**part 1 shipped** 2026-10-18, mobile 0.1.0) | Import, preset list, play/pause, volumes, lock-screen controls. Part 1: file-picker import, list, play/pause, volumes, lock-screen and call handling, loops only; measured screen off: 0 missing frames, ~7% of one core. Part 2: "Open with" import, sleep timer | 2-3 sessions |
 | 4 | Parity pass | Scatter/scheduled, Fluctuation, groups, whole-mix chain, A/B by ear vs desktop | 2 sessions |
 | 5 | Distribution | APK on itch.io + GitHub Releases; Google Play ($25 once) later; iOS ($99/year) only if wanted | 1 session |
 
