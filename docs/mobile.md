@@ -68,7 +68,7 @@ The player (phases 0-5) is done and public. Owner, 2026-10-18: the phone needs t
 
 | # | Phase | Output |
 |---|-------|--------|
-| 6 | Library + add your own sounds | "Add sounds" (file picker, multi-select), plus Open with / Share for audio files. Files are copied into app storage (no lost-permission surprises). Library screen: search, sort, rename, delete, tags. Over the clip cap (`MAX_BUFFER_CLIP_SECONDS`, 600 s) the app warns and trims. |
+| 6 | Library + add your own sounds (**shipped** 2026-10-18, mobile 0.6.0) | "Add sounds" (file picker, multi-select), plus Open with / Share for audio files. Files are copied into app storage (no lost-permission surprises). Library screen: search, sort, rename, delete, tags. Over the clip cap (`MAX_BUFFER_CLIP_SECONDS`, 600 s) the app warns and trims. |
 | 7 | Build and save mixes | The current mix: add/remove library sounds, per-sound volume and play, master, Play all. Save as preset, update, rename, delete. Saved presets keep the phone format, so they also import on the desktop. Phone "Export preset" via Share. |
 | 8 | Seamless loops on add | The desktop's "Prepare seamless looping on add", done with `OfflineAudioContext` (crossfade at the seam, rules shared from `src/shared/` where they exist). |
 | 9 | Sound Groups editing | Create/rename/delete a group, add/remove members, its filters (live biquads, already in the engine) and drift. |
