@@ -15,7 +15,8 @@ An ambient/sleep app is useless if it stops when the phone locks. That rules out
 ### Shape of the solution
 
 1. **Desktop does the heavy lifting.** A new "Export for phone" writes a normal `.ncvpreset` (format 2 zip) whose `audio/` holds each sound's **baked loop clip** (filters, EQ, echo, reverb, noise reduction, reverse, Doppler already baked by `loopClip.js`) re-encoded to Opus by `community/bundle.js`'s encoder. Freesound sounds are included too (the phone has no Freesound key). The manifest marks the clips as baked, so the phone skips per-sound filters. Loops longer than `MAX_BUFFER_CLIP_SECONDS` (10 min) get cut like the community "Cut to 15 s" path (`cutClip.js`), with a warning.
-2. **The phone only does what must be live:** buffer loops (`loop=true`, sample-accurate), volume, pan, pitch/speed, scatter and scheduled shot timing, Fluctuation, Sound Group chains (their filters and reverb), the whole-mix chain, master volume.
+2. **The phone only does what must be live:** buffer loops (`loop=true`, sample-accurate), volume, pan, pitch/speed, scatter and scheduled shot timing, Fluctuation, Sound Group chains and the whole-mix chain minus their reverb, master volume.
+3. **Reverb is always baked (owner, 2026-10-17).** Spike 0.0.4 measured ~30% of one core with the screen off, almost all of it the live convolver; SoundAura (`../noctivago-mobile/docs/study-soundaura.md`) plays with near-zero CPU because the phone only mixes. Reverb is linear, so Sound Group and whole-mix reverb are applied per sound at export: loops get the wet signal wrapped circularly (seamless), scatter/scheduled shots get their tail appended. The phone runs no convolver.
 3. **Shared rules, one copy.** The timing and modulation rules the desktop engine uses (scatter/scheduled shot picking, `Modulator.js` walks, `groupDrift.js`, `pan.js`, `equalPowerRamp.js`) move to `src/shared/` as DOM-free modules with tests, and the mobile app imports them. The node-wiring code is rewritten for React Native; the rules are not copied.
 4. **New repo** `Venari-Hunt/noctivago-mobile` (like the official plugins). Screens: preset list (import via Android "Open with" / share sheet, or a file picker), player (play/pause, master volume, per-sound volume sliders as the only "edit"), sleep timer. Lock-screen controls via the library's notification system.
 
@@ -36,7 +37,7 @@ An ambient/sleep app is useless if it stops when the phone locks. That rules out
 
 - **Library maturity:** `react-native-audio-api` is pre-1.0 (0.12). The spike exists to catch a missing node or a background-playback bug before anything else is built.
 - **Memory:** every clip is decoded fully into RAM. A 10-minute stereo clip at 48 kHz is ~230 MB as float. Phase 1 caps phone clips (target: sum of decoded clips under ~300 MB) and warns when a preset is too heavy.
-- **Battery:** live DSP draws more than a file player. The spike measures it; if it's bad, the whole-mix reverb is the first thing to drop to a baked version.
+- **Battery:** live DSP draws more than a file player. Measured: the live reverb alone cost ~30% of one core with the screen off, so all reverb is baked (point 3 above). Re-measure battery per hour once phase 2 plays a real preset.
 
 ### Owner-gated
 
