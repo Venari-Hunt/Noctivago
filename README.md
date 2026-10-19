@@ -58,6 +58,13 @@ Apache License 2.0 — see [LICENSE](LICENSE). Third-party components
 bundled in distributed builds (notably ffmpeg, GPLv3) are documented in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+## Requests and ideas
+
+Want a preset, a plugin or a feature? Ask in
+[Discussions](https://github.com/Venari-Hunt/Noctivago/discussions)
+(Ideas for requests, Show and tell for your own presets). Bugs go in
+[Issues](https://github.com/Venari-Hunt/Noctivago/issues).
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). A
