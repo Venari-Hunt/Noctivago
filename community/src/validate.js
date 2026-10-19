@@ -2,11 +2,13 @@
 // bindings, so test/validate.test.js runs it under plain node.
 
 export const LIMITS = {
-  // Well under the free plan's 100 MB request-body cap, so the 10 GB of free
-  // R2 storage holds a useful number of presets.
-  maxBundleBytes: 50 * 1024 * 1024,
-  // Uploads are refused once stored bundles reach this total, keeping R2
-  // inside its 10 GB free tier (R2 has no built-in spending cap).
+  // Under the free plan's 100 MB request-body cap with room for the form
+  // around it; the Worker's 128 MB of memory holds one upload, so the file
+  // goes to R2 as is (no second copy).
+  maxBundleBytes: 80 * 1024 * 1024,
+  // Stored bundles stay under this total, inside R2's 10 GB free tier (R2 has
+  // no built-in spending cap). When an upload would pass it, the oldest
+  // presets are deleted to make room (pickEvictions).
   maxTotalBytes: 8 * 1024 * 1024 * 1024,
   nameMax: 80,
   descriptionMax: 600,
@@ -127,4 +129,44 @@ export function rowToPreset(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
+}
+
+// Which presets to delete so `needBytes` more fit. `rows` come oldest
+// first ({ id, size_bytes, hidden }); hidden (reported) ones go before any
+// visible one. Returns the ids, or null when even deleting all is not enough.
+export function pickEvictions(rows, needBytes) {
+  if (needBytes <= 0) return []
+  const ordered = [...rows.filter((r) => r.hidden), ...rows.filter((r) => !r.hidden)]
+  const ids = []
+  let freed = 0
+  for (const r of ordered) {
+    if (freed >= needBytes) break
+    ids.push(r.id)
+    freed += Number(r.size_bytes) || 0
+  }
+  return freed >= needBytes ? ids : null
+}
+
+// A download's Range header as R2's range option: { offset, length } or
+// { suffix } (the zip's index sits at the end, so the phone asks for the
+// last bytes first). null = whole file; 'invalid' = refuse with 416. One
+// range only.
+export function parseRange(header) {
+  if (!header) return null
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim())
+  if (!m || (m[1] === '' && m[2] === '')) return 'invalid'
+  if (m[1] === '') {
+    const suffix = Number(m[2])
+    return suffix > 0 ? { suffix } : 'invalid'
+  }
+  const offset = Number(m[1])
+  if (m[2] === '') return { offset }
+  const end = Number(m[2])
+  return end >= offset ? { offset, length: end - offset + 1 } : 'invalid'
+}
+
+// A request counts as a download when it reads the whole file (the PC) or
+// starts at the end (the phone's first read of the zip index).
+export function countsAsDownload(range) {
+  return range === null || Boolean(range?.suffix)
 }

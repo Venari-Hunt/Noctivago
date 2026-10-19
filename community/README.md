@@ -71,8 +71,8 @@ These are set in `src/validate.js`:
 
 | Limit | Value |
 |---|---|
-| Size of one preset | 50 MB, after the app compresses the audio to Opus |
-| Total storage | 8 GB (uploads pause beyond this, so R2 stays in its 10 GB free tier) |
+| Size of one preset | 80 MB, after the app compresses the audio to Opus (the free plan takes at most 100 MB per request) |
+| Total storage | 8 GB, so R2 stays in its 10 GB free tier. An upload that would pass it deletes the oldest presets first (reported ones before any other) |
 | Uploads per network | 10 per day |
 | Reports per network | 30 per day |
 | Reports that hide a preset | 3, from different people |

@@ -8,7 +8,10 @@ import {
   looksLikeZip,
   isValidAuthorKey,
   isValidPresetId,
-  rowToPreset
+  rowToPreset,
+  pickEvictions,
+  parseRange,
+  countsAsDownload
 } from '../src/validate.js'
 
 const base = { name: 'Rainy cabin', author: 'Ana', soundCount: 3, rightsConfirmed: true }
@@ -84,5 +87,47 @@ describe('small validators', () => {
 
   test('rowToPreset survives bad tag JSON', () => {
     assert.deepEqual(rowToPreset({ id: 'x', tags: '{oops' }).tags, [])
+  })
+})
+
+describe('pickEvictions', () => {
+  const rows = [
+    { id: 'old', size_bytes: 30, hidden: 0 },
+    { id: 'mid', size_bytes: 30, hidden: 0 },
+    { id: 'reported', size_bytes: 10, hidden: 1 },
+    { id: 'new', size_bytes: 30, hidden: 0 }
+  ]
+  test('nothing to free deletes nothing', () => {
+    assert.deepEqual(pickEvictions(rows, 0), [])
+  })
+  test('reported presets go first, then the oldest', () => {
+    assert.deepEqual(pickEvictions(rows, 10), ['reported'])
+    assert.deepEqual(pickEvictions(rows, 35), ['reported', 'old'])
+    assert.deepEqual(pickEvictions(rows, 70), ['reported', 'old', 'mid'])
+  })
+  test('null when even everything is not enough', () => {
+    assert.equal(pickEvictions(rows, 101), null)
+  })
+})
+
+describe('parseRange', () => {
+  test('no header reads the whole file', () => {
+    assert.equal(parseRange(null), null)
+  })
+  test('the three single-range forms', () => {
+    assert.deepEqual(parseRange('bytes=0-99'), { offset: 0, length: 100 })
+    assert.deepEqual(parseRange('bytes=500-'), { offset: 500 })
+    assert.deepEqual(parseRange('bytes=-65536'), { suffix: 65536 })
+  })
+  test('junk and several ranges are refused', () => {
+    assert.equal(parseRange('bytes=-'), 'invalid')
+    assert.equal(parseRange('bytes=9-3'), 'invalid')
+    assert.equal(parseRange('bytes=0-1,5-9'), 'invalid')
+    assert.equal(parseRange('items=0-9'), 'invalid')
+  })
+  test('the PC and the phone each count one download', () => {
+    assert.equal(countsAsDownload(null), true)
+    assert.equal(countsAsDownload({ suffix: 65536 }), true)
+    assert.equal(countsAsDownload({ offset: 0, length: 100 }), false)
   })
 })
