@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.270 — Community presets play on the phone
+
+- **Sharing a preset to Community now also packs a phone copy**: the same sounds baked the way "Export for phone" does (every Remix effect, Sound Group and whole-mix reverb applied). The phone app's Community tab plays that copy, so it sounds exactly like the PC. Presets shared before this version don't have it yet: share them again to update them.
+- Sharing takes a little longer (each sound is baked once more), and the upload grows by roughly a sixth (Beach: about 7 MB on top of 41 MB). The 50 MB limit counts both.
+- Older versions of Noctívago still download these presets as before; they ignore the phone copy.
+
 ## v0.1.269 — Phone presets with special characters in file names
 
 - **Fix: a phone preset failed to import on the phone ("missing the audio for…") when a sound's file name had an accent or a special character** (é, ç, ã, a wide "｜" bar). Every preset file now marks its file names as UTF-8, so the phone, Windows Explorer and 7-Zip read them the same way Noctívago does. Export the preset For phone again to get a fixed file; the phone app 0.4.1 also opens the files exported before this fix.
