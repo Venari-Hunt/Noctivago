@@ -20,4 +20,9 @@ jobs:
       # network-flaky run.
       - run: npm ci --ignore-scripts
 
+      # Electron downloads itself on first use. Done once here: when the
+      # parallel test files did it at the same moment, they collided
+      # unpacking it ("The file exists", "Access is denied"; 2026-10-18).
+      - run: npx install-electron --no
+
       - run: npm test
