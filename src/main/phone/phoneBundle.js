@@ -92,10 +92,12 @@ async function bakeSound({ sound, sourcePath, reverbs, workDir }) {
   return { wavPath: clipPath, effective, cut }
 }
 
-// onProgress({ type: 'step', label, fraction }) - the Export tab's own shape.
-// Returns { ok, path, soundCount, totalBytes, decodedMB, warnings } or
-// { ok: false, error }.
-export async function exportForPhone(presetId, outputPath, { onProgress } = {}) {
+// Bakes every sound of a preset the way the Mixer plays it, as Opus files in
+// workRoot (the caller removes it). Shared by "Export for phone" and the
+// community upload's phone copy (community/bundle.js). Returns
+// { ok, manifest, files: [{ zipName, sourcePath }], warnings, totalSeconds }
+// or { ok: false, error }. onSound(done, total, name) fires as each finishes.
+export async function bakePhoneLayer(presetId, workRoot, { onSound } = {}) {
   const bundle = buildPortableBundle(presetId)
   if (!bundle) return { ok: false, error: 'Preset not found.' }
   const { manifest, files } = bundle
@@ -108,53 +110,62 @@ export async function exportForPhone(presetId, outputPath, { onProgress } = {}) 
   const groupOf = new Map()
   for (const g of manifest.groups) for (const i of g.soundIndexes) groupOf.set(i, g)
   const warnings = []
-  const step = (label, fraction) => onProgress?.({ type: 'step', label, fraction })
+  const packed = new Array(files.length)
+  let done = 0
+  await mapPool(files, encodeConcurrency(), async (f, i) => {
+    const sound = manifest.sounds[f.soundIndex]
+    const workDir = path.join(workRoot, String(i))
+    fs.mkdirSync(workDir, { recursive: true })
+    const reverbs = busReverbs(groupOf.get(f.soundIndex)?.filters, manifest.wholeMix)
+    const { wavPath, effective, cut } = await bakeSound({ sound, sourcePath: f.sourcePath, reverbs, workDir })
+    if (cut) warnings.push(`"${sound.name}" is a loop longer than 10 minutes, so the phone gets its middle ${CUT_SECONDS} s.`)
+    const clipSeconds = readWavDuration(wavPath)
+    const opusPath = path.join(workDir, 'clip.opus')
+    await encodeOpus(wavPath, opusPath)
+    const outName = `${path.basename(f.zipName, path.extname(f.zipName))}.opus`
+    sound.bundleName = outName
+    sound.settings = phoneSettings(effective, clipSeconds)
+    sound.overrides = null
+    sound.durationSeconds = clipSeconds
+    sound.fileSizeBytes = fs.statSync(opusPath).size
+    packed[i] = { zipName: `audio/${outName}`, sourcePath: opusPath }
+    done += 1
+    onSound?.(done, files.length, sound.name)
+  })
 
+  manifest.groups = manifest.groups.map((g) => ({ ...g, filters: withoutReverb(g.filters) }))
+  manifest.wholeMix = withoutReverb(manifest.wholeMix)
+  manifest.phone = { version: PHONE_BUNDLE_VERSION }
+
+  const totalSeconds = manifest.sounds.reduce((sum, s) => sum + (s.durationSeconds ?? 0), 0)
+  const memory = memoryWarning(totalSeconds)
+  if (memory) warnings.push(memory)
+  return { ok: true, manifest, files: packed, warnings, totalSeconds }
+}
+
+// onProgress({ type: 'step', label, fraction }) - the Export tab's own shape.
+// Returns { ok, path, soundCount, totalBytes, decodedMB, warnings } or
+// { ok: false, error }.
+export async function exportForPhone(presetId, outputPath, { onProgress } = {}) {
+  const step = (label, fraction) => onProgress?.({ type: 'step', label, fraction })
   const workRoot = path.join(tmpRoot(), crypto.randomUUID())
   fs.mkdirSync(workRoot, { recursive: true })
   try {
-    const packed = new Array(files.length)
-    let done = 0
-    step(`Baking ${files.length} sound${files.length === 1 ? '' : 's'} for the phone…`, 0)
-    await mapPool(files, encodeConcurrency(), async (f, i) => {
-      const sound = manifest.sounds[f.soundIndex]
-      const workDir = path.join(workRoot, String(i))
-      fs.mkdirSync(workDir)
-      const reverbs = busReverbs(groupOf.get(f.soundIndex)?.filters, manifest.wholeMix)
-      const { wavPath, effective, cut } = await bakeSound({ sound, sourcePath: f.sourcePath, reverbs, workDir })
-      if (cut) warnings.push(`"${sound.name}" is a loop longer than 10 minutes, so the phone gets its middle ${CUT_SECONDS} s.`)
-      const clipSeconds = readWavDuration(wavPath)
-      const opusPath = path.join(workDir, 'clip.opus')
-      await encodeOpus(wavPath, opusPath)
-      const outName = `${path.basename(f.zipName, path.extname(f.zipName))}.opus`
-      sound.bundleName = outName
-      sound.settings = phoneSettings(effective, clipSeconds)
-      sound.overrides = null
-      sound.durationSeconds = clipSeconds
-      sound.fileSizeBytes = fs.statSync(opusPath).size
-      packed[i] = { zipName: `audio/${outName}`, sourcePath: opusPath }
-      done += 1
-      step(`Baked "${sound.name}" (${done} of ${files.length})`, done / files.length)
+    step('Baking sounds for the phone…', 0)
+    const layer = await bakePhoneLayer(presetId, workRoot, {
+      onSound: (done, total, name) => step(`Baked "${name}" (${done} of ${total})`, done / total)
     })
-
-    manifest.groups = manifest.groups.map((g) => ({ ...g, filters: withoutReverb(g.filters) }))
-    manifest.wholeMix = withoutReverb(manifest.wholeMix)
-    manifest.phone = { version: PHONE_BUNDLE_VERSION }
-
-    const totalSeconds = manifest.sounds.reduce((sum, s) => sum + (s.durationSeconds ?? 0), 0)
-    const memory = memoryWarning(totalSeconds)
-    if (memory) warnings.push(memory)
-
+    if (!layer.ok) return layer
     fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-    const { soundCount, totalBytes } = writePortableBundle({ manifest, files: packed }, outputPath)
+    const { soundCount, totalBytes } = writePortableBundle({ manifest: layer.manifest, files: layer.files }, outputPath)
     step('Saved the phone preset', 1)
     return {
       ok: true,
       path: outputPath,
       soundCount,
       totalBytes,
-      decodedMB: Math.round(decodedBytes(totalSeconds) / (1024 * 1024)),
-      warnings
+      decodedMB: Math.round(decodedBytes(layer.totalSeconds) / (1024 * 1024)),
+      warnings: layer.warnings
     }
   } catch (err) {
     return { ok: false, error: err.message }

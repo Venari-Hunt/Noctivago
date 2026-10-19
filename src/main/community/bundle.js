@@ -6,7 +6,9 @@ import { buildPortableBundle, packPortableBundle } from '../presetPortable.js'
 import os from 'node:os'
 import { runFfmpegToFile } from '../ffmpeg/runFfmpeg.js'
 import { mapPool } from '../ffmpeg/mapPool.js'
-import { compressFraction, tooLargeMessage } from './uploadReport.js'
+import log from 'electron-log/main'
+import { compressFraction, phoneFraction, tooLargeMessage } from './uploadReport.js'
+import { bakePhoneLayer } from '../phone/phoneBundle.js'
 import { applySoundOverride } from '../../shared/constants.js'
 import { CUT_SECONDS, canCut, cutWindow, loopSeconds, shiftForCut } from './cutClip.js'
 
@@ -18,6 +20,12 @@ import { CUT_SECONDS, canCut, cutWindow, loopSeconds, shiftForCut } from './cutC
 //     leaves them valid.
 //   - Sounds listed in cutSounds ship only the middle 15 s of their loop
 //     (see cutClip.js).
+// It also carries a phone copy under phone/: "Export for phone"'s baked
+// clips and manifest (phone/preset.json + phone/audio/), so the phone app
+// plays the preset exactly as the PC does. The desktop import only reads
+// the root preset.json and audio/, so older versions ignore it.
+
+export const PHONE_LAYER_DIR = 'phone'
 
 // Must match community/src/validate.js's maxBundleBytes.
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -131,12 +139,16 @@ export async function buildCommunityBundle(presetId, { onProgress, cutSounds = [
       done.add(i)
       report(`Compressed ${done.size} of ${files.length} sounds…`, 'compress', compressFraction(sourceSizes, done))
     })
+    const phoneEntries = await buildPhoneEntries(presetId, path.join(workDir, PHONE_LAYER_DIR), (done, total) =>
+      report(`Baking the phone copy (${done} of ${total})…`, 'phone', phoneFraction(done, total))
+    )
+    for (const e of phoneEntries) running += e.data.length
     if (running > MAX_UPLOAD_BYTES) {
       return { ok: false, error: tooLargeMessage(sounds, running, MAX_UPLOAD_BYTES), sounds }
     }
-    report('Packing preset…', 'pack', compressFraction(sourceSizes, done))
+    report('Packing preset…', 'pack', phoneFraction(1, 1))
 
-    const { buffer } = packPortableBundle({ manifest, files: packed })
+    const { buffer } = packPortableBundle({ manifest, files: [...packed, ...phoneEntries] })
     return {
       ok: true,
       buffer,
@@ -144,10 +156,27 @@ export async function buildCommunityBundle(presetId, { onProgress, cutSounds = [
       sounds,
       soundCount: manifest.sounds.length,
       uploadedAudioCount: packed.length,
-      freesoundCount: manifest.sounds.length - packed.length
+      freesoundCount: manifest.sounds.length - packed.length,
+      phoneCopy: phoneEntries.length > 0
     }
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true })
+  }
+}
+
+// The phone copy's zip entries, or none when baking fails: the PC share
+// still works then, only the phone can't open it.
+async function buildPhoneEntries(presetId, workRoot, onSound) {
+  fs.mkdirSync(workRoot, { recursive: true })
+  try {
+    const layer = await bakePhoneLayer(presetId, workRoot, { onSound })
+    if (!layer.ok) throw new Error(layer.error)
+    const entries = [{ zipName: `${PHONE_LAYER_DIR}/preset.json`, data: Buffer.from(JSON.stringify(layer.manifest, null, 2), 'utf8') }]
+    for (const f of layer.files) entries.push({ zipName: `${PHONE_LAYER_DIR}/${f.zipName}`, data: fs.readFileSync(f.sourcePath) })
+    return entries
+  } catch (err) {
+    log.warn('Community upload: phone copy failed, sharing without it', err.message)
+    return []
   }
 }
 

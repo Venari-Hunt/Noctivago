@@ -2,6 +2,8 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   COMPRESS_SHARE,
+  PHONE_SHARE,
+  phoneFraction,
   compressFraction,
   uploadFraction,
   heaviestSounds,
@@ -33,7 +35,7 @@ describe('compressFraction', () => {
 
 describe('uploadFraction', () => {
   test('fills the rest of the bar', () => {
-    assert.equal(uploadFraction(0, 100), COMPRESS_SHARE)
+    assert.equal(uploadFraction(0, 100), COMPRESS_SHARE + PHONE_SHARE)
     assert.equal(uploadFraction(100, 100), 1)
     assert.equal(uploadFraction(200, 100), 1)
   })
@@ -69,5 +71,14 @@ describe('tooLargeMessage', () => {
       msg,
       'This preset is 60.0 MB after compression; the limit is 50 MB. Heaviest: "Fire" (40.0 MB), "Rain" (20.0 MB). Cut them to 15 s, shorten or remove them, then try again.'
     )
+  })
+})
+
+describe('phoneFraction', () => {
+  test('fills the phone share after compression', () => {
+    assert.equal(phoneFraction(0, 4), COMPRESS_SHARE)
+    assert.equal(phoneFraction(2, 4), COMPRESS_SHARE + 0.5 * PHONE_SHARE)
+    assert.equal(phoneFraction(4, 4), COMPRESS_SHARE + PHONE_SHARE)
+    assert.equal(phoneFraction(0, 0), COMPRESS_SHARE + PHONE_SHARE)
   })
 })
