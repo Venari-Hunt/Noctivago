@@ -4,11 +4,13 @@ import log from 'electron-log/main'
 import {
   getSettings,
   setLastRunVersion,
+  setUpdateRestart,
   setAutoUpdateEnabled as persistAutoUpdateEnabled,
   setAutoUpdateIntervalSeconds as persistAutoUpdateIntervalSeconds
 } from './settings.js'
 import { changelogTextBetween } from './changelog.js'
 import { isExportInProgress, whenExportIdle } from './exportState.js'
+import { isAutoStartPending } from './sleepTimer.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -253,7 +255,11 @@ export function initAutoUpdate(win) {
     whenExportIdle(() => {
       log.info(`Auto-update: ${info.version} downloaded, installing and restarting now`)
       setTimeout(() => {
-        whenExportIdle(() => autoUpdater.quitAndInstall(true, true))
+        whenExportIdle(() => {
+          // The relaunch continues this session (sleepTimerLaunch.js).
+          setUpdateRestart({ autoStartPending: isAutoStartPending() })
+          autoUpdater.quitAndInstall(true, true)
+        })
       }, 1500)
     })
   })

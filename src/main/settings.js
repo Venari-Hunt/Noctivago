@@ -85,6 +85,9 @@ const store = new Store({
     // sleepTimer.js re-arms from this on launch; the renderer never reads it
     // directly (it goes through sleepTimer:get like the in-memory one).
     sleepTimerRunState: null,
+    // Saved right before an update's install-and-restart, read once on the
+    // next launch (sleepTimerLaunch.js): { at: epoch ms, autoStartPending }.
+    updateRestart: null,
     // The app version the last time it ran - compared against the current
     // version on startup to detect "we just updated" and show the What's-new
     // screen (see autoUpdate.js). null on a first-ever launch, which
@@ -291,6 +294,17 @@ export function setSleepTimerRunState(state) {
 
 export function getSleepTimerRunState() {
   return store.get('sleepTimerRunState') ?? null
+}
+
+export function setUpdateRestart(state) {
+  store.set('updateRestart', { at: Date.now(), autoStartPending: Boolean(state?.autoStartPending) })
+}
+
+// Reads and clears it, so only the launch right after the update sees it.
+export function takeUpdateRestart() {
+  const saved = store.get('updateRestart') ?? null
+  store.set('updateRestart', null)
+  return saved && Number.isFinite(saved.at) ? saved : null
 }
 
 export function setAutoUpdateEnabled(enabled) {

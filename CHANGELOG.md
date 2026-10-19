@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.272 — Sleep timer stays off after an update
+
+- **Fix: after an update restarted the app, the sleep timer's "Start this timer every time Noctívago opens" notice came back and started the timer, even if you had clicked "Don't start".** An update restart now continues your session: a timer you skipped stays off, a running one keeps running, and the notice only returns if it was still counting down when the update started. Opening the app yourself works as before.
+
 ## v0.1.271 — Bigger community presets
 
 - **A community preset can now be up to 80 MB** (was 50 MB), so presets with long sounds need "Cut to 15 s" less often.

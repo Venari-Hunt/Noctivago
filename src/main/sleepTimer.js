@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import log from 'electron-log/main'
-import { setSleepTimerRunState, getSleepTimerRunState, getSettings } from './settings.js'
+import { setSleepTimerRunState, getSleepTimerRunState, getSettings, takeUpdateRestart } from './settings.js'
+import { shouldOfferAutoStart } from './sleepTimerLaunch.js'
 import { durationFromPrefs } from '../shared/sleepTimerTime.js'
 
 // Sleep timer: after a set duration (or at a chosen time of day), either
@@ -31,6 +32,10 @@ import { durationFromPrefs } from '../shared/sleepTimerTime.js'
 // Launch only marks it pending for AUTO_START_NOTICE_MS; the renderer shows
 // a notice with a countdown, "Don't start" and "Start now". Main holds the
 // deadline itself so the timer still starts if the renderer is throttled.
+//
+// Update restarts (owner, 2026-10-19): an install-and-restart continues the
+// session, so it doesn't bring back a notice the user already answered
+// (sleepTimerLaunch.js).
 
 const RESTORE_GRACE_MS = 5 * 60 * 1000
 const AUTO_START_NOTICE_MS = 20 * 1000
@@ -42,12 +47,21 @@ let mainWindow = null
 
 export function initSleepTimer(win) {
   mainWindow = win
-  if (!restoreSleepTimer()) autoStartSleepTimer()
+  const restored = restoreSleepTimer()
+  const restart = takeUpdateRestart()
+  const offer = shouldOfferAutoStart({ autoStartEnabled: getSettings().sleepTimerAutoStart, restored, restart, now: Date.now() })
+  if (restart && !restored) log.info(`Sleep timer: launch after an update restart, auto-start ${offer ? 'offered again' : 'not offered'}`)
+  if (offer) autoStartSleepTimer()
+}
+
+// True while the auto-start notice is counting down (autoUpdate.js saves it
+// before restarting for an update).
+export function isAutoStartPending() {
+  return pendingAutoStart !== null
 }
 
 function autoStartSleepTimer() {
   const settings = getSettings()
-  if (!settings.sleepTimerAutoStart) return
   const seconds = durationFromPrefs(settings)
   if (seconds == null) return
   pendingAutoStart = {
