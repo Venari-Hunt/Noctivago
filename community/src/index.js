@@ -29,6 +29,9 @@ import {
   LIMITS,
   isValidAuthorKey,
   isValidPresetId,
+  pickEvictions,
+  parseRange,
+  countsAsDownload,
   validateMeta,
   looksLikeZip,
   parseListQuery,
@@ -75,7 +78,7 @@ async function route(request, env, ctx) {
       if (method === 'DELETE') return deleteOwnPreset(request, env, id)
       return methodNotAllowed()
     }
-    if (action === 'bundle' && method === 'GET') return getBundle(env, ctx, id)
+    if (action === 'bundle' && method === 'GET') return getBundle(request, env, ctx, id)
     if (action === 'report' && method === 'POST') return reportPreset(request, env, id)
     return notFound()
   }
@@ -137,18 +140,23 @@ async function getPreset(env, id) {
   return json({ ok: true, preset: rowToPreset(row) })
 }
 
-async function getBundle(env, ctx, id) {
+// Whole file, or one byte range (the phone reads the zip's index at the end,
+// then only its phone/ copy).
+async function getBundle(request, env, ctx, id) {
   const row = await env.DB.prepare('SELECT id FROM presets WHERE id = ? AND hidden = 0').bind(id).first()
   if (!row) return notFound()
-  const object = await env.BUCKET.get(bundleKey(id))
+  const range = parseRange(request.headers.get('range'))
+  if (range === 'invalid') return new Response(null, { status: 416 })
+  const object = await env.BUCKET.get(bundleKey(id), range ? { range } : undefined)
   if (!object) return notFound()
-  ctx.waitUntil(env.DB.prepare('UPDATE presets SET downloads = downloads + 1 WHERE id = ?').bind(id).run())
+  if (countsAsDownload(range)) ctx.waitUntil(env.DB.prepare('UPDATE presets SET downloads = downloads + 1 WHERE id = ?').bind(id).run())
+  const headers = { 'content-type': 'application/zip', 'accept-ranges': 'bytes', 'cache-control': 'no-store' }
+  if (!range) return new Response(object.body, { headers: { ...headers, 'content-length': String(object.size) } })
+  const start = object.range?.offset ?? (range.suffix ? Math.max(0, object.size - range.suffix) : range.offset)
+  const length = object.range?.length ?? (range.suffix ? object.size - start : range.length ?? object.size - start)
   return new Response(object.body, {
-    headers: {
-      'content-type': 'application/zip',
-      'content-length': String(object.size),
-      'cache-control': 'no-store'
-    }
+    status: 206,
+    headers: { ...headers, 'content-length': String(length), 'content-range': `bytes ${start}-${start + length - 1}/${object.size}` }
   })
 }
 
@@ -194,34 +202,43 @@ async function savePreset(request, env, id) {
   const file = form.get('bundle')
   if (!file || typeof file.arrayBuffer !== 'function') return json({ ok: false, error: 'Missing preset file.' }, 400)
   if (file.size > LIMITS.maxBundleBytes) return json({ ok: false, error: tooLargeMessage() }, 413)
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  if (!looksLikeZip(bytes)) return json({ ok: false, error: "That isn't a Noctívago preset file." }, 400)
+  // Only the first bytes are read here; the file itself goes to R2 as is, so
+  // an 80 MB upload never sits in memory twice.
+  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer())
+  if (!looksLikeZip(head)) return json({ ok: false, error: "That isn't a Noctívago preset file." }, 400)
 
   // Storage budget: the total after this upload (minus the bundle it
   // replaces) must stay under maxTotalBytes. Checked before touching R2.
   const usage = await env.DB.prepare('SELECT COALESCE(SUM(size_bytes), 0) AS total FROM presets').first()
   const replaced = id ? (await env.DB.prepare('SELECT size_bytes FROM presets WHERE id = ?').bind(id).first())?.size_bytes ?? 0 : 0
-  if (usage.total - replaced + bytes.length > LIMITS.maxTotalBytes) {
-    return json({ ok: false, error: 'Community storage is full right now - uploads are paused. Try again later.' }, 507)
+  const needBytes = usage.total - replaced + file.size - LIMITS.maxTotalBytes
+  if (needBytes > 0) {
+    // Full: the oldest presets make room (owner, 2026-10-19).
+    const { results } = await env.DB.prepare('SELECT id, size_bytes, hidden FROM presets WHERE id != ? ORDER BY updated_at ASC')
+      .bind(id ?? '')
+      .all()
+    const evict = pickEvictions(results, needBytes)
+    if (!evict) return json({ ok: false, error: 'Community storage is full right now - uploads are paused. Try again later.' }, 507)
+    for (const old of evict) await removePreset(env, old)
   }
 
   const presetId = id ?? crypto.randomUUID().replace(/-/g, '')
   const now = new Date().toISOString()
-  await env.BUCKET.put(bundleKey(presetId), bytes, { httpMetadata: { contentType: 'application/zip' } })
+  await env.BUCKET.put(bundleKey(presetId), file, { httpMetadata: { contentType: 'application/zip' } })
 
   if (id) {
     await env.DB.prepare(
       `UPDATE presets SET name = ?, author = ?, description = ?, tags = ?, sound_count = ?, duration_seconds = ?,
         size_bytes = ?, app_version = ?, updated_at = ? WHERE id = ?`
     )
-      .bind(meta.name, meta.author, meta.description, JSON.stringify(meta.tags), meta.soundCount, meta.durationSeconds, bytes.length, meta.appVersion, now, presetId)
+      .bind(meta.name, meta.author, meta.description, JSON.stringify(meta.tags), meta.soundCount, meta.durationSeconds, file.size, meta.appVersion, now, presetId)
       .run()
   } else {
     await env.DB.prepare(
       `INSERT INTO presets (id, name, author, description, tags, sound_count, duration_seconds, size_bytes, app_version,
         author_key_hash, uploader_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(presetId, meta.name, meta.author, meta.description, JSON.stringify(meta.tags), meta.soundCount, meta.durationSeconds, bytes.length, meta.appVersion, keyHash, client, now, now)
+      .bind(presetId, meta.name, meta.author, meta.description, JSON.stringify(meta.tags), meta.soundCount, meta.durationSeconds, file.size, meta.appVersion, keyHash, client, now, now)
       .run()
   }
 

@@ -6,6 +6,12 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.271 — Bigger community presets
+
+- **A community preset can now be up to 80 MB** (was 50 MB), so presets with long sounds need "Cut to 15 s" less often.
+- **Community storage no longer fills up and stops uploads**: when it gets full, the oldest presets are removed to make room for new ones.
+- The phone app can now download only its own copy of a community preset (Beach: about 7 MB instead of 46 MB).
+
 ## v0.1.270 — Community presets play on the phone
 
 - **Sharing a preset to Community now also packs a phone copy**: the same sounds baked the way "Export for phone" does (every Remix effect, Sound Group and whole-mix reverb applied). The phone app's Community tab plays that copy, so it sounds exactly like the PC. Presets shared before this version don't have it yet: share them again to update them.

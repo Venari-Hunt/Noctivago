@@ -28,7 +28,7 @@ import { CUT_SECONDS, canCut, cutWindow, loopSeconds, shiftForCut } from './cutC
 export const PHONE_LAYER_DIR = 'phone'
 
 // Must match community/src/validate.js's maxBundleBytes.
-export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+export const MAX_UPLOAD_BYTES = 80 * 1024 * 1024
 const OPUS_BITRATE = '96k'
 
 // One Opus encode is single-threaded and light on memory; leave a core free
