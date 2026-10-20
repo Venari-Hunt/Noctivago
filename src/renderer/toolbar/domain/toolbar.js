@@ -6,7 +6,7 @@ export const INITIAL_TOOLBAR_STATE = {
   isDev: false,
   presetName: null,
   playing: false,
-  // Master volume as linear gain; the slider maps it (core/volumeScale.js).
+  // Master volume as linear gain; the slider maps it (shared/volumeScale.js).
   volumeGain: 1,
   muted: false,
   sleepActive: false,

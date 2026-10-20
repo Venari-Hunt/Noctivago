@@ -2,7 +2,7 @@
 // item names an action; the Mixer maps actions to its own handlers. Sound
 // Groups and "Edit in Remix" are added around this by the Mixer itself.
 
-import { DEFAULT_VOLUME } from '../../../core/volumeScale.js'
+import { DEFAULT_VOLUME } from '../../../../shared/volumeScale.js'
 
 // sound: { status, loading, included, muted, soloed, volume }
 export function soundMenuItems(sound) {
