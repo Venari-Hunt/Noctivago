@@ -109,6 +109,14 @@ const api = {
       ipcRenderer.on('library:addSoundFromUrlProgress', listener)
       return () => ipcRenderer.removeListener('library:addSoundFromUrlProgress', listener)
     },
+    // Settings → Library: WAV copies → lossless FLAC, applied at the next start.
+    compressionInfo: () => ipcRenderer.invoke('library:compressionInfo'),
+    compressSounds: () => ipcRenderer.invoke('library:compressSounds'),
+    onCompressSoundsProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('library:compressSoundsProgress', listener)
+      return () => ipcRenderer.removeListener('library:compressSoundsProgress', listener)
+    },
     addFolderSounds: (folderPath, options) => ipcRenderer.invoke('library:addFolderSounds', folderPath, options),
     addSoundFromFreesound: (payload) => ipcRenderer.invoke('library:addSoundFromFreesound', payload),
     onAddSoundFromFreesoundProgress: (callback) => {

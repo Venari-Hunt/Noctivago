@@ -6,7 +6,7 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import log from 'electron-log/main'
 import { registerIpcHandlers } from './ipc.js'
-import { getPlaybackPathForId, getLoopClipPathForId, listSounds, migrateLoopClipFormat, detectFreesoundSources } from './library.js'
+import { getPlaybackPathForId, getLoopClipPathForId, listSounds, migrateLoopClipFormat, detectFreesoundSources, applyPendingFlacSwaps } from './library.js'
 import { ensureDefaultPreset, getSoundOverride } from './presets.js'
 import { registerPluginProtocol } from './plugins/protocol.js'
 import { startPluginMigration } from './plugins/migration.js'
@@ -273,6 +273,8 @@ if (isFirstInstance) app.whenReady().then(() => {
   // Before initAutoUpdate, which overwrites lastRunVersion.
   startPluginMigration()
   migrateLoopClipFormat()
+  // Before the window: no sound can be streaming its old WAV yet.
+  applyPendingFlacSwaps()
   detectFreesoundSources()
   bootstrapDefaultPreset()
   const win = createWindow()

@@ -32,6 +32,7 @@ export function SettingsWindow({ noctivago, onClose }) {
   const api = useMemo(
     () => ({
       library: noctivago.library,
+      restartApp: noctivago.pluginStore.restartApp,
       update: async (change) => setSettings(await change(noctivago.settings))
     }),
     [noctivago]

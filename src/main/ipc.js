@@ -131,6 +131,12 @@ export function registerIpcHandlers() {
     })
   )
   ipcMain.handle('library:cancelAddSoundFromUrl', () => library.cancelAddSoundFromUrl())
+  ipcMain.handle('library:compressionInfo', () => library.compressionInfo())
+  ipcMain.handle('library:compressSounds', (event) =>
+    library.compressLibrarySounds((update) => {
+      if (!event.sender.isDestroyed()) event.sender.send('library:compressSoundsProgress', update)
+    })
+  )
   ipcMain.handle('library:addFolderSounds', (_event, folderPath, options) => library.addFolderSounds(folderPath, options))
   // Community presets (src/main/community/client.js).
   ipcMain.handle('community:getProfile', () => community.getProfile())
