@@ -1,9 +1,5 @@
 import { formatDuration } from '../../../util/time.js'
-
-function formatSize(bytes) {
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+import { formatSize } from '../../../util/size.js'
 
 export function formatMeta(entry) {
   const parts = []

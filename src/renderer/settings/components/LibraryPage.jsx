@@ -1,6 +1,7 @@
 import { SettingItem } from './SettingItem.jsx'
 import { Toggle } from './Toggle.jsx'
 import { WatchedFolders } from './WatchedFolders.jsx'
+import { CompressSounds } from './CompressSounds.jsx'
 
 const COOKIE_BROWSERS = [
   ['none', "Don't sign in"],
@@ -31,6 +32,9 @@ export function LibraryPage({ settings, api }) {
       <h3 className="settings-page-heading">Watched folders</h3>
       <p className="settings-page-hint">Audio files added to these folders later are imported into your library automatically.</p>
       <WatchedFolders library={api.library} />
+
+      <h3 className="settings-page-heading">Disk space</h3>
+      <CompressSounds library={api.library} restartApp={api.restartApp} />
     </>
   )
 }

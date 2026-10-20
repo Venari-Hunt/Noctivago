@@ -12,6 +12,8 @@ import { isYtDlpAvailable } from './ytdlp/ytDlpPath.js'
 import { downloadChunked } from './ytdlp/chunkedDownload.js'
 import { downloadPreviewAudio } from './freesound/download.js'
 import { STORED_AUDIO_EXT, STORED_AUDIO_ARGS } from './ffmpeg/storedAudio.js'
+import { compressToFlac } from './ffmpeg/compressToFlac.js'
+import { compressionCandidates, applyFlacSwaps, flacNameFor } from './compressLibraryCore.js'
 import { getSoundCredits, trimDescription } from './freesound/client.js'
 import { parseFreesoundFileName } from '../shared/credits.js'
 import { getSettings } from './settings.js'
@@ -1272,6 +1274,71 @@ export function remove(id) {
   }
   deleteLoopClip(id)
   store.set('sounds', sounds.filter((s) => s.id !== id))
+}
+
+// "Compress library sounds" (Settings → Library): WAV copies → lossless
+// FLAC. Rules and why the swap waits for a restart: compressLibraryCore.js.
+function fileSize(filePath) {
+  try {
+    return fs.statSync(filePath).size
+  } catch {
+    return 0
+  }
+}
+
+let compressing = null
+
+export function compressionInfo() {
+  const pending = store.get('pendingFlacSwaps') ?? []
+  const files = compressionCandidates(store.get('sounds'), pending, store.get('flacSkipped') ?? [])
+  return {
+    count: files.length,
+    bytes: files.reduce((sum, f) => sum + fileSize(path.join(soundsDir(), f)), 0),
+    pendingCount: pending.length,
+    running: compressing != null
+  }
+}
+
+// onProgress({ done, total }). Each finished file is saved as a pending swap
+// right away, so quitting halfway keeps the work already done.
+export function compressLibrarySounds(onProgress) {
+  if (compressing) return compressing
+  compressing = (async () => {
+    const files = compressionCandidates(store.get('sounds'), store.get('pendingFlacSwaps') ?? [], store.get('flacSkipped') ?? [])
+    let converted = 0
+    let savedBytes = 0
+    for (const [i, from] of files.entries()) {
+      onProgress?.({ done: i, total: files.length })
+      const to = flacNameFor(from)
+      const result = await compressToFlac(path.join(soundsDir(), from), path.join(soundsDir(), to))
+      if (result.ok) {
+        store.set('pendingFlacSwaps', [...(store.get('pendingFlacSwaps') ?? []), { from, to }])
+        converted++
+        savedBytes += result.before - result.after
+      } else {
+        store.set('flacSkipped', [...(store.get('flacSkipped') ?? []), from])
+      }
+    }
+    onProgress?.({ done: files.length, total: files.length })
+    return { converted, skipped: files.length - converted, savedBytes }
+  })().finally(() => {
+    compressing = null
+  })
+  return compressing
+}
+
+// Startup, before any window exists: nothing can be streaming yet.
+export function applyPendingFlacSwaps() {
+  const pending = store.get('pendingFlacSwaps') ?? []
+  if (pending.length === 0) return
+  const dir = soundsDir()
+  const { sounds, deleteFiles } = applyFlacSwaps(store.get('sounds'), pending, {
+    exists: (f) => fs.existsSync(path.join(dir, f)),
+    sizeOf: (f) => fileSize(path.join(dir, f))
+  })
+  store.set('sounds', sounds)
+  store.set('pendingFlacSwaps', [])
+  for (const f of deleteFiles) fs.rmSync(path.join(dir, f), { force: true })
 }
 
 export function getPlaybackPathForId(id) {

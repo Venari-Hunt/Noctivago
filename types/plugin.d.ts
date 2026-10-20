@@ -264,6 +264,9 @@ export interface NoctivagoApi {
     /** Stops a link download in flight; resolves true if one was running. */
     cancelAddSoundFromUrl(): Promise<boolean>
     onAddSoundFromUrlProgress(callback: (payload: any) => void): Unsubscribe
+    compressionInfo(): Promise<{ count: number; bytes: number; pendingCount: number; running: boolean }>
+    compressSounds(): Promise<{ converted: number; skipped: number; savedBytes: number }>
+    onCompressSoundsProgress(callback: (payload: { done: number; total: number }) => void): Unsubscribe
     addFolderSounds(folderPath: string, options?: Payload): Promise<any>
     addSoundFromFreesound(payload: Payload): Promise<any>
     onAddSoundFromFreesoundProgress(callback: (payload: any) => void): Unsubscribe
