@@ -1,5 +1,5 @@
 import { assignGroupColorSlots } from './soundRow.js'
-import { DEFAULT_VOLUME } from '../../../core/volumeScale.js'
+import { DEFAULT_VOLUME } from '../../../../shared/volumeScale.js'
 
 export const SORT_MODES = [
   { value: 'name-asc', label: 'Name (A-Z)' },

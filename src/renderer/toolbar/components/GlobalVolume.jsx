@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { gainToSlider, sliderToGain, SLIDER_STEPS } from '../../core/volumeScale.js'
+import { gainToSlider, sliderToGain, SLIDER_STEPS } from '../../../shared/volumeScale.js'
 
 // Same approach as the sound cards' VolumeSlider: uncontrolled, synced from
 // `gain` only when it changes (the startup restore), and listening to the

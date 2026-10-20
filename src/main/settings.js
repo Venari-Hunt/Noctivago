@@ -145,7 +145,7 @@ const store = new Store({
     // persisted at all - every launch silently reset it to the HTML
     // default (50 = unity gain), regardless of what it had been turned down
     // to. Linear gain, like per-sound volume (1 = unity; see
-    // core/volumeScale.js for the slider mapping). Written debounced on every
+    // shared/volumeScale.js for the slider mapping). Written debounced on every
     // drag (mirrors per-sound volume's own VOLUME_SAVE_DEBOUNCE_MS pattern in
     // tabs/mixer/index.js). null = never set; see legacyGlobalVolumeGain.
     globalVolumeGain: null,

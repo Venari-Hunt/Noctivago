@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { soundMenuItems, presetMenuItems, togglePresetSound, duplicateName } from '../src/renderer/tabs/mixer/domain/soundMenu.js'
-import { DEFAULT_VOLUME } from '../src/renderer/core/volumeScale.js'
+import { DEFAULT_VOLUME } from '../src/shared/volumeScale.js'
 
 const base = { status: 'ok', loading: false, included: false, muted: false, soloed: false, volume: DEFAULT_VOLUME }
 const byAction = (items) => Object.fromEntries(items.filter((i) => i.action).map((i) => [i.action, i]))

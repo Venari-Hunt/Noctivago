@@ -1,4 +1,4 @@
-import { DEFAULT_SOUND_VOLUME, VOLUME_MAX_GAIN, VOLUME_MIN_DB } from '../../shared/constants.js'
+import { DEFAULT_SOUND_VOLUME, VOLUME_MAX_GAIN, VOLUME_MIN_DB } from './constants.js'
 
 // The volume sliders (the global one in the toolbar and every per-sound one
 // in the Mixer) are bipolar: the center is unity gain - the sound playing at

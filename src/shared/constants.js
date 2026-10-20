@@ -10,11 +10,11 @@ export const MAX_BUFFER_CLIP_SECONDS = 600
 // A fresh sound's volume. The volume sliders are bipolar - their center is
 // unity gain (the sound at its own recorded level), so a new sound sits dead
 // center. Was 0.7 (an arbitrary slight attenuation) before the bipolar
-// sliders. Imported by both the renderer (core/volumeScale.js) and main
+// sliders. Imported by both the renderer (shared/volumeScale.js) and main
 // (library.js) so the default can't drift between them.
 export const DEFAULT_SOUND_VOLUME = 1
 
-// Volume slider range (renderer/core/volumeScale.js). Full right is +6 dB
+// Volume slider range (shared/volumeScale.js). Full right is +6 dB
 // (2x); the quiet side tapers in dB down to VOLUME_MIN_DB, then silence.
 // Main clamps the saved master volume to the same range.
 export const VOLUME_MAX_GAIN = 2

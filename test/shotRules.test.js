@@ -78,7 +78,7 @@ describe('config keys', () => {
 // may only import each other: no Electron, Node built-ins or renderer code.
 test('phone-facing shared rules import only other shared files', () => {
   const dir = path.join(import.meta.dirname, '../src/shared')
-  for (const file of ['modulator.js', 'shotRules.js', 'equalPowerRamp.js', 'groupDrift.js', 'pan.js', 'eqBands.js']) {
+  for (const file of ['modulator.js', 'shotRules.js', 'equalPowerRamp.js', 'groupDrift.js', 'pan.js', 'eqBands.js', 'constants.js', 'volumeScale.js']) {
     const src = fs.readFileSync(path.join(dir, file), 'utf8')
     for (const [, spec] of src.matchAll(/^import .* from '([^']+)'/gm)) {
       assert.match(spec, /^\.\/[\w]+\.js$/, `${file} imports ${spec}`)

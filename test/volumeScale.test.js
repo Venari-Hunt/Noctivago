@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { positionToGain, gainToPosition, gainToSlider, sliderToGain, SLIDER_STEPS, VOLUME_MAX_GAIN } from '../src/renderer/core/volumeScale.js'
+import { positionToGain, gainToPosition, gainToSlider, sliderToGain, SLIDER_STEPS, VOLUME_MAX_GAIN } from '../src/shared/volumeScale.js'
 import { VOLUME_MIN_DB } from '../src/shared/constants.js'
 
 const db = (g) => 20 * Math.log10(g)
