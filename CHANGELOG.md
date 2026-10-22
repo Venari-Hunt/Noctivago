@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.274 — Softer dark background
+
+- **Changed: the app background is now dark gray instead of pure black.** Raised panels are a step lighter so layers still read clearly.
+
 ## v0.1.273 — Compress sounds already in your library
 
 - **New: Settings → Library → Compress library sounds.** WAV sounds stored in your library become FLAC: the same sound, about half the space. Each file is checked to decode to exactly the same audio before it is kept; the few that can't be stored exactly stay WAV. The change finishes when Noctívago next starts, so nothing you are playing is interrupted. Sounds you play from their own folder are never touched.
