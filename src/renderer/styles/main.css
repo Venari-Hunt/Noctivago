@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
-  /* OLED theme: a true-black page, near-black raised surfaces, one yellow
+  /* Dark theme: a dark gray page (never pure black), lighter raised surfaces, one yellow
      accent. Text sitting on a yellow fill is --on-accent (black), never
      white - white on yellow is unreadable. */
-  --bg: #000000;
-  --surface: #0d0d0d;
-  --surface-alt: #161616;
-  --surface-hover: #202020;
-  --border: #262626;
-  --border-strong: #3a3a3a;
+  --bg: #121212;
+  --surface: #1a1a1a;
+  --surface-alt: #222222;
+  --surface-hover: #2c2c2c;
+  --border: #333333;
+  --border-strong: #484848;
   --text: #f5f5f5;
   --text-dim: #8f8f8f;
   --accent: #ffc933;
