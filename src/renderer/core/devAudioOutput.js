@@ -65,3 +65,7 @@ export async function setAudioOutputChoice(choice) {
   }
   await Promise.all([...contexts].map((context) => applyTo(context, choice)))
 }
+
+// Plugins (Remix) own their own AudioContext and can't import this file, so
+// they register it through this global and follow the same setting.
+window.noctivagoAudioOutput = { register: registerAudioOutput }
