@@ -14,6 +14,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `src/shared/` — code/constants used by main and renderer. The playback rules the phone player also imports are here, DOM- and Electron-free: `modulator.js` (Fluctuation walk + timing), `shotRules.js` (scatter/scheduled per-shot picks and timing), `equalPowerRamp.js`, `groupDrift.js`, `pan.js`, `eqBands.js`, `constants.js`, `volumeScale.js` (the bipolar volume slider) (`test/shotRules.test.js` guards their imports).
 - `src/renderer/` — `main.js` bootstrap; `core/TabHost.js`, `core/PluginLoader.js`; `toolbar/` the top bar (React; state pushed in by the Mixer, sleep timer, main.js); `components/` icons shared across screens; `settings/` the Settings window (React; plugin toggles, Restricted mode, store Browse); `tabs/mixer/` the Mixer; `audio/` engine, sources, clip meters; `ui/` Mixer-only widgets.
 - Official plugins (Remix, Export, Composite, Browse Sounds, Community) live in their own repos, `Venari-Hunt/noctivago-<id>`, and install from the store; `dev-plugins/` holds dev-only test fixtures.
+- `scripts/cdp-shot.mjs` — screenshots the running dev app (`npm run dev -- --remoteDebuggingPort 9222`): `node scripts/cdp-shot.mjs <out.png> [--width 1280] [--height 800] [--eval "<js>"]`; flaky while the window is hidden in the tray.
 
 ## Docs (read only the one a task touches)
 
