@@ -1083,13 +1083,17 @@ main {
 
 .sound-row-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-height: 24px;
   align-items: center;
   gap: var(--space-1);
-  justify-content: center;
+  justify-content: safe center;
+  overflow: hidden;
 }
 
 .tag-chip {
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -1103,7 +1107,15 @@ main {
   border: 0;
 }
 
+.tag-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tag-chip-remove {
+  flex: none;
   display: inline-grid;
   place-items: center;
   width: 14px;
@@ -1123,6 +1135,8 @@ main {
 }
 
 .tag-chip-add {
+  flex: none;
+  white-space: nowrap;
   cursor: pointer;
   color: var(--text-dim);
   border: 1px dashed var(--border-strong);
@@ -2590,5 +2604,5 @@ main {
 
 /* "+ tag" shows on hover or focus, like the corner buttons. */
 .sound-row:not(:hover):not(:focus-within) .tag-chip-add {
-  opacity: 0;
+  display: none;
 }

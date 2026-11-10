@@ -92,7 +92,7 @@ export function SoundTags({ tags, allTags, editToken, onChange }) {
     <div className="sound-row-tags">
       {tags.map((tag) => (
         <span key={tag} className="tag-chip">
-          {tag}
+          <span className="tag-chip-name">{tag}</span>
           <button
             type="button"
             className="tag-chip-remove"
