@@ -2202,6 +2202,8 @@ export function mount(container) {
       <button id="bulk-select-toggle" class="btn" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
       <div id="tag-filter-pop" class="tag-filter-pop hidden" role="menu"></div>
     </div>
+    <ul id="sound-list" class="sound-list"></ul>
+    <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
     <div id="bulk-select-bar" class="bulk-select-bar hidden">
       <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
       <select id="bulk-select-preset" aria-label="Apply an effect preset">
@@ -2217,8 +2219,6 @@ export function mount(container) {
       </select>
       <button id="bulk-select-done" class="btn btn-primary" type="button">Done</button>
     </div>
-    <ul id="sound-list" class="sound-list"></ul>
-    <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
   `
   els.soundSearch = container.querySelector('#sound-search')
   mountRecommendedPlugins(container.querySelector('#recommended-plugins'), window.noctivago)
