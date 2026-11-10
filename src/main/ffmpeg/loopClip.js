@@ -890,6 +890,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // as long as it runs *last*.
   const tmpIntermediatePath = `${outputPath}.pre.tmp.wav`
   const tmpReverbPath = `${outputPath}.reverb.tmp.wav`
+  const tmpWrappedPath = `${outputPath}.wrap.tmp.wav`
   const tmpEnvelopePath = `${outputPath}.envelope.tmp.wav`
   try {
     const filterChain = buildFilterChain(filters)
@@ -898,7 +899,14 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     // (afftdn's profile was measured against that same unshaped signal).
     // Spectral repair next, still before anything that shifts time
     // (speed/pitch/reverse), since its boxes are in source time.
-    const preChain = [noiseChain, spectralChain, filterChain, speedPitchChain].filter(Boolean).join(',')
+    // Speed/pitch/reverse then run BEFORE the gate/highpass/lowpass/gain/
+    // echo/EQ chain (v0.1.275, one engine): the Remix live preview applies
+    // those filters to audio that is already sped up and reversed (its
+    // voices stream a reversed copy of the loop, then the filter chain), so
+    // the save now does the same. Audible difference: echo on a reversed
+    // sound repeats after each sound instead of swelling into it, and echo
+    // delay no longer stretches with Speed - both now match what Remix plays.
+    const preChain = [noiseChain, spectralChain, speedPitchChain].filter(Boolean).join(',')
     await runFfmpegToFile([
       '-y',
       '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
@@ -906,6 +914,22 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
       '-vn',
       '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
     ])
+    // The filters run as their own pass over the clip played twice, keeping
+    // only the second round: echo, gate and EQ state then arrive at the clip
+    // start already carrying the end of the clip, as in the live loop. Run
+    // once on the bare clip, the echo tail was cut at the end and the
+    // crossfade blended a loud tail into a silent head (v0.1.276).
+    if (filterChain) {
+      const clipSeconds = readWavDuration(tmpIntermediatePath)
+      await runFfmpegToFile([
+        '-y',
+        '-stream_loop', '1', '-i', tmpIntermediatePath,
+        '-af', `${filterChain},atrim=start=${clipSeconds.toFixed(6)}:end=${(clipSeconds * 2).toFixed(6)},asetpts=PTS-STARTPTS`,
+        '-vn',
+        '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpWrappedPath
+      ])
+      fs.renameSync(tmpWrappedPath, tmpIntermediatePath)
+    }
     // Reverb runs as its own isolated pass, same "pre-process first, THEN
     // crossfade" reasoning as speed/pitch/reverse above - it's linear/time-
     // invariant so it can't reintroduce the class of edge-effect seam
@@ -954,6 +978,13 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     console.error('renderLoopClip (speed/pitch/reverse/reverb/envelope) failed', id, err)
     return { ok: false, error: err.message }
   } finally {
+    if (fs.existsSync(tmpWrappedPath)) {
+      try {
+        fs.unlinkSync(tmpWrappedPath)
+      } catch {
+        // best-effort cleanup
+      }
+    }
     if (fs.existsSync(tmpReverbPath)) {
       try {
         fs.unlinkSync(tmpReverbPath)

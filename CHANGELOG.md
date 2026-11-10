@@ -6,6 +6,15 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.276 — Pick where the sound plays
+
+- **New: Settings → General → Audio → Output device.** Choose which speakers or headphones Noctívago plays through, and change it while it is playing. Automatic keeps your system default. The choice is remembered on this PC.
+
+## v0.1.275 — Reverse saves the way Remix plays it
+
+- **Fixed: a saved sound with Echo no longer ends in a long echo tail.** The saved loop kept its length and the echo wraps around the loop end, like the live preview, so the loop no longer jumps from the end to the middle.
+- **Changed: Speed, Pitch and Reverse now run before the filters when a sound is saved, the same order the Remix preview plays them in.** Echo on a reversed sound now repeats after each sound instead of swelling into it, and echo timing no longer stretches with Speed. Needs Remix 1.2.4, which plays Reverse live.
+
 ## v0.1.274 — Softer dark background
 
 - **Changed: the app background is now dark gray instead of pure black.** Raised panels are a step lighter so layers still read clearly.
