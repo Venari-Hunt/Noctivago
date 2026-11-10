@@ -119,15 +119,25 @@ function fireElapsed(action) {
   }
 }
 
+// setTimeout cannot wait longer than 2^31-1 ms (about 24.8 days) - it fires at
+// once - so long timers wait in chunks and check the clock each time.
+const MAX_WAIT_MS = 2 ** 31 - 1
+
 function armFor(ms) {
   timeout = setTimeout(() => {
+    if (!current) return
+    const left = current.firesAt - Date.now()
+    if (left > 1000) {
+      armFor(left)
+      return
+    }
     const fired = current
     current = null
     timeout = null
     setSleepTimerRunState(null)
     log.info(`Sleep timer elapsed, action: ${fired.action}`)
     fireElapsed(fired.action)
-  }, Math.max(1, ms))
+  }, Math.min(MAX_WAIT_MS, Math.max(1, ms)))
 }
 
 export function startSleepTimer(durationSeconds, action) {

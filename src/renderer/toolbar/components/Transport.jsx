@@ -11,12 +11,12 @@ export function Transport({ state, handlers }) {
       </button>
       <div className="toolbar-group toolbar-actions">
         {state.sleepActive ? (
-          <button className="btn btn-ghost sleep-timer-remaining" type="button" title={sleepButtonTitle(true)} onClick={handlers.onOpenSleepTimer}>
+          <button id="sleep-timer-button" className={'btn btn-ghost sleep-timer-remaining' + (state.sleepOpen ? ' sleep-open' : '')} type="button" title={sleepButtonTitle(true)} onClick={handlers.onOpenSleepTimer}>
             <MockIcon name="moon" />
             {state.sleepRemaining}
           </button>
         ) : (
-          <button className="btn btn-ghost btn-svg-icon" type="button" title={sleepButtonTitle(false)} onClick={handlers.onOpenSleepTimer}>
+          <button id="sleep-timer-button" className={'btn btn-ghost btn-svg-icon' + (state.sleepOpen ? ' sleep-open' : '')} type="button" title={sleepButtonTitle(false)} onClick={handlers.onOpenSleepTimer}>
             <MockIcon name="moon" size={20} />
           </button>
         )}

@@ -1704,12 +1704,28 @@ main {
 .sleep-pop {
   position: absolute;
   right: var(--space-5);
-  bottom: 80px;
+  bottom: 76px;
   width: min(560px, calc(100vw - 48px));
   background: var(--surface-alt);
   border-radius: var(--radius);
   box-shadow: 0 16px 48px rgb(0 0 0 / 0.5);
-  overflow: hidden;
+}
+
+/* A tail from the popover down to the moon button. */
+.sleep-pop-arrow {
+  position: absolute;
+  left: var(--arrow-x, 90%);
+  bottom: -14px;
+  width: 28px;
+  height: 14px;
+  translate: -50% 0;
+  background: var(--surface);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.toolbar .sleep-open {
+  background: var(--tint);
+  color: var(--tint-ink);
 }
 
 .sleep-pop.running {
@@ -1749,7 +1765,7 @@ main {
 }
 
 .sleep-endat {
-  width: 72px;
+  width: 104px;
   height: 28px;
   padding: 0 var(--space-2);
   border: 0;
@@ -1766,7 +1782,7 @@ main {
 
 .sleep-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2) var(--space-3);
   padding: var(--space-1) var(--space-4) var(--space-2);
 }
@@ -1945,6 +1961,7 @@ main {
 }
 
 .sleep-foot {
+  border-radius: 0 0 var(--radius) var(--radius);
   display: flex;
   flex-wrap: wrap;
   align-items: center;

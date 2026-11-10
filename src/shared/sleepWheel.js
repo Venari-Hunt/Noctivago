@@ -1,12 +1,15 @@
 // Sleep timer wheel math (pure), ported from the Rouse "How long before"
-// wheel (design system `.roller`, mock-rouse-how-long): two fields, hours and
-// minutes, and one wheel that rolls whichever field is active.
+// wheel (design system `.roller`, mock-rouse-how-long): three fields (days,
+// hours, minutes) and one wheel that rolls whichever field is active. It
+// always starts on minutes, and days have no top end short of a year.
 
-export const TIMER_MAX_MIN = 1440
+export const TIMER_MAX_MIN = 365 * 1440 // a year; the wheel rolls days with no smaller limit
+const STEP = { min: 1, h: 60, d: 1440 }
+const LOWER = { d: 'h', h: 'min' }
 export const WHEEL_PX = 10 // finger distance per tick
 export const RIDGE_PX = 12 // ridge spacing at the wheel's center
 
-// Any minutes value -> a whole, valid timer length (1 minute to 24 hours).
+// Any minutes value -> a whole, valid timer length (1 minute to a year).
 export function clampMinutes(minutes) {
   const n = Math.round(Number(minutes))
   if (!Number.isFinite(n)) return 1
@@ -15,19 +18,22 @@ export function clampMinutes(minutes) {
 
 export function splitMinutes(minutes) {
   const m = clampMinutes(minutes)
-  return { h: Math.floor(m / 60), min: m % 60 }
+  return { d: Math.floor(m / 1440), h: Math.floor((m % 1440) / 60), min: m % 60 }
 }
 
-// One wheel tick on the active unit ('h' or 'min'). Filling the minutes
-// moves the wheel to hours; emptying the hours moves it back to minutes.
-// Returns { minutes, unit } or null when the wheel is at an end (1 min / 24 h).
+// One wheel tick on the active unit ('d', 'h' or 'min'). Filling the minutes
+// moves the wheel to hours, filling the hours to days; going down past zero
+// in a unit drops to the next smaller one (1 h gives 59 min). Returns
+// { minutes, unit } or null when the wheel is at an end.
 export function roll(minutes, unit, up) {
   const m = clampMinutes(minutes)
-  const step = unit === 'h' ? 60 : 1
-  const next = m + (up ? step : -step)
-  if (next < 1 || next > TIMER_MAX_MIN) return null
+  const next = m + (up ? STEP[unit] : -STEP[unit])
+  if (next > TIMER_MAX_MIN) return null
+  if (next < 1) return LOWER[unit] ? roll(m, LOWER[unit], false) : null
   let nextUnit = unit
   if (up && unit === 'min' && next % 60 === 0) nextUnit = 'h'
+  if (up && unit === 'h' && next % 1440 === 0) nextUnit = 'd'
+  if (!up && unit === 'd' && next < 1440) nextUnit = 'h'
   if (!up && unit === 'h' && next < 60) nextUnit = 'min'
   return { minutes: next, unit: nextUnit }
 }
@@ -39,18 +45,23 @@ export function readNumber(text) {
   return /^\d*\.?\d+$/.test(t) || /^\d+\.$/.test(t) ? Number(t) : null
 }
 
-// The two typed fields -> minutes (hours may be a fraction, minutes may pass 59), or null if either is not a number.
-export function minutesFromFields(hText, minText) {
+// The three typed fields -> minutes (days and hours may be fractions, minutes may pass 59), or null if any is not a number.
+export function minutesFromFields(dText, hText, minText) {
+  const d = readNumber(dText)
   const h = readNumber(hText)
   const min = readNumber(minText)
-  if (h === null || min === null) return null
-  return clampMinutes(h * 60 + min)
+  if (d === null || h === null || min === null) return null
+  return clampMinutes(d * 1440 + h * 60 + min)
 }
 
-// Clock time ("HH:MM") the timer ends at when it runs for `minutes` from `now`.
+// When the timer ends: "HH:MM" today, "Thu 07:36" on another day.
 export function endClock(minutes, now = new Date()) {
   const end = new Date(now.getTime() + clampMinutes(minutes) * 60000)
-  return `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`
+  const clock = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`
+  if (end.toDateString() === now.toDateString()) return clock
+  const sameWeek = end.getTime() - now.getTime() < 6 * 86400000
+  const day = sameWeek ? end.toLocaleDateString('en-US', { weekday: 'short' }) : end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return `${day} ${clock}`
 }
 
 // Side-scroll (or Shift+wheel) over the wheel -> +1 / -1 tick, or 0 for a plain up/down wheel.

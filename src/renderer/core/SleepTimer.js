@@ -26,6 +26,16 @@ let wheel = null
 function showModal(el) {
   el.classList.remove('hidden')
 }
+
+// The popover's tail points at the moon button, which stays lit while it is open.
+function pointAtMoon() {
+  const btn = document.getElementById('sleep-timer-button')
+  if (!btn || els.modal.classList.contains('hidden')) return
+  const pop = els.pop.getBoundingClientRect()
+  const b = btn.getBoundingClientRect()
+  const x = Math.min(pop.width - 24, Math.max(24, b.left + b.width / 2 - pop.left))
+  els.pop.style.setProperty('--arrow-x', x + 'px')
+}
 function hideModal(el) {
   el.classList.add('hidden')
 }
@@ -39,10 +49,12 @@ function refreshDisplay() {
 
 function renderSetup(force = false) {
   const { minutes, mode } = setup
-  const { h, min } = splitMinutes(minutes)
+  const { d, h, min } = splitMinutes(minutes)
   // A field being typed in keeps its text until it loses focus.
+  if (force || document.activeElement !== els.dInput) els.dInput.value = d || ''
   if (force || document.activeElement !== els.hInput) els.hInput.value = h || ''
   if (force || document.activeElement !== els.minInput) els.minInput.value = min || ''
+  els.dInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'd')
   els.hInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'h')
   els.minInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'min')
   if (mode === 'at') {
@@ -82,6 +94,7 @@ function applyState(state) {
   } else {
     renderSetup()
   }
+  pointAtMoon()
 }
 
 // Typed end time -> minutes from now (and the time to remember). Bad text
@@ -217,6 +230,7 @@ export function installSleepTimer() {
     pop: modal.querySelector('.sleep-pop'),
     setup: document.getElementById('sleep-timer-setup'),
     activeBox: document.getElementById('sleep-timer-active'),
+    dInput: document.getElementById('sleep-timer-d'),
     hInput: document.getElementById('sleep-timer-h'),
     minInput: document.getElementById('sleep-timer-min'),
     wheel: document.getElementById('sleep-timer-wheel'),
@@ -244,7 +258,10 @@ export function installSleepTimer() {
     noticeSkip: document.getElementById('sleep-timer-autostart-skip')
   }
 
-  const close = () => hideModal(els.modal)
+  const close = () => {
+    hideModal(els.modal)
+    updateToolbar({ sleepOpen: false })
+  }
 
   const open = async () => {
     const [state, settings] = await Promise.all([
@@ -264,6 +281,8 @@ export function installSleepTimer() {
     setAutoStartSwitch(Boolean(settings.sleepTimerAutoStart))
     applyState(state)
     showModal(els.modal)
+    updateToolbar({ sleepOpen: true })
+    pointAtMoon()
     wheel.redraw()
   }
 
@@ -296,20 +315,20 @@ export function installSleepTimer() {
     renderSetup()
     return true
   }
-  wheel = installWheel(els.wheel, tick)
+  wheel = installWheel(els.wheel, tick, els.pop)
   els.wheel.addEventListener('pointerdown', () => document.activeElement?.blur?.())
   els.less.addEventListener('click', () => wheel.nudge(false))
   els.more.addEventListener('click', () => wheel.nudge(true))
   // Side-scroll works anywhere over the setup area, not only on the wheel.
   els.setup.addEventListener('wheel', (e) => wheel.wheel(e), { passive: false })
-  for (const input of [els.hInput, els.minInput]) {
+  for (const input of [els.dInput, els.hInput, els.minInput]) {
     input.addEventListener('focus', () => {
       setup = { ...setup, unit: input.dataset.unit }
       input.select()
       renderSetup()
     })
     const commitFields = () => {
-      const minutes = minutesFromFields(els.hInput.value, els.minInput.value)
+      const minutes = minutesFromFields(els.dInput.value, els.hInput.value, els.minInput.value)
       if (minutes != null) setup = { ...setup, mode: 'in', minutes }
       renderSetup(true) // both fields show the tidied-up numbers, so a second commit adds nothing
     }
@@ -321,7 +340,7 @@ export function installSleepTimer() {
   }
   for (const btn of els.presets) {
     btn.addEventListener('click', () => {
-      setup = { ...setup, mode: 'in', minutes: Number(btn.dataset.min), unit: Number(btn.dataset.min) % 60 === 0 ? 'h' : 'min' }
+      setup = { ...setup, mode: 'in', minutes: Number(btn.dataset.min), unit: 'min' }
       renderSetup()
     })
   }

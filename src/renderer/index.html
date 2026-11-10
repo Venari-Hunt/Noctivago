@@ -263,12 +263,14 @@
 
     <div id="sleep-timer-modal" class="sleep-pop-wrap hidden">
       <div class="sleep-pop" role="dialog" aria-label="Sleep timer">
+        <span class="sleep-pop-arrow" aria-hidden="true"></span>
         <h3>Sleep timer<button id="sleep-timer-close" class="btn btn-ghost btn-svg-icon" type="button" aria-label="Close"><span data-icon="x"></span></button></h3>
         <div id="sleep-timer-setup">
           <div class="sleep-fields">
+            <div class="sleep-unit"><input id="sleep-timer-d" data-unit="d" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Days" /><label for="sleep-timer-d">Day</label></div>
             <div class="sleep-unit"><input id="sleep-timer-h" data-unit="h" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Hours" /><label for="sleep-timer-h">Hr</label></div>
             <div class="sleep-unit"><input id="sleep-timer-min" data-unit="min" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Minutes" /><label for="sleep-timer-min">Min</label></div>
-            <span class="sleep-dim sleep-endrow">ends at <input id="sleep-timer-at" class="sleep-endat" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" aria-label="Ends at" /></span>
+            <span class="sleep-dim sleep-endrow">ends at <input id="sleep-timer-at" class="sleep-endat" type="text" inputmode="numeric" placeholder="HH:MM" aria-label="Ends at" /></span>
           </div>
           <div class="sleep-roll">
             <button id="sleep-timer-less" class="sleep-roll-btn" type="button" aria-label="One less"><span data-icon="minus" data-size="20"></span></button>

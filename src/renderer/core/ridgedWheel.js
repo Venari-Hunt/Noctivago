@@ -3,7 +3,10 @@ import { WHEEL_PX, RIDGE_PX, wheelDirection } from '../../shared/sleepWheel.js'
 // The ridged wheel from the design system (`.roller`, Rouse "How long before"):
 // a cylinder seen from the side. Drag it sideways, coast on release, or use a
 // mouse side-wheel / Shift+wheel / arrow keys. `onTick(up)` returns false when
-// the value is at an end, which stops the wheel dead.
+// the value is at an end, which stops the wheel dead. A drag ends (and never
+// coasts) the moment the button is up, the pointer leaves `boundary` (the
+// popover), or the window loses focus, so a click held while wandering off
+// never keeps rolling.
 
 export function drawWheel(el, shift) {
   const canvas = el.querySelector('canvas')
@@ -31,7 +34,7 @@ export function drawWheel(el, shift) {
   }
 }
 
-export function installWheel(el, onTick) {
+export function installWheel(el, onTick, boundary = null) {
   let last = null
   let spare = 0
   let shift = 0
@@ -69,8 +72,24 @@ export function installWheel(el, onTick) {
     el.classList.add('held')
     last = e.clientX
   })
+  const outside = (e) => {
+    if (!boundary) return false
+    const r = boundary.getBoundingClientRect()
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom
+  }
+  const drop = () => {
+    last = null
+    speed = 0
+    spare = 0
+    cancelAnimationFrame(spin)
+    el.classList.remove('held')
+  }
   el.addEventListener('pointermove', (e) => {
     if (last === null) return
+    if (e.buttons === 0 || outside(e)) {
+      drop()
+      return
+    }
     speed = e.clientX - last
     last = e.clientX
     turn(speed)
@@ -88,7 +107,11 @@ export function installWheel(el, onTick) {
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) spin = requestAnimationFrame(coast)
   }
   el.addEventListener('pointerup', release)
-  el.addEventListener('pointercancel', release)
+  el.addEventListener('pointercancel', drop)
+  el.addEventListener('lostpointercapture', () => {
+    if (last !== null) drop()
+  })
+  window.addEventListener('blur', drop)
   el.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
     e.preventDefault()
