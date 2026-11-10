@@ -39,9 +39,7 @@ function GroupLine({ name, id, colorSlot, onOpenMenu }) {
       }}
     >
       <i aria-hidden="true" />
-      <span>
-        Group <b>{name}</b>
-      </span>
+      <span><b>{name}</b></span>
     </button>
   )
 }
