@@ -18,7 +18,7 @@ import { startLevelMeters } from '../../ui/levelMeters.js'
 import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipReport.js'
 import { openClipReport } from './components/ClipReport.jsx'
 import { mountRecommendedPlugins } from './components/RecommendedPlugins.jsx'
-import { setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
+import { mountAddSound, setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -198,7 +198,7 @@ function hideModal(el) {
 }
 
 function refreshGlobalButton() {
-  updateToolbar({ playing: state.playing.size > 0 })
+  updateToolbar({ playing: state.playing.size > 0, mixCount: state.included.size })
 }
 
 const EMPTY_LIBRARY_TEXT = 'No sounds yet. Click "Add Sound" to import one.'
@@ -291,6 +291,7 @@ function render() {
   const filtering = state.searchQuery.trim() || state.activeTagFilter
   els.emptyState.textContent = filtering && state.library.length > 0 ? NO_SEARCH_MATCHES_TEXT : EMPTY_LIBRARY_TEXT
   renderTagFilterBar()
+  updateToolbar({ mixCount: state.included.size })
   // Every tag used anywhere in the *full* library (not just visible, which
   // may already be search/tag-filtered) - drives each row's "+ tag"
   // autocomplete, same computation renderTagFilterBar() already does for
@@ -2200,6 +2201,7 @@ export function mount(container) {
       <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
       <select id="sound-group" class="sound-group-select" title="Group by"></select>
       <button id="bulk-select-toggle" class="btn" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
+      <div id="add-sound-slot"></div>
       <div id="tag-filter-pop" class="tag-filter-pop hidden" role="menu"></div>
     </div>
     <ul id="sound-list" class="sound-list"></ul>
@@ -2222,6 +2224,7 @@ export function mount(container) {
   `
   els.soundSearch = container.querySelector('#sound-search')
   mountRecommendedPlugins(container.querySelector('#recommended-plugins'), window.noctivago)
+  mountAddSound(container.querySelector('#add-sound-slot'))
   els.soundSort = container.querySelector('#sound-sort')
   els.soundGroup = container.querySelector('#sound-group')
   els.bulkSelectToggle = container.querySelector('#bulk-select-toggle')

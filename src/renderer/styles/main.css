@@ -89,6 +89,7 @@ body {
 }
 
 #app {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -126,19 +127,18 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Top bar: three fixed zones - preset on the left, transport (play, volume,
-   mute, sleep) in the middle, app actions on the right. On a narrow window
-   the transport drops to its own full-width second row instead of the
-   pieces wrapping wherever they happen to fit. */
+/* Player bar (the mock's .player): preset on the left, Play in the middle,
+   sleep / mute / master volume on the right. Lives at the bottom of the window,
+   one row tall; Play is the one solid amber control in the app. */
 .toolbar {
+  flex: none;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas: 'preset transport actions';
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  gap: var(--space-4);
+  height: 72px;
+  padding: 0 var(--space-5);
+  background: var(--surface);
 }
 
 .toolbar-group {
@@ -148,36 +148,35 @@ body {
   min-width: 0;
 }
 
-.toolbar-preset {
-  grid-area: preset;
-}
-
-.toolbar-transport {
-  grid-area: transport;
-}
-
 .toolbar-actions {
-  grid-area: actions;
   justify-content: flex-end;
 }
 
-@media (max-width: 720px) {
+.toolbar .btn-play {
+  width: 64px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.toolbar .btn-play:hover {
+  background: var(--accent-strong);
+}
+
+.toolbar .btn-play:active {
+  background: #cda63e;
+}
+
+.toolbar .btn-play svg {
+  width: 24px;
+  height: 24px;
+}
+
+@container (max-width: 560px) {
   .toolbar {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      'preset actions'
-      'transport transport';
-  }
-
-  .toolbar-transport .global-volume-label {
-    flex: 1;
-  }
-
-  .toolbar-transport .volume-slider-wrap,
-  .toolbar-transport .global-volume {
-    flex: 1;
-    width: auto;
-    min-width: 0;
+    padding: 0 var(--space-3);
   }
 }
 
@@ -199,12 +198,21 @@ body {
   letter-spacing: 0.06em;
 }
 
+/* Top nav (the mock's .nav): tabs centered, Settings at the right end. */
+.nav {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  height: 48px;
+  padding: 0 var(--space-4);
+  background: var(--bg);
+}
+
 .tab-bar {
   display: flex;
   gap: var(--space-1);
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -213,27 +221,38 @@ body {
   display: none;
 }
 
-.tab-button {
-  height: 40px;
+.nav-end {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tab-button,
+.nav-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
   padding: 0 var(--space-3);
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 0;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.tab-button:hover {
+.tab-button:hover,
+.nav-button:hover {
   color: var(--text);
 }
 
-.tab-button-active {
+.tab-button-active,
+.nav-button-active {
+  background: var(--surface-alt);
   color: var(--text);
-  border-bottom-color: var(--accent);
 }
 
 .tab-sticky-bar {
@@ -1235,63 +1254,102 @@ main {
   width: 140px;
 }
 
-/* Which preset the Mixer / Remix tab is editing - dim "No preset" until one
-   is loaded, then the name with a yellow bookmark. Ellipsizes so a long name
-   can't push the bar around; full name on hover via title. */
+/* Which preset the Mixer / Remix tab is editing: the name over a dim line.
+   Doubles as the shortcut into the Presets modal. */
 .active-preset-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
   min-width: 0;
-  max-width: 240px;
-  height: var(--control-h);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
+  max-width: 280px;
+  height: 48px;
+  padding: 4px var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  color: var(--text);
   cursor: pointer;
-  transition: border-color 0.12s;
+  font: inherit;
 }
 
 .active-preset-indicator:hover {
-  border-color: var(--border-strong);
+  background: var(--surface-alt);
 }
 
-.active-preset-indicator .active-preset-icon {
-  flex: 0 0 auto;
-  opacity: 0.7;
-}
-
-.active-preset-indicator .active-preset-name {
+.active-preset-name {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
 }
 
-.active-preset-indicator.has-preset {
-  color: var(--text);
-}
-
-.active-preset-indicator.has-preset .active-preset-icon {
-  opacity: 1;
-  color: var(--accent);
-}
-
-.global-volume-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: 12px;
+.active-preset-indicator:not(.has-preset) .active-preset-name {
   color: var(--text-dim);
 }
 
-.global-volume {
+.active-preset-sub {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-dim);
+}
+
+/* Master volume: the slider with the live level as a thin amber line under it
+   (the line turns red and stays red when the mix clips; click it for the clip
+   report - ui/levelMeters.js). */
+.global-volume-label {
+  position: relative;
+  display: block;
   width: 160px;
 }
+
+.global-volume-label .volume-slider-wrap,
+.global-volume {
+  display: block;
+  width: 100%;
+}
+
+.global-volume-label .level-meter-master {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  width: auto;
+  height: 3px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.global-volume-label .level-meter-master::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+
+.global-volume-label .level-meter-master.clipped {
+  box-shadow: none;
+}
+
+.global-volume-label .level-meter-master.clipped .level-meter-fill {
+  background: #f28b82;
+}
+
+@container (max-width: 560px) {
+  .global-volume-label {
+    display: none;
+  }
+
+  .active-preset-sub {
+    display: none;
+  }
+}
+
 
 .empty-state {
   color: var(--text-dim);
@@ -1588,7 +1646,7 @@ main {
 .sleep-timer-remaining {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: var(--accent);
+  color: var(--text-dim);
   cursor: pointer;
 }
 
@@ -1846,10 +1904,6 @@ main {
 
 .level-meter.clipped .level-meter-fill {
   background: var(--danger);
-}
-
-.level-meter-master {
-  width: 60px;
 }
 
 .sound-row-group-badge.clipped {

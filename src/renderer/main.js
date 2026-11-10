@@ -11,7 +11,7 @@ import { installAddLinkDialog } from './core/AddLinkDialog.js'
 import { mountToolbar, updateToolbar } from './toolbar/index.jsx'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
-mountToolbar(document.getElementById('toolbar'))
+mountToolbar(document.getElementById('toolbar'), document.getElementById('nav-end'))
 installSliderDoubleClickReset()
 installNumberBoxStepper()
 installWatchFolderDialog()

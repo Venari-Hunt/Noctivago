@@ -2,6 +2,8 @@ import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { INITIAL_TOOLBAR_STATE } from './domain/toolbar.js'
 import { Toolbar } from './components/Toolbar.jsx'
+import { NavEnd } from './components/NavEnd.jsx'
+import { AddSoundMenu } from './components/AddSoundMenu.jsx'
 
 // The app-wide top bar. Each piece of its state has one owner that pushes it
 // in (the Mixer: preset, playing, volume, mute, "+" menu; core/SleepTimer.js:
@@ -16,15 +18,25 @@ const handlerProxy = new Proxy(handlers, {
   get: (target, name) => (...args) => target[name]?.(...args)
 })
 let root = null
+let navRoot = null
 
 function render() {
   if (!root) return
   flushSync(() => root.render(<Toolbar state={state} handlers={handlerProxy} />))
 }
 
-export function mountToolbar(headerEl) {
+// headerEl is the player bar at the bottom; navEndEl is the right end of the
+// top nav (Settings).
+export function mountToolbar(headerEl, navEndEl) {
   root = createRoot(headerEl)
   render()
+  navRoot = createRoot(navEndEl)
+  navRoot.render(<NavEnd handlers={handlerProxy} />)
+}
+
+// The "Add sound" button + menu live in the Mixer's own toolbar row.
+export function mountAddSound(slotEl) {
+  createRoot(slotEl).render(<AddSoundMenu onPick={(id) => handlerProxy.onAddSound(id)} />)
 }
 
 export function updateToolbar(patch) {

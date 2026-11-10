@@ -24,9 +24,8 @@ export function GlobalVolume({ gain, onInput }) {
 
   return (
     <label className="global-volume-label">
-      Volume
       <span className="volume-slider-wrap">
-        <input ref={ref} type="range" min="0" max={SLIDER_STEPS} defaultValue={gainToSlider(1)} className="global-volume" />
+        <input ref={ref} type="range" min="0" max={SLIDER_STEPS} defaultValue={gainToSlider(1)} className="global-volume" aria-label="Master volume" />
       </span>
       {/* Filled in every frame by ui/levelMeters.js, outside React. */}
       <span className="level-meter level-meter-master" data-meter-master>

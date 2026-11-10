@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { ADD_SOUND_ITEMS } from '../domain/toolbar.js'
-import { filledIconSvg } from '../../core/menuIcons.js'
+import { filledIconSvg, menuIconSvg } from '../../core/menuIcons.js'
 
 // The "+" button's dropdown. Closes on an outside click, on Escape, and after
 // picking an item.
@@ -31,8 +31,9 @@ export function AddSoundMenu({ onPick }) {
 
   return (
     <div ref={wrapperRef} className="add-sound-menu-wrapper">
-      <button className="btn btn-icon" type="button" title="Add sound" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}>
-        +
+      <button className="btn btn-icon-text" type="button" title="Add sound" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span dangerouslySetInnerHTML={{ __html: menuIconSvg('add') }} />
+        Add sound
       </button>
       {open && (
         <div className="dropdown-menu">

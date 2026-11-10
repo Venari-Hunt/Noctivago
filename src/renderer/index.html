@@ -11,11 +11,16 @@
         <img class="title-bar-icon" src="./assets/app-icon.png" alt="" />
         <span id="title-bar-name" class="title-bar-name">Noctívago</span>
       </div>
-      <!-- Rendered by toolbar/index.jsx -->
-      <header id="toolbar" class="toolbar"></header>
-      <nav id="tab-bar" class="tab-bar"></nav>
+      <nav class="nav">
+        <span></span>
+        <div id="tab-bar" class="tab-bar"></div>
+        <!-- Rendered by toolbar/index.jsx -->
+        <div id="nav-end" class="nav-end"></div>
+      </nav>
       <div id="tab-sticky-bar" class="tab-sticky-bar hidden"></div>
       <main id="tab-content"></main>
+      <!-- The player bar, rendered by toolbar/index.jsx -->
+      <footer id="toolbar" class="toolbar"></footer>
     </div>
 
     <div id="add-sound-dialog" class="modal hidden">
