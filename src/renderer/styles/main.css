@@ -2487,3 +2487,32 @@ main {
   color: var(--text);
   background: var(--surface-alt);
 }
+
+/* Desktop 2.0 step 3: the whole card is the in-mix switch. The In Mix button
+   stays only as a keyboard twin, invisible until it has focus. */
+.sound-row:not(.sound-row-missing):not(.sound-row-selectable) {
+  cursor: pointer;
+}
+
+.sound-row-draggable:not(.sound-row-missing) {
+  cursor: pointer;
+}
+
+.sound-row-switch:not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  padding: 0;
+  border: 0;
+}
+
+.sound-row-foot .level-meter {
+  cursor: pointer;
+}
+
+/* "+ tag" shows on hover or focus, like the corner buttons. */
+.sound-row:not(:hover):not(:focus-within) .tag-chip-add {
+  opacity: 0;
+}

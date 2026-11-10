@@ -1,10 +1,15 @@
-import { useState } from 'react'
-import { formatMeta, groupBadgeColors } from '../domain/soundRow.js'
+import { useEffect, useRef, useState } from 'react'
+import { formatMeta, groupBadgeColors, sideScrollDelta, wheelPosition } from '../domain/soundRow.js'
 import { SoundName } from './SoundName.jsx'
 import { SoundTags } from './SoundTags.jsx'
 import { KnobLine, MissingControls, MixFoot } from './SoundControls.jsx'
 import { PLAY_TYPES, playTypeOf } from './VolumeKnob.jsx'
 import { PlayIcon, TrashIcon } from '../../../components/icons.jsx'
+import { SLIDER_STEPS } from '../../../../shared/volumeScale.js'
+
+// A click on any of these keeps its own meaning; every other spot on the card
+// flips it in or out of the mix (or ticks it, in Select mode).
+const OWN_CLICK = 'button, input, select, textarea, a, label, .knob, .tag-chip, .level-meter, .sound-row-name-input, [contenteditable]'
 
 // Composite and Freesound sounds play like any other; the badge says where
 // they came from, and for Freesound keeps the license attribution visible.
@@ -132,10 +137,37 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
     .filter(Boolean)
     .join(' ')
   const openMenu = (evt) => callbacks.onContextMenu(entry.id, evt)
+  const ref = useRef(null)
+
+  // Side-scroll (or Shift+scroll) anywhere on the card turns the volume. Native
+  // listener: React's onWheel is passive and could not stop the list scrolling.
+  useEffect(() => {
+    const li = ref.current
+    if (!li) return undefined
+    const onWheel = (evt) => {
+      const delta = sideScrollDelta(evt)
+      const slider = li.querySelector('.sound-row-volume')
+      if (!delta || !slider) return
+      evt.preventDefault()
+      const pos = wheelPosition(Number(slider.value) / SLIDER_STEPS, delta)
+      slider.value = String(Math.round(pos * SLIDER_STEPS))
+      slider.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    li.addEventListener('wheel', onWheel, { passive: false })
+    return () => li.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const onCardClick = (evt) => {
+    if (evt.target.closest(OWN_CLICK)) return
+    if (state.selectMode) callbacks.onToggleSelect(entry.id)
+    else if (!missing && !state.loading) callbacks.onToggleIncluded(entry.id)
+  }
   const playType = PLAY_TYPES[playTypeOf(entry)]
 
   return (
     <li
+      ref={ref}
+      onClick={onCardClick}
       className={className}
       data-id={entry.id}
       onContextMenu={(evt) => {

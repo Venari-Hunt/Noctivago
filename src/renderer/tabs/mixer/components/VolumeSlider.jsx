@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { gainToSlider, sliderToGain, DEFAULT_VOLUME, SLIDER_STEPS } from '../../../../shared/volumeScale.js'
+import { DRAG_THRESHOLD_PX, dragPosition } from '../domain/soundRow.js'
 
 // Bipolar: the centre is unity gain (shared/volumeScale.js). Uncontrolled
 // on purpose - the Mixer doesn't re-render while dragging, and a controlled
@@ -32,7 +33,52 @@ export function VolumeSlider({ volume, onChange, onMove }) {
       onChangeRef.current(gain)
     }
     el.addEventListener('input', onInput)
-    return () => el.removeEventListener('input', onInput)
+
+    // Drag the knob sideways (a press without a drag is a click, which
+    // belongs to the card). The native thumb jump is cancelled so a click
+    // never changes the volume; arrow keys and double-click reset still work.
+    let drag = null
+    const onDown = (evt) => {
+      if (evt.button !== 0) return
+      evt.preventDefault()
+      el.focus({ preventScroll: true })
+      drag = { id: evt.pointerId, x: evt.clientX, from: Number(el.value) / SLIDER_STEPS, moved: false }
+    }
+    const onMovePtr = (evt) => {
+      if (!drag || evt.pointerId !== drag.id) return
+      const dx = evt.clientX - drag.x
+      if (!drag.moved) {
+        if (Math.abs(dx) <= DRAG_THRESHOLD_PX) return
+        drag.moved = true
+        el.setPointerCapture(drag.id)
+      }
+      el.value = String(Math.round(dragPosition(drag.from, dx) * SLIDER_STEPS))
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const onUp = (evt) => {
+      if (!drag || evt.pointerId !== drag.id) return
+      if (drag.moved) {
+        // A drag must not also flip the card in or out of the mix.
+        const swallow = (e) => {
+          e.stopPropagation()
+          e.preventDefault()
+        }
+        window.addEventListener('click', swallow, { capture: true, once: true })
+        setTimeout(() => window.removeEventListener('click', swallow, true), 0)
+      }
+      drag = null
+    }
+    el.addEventListener('pointerdown', onDown)
+    el.addEventListener('pointermove', onMovePtr)
+    el.addEventListener('pointerup', onUp)
+    el.addEventListener('pointercancel', onUp)
+    return () => {
+      el.removeEventListener('input', onInput)
+      el.removeEventListener('pointerdown', onDown)
+      el.removeEventListener('pointermove', onMovePtr)
+      el.removeEventListener('pointerup', onUp)
+      el.removeEventListener('pointercancel', onUp)
+    }
   }, [])
 
   // The wrapper carries the centre-tick marker (::after).

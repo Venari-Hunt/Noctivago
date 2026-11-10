@@ -118,3 +118,34 @@ export function groupBadgeColors(groupId, colorSlot) {
     color: `hsl(${hue}, 85%, ${light + 8}%)`
   }
 }
+
+// ---- Knob gestures (Desktop 2.0 step 3) ----
+// Positions are 0..1 on shared/volumeScale.js's curve; never a second scale.
+
+// A wheel is a "side-scroll" when it is mostly horizontal, or when Shift
+// turns a vertical wheel sideways. Plain vertical scrolling returns 0 so the
+// list still scrolls. Lines count as 40 px, like the mock.
+export function sideScrollDelta({ deltaX = 0, deltaY = 0, deltaMode = 0, shiftKey = false }) {
+  const unit = deltaMode === 1 ? 40 : 1
+  if (Math.abs(deltaX) > Math.abs(deltaY)) return deltaX * unit
+  return shiftKey ? deltaY * unit : 0
+}
+
+// 30 px of side-scroll is one percent of the knob's travel.
+export const WHEEL_PX_PER_PERCENT = 30
+// A drag of 160 px sweeps the whole arc. A felt value: the owner tunes it.
+export const DRAG_PX_PER_SWEEP = 160
+// Past this many pixels a press is a drag, not a click.
+export const DRAG_THRESHOLD_PX = 3
+
+export function clampPosition(pos) {
+  return Math.min(1, Math.max(0, pos))
+}
+
+export function wheelPosition(startPos, delta) {
+  return clampPosition(startPos + delta / WHEEL_PX_PER_PERCENT / 100)
+}
+
+export function dragPosition(startPos, dx) {
+  return clampPosition(startPos + dx / DRAG_PX_PER_SWEEP)
+}

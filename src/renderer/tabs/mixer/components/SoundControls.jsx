@@ -44,15 +44,17 @@ export function KnobLine({ entry, state, callbacks }) {
   )
 }
 
-// In Mix toggle and the level meter, at the card's foot. (Step 3 turns the
-// whole card into the switch; until then the button stays.)
+// The card itself is the in-mix switch (SoundRow's onCardClick). This button
+// is the keyboard and screen-reader twin: invisible until focused. Next to it,
+// the level meter.
 export function MixFoot({ id, state, callbacks }) {
   const { included, loading } = state
   return (
     <div className="sound-row-foot">
       <button
         type="button"
-        className={'btn btn-small' + (included ? ' btn-active' : '')}
+        className="btn btn-small sound-row-switch"
+        aria-pressed={included}
         disabled={loading}
         onClick={() => callbacks.onToggleIncluded(id)}
       >

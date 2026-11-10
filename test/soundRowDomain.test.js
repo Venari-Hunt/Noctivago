@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyTagSuggestion, matchingTags, mergeTypedTags } from '../src/renderer/tabs/mixer/domain/soundRow.js'
+import { applyTagSuggestion, matchingTags, mergeTypedTags, sideScrollDelta, wheelPosition, dragPosition } from '../src/renderer/tabs/mixer/domain/soundRow.js'
 import { buildSoundListSections } from '../src/renderer/tabs/mixer/domain/soundList.js'
 
 test('tag autocomplete only looks at the segment being typed and skips tags the sound has', () => {
@@ -61,4 +61,20 @@ test('Sound Group view puts ungrouped sounds in the mix in their own section on 
     sections.map((s) => [s.label, s.rows.map((r) => r.entry.id)]),
     [['Playing (ungrouped)', ['a', 'b']], ['Rain', ['c']], ['Ungrouped', ['d']]]
   )
+})
+
+test('side-scroll: horizontal wheel or Shift+wheel counts, plain vertical scroll does not', () => {
+  assert.equal(sideScrollDelta({ deltaX: 30, deltaY: 4 }), 30)
+  assert.equal(sideScrollDelta({ deltaX: 0, deltaY: 60 }), 0)
+  assert.equal(sideScrollDelta({ deltaX: 0, deltaY: 60, shiftKey: true }), 60)
+  assert.equal(sideScrollDelta({ deltaX: 2, deltaY: 0, deltaMode: 1 }), 80)
+})
+
+test('knob gestures move the position and stop at both ends', () => {
+  assert.equal(wheelPosition(0.5, 30), 0.51)
+  assert.equal(wheelPosition(0.995, 300), 1)
+  assert.equal(wheelPosition(0.01, -300), 0)
+  assert.equal(dragPosition(0.5, 80), 1)
+  assert.equal(dragPosition(0.5, -16), 0.4)
+  assert.equal(dragPosition(0.5, 1000), 1)
 })
