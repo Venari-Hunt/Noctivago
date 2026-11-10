@@ -6,11 +6,14 @@ import { gainToSlider, sliderToGain, DEFAULT_VOLUME, SLIDER_STEPS } from '../../
 // input would snap back. The native listener (not onChange) also catches the
 // app-wide double-click reset (core/sliderReset.js), which sets .value and
 // dispatches `input` itself; React's change tracking swallows that event.
-// defaultValue is the reset target, value is the live volume.
-export function VolumeSlider({ volume, onChange }) {
+// defaultValue is the reset target, value is the live volume. onMove (optional)
+// hears the gain on every render and every drag step, for a knob that mirrors it.
+export function VolumeSlider({ volume, onChange, onMove }) {
   const ref = useRef(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const onMoveRef = useRef(onMove)
+  onMoveRef.current = onMove
 
   // Every render, not only when `volume` changes: a drag doesn't re-render,
   // so the last rendered volume can be stale, and setting it back to that
@@ -18,11 +21,16 @@ export function VolumeSlider({ volume, onChange }) {
   useLayoutEffect(() => {
     const target = String(gainToSlider(volume))
     if (ref.current.value !== target) ref.current.value = target
+    onMoveRef.current?.(volume)
   })
 
   useEffect(() => {
     const el = ref.current
-    const onInput = () => onChangeRef.current(sliderToGain(el.value))
+    const onInput = () => {
+      const gain = sliderToGain(el.value)
+      onMoveRef.current?.(gain)
+      onChangeRef.current(gain)
+    }
     el.addEventListener('input', onInput)
     return () => el.removeEventListener('input', onInput)
   }, [])

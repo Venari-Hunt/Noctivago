@@ -94,3 +94,36 @@ export function TrashIcon() {
     </svg>
   )
 }
+
+// Play-type icons on the Mixer cards: the knob's center and the mode line.
+export function RepeatIcon({ size = 14 }) {
+  return (
+    <svg {...stroke(size)}>
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+    </svg>
+  )
+}
+
+export function ShuffleIcon({ size = 14 }) {
+  return (
+    <svg {...stroke(size)}>
+      <path d="m18 14 4 4-4 4" />
+      <path d="m18 2 4 4-4 4" />
+      <path d="M2 18h1.97a4 4 0 0 0 3.25-1.68l5.56-7.64A4 4 0 0 1 16.03 7H22" />
+      <path d="M2 6h1.97a4 4 0 0 1 3.25 1.68l.74 1.02" />
+      <path d="M22 18h-5.97a4 4 0 0 1-3.25-1.68l-.74-1.02" />
+    </svg>
+  )
+}
+
+export function ClockIcon({ size = 14 }) {
+  return (
+    <svg {...stroke(size)}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </svg>
+  )
+}

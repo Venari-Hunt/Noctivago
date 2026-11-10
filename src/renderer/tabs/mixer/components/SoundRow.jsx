@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { formatMeta, groupBadgeColors } from '../domain/soundRow.js'
 import { SoundName } from './SoundName.jsx'
 import { SoundTags } from './SoundTags.jsx'
-import { MissingControls, SoundControls } from './SoundControls.jsx'
+import { KnobLine, MissingControls, MixFoot } from './SoundControls.jsx'
+import { PLAY_TYPES, playTypeOf } from './VolumeKnob.jsx'
 import { PlayIcon, TrashIcon } from '../../../components/icons.jsx'
 
 // Composite and Freesound sounds play like any other; the badge says where
@@ -51,32 +52,38 @@ function GroupBadge({ name, id, colorSlot, onOpenMenu }) {
   )
 }
 
-// Pinned top-right so they sit in the same spot on every card.
-function RowActions({ entry, callbacks }) {
+// Corner buttons, shown on hover or focus: test shot top-left, remove top-right.
+function RowCorners({ entry, callbacks }) {
   // Scatter and scheduled sounds only: fire one shot now to test the
   // settings, whether or not the sound is in the mix.
   const canTestFire = entry.status !== 'missing' && (entry.playMode === 'scatter' || entry.playMode === 'scheduled')
   return (
-    <div className="sound-row-actions">
-      {canTestFire && (
+    <>
+      <div className="sound-row-corner sound-row-corner-l">
+        {canTestFire && (
+          <button
+            type="button"
+            className="btn btn-small btn-svg-icon"
+            title="Play one shot now (test this configuration)"
+            aria-label="Play one shot now"
+            onClick={() => callbacks.onTestFire(entry.id)}
+          >
+            <PlayIcon />
+          </button>
+        )}
+      </div>
+      <div className="sound-row-corner sound-row-corner-r">
         <button
           type="button"
-          className="btn btn-small btn-svg-icon"
-          title="Play one shot now (test this configuration)"
-          onClick={() => callbacks.onTestFire(entry.id)}
+          className="btn btn-small btn-svg-icon sound-row-remove"
+          title="Remove from library"
+          aria-label="Remove from library"
+          onClick={() => callbacks.onRemove(entry.id)}
         >
-          <PlayIcon />
+          <TrashIcon />
         </button>
-      )}
-      <button
-        type="button"
-        className="btn btn-small btn-svg-icon sound-row-remove"
-        title="Remove from library"
-        onClick={() => callbacks.onRemove(entry.id)}
-      >
-        <TrashIcon />
-      </button>
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -106,13 +113,16 @@ function useRowDrag(entry, draggable, callbacks) {
   }
 }
 
-// One card: name line, meta + tags, controls (see main.css's three-line
-// .sound-row layout).
+// One knob card, one centered column: corner buttons, mute / knob / solo,
+// name, play type, length and size, badges and tags, In Mix and the level
+// meter (see main.css's .sound-row).
 export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequest }) {
   const missing = entry.status === 'missing'
   const drag = useRowDrag(entry, draggable, callbacks)
   const className = [
     'sound-row',
+    state.included && 'sound-row-on',
+    state.muted && 'sound-row-muted',
     missing && 'sound-row-missing',
     state.selectMode && 'sound-row-selectable',
     state.selected && 'sound-row-selected',
@@ -122,6 +132,7 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
     .filter(Boolean)
     .join(' ')
   const openMenu = (evt) => callbacks.onContextMenu(entry.id, evt)
+  const playType = PLAY_TYPES[playTypeOf(entry)]
 
   return (
     <li
@@ -138,21 +149,30 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
           <input type="checkbox" checked={state.selected} onChange={() => callbacks.onToggleSelect(entry.id)} />
         </label>
       )}
+      <RowCorners entry={entry} callbacks={callbacks} />
+      {!missing && <KnobLine entry={entry} state={state} callbacks={callbacks} />}
       <div className="sound-row-name-row">
         <SoundName
           name={entry.name}
           editToken={editRequest?.field === 'name' ? editRequest.token : 0}
           onRename={(name) => callbacks.onRename(entry.id, name)}
         />
+      </div>
+      {!missing && (
+        <div className="sound-row-mode">
+          <playType.Icon size={12} />
+          <span>{playType.label}</span>
+        </div>
+      )}
+      <div className="sound-row-meta-line">
+        <span className="sound-row-meta">{formatMeta(entry)}</span>
+        {state.error && <span className="sound-row-error">{state.error}</span>}
+      </div>
+      <div className="sound-row-info">
         <SourceBadges entry={entry} />
         {state.groupName && (
           <GroupBadge key={state.groupName} name={state.groupName} id={state.groupId} colorSlot={state.groupColorSlot} onOpenMenu={openMenu} />
         )}
-        <RowActions entry={entry} callbacks={callbacks} />
-      </div>
-      <div className="sound-row-info">
-        <span className="sound-row-meta">{formatMeta(entry)}</span>
-        {state.error && <span className="sound-row-error">{state.error}</span>}
         <SoundTags
           tags={entry.tags ?? []}
           allTags={allTags}
@@ -163,7 +183,7 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
       {missing ? (
         <MissingControls onRelink={() => callbacks.onRelink(entry.id)} />
       ) : (
-        <SoundControls id={entry.id} state={state} callbacks={callbacks} />
+        <MixFoot id={entry.id} state={state} callbacks={callbacks} />
       )}
     </li>
   )

@@ -1,4 +1,4 @@
-import { VolumeSlider } from './VolumeSlider.jsx'
+import { VolumeKnob, playTypeOf } from './VolumeKnob.jsx'
 import { LinkIcon, MuteIcon, VolumeIcon } from '../../../components/icons.jsx'
 
 export function MissingControls({ onRelink }) {
@@ -12,11 +12,44 @@ export function MissingControls({ onRelink }) {
   )
 }
 
-// In Mix / volume / level meter / mute / solo, one grid row (main.css).
-export function SoundControls({ id, state, callbacks }) {
-  const { included, loading, volume, muted, soloed } = state
+// Mute, the volume knob, solo: one centered line (main.css .sound-row-knobs).
+// Mute and solo only show on a sound that is in the mix.
+export function KnobLine({ entry, state, callbacks }) {
+  const { volume, muted, soloed } = state
+  const id = entry.id
   return (
-    <div className="sound-row-controls">
+    <div className="sound-row-knobs">
+      <button
+        type="button"
+        className={'btn btn-svg-icon sound-row-tool' + (muted ? ' btn-svg-icon-active' : '')}
+        title={muted ? 'Unmute' : 'Mute'}
+        aria-pressed={muted}
+        onClick={() => callbacks.onToggleMute(id)}
+      >
+        {muted ? <MuteIcon /> : <VolumeIcon />}
+      </button>
+      <VolumeKnob volume={volume} muted={muted} playType={playTypeOf(entry)} onChange={(gain) => callbacks.onVolumeChange(id, gain)} />
+      {/* "S" like a DAW's solo button. Accent when active, not the mute red:
+          soloed means audible on purpose. */}
+      <button
+        type="button"
+        className={'btn btn-svg-icon sound-row-tool sound-row-solo' + (soloed ? ' btn-svg-icon-solo-active' : '')}
+        title={soloed ? 'Unsolo' : 'Solo (mute every other sound)'}
+        aria-pressed={soloed}
+        onClick={() => callbacks.onToggleSolo(id)}
+      >
+        S
+      </button>
+    </div>
+  )
+}
+
+// In Mix toggle and the level meter, at the card's foot. (Step 3 turns the
+// whole card into the switch; until then the button stays.)
+export function MixFoot({ id, state, callbacks }) {
+  const { included, loading } = state
+  return (
+    <div className="sound-row-foot">
       <button
         type="button"
         className={'btn btn-small' + (included ? ' btn-active' : '')}
@@ -25,29 +58,10 @@ export function SoundControls({ id, state, callbacks }) {
       >
         {loading ? 'Loading…' : included ? 'In Mix' : 'Add'}
       </button>
-      <VolumeSlider volume={volume} onChange={(gain) => callbacks.onVolumeChange(id, gain)} />
       {/* Painted by ui/levelMeters.js, outside React. */}
       <span className="level-meter" data-meter-sound={id}>
         <span className="level-meter-fill" />
       </span>
-      <button
-        type="button"
-        className={'btn btn-svg-icon' + (muted ? ' btn-svg-icon-active' : '')}
-        title={muted ? 'Unmute' : 'Mute'}
-        onClick={() => callbacks.onToggleMute(id)}
-      >
-        {muted ? <MuteIcon /> : <VolumeIcon />}
-      </button>
-      {/* "S" like a DAW's solo button. Accent when active, not the mute red:
-          soloed means audible on purpose. */}
-      <button
-        type="button"
-        className={'btn btn-svg-icon sound-row-solo' + (soloed ? ' btn-svg-icon-solo-active' : '')}
-        title={soloed ? 'Unsolo' : 'Solo (mute every other sound)'}
-        onClick={() => callbacks.onToggleSolo(id)}
-      >
-        S
-      </button>
     </div>
   )
 }
