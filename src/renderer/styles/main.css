@@ -3027,3 +3027,34 @@ main {
   background: var(--surface-hover);
   color: var(--text);
 }
+
+/* Narrow windows: the rail's tools drop to their own row under the title so nothing overlaps. */
+.presets-autosave {
+  white-space: nowrap;
+}
+
+.presets-tools {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+  .presets-host[data-view='rail'] .presets-panel {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title close'
+      'tools tools'
+      'name name'
+      'note note'
+      'list list';
+    padding: var(--space-3) var(--space-3) 0 var(--space-4);
+  }
+
+  .presets-host[data-view='rail'] .presets-tools {
+    justify-self: stretch;
+    justify-content: space-between;
+  }
+
+  .presets-host[data-view='rail'] .preset-cards {
+    padding-right: var(--space-4);
+  }
+}
