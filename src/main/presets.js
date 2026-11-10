@@ -357,6 +357,43 @@ export function ensureDefaultPreset(fallbackSounds = []) {
   return savePreset({ name: 'Default', sounds: fallbackSounds, wholeMix: null, groups: [] })
 }
 
+// Desktop 2.0 (Presets rail/gallery card menu). Rename keeps everything else;
+// an empty or unknown name is refused (null). Duplicate copies the preset under
+// a free "(copy)" name with a new id and today's date; the caller loads it.
+export function renamePreset(id, name) {
+  const clean = typeof name === 'string' ? name.trim() : ''
+  if (!clean) return null
+  const presets = store.get('presets')
+  const preset = presets.find((p) => p.id === id)
+  if (!preset) return null
+  preset.name = clean
+  store.set('presets', presets)
+  return preset
+}
+
+export function duplicatePresetName(name, existingNames) {
+  const taken = new Set(existingNames)
+  const base = name.replace(/ \(copy(?: \d+)?\)$/, '')
+  let candidate = `${base} (copy)`
+  for (let n = 2; taken.has(candidate); n++) candidate = `${base} (copy ${n})`
+  return candidate
+}
+
+export function duplicatePreset(id) {
+  const presets = store.get('presets')
+  const source = presets.find((p) => p.id === id)
+  if (!source) return null
+  const copy = {
+    ...structuredClone(source),
+    id: crypto.randomUUID(),
+    name: duplicatePresetName(source.name, presets.map((p) => p.name)),
+    createdAt: new Date().toISOString()
+  }
+  presets.push(copy)
+  store.set('presets', presets)
+  return copy
+}
+
 // Returns the auto-created replacement Default preset when this deletion
 // empties the list (see ensureDefaultPreset), or null when other presets
 // remain (the renderer decides what to do in that case - see

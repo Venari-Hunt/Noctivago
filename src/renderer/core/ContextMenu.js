@@ -5,7 +5,7 @@
 // Single active instance at a time (a second call closes whatever's open) -
 // this app never needs two context menus open at once.
 
-import { menuIconSvg } from './menuIcons.js'
+import { menuIconSvg, filledIconSvg } from './menuIcons.js'
 
 let activeMenu = null
 let activeSubmenu = null
@@ -70,7 +70,7 @@ function buildMenu(x, y, items, { isSubmenu = false } = {}) {
     if (hasIcons) {
       const icon = document.createElement('span')
       icon.className = 'context-menu-icon'
-      icon.innerHTML = menuIconSvg(item.icon)
+      icon.innerHTML = menuIconSvg(item.icon) || filledIconSvg(item.icon)
       btn.appendChild(icon)
     }
     const label = document.createElement('span')

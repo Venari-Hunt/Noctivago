@@ -26,7 +26,7 @@ import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { pluginMigrationSettled, takeStartupNotices } from './plugins/migration.js'
 import * as pluginStore from './plugins/store.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setSleepTimerAutoStartEnabled, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumeGain, setLastActivePresetId, setPresetAutosaveEnabled, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setSleepTimerAutoStartEnabled, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumeGain, setLastActivePresetId, setPresetAutosaveEnabled, setPresetsView, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
 import {
   getSleepTimer,
   startSleepTimer,
@@ -107,6 +107,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setGlobalVolumeGain', (_event, gain) => setGlobalVolumeGain(gain))
   ipcMain.handle('settings:setLastActivePresetId', (_event, id) => setLastActivePresetId(id))
   ipcMain.handle('settings:setPresetAutosaveEnabled', (_event, enabled) => setPresetAutosaveEnabled(enabled))
+  ipcMain.handle('settings:setPresetsView', (_event, view) => setPresetsView(view))
 
   ipcMain.handle('settings:setSleepTimerAutoStartEnabled', (_event, enabled) => setSleepTimerAutoStartEnabled(enabled))
   ipcMain.handle('sleepTimer:get', () => getSleepTimer())
@@ -199,6 +200,8 @@ export function registerIpcHandlers() {
   ipcMain.handle('presets:list', () => presets.listPresets())
   ipcMain.handle('presets:save', (_event, payload) => presets.savePreset(payload))
   ipcMain.handle('presets:delete', (_event, id) => presets.deletePreset(id))
+  ipcMain.handle('presets:rename', (_event, id, name) => presets.renamePreset(id, name))
+  ipcMain.handle('presets:duplicate', (_event, id) => presets.duplicatePreset(id))
   ipcMain.handle('presets:updateWholeMix', (_event, id, wholeMix) => presets.updatePresetWholeMix(id, wholeMix))
   ipcMain.handle('presets:updateSounds', (_event, id, sounds) => presets.updatePresetSounds(id, sounds))
   ipcMain.handle('presets:updateGroups', (_event, id, groups) => presets.updatePresetGroups(id, groups, { markIncluded: library.updateIncluded }))

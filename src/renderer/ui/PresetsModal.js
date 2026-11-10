@@ -1,56 +1,92 @@
-export function renderPresetList(listEl, presets, callbacks) {
-  listEl.innerHTML = ''
+import { mockIconSvg } from '../components/mockIcons.jsx'
 
-  if (presets.length === 0) {
-    const empty = document.createElement('li')
-    empty.className = 'preset-list-empty'
-    empty.textContent = 'No presets saved yet.'
-    listEl.appendChild(empty)
-    return
-  }
+// Draws the Presets rail / gallery cards (Desktop 2.0, mock screens "presets" and
+// "presets-gallery"). `cards` come from tabs/mixer/domain/presetCard.js. Each card
+// loads its preset on click or Enter; the corner button opens the card menu
+// (rename, duplicate, export, delete); the last card saves the current mix as new.
+export function renderPresetCards(listEl, cards, { activeId, onLoad, onMenu, onSaveNew }) {
+  listEl.replaceChildren()
 
-  for (const preset of presets) {
-    const li = document.createElement('li')
-    li.className = 'preset-row'
+  for (const card of cards) {
+    const el = document.createElement('div')
+    el.className = 'pcard' + (card.id === activeId ? ' cur' : '')
+    el.setAttribute('role', 'button')
+    el.tabIndex = 0
+    el.setAttribute('aria-label', `Load ${card.name}`)
+    el.dataset.presetId = card.id
 
-    const name = document.createElement('span')
-    name.className = 'preset-row-name'
-    name.textContent = preset.name
-    name.title = preset.name
-    li.appendChild(name)
+    const corner = document.createElement('div')
+    corner.className = 'pcard-corner'
+    const more = document.createElement('button')
+    more.type = 'button'
+    more.className = 'pcard-more'
+    more.title = 'Rename, duplicate, export, delete'
+    more.setAttribute('aria-label', `More for ${card.name}`)
+    more.innerHTML = mockIconSvg('ellipsis', 16)
+    more.addEventListener('click', (event) => {
+      event.stopPropagation()
+      const rect = more.getBoundingClientRect()
+      onMenu(card, rect.left, rect.bottom + 4)
+    })
+    corner.appendChild(more)
+    el.appendChild(corner)
 
-    const actions = document.createElement('div')
-    actions.className = 'preset-row-actions'
-    li.appendChild(actions)
-
-    const loadBtn = document.createElement('button')
-    loadBtn.className = 'btn btn-small btn-primary btn-icon-text'
-    loadBtn.type = 'button'
-    loadBtn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Load'
-    loadBtn.addEventListener('click', () => callbacks.onLoad(preset))
-    actions.appendChild(loadBtn)
-
-    if (callbacks.onExport) {
-      const exportBtn = document.createElement('button')
-      exportBtn.className = 'btn btn-small btn-icon-text'
-      exportBtn.type = 'button'
-      exportBtn.innerHTML =
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Export'
-      exportBtn.addEventListener('click', () => callbacks.onExport(preset))
-      actions.appendChild(exportBtn)
+    const print = document.createElement('div')
+    print.className = 'pcard-print'
+    print.setAttribute('aria-hidden', 'true')
+    for (const bar of card.bars) {
+      const i = document.createElement('i')
+      i.className = bar.event ? 'ev' : 'lp'
+      i.style.height = `${bar.height}px`
+      print.appendChild(i)
     }
+    el.appendChild(print)
 
-    const deleteBtn = document.createElement('button')
-    deleteBtn.className = 'btn btn-small btn-danger btn-icon-text'
-    deleteBtn.type = 'button'
-    deleteBtn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg> Delete'
-    deleteBtn.addEventListener('click', () => callbacks.onDelete(preset.id))
-    actions.appendChild(deleteBtn)
+    const name = document.createElement('div')
+    name.className = 'pcard-name'
+    name.textContent = card.name
+    name.title = card.name
+    el.appendChild(name)
 
-    listEl.appendChild(li)
+    const meta = document.createElement('div')
+    meta.className = 'pcard-meta'
+    meta.textContent = card.modeText ? `${card.countText} · ${card.modeText}` : card.countText
+    el.appendChild(meta)
+
+    const chips = document.createElement('div')
+    chips.className = 'pcard-chips'
+    for (const tag of card.tags) {
+      const chip = document.createElement('span')
+      chip.className = 'pcard-chip'
+      chip.textContent = tag
+      chips.appendChild(chip)
+    }
+    el.appendChild(chips)
+
+    const state = document.createElement('div')
+    state.className = 'pcard-state'
+    if (card.id === activeId) state.innerHTML = mockIconSvg('check', 14) + 'Loaded'
+    else state.textContent = card.createdText
+    el.appendChild(state)
+
+    el.addEventListener('click', () => onLoad(card.id))
+    el.addEventListener('keydown', (event) => {
+      if (event.target !== el) return
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        onLoad(card.id)
+      }
+    })
+    listEl.appendChild(el)
   }
+
+  const save = document.createElement('button')
+  save.type = 'button'
+  save.className = 'pcard pcard-save'
+  save.title = 'Save everything in the mix (sounds, whole-mix filters, Sound Groups) as a new preset'
+  save.innerHTML = mockIconSvg('save', 24) + '<b>Save mix as new</b><span>Keeps these sounds and volumes</span>'
+  save.addEventListener('click', onSaveNew)
+  listEl.appendChild(save)
 }
 
 // Renders the per-sound status list inside the "Import preset" dialog. Each

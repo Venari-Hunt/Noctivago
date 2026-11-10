@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeWholeMix, normalizeGroupFilters, normalizeGroups, updatePresetGroups, savePreset, deletePreset } from '../src/main/presets.js'
+import { listPresets, normalizeWholeMix, normalizeGroupFilters, normalizeGroups, updatePresetGroups, savePreset, deletePreset, renamePreset, duplicatePreset, duplicatePresetName } from '../src/main/presets.js'
 
 describe('normalizeWholeMix', () => {
   test('null/undefined/non-object input is null', () => {
@@ -218,5 +218,39 @@ describe('updatePresetGroups: joining a group also joins the mix', () => {
     } finally {
       deletePreset(preset.id)
     }
+  })
+})
+
+describe('Desktop 2.0 card menu: rename and duplicate', () => {
+  test('renamePreset trims the name and refuses an empty one', () => {
+    const preset = savePreset({ name: 'probe-rename', sounds: [], wholeMix: null, groups: [] })
+    try {
+      assert.equal(renamePreset(preset.id, '   '), null)
+      assert.equal(renamePreset('no-such-id', 'x'), null)
+      assert.equal(renamePreset(preset.id, '  probe-renamed  ').name, 'probe-renamed')
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('duplicatePreset copies sounds under a free "(copy)" name with a new id', () => {
+    for (const p of listPresets()) if (p.name.startsWith('probe-dup')) deletePreset(p.id)
+    const preset2 = savePreset({ name: 'probe-dup', sounds: [{ soundId: 's1', volume: 0.7, overrides: null }], wholeMix: null, groups: [] })
+    let copy
+    try {
+      copy = duplicatePreset(preset2.id)
+      assert.notEqual(copy.id, preset2.id)
+      assert.equal(copy.name, 'probe-dup (copy)')
+      assert.equal(copy.sounds[0].volume, 0.7)
+      assert.equal(duplicatePreset(preset2.id).name, 'probe-dup (copy 2)')
+      assert.equal(duplicatePreset('no-such-id'), null)
+    } finally {
+      for (const p of listPresets()) if (p.name.startsWith('probe-dup')) deletePreset(p.id)
+    }
+  })
+
+  test('duplicatePresetName skips taken names and strips an existing suffix', () => {
+    assert.equal(duplicatePresetName('Rain', []), 'Rain (copy)')
+    assert.equal(duplicatePresetName('Rain (copy)', ['Rain (copy)']), 'Rain (copy 2)')
   })
 })

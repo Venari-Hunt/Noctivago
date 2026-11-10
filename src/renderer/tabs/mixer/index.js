@@ -6,7 +6,8 @@ import { BufferScheduledSource, StreamScheduledSource } from '../../audio/Schedu
 import { sortForDisplay, SORT_MODES, GROUP_MODES } from './domain/soundList.js'
 import { soundMenuItems, presetMenuItems, togglePresetSound, REMOVE_MENU_ITEM, duplicateName } from './domain/soundMenu.js'
 import { renderSoundList } from './components/SoundList.jsx'
-import { renderPresetList, renderPresetImportList } from '../../ui/PresetsModal.js'
+import { renderPresetCards, renderPresetImportList } from '../../ui/PresetsModal.js'
+import { presetCardData } from './domain/presetCard.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
 import { openRecordDialog } from '../../core/RecordDialog.js'
 import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
@@ -149,11 +150,13 @@ const els = {
   presetsModal: document.getElementById('presets-modal'),
   updateActivePresetBtn: document.getElementById('update-active-preset'),
   updateActivePresetLabel: document.getElementById('update-active-preset-label'),
-  presetAutosaveNote: document.getElementById('preset-autosave-note'),
   presetAutosaveToggle: document.getElementById('preset-autosave-toggle'),
   newPresetName: document.getElementById('new-preset-name'),
   newPresetBlankBtn: document.getElementById('new-preset-blank'),
-  savePresetBtn: document.getElementById('save-preset'),
+  presetsScrim: document.getElementById('presets-scrim'),
+  presetNameRow: document.getElementById('preset-name-row'),
+  presetNameConfirm: document.getElementById('preset-name-confirm'),
+  presetNameCancel: document.getElementById('preset-name-cancel'),
   presetSaveHint: document.getElementById('preset-save-hint'),
   presetList: document.getElementById('preset-list'),
   presetsClose: document.getElementById('presets-close'),
@@ -1644,10 +1647,15 @@ els.addFolderTagConfirm.addEventListener('click', async () => {
 
 async function refreshPresetList() {
   const presets = await api.presets.list()
-  renderPresetList(els.presetList, presets, {
-    onLoad: loadPreset,
-    onDelete: deletePreset,
-    onExport: exportPreset
+  const libraryById = new Map(state.library.map((entry) => [entry.id, entry]))
+  renderPresetCards(els.presetList, presets.map((preset) => presetCardData(preset, libraryById)), {
+    activeId: state.activePresetId,
+    onLoad: (id) => {
+      const preset = presets.find((p) => p.id === id)
+      if (preset) loadPreset(preset)
+    },
+    onMenu: (card, x, y) => openPresetCardMenu(presets.find((p) => p.id === card.id), x, y),
+    onSaveNew: () => openPresetNameRow('save')
   })
   updateActivePresetButtonState(presets)
 }
@@ -1661,12 +1669,9 @@ function updateActivePresetButtonState(presets) {
   setActivePresetIndicator(active?.name ?? null)
   if (!active) {
     els.updateActivePresetBtn.classList.add('hidden')
-    els.presetAutosaveNote.classList.add('hidden')
     return
   }
   els.updateActivePresetBtn.classList.remove('hidden')
-  els.presetAutosaveNote.classList.remove('hidden')
-  updatePresetAutosaveNoteText()
   els.updateActivePresetLabel.textContent = `Save "${active.name}" now`
 }
 
@@ -1677,6 +1682,51 @@ function updateActivePresetButtonState(presets) {
 // plus updateActivePresetButtonState above for renames / external edits.
 function setActivePresetIndicator(name) {
   updateToolbar({ presetName: name || null })
+}
+
+function openPresetCardMenu(preset, x, y) {
+  if (!preset) return
+  openContextMenu(x, y, [
+    { label: 'Rename…', icon: 'pencil', onClick: () => openPresetNameRow('rename', preset) },
+    {
+      label: 'Duplicate',
+      icon: 'copy',
+      onClick: async () => {
+        const copy = await api.presets.duplicate(preset.id)
+        if (!copy) return
+        setPresetHint(`Duplicated as "${copy.name}".`)
+        await refreshPresetList()
+      }
+    },
+    { label: 'Export preset file', icon: 'upload', onClick: () => exportPreset(preset) },
+    { separator: true },
+    { label: 'Delete', icon: 'trash-2', onClick: () => deletePreset(preset.id) }
+  ])
+}
+
+function setPresetHint(text, ok = true) {
+  els.presetSaveHint.classList.toggle('ok', ok)
+  els.presetSaveHint.textContent = text
+}
+
+// The name row under the title: one input for the three actions that need a
+// name - save the mix as new, new blank, rename. Nothing is saved until Save.
+let presetNameMode = null
+function openPresetNameRow(mode, preset = null) {
+  presetNameMode = { mode, presetId: preset?.id ?? null }
+  els.presetSaveHint.textContent = ''
+  els.newPresetName.value = mode === 'rename' ? (preset?.name ?? '') : ''
+  els.newPresetName.placeholder = 'Preset name'
+  els.presetNameConfirm.textContent = mode === 'rename' ? 'Rename' : mode === 'blank' ? 'Create' : 'Save'
+  els.presetNameRow.classList.remove('hidden')
+  els.newPresetName.focus()
+  els.newPresetName.select()
+}
+
+function closePresetNameRow() {
+  presetNameMode = null
+  els.presetNameRow.classList.add('hidden')
+  els.newPresetName.value = ''
 }
 
 async function exportPreset(preset) {
@@ -1698,6 +1748,9 @@ async function exportPreset(preset) {
 async function openPresetsModal() {
   els.presetSaveHint.textContent = ''
   els.presetSaveHint.classList.remove('ok')
+  closePresetNameRow()
+  const { presetsView } = await api.settings.get()
+  els.presetsModal.dataset.view = presetsView === 'gallery' ? 'gallery' : 'rail'
   // Make sure the list about to be rendered reflects any just-made mix edit
   // that's still inside the autosave debounce window.
   await flushPresetAutosave()
@@ -1714,6 +1767,14 @@ setToolbarHandlers({
 })
 
 els.presetsClose.addEventListener('click', () => hideModal(els.presetsModal))
+els.presetsScrim.addEventListener('click', () => hideModal(els.presetsModal))
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || els.presetsModal.classList.contains('hidden')) return
+  // The card menu and an open name row take Escape first.
+  if (document.querySelector('.context-menu')) return
+  if (presetNameMode) closePresetNameRow()
+  else hideModal(els.presetsModal)
+})
 
 // Shared by both the "Save changes" (update-in-place) and "Save as new
 // preset" (always creates) buttons - the currently-included sounds/volumes,
@@ -1768,11 +1829,6 @@ let presetAutosaveTimer = null
 // autosaveActivePreset() can fire on every volume drag.
 let presetAutosaveUserEnabled = true
 
-function updatePresetAutosaveNoteText() {
-  els.presetAutosaveNote.textContent = presetAutosaveUserEnabled
-    ? 'Changes to the loaded preset save automatically as you edit the mix.'
-    : 'Autosave is off - use "Save … now" below to update this preset by hand.'
-}
 
 // BUG FIX (v0.1.223): state.activePresetSounds used to be set only when a
 // preset loaded, so it went stale as soon as the mix changed (a sound added
@@ -1832,26 +1888,16 @@ els.updateActivePresetBtn.addEventListener('click', async () => {
   await refreshPresetList()
 })
 
-els.savePresetBtn.addEventListener('click', async () => {
-  const name = els.newPresetName.value.trim()
-  if (!name) {
-    els.newPresetName.focus()
-    els.newPresetName.placeholder = 'Enter a name first'
-    return
-  }
-  if (state.included.size === 0) {
-    els.presetSaveHint.classList.remove('ok')
-    els.presetSaveHint.textContent = 'Add at least one sound to the mix before saving a preset.'
-    return
-  }
-  els.presetSaveHint.textContent = ''
-  // BUG FIX (reported directly, "obviously a bug"): this used to send only
-  // `sounds`, so saving the current mix as a new preset silently dropped
-  // whatever whole-mix filters/EQ and Sound Groups the currently-loaded
-  // preset had. state.groups already tracks "the active preset's groups, or
-  // [] if none" (see loadPresetInner/deletePreset); wholeMix isn't cached in
-  // state at all (it's applied straight onto the live engine.wholeMix node),
-  // so it's re-fetched from the active preset's own record here.
+// Save the current mix as a new preset (the "Save mix as new" card), start a
+// blank one (New blank), or rename: all three share the name row.
+//
+// BUG FIX (reported directly, "obviously a bug"): saving the mix as new used to
+// send only `sounds`, silently dropping whatever whole-mix filters/EQ and Sound
+// Groups the loaded preset had. state.groups already tracks "the active preset's
+// groups, or [] if none"; wholeMix isn't cached in state (it's applied straight
+// onto the live engine.wholeMix node), so it's re-fetched from the active
+// preset's own record here.
+async function saveMixAsNewPreset(name) {
   const activePreset = state.activePresetId
     ? (await api.presets.list()).find((p) => p.id === state.activePresetId)
     : null
@@ -1864,34 +1910,53 @@ els.savePresetBtn.addEventListener('click', async () => {
     wholeMix: activePreset?.wholeMix ?? null,
     groups: state.groups
   })
-  els.newPresetName.value = ''
   await refreshPresetList()
-})
+}
 
 // Owner inbox (2026-09-12): "creating a new preset there should be 2
-// options" - a clean-slate preset alongside the existing (now-renamed,
-// same note) "based on the current mix" save above. Always empty regardless
-// of what's currently in the mix, then loaded like any other preset (via
-// the same loadPreset every other entry point uses) so the Mixer actually
-// clears down to nothing, ready to build up from scratch.
-els.newPresetBlankBtn.addEventListener('click', async () => {
+// options" - a clean-slate preset alongside "based on the current mix". Always
+// empty regardless of the mix, then loaded like any other preset (via the same
+// loadPreset every other entry point uses) so the Mixer clears down to nothing.
+async function createBlankPreset(name) {
+  const created = await api.presets.save({ name, sounds: [], wholeMix: null, groups: [] })
+  await refreshPresetList()
+  if (created) await loadPreset(created)
+}
+
+async function confirmPresetName() {
+  if (!presetNameMode) return
   const name = els.newPresetName.value.trim()
   if (!name) {
     els.newPresetName.focus()
     els.newPresetName.placeholder = 'Enter a name first'
     return
   }
+  const { mode, presetId } = presetNameMode
+  if (mode === 'save' && state.included.size === 0) {
+    setPresetHint('Add at least one sound to the mix before saving a preset.', false)
+    return
+  }
+  closePresetNameRow()
   els.presetSaveHint.textContent = ''
-  const created = await api.presets.save({ name, sounds: [], wholeMix: null, groups: [] })
-  els.newPresetName.value = ''
-  await refreshPresetList()
-  if (created) await loadPreset(created)
+  if (mode === 'save') await saveMixAsNewPreset(name)
+  else if (mode === 'blank') await createBlankPreset(name)
+  else {
+    const renamed = await api.presets.rename(presetId, name)
+    if (!renamed) setPresetHint('Could not rename - that preset may have been deleted.', false)
+    await refreshPresetList()
+  }
+}
+
+els.presetNameConfirm.addEventListener('click', confirmPresetName)
+els.presetNameCancel.addEventListener('click', closePresetNameRow)
+els.newPresetName.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') confirmPresetName()
 })
+els.newPresetBlankBtn.addEventListener('click', () => openPresetNameRow('blank'))
 
 els.presetAutosaveToggle.addEventListener('change', () => {
   presetAutosaveUserEnabled = els.presetAutosaveToggle.checked
   api.settings.setPresetAutosaveEnabled(presetAutosaveUserEnabled)
-  updatePresetAutosaveNoteText()
 })
 
 // Only touches sounds that actually changed between the current mix and the
@@ -2298,7 +2363,6 @@ export function mount(container) {
     applyGlobalVolume()
     presetAutosaveUserEnabled = settings.presetAutosaveEnabled
     els.presetAutosaveToggle.checked = presetAutosaveUserEnabled
-    updatePresetAutosaveNoteText()
     await refreshList()
     await restoreLastActivePreset(settings)
     await maybeResumeOnLaunch(settings)

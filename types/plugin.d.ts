@@ -300,6 +300,8 @@ export interface NoctivagoApi {
     list(): Promise<Preset[]>
     save(payload: Payload): Promise<any>
     delete(id: string): Promise<any>
+    rename(id: string, name: string): Promise<any>
+    duplicate(id: string): Promise<any>
     updateWholeMix(id: string, wholeMix: Payload): Promise<any>
     updateSounds(id: string, sounds: any[]): Promise<any>
     updateGroups(id: string, groups: any[]): Promise<any>

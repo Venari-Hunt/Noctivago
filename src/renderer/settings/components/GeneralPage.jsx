@@ -32,6 +32,14 @@ export function GeneralPage({ settings, api }) {
 
   return (
     <>
+      <h3 className="settings-page-heading">Appearance</h3>
+      <SettingItem name="Presets open as" description="Rail keeps the Mixer in view. Gallery opens a window over it.">
+        <div className="preset-view-seg" role="group" aria-label="Presets open as">
+          <button type="button" aria-pressed={settings.presetsView !== 'gallery'} onClick={() => api.update((s) => s.setPresetsView('rail'))}>Rail</button>
+          <button type="button" aria-pressed={settings.presetsView === 'gallery'} onClick={() => api.update((s) => s.setPresetsView('gallery'))}>Gallery</button>
+        </div>
+      </SettingItem>
+
       <h3 className="settings-page-heading">Updates</h3>
       <SettingItem name="Check for updates">
         <button className="btn" type="button" onClick={openUpdateModal}>Check now…</button>

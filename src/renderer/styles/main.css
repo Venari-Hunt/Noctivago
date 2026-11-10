@@ -1597,27 +1597,9 @@ main {
   margin-top: 16px;
 }
 
-#update-active-preset {
-  width: 100%;
-  justify-content: center;
-  margin-bottom: 12px;
-}
 
-.preset-save-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
 
-.preset-autosave-toggle-row {
-  margin-bottom: 8px;
-}
 
-.preset-save-row input[type='text'] {
-  flex: 1;
-  min-width: 140px;
-}
 
 .preset-save-hint {
   margin: -10px 0 12px;
@@ -1784,46 +1766,15 @@ main {
   color: var(--danger);
 }
 
-/* The presets list can hold long names and three action buttons per row;
-   let the modal grow with the window instead of squeezing the name into an
-   ellipsis, and stack name-over-buttons so the name always gets full width. */
-#presets-modal .modal-card,
+/* The import dialog lists sounds with a status each; give it room. */
 #preset-import-dialog .modal-card {
   width: min(520px, 92vw);
 }
 
-#preset-list {
-  max-height: min(52vh, 440px);
-  overflow-y: auto;
-}
 
-.preset-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 10px;
-  background: var(--surface-alt);
-  border-radius: var(--radius-sm);
-}
 
-.preset-row-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
 
-.preset-row-actions {
-  display: flex;
-  gap: 8px;
-}
 
-.preset-row-actions .btn {
-  flex: 1;
-  justify-content: center;
-}
 
 .preset-list-empty {
   color: var(--text-dim);
@@ -2666,4 +2617,413 @@ main {
 /* "+ tag" shows on hover or focus, like the corner buttons. */
 .sound-row:not(:hover):not(:focus-within) .tag-chip-add {
   display: none;
+}
+
+/* ---- Presets rail and gallery (Desktop 2.0; mock screens presets, presets-gallery) ---- */
+.presets-host {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.presets-host.hidden {
+  display: none;
+}
+
+.presets-panel {
+  pointer-events: auto;
+  background: var(--surface);
+  display: grid;
+  min-width: 0;
+}
+
+.presets-title {
+  grid-area: title;
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.presets-tools {
+  grid-area: tools;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.presets-autosave {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-h);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+#presets-close {
+  grid-area: close;
+}
+
+.presets-name-row {
+  grid-area: name;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.presets-name-row.hidden {
+  display: none;
+}
+
+.presets-name-row input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.presets-panel .preset-save-hint {
+  grid-area: note;
+  margin: 0;
+  min-height: 0;
+}
+
+.presets-panel .preset-save-hint:empty {
+  display: none;
+}
+
+.preset-cards {
+  grid-area: list;
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Rail: rises from the player, the Mixer stays in view. */
+.presets-host[data-view='rail'] .presets-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 72px;
+  box-shadow: 0 -16px 48px rgb(0 0 0 / 0.4);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title tools close'
+    'name name name'
+    'note note note'
+    'list list list';
+  align-items: center;
+  column-gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0 var(--space-5);
+}
+
+.presets-host[data-view='rail'] .presets-tools {
+  justify-self: end;
+}
+
+.presets-host[data-view='rail'] .presets-name-row {
+  padding: var(--space-2) 0;
+}
+
+.presets-host[data-view='rail'] .preset-cards {
+  padding: var(--space-2) var(--space-5) var(--space-4) 0;
+  margin-right: calc(-1 * var(--space-4));
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.presets-host[data-view='rail'] .pcard {
+  flex: none;
+  width: 232px;
+  min-height: 212px;
+}
+
+/* Gallery: a window over the app, same cards. */
+.presets-host[data-view='gallery'] {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  padding-top: var(--title-bar-h);
+}
+
+.presets-host[data-view='gallery'] .presets-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(10 10 12 / 0.6);
+}
+
+.presets-host[data-view='gallery'] .presets-panel {
+  position: relative;
+  width: min(800px, calc(100% - 32px));
+  max-height: calc(100% - var(--title-bar-h) - 32px);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.5);
+  overflow: hidden;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    '. title close'
+    'name name name'
+    'note note note'
+    'list list list'
+    'tools tools tools';
+  align-items: center;
+  padding: var(--space-3);
+}
+
+.presets-host[data-view='gallery'] .presets-title {
+  text-align: center;
+}
+
+.presets-host[data-view='gallery'] .presets-name-row {
+  padding: var(--space-2) var(--space-4);
+}
+
+.presets-host[data-view='gallery'] .preset-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  align-self: stretch;
+  overflow-y: auto;
+  padding: var(--space-1) var(--space-4);
+}
+
+.presets-host[data-view='gallery'] .pcard {
+  min-width: 0;
+  min-height: 212px;
+}
+
+.presets-host[data-view='gallery'] .presets-tools {
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.presets-host[data-view='gallery'] .presets-autosave {
+  margin-right: auto;
+}
+
+.pcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-3) var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pcard:hover {
+  background: var(--surface-hover);
+}
+
+.pcard.cur {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.pcard-corner {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  z-index: 2;
+  opacity: 0;
+}
+
+.pcard:hover .pcard-corner,
+.pcard:focus-within .pcard-corner {
+  opacity: 1;
+}
+
+.pcard-more {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.pcard-more:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.pcard-print {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  height: 64px;
+  margin-bottom: var(--space-2);
+}
+
+.pcard-print i {
+  width: 5px;
+  border-radius: 2px;
+}
+
+.pcard-print .lp {
+  background: #6a6a72;
+}
+
+.pcard-print .ev {
+  background: var(--accent);
+}
+
+.pcard-name {
+  max-width: 100%;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pcard-meta {
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pcard-chips {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  margin-top: var(--space-1);
+  max-width: 100%;
+}
+
+.pcard-chip {
+  display: inline-block;
+  height: 20px;
+  padding-inline: var(--space-2);
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.pcard:hover .pcard-chip {
+  background: #36363d;
+}
+
+.pcard-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-dim);
+}
+
+.pcard.cur .pcard-state {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.pcard-save {
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--tint-ink);
+  background: var(--tint);
+}
+
+.pcard-save:hover {
+  background: var(--tint-hover);
+}
+
+.pcard-save b {
+  font-weight: 600;
+}
+
+.pcard-save span {
+  font-size: 12px;
+  line-height: 16px;
+  color: #d8c58b;
+}
+
+/* The mock's switch, drawn on a checkbox so the existing change handler keeps working. */
+.preset-switch {
+  appearance: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  flex: none;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-hover);
+  cursor: pointer;
+}
+
+.preset-switch::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 120ms;
+}
+
+.preset-switch:checked {
+  background: var(--tint);
+}
+
+.preset-switch:checked::after {
+  transform: translateX(16px);
+  background: var(--tint-ink);
+}
+
+/* Settings > General: the Rail / Gallery choice. */
+.preset-view-seg {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+}
+
+.preset-view-seg button {
+  height: 28px;
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.preset-view-seg button:hover {
+  color: var(--text);
+}
+
+.preset-view-seg button[aria-pressed='true'] {
+  background: var(--surface-hover);
+  color: var(--text);
 }

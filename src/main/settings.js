@@ -164,6 +164,9 @@ const store = new Store({
     // Presets modal's own checkbox is the only UI for this, not the
     // Settings menu, per the owner's own request for where it should live.
     presetAutosaveEnabled: true,
+    // Desktop 2.0: how the Presets panel opens - 'rail' rises above the player
+    // with the Mixer still in view, 'gallery' is a window over the app.
+    presetsView: 'rail',
     // Plugin ids switched off in Settings > Core/Community plugins. The
     // renderer loads/unloads plugins live when this changes.
     disabledPlugins: [],
@@ -251,6 +254,7 @@ export function getSettings() {
     globalVolumeGain: store.get('globalVolumeGain') ?? legacyGlobalVolumeGain(store.get('globalVolumePosition')),
     lastActivePresetId: store.get('lastActivePresetId'),
     presetAutosaveEnabled: store.get('presetAutosaveEnabled'),
+    presetsView: store.get('presetsView') === 'gallery' ? 'gallery' : 'rail',
     disabledPlugins: store.get('disabledPlugins'),
     restrictedMode: store.get('restrictedMode'),
     autoUpdatePlugins: store.get('autoUpdatePlugins'),
@@ -458,6 +462,11 @@ function legacyGlobalVolumeGain(position) {
 
 export function setLastActivePresetId(id) {
   store.set('lastActivePresetId', typeof id === 'string' ? id : null)
+  return getSettings()
+}
+
+export function setPresetsView(view) {
+  store.set('presetsView', view === 'gallery' ? 'gallery' : 'rail')
   return getSettings()
 }
 

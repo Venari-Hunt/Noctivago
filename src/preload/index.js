@@ -28,7 +28,8 @@ const api = {
     setYtDlpCookiesBrowser: (browser) => ipcRenderer.invoke('settings:setYtDlpCookiesBrowser', browser),
     setGlobalVolumeGain: (gain) => ipcRenderer.invoke('settings:setGlobalVolumeGain', gain),
     setLastActivePresetId: (id) => ipcRenderer.invoke('settings:setLastActivePresetId', id),
-    setPresetAutosaveEnabled: (enabled) => ipcRenderer.invoke('settings:setPresetAutosaveEnabled', enabled)
+    setPresetAutosaveEnabled: (enabled) => ipcRenderer.invoke('settings:setPresetAutosaveEnabled', enabled),
+    setPresetsView: (view) => ipcRenderer.invoke('settings:setPresetsView', view)
   },
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow'),
@@ -159,6 +160,8 @@ const api = {
     list: () => ipcRenderer.invoke('presets:list'),
     save: (payload) => ipcRenderer.invoke('presets:save', payload),
     delete: (id) => ipcRenderer.invoke('presets:delete', id),
+    rename: (id, name) => ipcRenderer.invoke('presets:rename', id, name),
+    duplicate: (id) => ipcRenderer.invoke('presets:duplicate', id),
     updateWholeMix: (id, wholeMix) => ipcRenderer.invoke('presets:updateWholeMix', id, wholeMix),
     updateSounds: (id, sounds) => ipcRenderer.invoke('presets:updateSounds', id, sounds),
     updateGroups: (id, groups) => ipcRenderer.invoke('presets:updateGroups', id, groups),

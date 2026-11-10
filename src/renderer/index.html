@@ -165,38 +165,29 @@
       </div>
     </div>
 
-    <div id="presets-modal" class="modal hidden">
-      <div class="modal-card">
-        <h2>Presets</h2>
-        <button id="update-active-preset" class="btn btn-primary btn-icon-text hidden" type="button">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-          <span id="update-active-preset-label">Save changes</span>
-        </button>
-        <label class="settings-row preset-autosave-toggle-row">
-          <input id="preset-autosave-toggle" type="checkbox" />
-          Autosave changes to the loaded preset
-        </label>
-        <p id="preset-autosave-note" class="preset-save-hint hidden">Changes to the loaded preset save automatically as you edit the mix.</p>
-        <div class="preset-save-row">
-          <input id="new-preset-name" type="text" placeholder="Preset name" />
-          <button id="new-preset-blank" class="btn btn-icon-text" type="button" title="Start a new, empty preset with this name">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            New blank preset
-          </button>
-          <button id="save-preset" class="btn btn-icon-text" type="button" title="Save everything currently in the mix (sounds, whole-mix filters, Sound Groups) as a new preset with this name">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            Save current mix as new preset
-          </button>
+    <!-- Presets (Desktop 2.0): a rail that rises above the player, or a gallery window,
+         chosen in Settings > General (data-view). The cards are drawn by tabs/mixer/index.js. -->
+    <div id="presets-modal" class="presets-host hidden" data-view="rail">
+      <div id="presets-scrim" class="presets-scrim"></div>
+      <div class="presets-panel" role="dialog" aria-label="Presets">
+        <h2 class="presets-title">Presets</h2>
+        <div class="presets-tools">
+          <label class="presets-autosave">
+            Save changes as I go
+            <input id="preset-autosave-toggle" class="preset-switch" type="checkbox" role="switch" aria-label="Save changes as I go" />
+          </label>
+          <button id="update-active-preset" class="btn btn-ghost hidden" type="button"><span id="update-active-preset-label">Save changes</span></button>
+          <button id="import-preset" class="btn btn-ghost" type="button">Import</button>
+          <button id="new-preset-blank" class="btn btn-ghost" type="button" title="Start a new, empty preset">New blank</button>
+        </div>
+        <button id="presets-close" class="btn btn-icon btn-ghost" type="button" aria-label="Close"><svg width="16" height="16" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M208.49,191.51a12,12,0,0,1-17,17L128,145,64.49,208.49a12,12,0,0,1-17-17L111,128,47.51,64.49a12,12,0,0,1,17-17L128,111l63.51-63.52a12,12,0,0,1,17,17L145,128Z"/></svg></button>
+        <div id="preset-name-row" class="presets-name-row hidden">
+          <input id="new-preset-name" type="text" placeholder="Preset name" aria-label="Preset name" />
+          <button id="preset-name-confirm" class="btn btn-primary" type="button">Save</button>
+          <button id="preset-name-cancel" class="btn btn-ghost" type="button">Cancel</button>
         </div>
         <p id="preset-save-hint" class="preset-save-hint"></p>
-        <ul id="preset-list" class="preset-list"></ul>
-        <div class="modal-actions">
-          <button id="import-preset" class="btn btn-icon-text" type="button">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Import preset…
-          </button>
-          <button id="presets-close" class="btn" type="button">Close</button>
-        </div>
+        <div id="preset-list" class="preset-cards"></div>
       </div>
     </div>
 
