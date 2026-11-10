@@ -1,11 +1,8 @@
 // Sleep timer wheel math (pure), ported from the Rouse "How long before"
-// wheel (design system `.roller`, mock-rouse-how-long): three fields (days,
-// hours, minutes) and one wheel that rolls whichever field is active. It
-// always starts on minutes, and days have no top end short of a year.
+// wheel (design system `.roller`, mock-rouse-how-long): three typable fields
+// (days, hours, minutes) and one wheel that only ever adds or removes minutes.
 
 export const TIMER_MAX_MIN = 365 * 1440 // a year; the wheel rolls days with no smaller limit
-const STEP = { min: 1, h: 60, d: 1440 }
-const LOWER = { d: 'h', h: 'min' }
 export const WHEEL_PX = 10 // finger distance per tick
 export const RIDGE_PX = 12 // ridge spacing at the wheel's center
 
@@ -21,21 +18,11 @@ export function splitMinutes(minutes) {
   return { d: Math.floor(m / 1440), h: Math.floor((m % 1440) / 60), min: m % 60 }
 }
 
-// One wheel tick on the active unit ('d', 'h' or 'min'). Filling the minutes
-// moves the wheel to hours, filling the hours to days; going down past zero
-// in a unit drops to the next smaller one (1 h gives 59 min). Returns
-// { minutes, unit } or null when the wheel is at an end.
-export function roll(minutes, unit, up) {
-  const m = clampMinutes(minutes)
-  const next = m + (up ? STEP[unit] : -STEP[unit])
-  if (next > TIMER_MAX_MIN) return null
-  if (next < 1) return LOWER[unit] ? roll(m, LOWER[unit], false) : null
-  let nextUnit = unit
-  if (up && unit === 'min' && next % 60 === 0) nextUnit = 'h'
-  if (up && unit === 'h' && next % 1440 === 0) nextUnit = 'd'
-  if (!up && unit === 'd' && next < 1440) nextUnit = 'h'
-  if (!up && unit === 'h' && next < 60) nextUnit = 'min'
-  return { minutes: next, unit: nextUnit }
+// One wheel tick: always one minute, never another unit (bigger jumps are
+// typed). Returns the new minutes, or null at an end (1 minute / the cap).
+export function roll(minutes, up) {
+  const next = clampMinutes(minutes) + (up ? 1 : -1)
+  return next < 1 || next > TIMER_MAX_MIN ? null : next
 }
 
 // "2", "0.5", "1,5" -> number; "" -> 0; anything else -> null.

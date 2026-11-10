@@ -20,7 +20,7 @@ let noticeInterval = null
 let firesAt = null
 // What the ruler shows while setting: minutes, how they were set ('in' =
 // ruler/scroll, 'at' = typed end time), the typed time, and the action.
-let setup = { minutes: 30, mode: 'in', timeOfDay: '', action: 'stop', unit: 'min' }
+let setup = { minutes: 30, mode: 'in', timeOfDay: '', action: 'stop' }
 let wheel = null
 
 function showModal(el) {
@@ -54,9 +54,6 @@ function renderSetup(force = false) {
   if (force || document.activeElement !== els.dInput) els.dInput.value = d || ''
   if (force || document.activeElement !== els.hInput) els.hInput.value = h || ''
   if (force || document.activeElement !== els.minInput) els.minInput.value = min || ''
-  els.dInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'd')
-  els.hInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'h')
-  els.minInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'min')
   if (mode === 'at') {
     els.atInput.value = setup.timeOfDay
   } else if (document.activeElement !== els.atInput) {
@@ -274,8 +271,7 @@ export function installSleepTimer() {
         mode: at ? 'at' : 'in',
         timeOfDay: at ? settings.sleepTimerTimeOfDay : '',
         minutes: at ? clampMinutes(Math.ceil((at.getTime() - Date.now()) / 60000)) : clampMinutes(settings.sleepTimerMinutes ?? 30),
-        action: settings.sleepTimerAction ?? 'stop',
-        unit: 'min'
+        action: settings.sleepTimerAction ?? 'stop'
       }
     }
     setAutoStartSwitch(Boolean(settings.sleepTimerAutoStart))
@@ -309,9 +305,9 @@ export function installSleepTimer() {
   // preset, or type the end time. Wheel, fields and presets set minutes;
   // typing the end time sets a time of day.
   const tick = (up) => {
-    const r = roll(setup.minutes, setup.unit, up)
-    if (!r) return false
-    setup = { ...setup, mode: 'in', minutes: r.minutes, unit: r.unit }
+    const minutes = roll(setup.minutes, up)
+    if (minutes == null) return false
+    setup = { ...setup, mode: 'in', minutes }
     renderSetup()
     return true
   }
@@ -323,7 +319,6 @@ export function installSleepTimer() {
   els.setup.addEventListener('wheel', (e) => wheel.wheel(e), { passive: false })
   for (const input of [els.dInput, els.hInput, els.minInput]) {
     input.addEventListener('focus', () => {
-      setup = { ...setup, unit: input.dataset.unit }
       input.select()
       renderSetup()
     })
@@ -340,7 +335,7 @@ export function installSleepTimer() {
   }
   for (const btn of els.presets) {
     btn.addEventListener('click', () => {
-      setup = { ...setup, mode: 'in', minutes: Number(btn.dataset.min), unit: 'min' }
+      setup = { ...setup, mode: 'in', minutes: Number(btn.dataset.min) }
       renderSetup()
     })
   }

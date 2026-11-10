@@ -9,21 +9,14 @@ describe('sleep wheel', () => {
     assert.equal(clampMinutes('abc'), 1)
   })
   test('split into days, hours, minutes', () => assert.deepEqual(splitMinutes(1500), { d: 1, h: 1, min: 0 }))
-  test('rolling up carries minutes into hours and hours into days', () => {
-    assert.deepEqual(roll(59, 'min', true), { minutes: 60, unit: 'h' })
-    assert.deepEqual(roll(30, 'min', true), { minutes: 31, unit: 'min' })
-    assert.deepEqual(roll(1380, 'h', true), { minutes: 1440, unit: 'd' })
-    assert.deepEqual(roll(1440, 'd', true), { minutes: 2880, unit: 'd' })
-  })
-  test('rolling down drops to the next smaller unit', () => {
-    assert.deepEqual(roll(120, 'h', false), { minutes: 60, unit: 'h' })
-    assert.deepEqual(roll(90, 'h', false), { minutes: 30, unit: 'min' })
-    assert.deepEqual(roll(60, 'h', false), { minutes: 59, unit: 'min' })
-    assert.deepEqual(roll(1440, 'd', false), { minutes: 1380, unit: 'h' })
+  test('the wheel only adds or removes one minute', () => {
+    assert.equal(roll(59, true), 60)
+    assert.equal(roll(60, false), 59)
+    assert.equal(roll(1440, true), 1441)
   })
   test('ends stop dead', () => {
-    assert.equal(roll(1, 'min', false), null)
-    assert.equal(roll(TIMER_MAX_MIN, 'd', true), null)
+    assert.equal(roll(1, false), null)
+    assert.equal(roll(TIMER_MAX_MIN, true), null)
   })
   test('typed fields', () => {
     assert.equal(readNumber('1,5'), 1.5)
