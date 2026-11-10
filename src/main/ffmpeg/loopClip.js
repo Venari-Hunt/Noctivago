@@ -8,6 +8,7 @@ import { buildPanFilter, normalizePan, parseChannelCount } from './panFilter.js'
 import { getOrCreateReverbIR } from './reverbIR.js'
 import { hasVolumeEnvelope, renderVolumeEnvelopeWav } from './volumeEnvelope.js'
 import { buildSpectralRepairFilter } from './spectralRepair.js'
+import { needsPitchPass, pitchShiftWavFile } from './pitchShift.js'
 import { eqBandStageCount } from '../../shared/eqBands.js'
 
 const pending = new Map()
@@ -364,136 +365,12 @@ function buildFilterChain(filters) {
   return parts.length > 0 ? parts.join(',') : null
 }
 
-// Default how far the pitch swings (in semitones) - now a user-adjustable
-// value (speedPitch.dopplerIntensitySemitones, a Remix slider) rather than
-// this fixed constant alone; kept as the fallback for entries saved before
-// the control existed. 5 was the original fixed value, chosen as a clearly
-// audible pass-by without tipping into "obviously fake siren" territory.
-const DEFAULT_DOPPLER_INTENSITY_SEMITONES = 5
-
-// How abruptly the pitch swings through the marker (speedPitch.dopplerSharpness,
-// a 0..1 Remix slider). This is what makes it sound like a *pass-by* rather
-// than a slow detune: at a low value the pitch glides continuously across the
-// whole clip (the original, and what a direct report called out as "just
-// lowering the pitch progressively"); at a high value the pitch sits roughly
-// flat - high while approaching, low while receding - and does its whole swing
-// in a short burst right at the marker, the classic siren "fwooo-yowm" of
-// something rushing past close by. 0.5 is a clearly plateau-shaped pass-by
-// without the transition being so sharp it reads as a glitch. Kept as the
-// fallback for entries saved before the control existed.
-const DEFAULT_DOPPLER_SHARPNESS = 0.5
-
-// Floor on how close the draggable "closest point" marker (closestFraction,
-// see below) can get to either edge - without this, dragging it all the way
-// to Start or End would collapse one side's ramp to zero duration, an
-// instant jump rather than a bend (and a literal divide-by-zero in the slope
-// math below). Matches LoopEditor.js's own identical clamp on the drag side,
-// duplicated for the usual cross-directory (renderer can't reach main) plus
-// main/renderer process split reasons.
-const MIN_DOPPLER_FRACTION = 0.05
-
-// Generates a sequence of timestamped `rubberband pitch <value>;` commands
-// (ffmpeg's asendcmd syntax) spanning [0, durationSeconds] - the trimmed
-// loop region's own duration, matching what this pre-processing pass
-// actually reads via -ss/-t before any of this runs. The pitch contour
-// follows the physical Doppler model f'/f = c / (c + v*cos0) rather than a
-// straight semitone ramp: as a source moves past on a straight line,
-// cos0 (the along-track angle) swings from ~+1 while approaching, through 0
-// at closest approach, to ~-1 while receding, and how *fast* it swings
-// through 0 depends on how close the pass is. That gives the characteristic
-// flat-high / fast-drop / flat-low siren shape - a plain linear ramp
-// instead just sounds like a slow continuous detune (a directly-reported
-// bug). The "closest" marker is at t=durationSeconds*closestFraction
-// (user-draggable on the waveform, defaulting to the midpoint):
-//
-// - Normal (reversed=false): high pitch (+intensity) while approaching,
-//   crossing exactly natural at the marker, low pitch (-intensity) while
-//   receding - the marker is the natural-pitch crossing, Start/End are the
-//   extremes.
-// - Reversed: Start/End sit at natural pitch and the full high->low swing
-//   happens in a short burst right at the marker (a raised-cosine window
-//   tapers it back to natural by the ends) - models something darting
-//   sharply past very close rather than a distant approach/recede.
-//
-// sharpness01 (0..1) maps exponentially to k, the model's effective "how
-// close does it pass" factor: small k keeps cos0 near 0 for most of the
-// clip (a gentle glide), large k drives cos0 to +/-1 everywhere except at
-// the marker (flat plateaus, fast transition). The contour is renormalized
-// so it still hits exactly +/-intensity at Start/End regardless of k.
-//
-// The two segments either side of the marker are each scaled to their own
-// length, so a marker dragged off-center makes one side swing faster than
-// the other - the point of making it draggable. Composed multiplicatively
-// with whatever static pitchSemitones is already set, so the two controls
-// stack. ~10 commands/second is dense enough that rubberband (which does its
-// own internal smoothing between commands) produces a continuous-sounding
-// bend rather than audible discrete steps.
-function buildDopplerSendCmd(basePitchRatio, durationSeconds, closestFraction = 0.5, intensitySemitones = DEFAULT_DOPPLER_INTENSITY_SEMITONES, reversed = false, sharpness01 = DEFAULT_DOPPLER_SHARPNESS) {
-  if (durationSeconds <= 0) return null
-  const frac = Math.min(Math.max(closestFraction, MIN_DOPPLER_FRACTION), 1 - MIN_DOPPLER_FRACTION)
-  const closestT = frac * durationSeconds
-  const steps = Math.max(8, Math.min(400, Math.round(durationSeconds * 10)))
-  const sharp = Math.min(Math.max(sharpness01, 0), 1)
-  const k = 0.6 * Math.pow(30, sharp) // ~0.6 (gentle glide) .. ~18 (hard plateaus)
-  const edgeCos = k / Math.sqrt(1 + k * k) // |contour| at the segment ends, for renormalizing to +/-intensity
-  const parts = []
-  for (let i = 0; i <= steps; i++) {
-    const t = (i / steps) * durationSeconds
-    const beforeMarker = t <= closestT
-    // signed normalized position: -1 at Start, 0 at the marker, +1 at End,
-    // each side scaled to its own length (the off-center-marker behavior).
-    const s = beforeMarker
-      ? (t - closestT) / closestT
-      : (t - closestT) / (durationSeconds - closestT)
-    // cos0-shaped contour: ~linear through the marker, saturating to a
-    // plateau away from it. Renormalized so |contour| == 1 at s = +/-1.
-    const contour = ((k * s) / Math.sqrt(1 + (k * s) * (k * s))) / edgeCos
-    const semitoneOffset = reversed
-      ? -intensitySemitones * contour * Math.pow(Math.cos((Math.PI * s) / 2), 2)
-      : -intensitySemitones * contour
-    const pitch = basePitchRatio * Math.pow(2, semitoneOffset / 12)
-    parts.push(`${t.toFixed(3)} rubberband pitch ${pitch.toFixed(6)};`)
-  }
-  return parts.join('')
-}
-
-// rubberband's tempo/pitch are scale factors, not the semitone/percent units
-// the UI works in - pitchSemitones converts via the standard equal-
-// temperament ratio (2^(semitones/12)); speed is already a plain multiplier.
-// durationSeconds is the trimmed loop region's own length (loopEnd -
-// loopStart), needed only to compute the Doppler sweep's midpoint - unused
-// otherwise. Returns null when speed/pitch/doppler are all neutral and
-// reversed is false, so callers can skip the whole pre-processing pass
-// entirely for the default, most-common case.
-function buildSpeedPitchReverseChain(speedPitch, durationSeconds) {
-  if (!speedPitch) return null
-  const {
-    speed = 1,
-    pitchSemitones = 0,
-    reversed = false,
-    dopplerEnabled = false,
-    dopplerClosestFraction = 0.5,
-    dopplerIntensitySemitones = DEFAULT_DOPPLER_INTENSITY_SEMITONES,
-    dopplerReversed = false,
-    dopplerSharpness = DEFAULT_DOPPLER_SHARPNESS
-  } = speedPitch
-  const parts = []
-  if (speed !== 1 || pitchSemitones !== 0 || dopplerEnabled) {
-    const pitchRatio = Math.pow(2, pitchSemitones / 12)
-    if (dopplerEnabled) {
-      const sendCmd = buildDopplerSendCmd(pitchRatio, durationSeconds, dopplerClosestFraction, dopplerIntensitySemitones, dopplerReversed, dopplerSharpness)
-      if (sendCmd) parts.push(`asendcmd=c='${sendCmd}'`)
-    }
-    // channels=together: ~1.12x faster than rubberband's default of shifting
-    // each channel independently, and it avoids the stereo decorrelation /
-    // smear that independent per-channel shifting causes - the same defect
-    // fixed on the live-playback side in v0.1.112 (see pitchStretch.js).
-    // Benchmarked 2026-09-16 against the real bundled ffmpeg; see
-    // exportMix.js's RUBBERBAND_OPTS for the full measurements.
-    parts.push(`rubberband=tempo=${speed}:pitch=${pitchRatio.toFixed(6)}:channels=together`)
-  }
-  if (reversed) parts.push('areverse')
-  return parts.length > 0 ? parts.join(',') : null
+// Speed, Pitch and Doppler run in their own pass (pitchShift.js, Signalsmith
+// Stretch: the engine the Remix preview plays through); Reverse is the only
+// part left in ffmpeg. Both stay in the order the bake always had: pitch pass
+// first, areverse after it, so Doppler's contour is reversed with the audio.
+function buildReverseChain(speedPitch) {
+  return speedPitch?.reversed ? 'areverse' : null
 }
 
 // Only the header is ever needed (RIFF/fmt/data chunk headers, never the
@@ -828,7 +705,8 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   const tmpPath = `${outputPath}.tmp`
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
-  const speedPitchChain = buildSpeedPitchReverseChain(speedPitch, loopEnd - loopStart)
+  const pitchActive = needsPitchPass(speedPitch)
+  const reverseChain = buildReverseChain(speedPitch)
   // Reverb (afir convolution) needs a second ffmpeg *input* (the impulse
   // response) - it can't join buildFilterChain's plain comma-separated -af
   // fragment the way highpass/lowpass/echo/EQ do, so it always needs its own
@@ -853,7 +731,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // reason as noise reduction above.
   const spectralChain = buildSpectralRepairFilter(filters?.spectralRepairs, loopStart, loopEnd)
 
-  if (!speedPitchChain && !reverbActive && !noiseChain && !envelopeActive && !spectralChain) {
+  if (!pitchActive && !reverseChain && !reverbActive && !noiseChain && !envelopeActive && !spectralChain) {
     try {
       await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, pan: filters?.pan, outputPath })
       return { ok: true }
@@ -892,6 +770,8 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   const tmpReverbPath = `${outputPath}.reverb.tmp.wav`
   const tmpWrappedPath = `${outputPath}.wrap.tmp.wav`
   const tmpEnvelopePath = `${outputPath}.envelope.tmp.wav`
+  const tmpPitchInPath = `${outputPath}.pitchin.tmp.wav`
+  const tmpPitchOutPath = `${outputPath}.pitchout.tmp.wav`
   try {
     const filterChain = buildFilterChain(filters)
     // Noise reduction runs first - it should subtract the sampled noise
@@ -906,14 +786,36 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     // the save now does the same. Audible difference: echo on a reversed
     // sound repeats after each sound instead of swelling into it, and echo
     // delay no longer stretches with Speed - both now match what Remix plays.
-    const preChain = [noiseChain, spectralChain, speedPitchChain].filter(Boolean).join(',')
-    await runFfmpegToFile([
-      '-y',
-      '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
-      ...(preChain ? ['-af', preChain] : []),
-      '-vn',
-      '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
-    ])
+    if (pitchActive) {
+      // Speed, Pitch and Doppler need the whole trimmed clip in memory, so
+      // ffmpeg hands it over as float audio, the pitch pass transforms it,
+      // and ffmpeg takes it back (reverse, then 16-bit).
+      const preChain = [noiseChain, spectralChain].filter(Boolean).join(',')
+      await runFfmpegToFile([
+        '-y',
+        '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
+        ...(preChain ? ['-af', preChain] : []),
+        '-vn',
+        '-c:a', 'pcm_f32le', '-ar', '44100', '-f', 'wav', tmpPitchInPath
+      ])
+      await pitchShiftWavFile(tmpPitchInPath, tmpPitchOutPath, speedPitch)
+      await runFfmpegToFile([
+        '-y',
+        '-i', tmpPitchOutPath,
+        ...(reverseChain ? ['-af', reverseChain] : []),
+        '-vn',
+        '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
+      ])
+    } else {
+      const preChain = [noiseChain, spectralChain, reverseChain].filter(Boolean).join(',')
+      await runFfmpegToFile([
+        '-y',
+        '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
+        ...(preChain ? ['-af', preChain] : []),
+        '-vn',
+        '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
+      ])
+    }
     // The filters run as their own pass over the clip played twice, keeping
     // only the second round: echo, gate and EQ state then arrive at the clip
     // start already carrying the end of the clip, as in the live loop. Run
@@ -997,6 +899,15 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
         fs.unlinkSync(tmpEnvelopePath)
       } catch {
         // best-effort cleanup
+      }
+    }
+    for (const leftover of [tmpPitchInPath, tmpPitchOutPath]) {
+      if (fs.existsSync(leftover)) {
+        try {
+          fs.unlinkSync(leftover)
+        } catch {
+          // best-effort cleanup
+        }
       }
     }
     if (fs.existsSync(tmpIntermediatePath)) {
