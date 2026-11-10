@@ -1,6 +1,6 @@
 // Owns the single "watch a folder" dialog shared by its two entry points -
 // the toolbar's "+" add-sound menu (a one-off action, like the other two
-// items there) and the Settings modal's "Watched folders" section (where
+// items there) and the Settings page's "Watched folders" section (where
 // the resulting list actually lives, since it's a background behavior, not
 // a one-off add). installWatchFolderDialog() wires the dialog's own
 // Cancel/Confirm once; openWatchFolderPicker() is what either entry point
@@ -8,7 +8,6 @@
 // instead of duplicated per trigger.
 let els = null
 let picked = null
-let reshowSettingsModal = false
 
 export function installWatchFolderDialog() {
   els = {
@@ -17,14 +16,12 @@ export function installWatchFolderDialog() {
     keepCopy: document.getElementById('add-watched-folder-keep-copy'),
     status: document.getElementById('add-watched-folder-status'),
     cancel: document.getElementById('add-watched-folder-cancel'),
-    confirm: document.getElementById('add-watched-folder-confirm'),
-    settingsModal: document.getElementById('settings-modal')
+    confirm: document.getElementById('add-watched-folder-confirm')
   }
 
   els.cancel.addEventListener('click', () => {
     picked = null
     els.dialog.classList.add('hidden')
-    if (reshowSettingsModal) els.settingsModal.classList.remove('hidden')
   })
 
   els.confirm.addEventListener('click', async () => {
@@ -36,15 +33,12 @@ export function installWatchFolderDialog() {
     })
     picked = null
     els.dialog.classList.add('hidden')
-    if (reshowSettingsModal) els.settingsModal.classList.remove('hidden')
     document.dispatchEvent(new CustomEvent('watched-folder-added', { detail: { addedCount } }))
   })
 }
 
 // Opens the native folder picker, then the confirm dialog if a folder was
-// chosen. If the Settings modal happens to already be open (the dialog's
-// usual home), hides it behind this one and restores it after - otherwise
-// (the toolbar "+" entry point) leaves everything else alone.
+// chosen. The dialog opens over whatever is showing (Settings or the Mixer).
 export async function openWatchFolderPicker() {
   const folder = await window.noctivago.library.pickWatchFolder()
   if (!folder) return
@@ -53,7 +47,5 @@ export async function openWatchFolderPicker() {
   els.keepCopy.checked = false
   els.status.textContent = ''
   els.confirm.disabled = false
-  reshowSettingsModal = !els.settingsModal.classList.contains('hidden')
-  if (reshowSettingsModal) els.settingsModal.classList.add('hidden')
   els.dialog.classList.remove('hidden')
 }

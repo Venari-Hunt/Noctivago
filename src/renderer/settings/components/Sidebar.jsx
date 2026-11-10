@@ -1,20 +1,14 @@
-export function Sidebar({ groups, activeId, onSelect }) {
+import { MockIcon } from '../../components/mockIcons.jsx'
+
+// The list of Settings pages (the mock's .subnav): an icon and a name each.
+export function Sidebar({ pages, activeId, onSelect }) {
   return (
-    <nav className="settings-sidebar">
-      {groups.map((group) => (
-        <div key={group.label} className="settings-sidebar-group">
-          <div className="settings-sidebar-label">{group.label}</div>
-          {group.items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`settings-sidebar-item${item.id === activeId ? ' active' : ''}`}
-              onClick={() => onSelect(item.id)}
-            >
-              {item.title}
-            </button>
-          ))}
-        </div>
+    <nav className="subnav" aria-label="Settings">
+      {pages.map((page) => (
+        <button key={page.id} type="button" className={page.id === activeId ? 'cur' : ''} onClick={() => onSelect(page.id)}>
+          <MockIcon name={page.icon} />
+          {page.title}
+        </button>
       ))}
     </nav>
   )

@@ -31,7 +31,18 @@ export function mountToolbar(headerEl, navEndEl) {
   root = createRoot(headerEl)
   render()
   navRoot = createRoot(navEndEl)
-  navRoot.render(<NavEnd handlers={handlerProxy} />)
+  renderNav()
+}
+
+let settingsOpen = false
+function renderNav() {
+  navRoot?.render(<NavEnd handlers={handlerProxy} settingsOpen={settingsOpen} />)
+}
+
+// main.js pushes whether the Settings page is the active tab.
+export function setSettingsOpen(open) {
+  settingsOpen = open
+  renderNav()
 }
 
 // The "Add sound" button + menu live in the Mixer's own toolbar row.

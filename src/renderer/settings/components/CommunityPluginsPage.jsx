@@ -4,6 +4,7 @@ import { SettingItem } from './SettingItem.jsx'
 import { Toggle } from './Toggle.jsx'
 import { PluginRow } from './PluginRow.jsx'
 import { BrowseModal } from './BrowseModal.jsx'
+import { Group } from './Group.jsx'
 
 export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, autoUpdate, pluginsApi, store, optionPageIds, onOpenOptions }) {
   const [confirmingUnrestrict, setConfirmingUnrestrict] = useState(false)
@@ -65,57 +66,59 @@ export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, auto
 
   return (
     <>
-      <h3 className="settings-page-heading">Community plugins</h3>
-      <SettingItem
-        name="Restricted mode"
-        description="While on, only official plugins from Noctívago load. Turn it off to install and use plugins made by other people."
-      >
-        <Toggle checked={restrictedMode} label="Restricted mode" onChange={onRestrictedChange} />
-      </SettingItem>
-      {confirmingUnrestrict && (
-        <div className="plugin-store-confirm">
-          <p>Plugins made by other people can use everything Noctívago can, including your files. Only install ones you trust.</p>
-          <button className="btn btn-small btn-danger" type="button" onClick={() => { setConfirmingUnrestrict(false); pluginsApi.setRestrictedMode(false) }}>
-            Turn off Restricted mode
-          </button>{' '}
-          <button className="btn btn-small" type="button" onClick={() => setConfirmingUnrestrict(false)}>Cancel</button>
-        </div>
-      )}
-      <SettingItem name="Community plugins" description="Find and install plugins.">
-        <button className="btn btn-primary" type="button" onClick={() => setBrowsing(true)}>Browse</button>
-      </SettingItem>
-      <SettingItem
-        name="Update plugins automatically"
-        description="Checks shortly after launch and every few hours. An update switches over as soon as that plugin isn't in use, and a notification says what changed."
-      >
-        <Toggle checked={autoUpdate !== false} label="Update plugins automatically" onChange={pluginsApi.setAutoUpdate} />
-      </SettingItem>
-      <SettingItem name="Check for updates" description={checkStatus || undefined}>
-        {pendingUpdates > 0 && (
-          <button className="btn btn-primary" type="button" onClick={updateAll}>Update all</button>
-        )}{' '}
-        <button className="btn" type="button" disabled={!plugins.length} onClick={checkForUpdates}>Check for updates</button>
-      </SettingItem>
+      <Group title="Community plugins">
+        <SettingItem
+          name="Restricted mode"
+          description="While on, only official plugins from Noctívago load. Turn it off to install and use plugins made by other people."
+        >
+          <Toggle checked={restrictedMode} label="Restricted mode" onChange={onRestrictedChange} />
+        </SettingItem>
+        {confirmingUnrestrict && (
+          <div className="plugin-store-confirm">
+            <p>Plugins made by other people can use everything Noctívago can, including your files. Only install ones you trust.</p>
+            <button className="btn btn-small btn-danger" type="button" onClick={() => { setConfirmingUnrestrict(false); pluginsApi.setRestrictedMode(false) }}>
+              Turn off Restricted mode
+            </button>{' '}
+            <button className="btn btn-small" type="button" onClick={() => setConfirmingUnrestrict(false)}>Cancel</button>
+          </div>
+        )}
+        <SettingItem name="Community plugins" description="Find and install plugins.">
+          <button className="btn btn-primary" type="button" onClick={() => setBrowsing(true)}>Browse</button>
+        </SettingItem>
+        <SettingItem
+          name="Update plugins automatically"
+          description="Checks shortly after launch and every few hours. An update switches over as soon as that plugin isn't in use, and a notification says what changed."
+        >
+          <Toggle checked={autoUpdate !== false} label="Update plugins automatically" onChange={pluginsApi.setAutoUpdate} />
+        </SettingItem>
+        <SettingItem name="Check for updates" description={checkStatus || undefined}>
+          {pendingUpdates > 0 && (
+            <button className="btn btn-primary" type="button" onClick={updateAll}>Update all</button>
+          )}{' '}
+          <button className="btn" type="button" disabled={!plugins.length} onClick={checkForUpdates}>Check for updates</button>
+        </SettingItem>
+      </Group>
 
-      <h3 className="settings-page-heading">Installed plugins</h3>
-      {plugins.length === 0 ? (
-        <p className="settings-page-hint">No community plugins installed yet.</p>
-      ) : (
-        <ul className="settings-plugin-list">
-          {plugins.map((p) => (
-            <PluginRow
-              key={p.id}
-              plugin={p}
-              busy={busy[p.id]}
-              hasOptions={p.loaded && optionPageIds.has(p.id)}
-              onOpenOptions={() => onOpenOptions(p.id)}
-              onToggle={(on) => pluginsApi.setEnabled(p.id, on)}
-              onUninstall={() => run(p.id, 'Removing', () => store.uninstall(p.id))}
-              update={updates[p.id] && { version: updates[p.id], onClick: () => run(p.id, 'Updating', () => store.install(p.id)) }}
-            />
-          ))}
-        </ul>
-      )}
+      <Group title="Installed plugins">
+        {plugins.length === 0 ? (
+          <p className="settings-page-hint">No community plugins installed yet.</p>
+        ) : (
+          <ul className="settings-plugin-list">
+            {plugins.map((p) => (
+              <PluginRow
+                key={p.id}
+                plugin={p}
+                busy={busy[p.id]}
+                hasOptions={p.loaded && optionPageIds.has(p.id)}
+                onOpenOptions={() => onOpenOptions(p.id)}
+                onToggle={(on) => pluginsApi.setEnabled(p.id, on)}
+                onUninstall={() => run(p.id, 'Removing', () => store.uninstall(p.id))}
+                update={updates[p.id] && { version: updates[p.id], onClick: () => run(p.id, 'Updating', () => store.install(p.id)) }}
+              />
+            ))}
+          </ul>
+        )}
+      </Group>
 
       {browsing && (
         <BrowseModal

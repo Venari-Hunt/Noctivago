@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSidebar, pluginPageId, OPTION_PAGES } from '../src/renderer/settings/domain/sidebar.js'
+import { buildSidebar, OPTION_PAGES } from '../src/renderer/settings/domain/sidebar.js'
 import { splitByKind } from '../src/renderer/settings/domain/pluginGroups.js'
 import { addPluginSettingsPage, listPluginSettingsPages, subscribePluginSettingsPages } from '../src/renderer/settings/domain/pluginSettingsPages.js'
 
@@ -11,26 +11,13 @@ const described = [
 ]
 
 describe('settings sidebar', () => {
-  test('always starts with the Options pages', () => {
-    assert.deepEqual(buildSidebar([], described), [{ label: 'Options', items: OPTION_PAGES }])
+  test('lists the fixed pages', () => {
+    assert.deepEqual(buildSidebar(described), OPTION_PAGES)
+    assert.deepEqual(OPTION_PAGES.map((p) => p.id), ['general', 'library', 'core-plugins', 'community-plugins', 'privacy', 'about'])
   })
 
   test('hides the Core plugins page when there are no core plugins', () => {
-    const [options] = buildSidebar([], [described[2]])
-    assert.deepEqual(options.items.map((p) => p.id), ['general', 'library', 'community-plugins'])
-  })
-
-  test('groups plugin pages by kind, sorted by title', () => {
-    const groups = buildSidebar(
-      [{ pluginId: 'remix', title: 'Remix' }, { pluginId: 'rain', title: 'Rain tools' }, { pluginId: 'export', title: 'Export' }],
-      described
-    )
-    assert.deepEqual(groups.map((g) => g.label), ['Options', 'Core plugins', 'Community plugins'])
-    assert.deepEqual(groups[1].items, [
-      { id: pluginPageId('export'), title: 'Export' },
-      { id: pluginPageId('remix'), title: 'Remix' }
-    ])
-    assert.deepEqual(groups[2].items, [{ id: pluginPageId('rain'), title: 'Rain tools' }])
+    assert.deepEqual(buildSidebar([described[2]]).map((p) => p.id), ['general', 'library', 'community-plugins', 'privacy', 'about'])
   })
 })
 

@@ -23,10 +23,5 @@ export function PluginOptionsPage({ page }) {
     }
   }, [page])
 
-  return (
-    <>
-      <h3 className="settings-page-heading">{page.title}</h3>
-      <div ref={containerRef} />
-    </>
-  )
+  return <div ref={containerRef} />
 }

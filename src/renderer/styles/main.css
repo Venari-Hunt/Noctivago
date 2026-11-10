@@ -2273,98 +2273,132 @@ main {
   margin: 0 0 8px;
 }
 
-/* Settings window (settings/components/), Obsidian-style: sidebar of pages
-   on the left, the chosen page on the right. */
-.settings-window {
-  width: min(860px, 96vw);
-  height: min(620px, 90vh);
-  max-height: none;
-  padding: 0;
+/* Settings page (settings/components/), the approved mock's .sets: a list of
+   pages on the left, the chosen page as a column of cards on the right. */
+.sets {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 640px);
+  gap: var(--space-5);
+  justify-content: center;
+  align-items: start;
+}
+
+.subnav {
+  position: sticky;
+  top: 0;
   display: flex;
-  overflow: hidden;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
-.settings-sidebar {
-  flex: 0 0 190px;
-  padding: var(--space-4) var(--space-2);
-  border-right: 1px solid var(--border);
-  background: var(--bg);
-  overflow-y: auto;
-}
-
-.settings-sidebar-group + .settings-sidebar-group {
-  margin-top: 14px;
-}
-
-.settings-sidebar-label {
-  padding: 0 10px 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-}
-
-.settings-sidebar-item {
-  display: block;
-  width: 100%;
-  height: var(--control-h);
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--radius-sm);
+.subnav button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
   font: inherit;
+  font-weight: 600;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
 
-.settings-sidebar-item:hover {
-  background: var(--surface-hover);
+.subnav button:hover {
   color: var(--text);
 }
 
-.settings-sidebar-item.active {
-  background: var(--accent);
-  color: var(--on-accent);
+.subnav button.cur {
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
-.settings-page {
-  flex: 1;
+.scol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   min-width: 0;
-  padding: 16px 22px 22px;
-  overflow-y: auto;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+h2.gh.l {
+  margin: 0;
+  padding-block: var(--space-2) var(--space-1);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.prose {
+  margin: 0;
+  padding-block: var(--space-1) var(--space-2);
+  max-width: 64ch;
+}
+
+.abouth {
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-5);
+  text-align: center;
+}
+
+.abouth svg {
+  width: 32px;
+  height: 32px;
+  color: var(--accent);
+}
+
+.abouth h2 {
+  margin: var(--space-2) 0 0;
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.abouth p {
+  margin: 0;
+  color: var(--text-dim);
 }
 
 .settings-page-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .settings-page-top h2 {
   margin: 0;
 }
 
-.settings-page-heading {
-  margin: 18px 0 6px;
-  font-size: 13px;
-}
-
 .settings-page-hint {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-2);
   font-size: 12px;
+  line-height: 16px;
   color: var(--text-dim);
 }
 
+/* One row: name and description on the left, its control on the right. */
 .settings-item,
 .settings-plugin-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
+  gap: var(--space-4);
+  min-height: 48px;
+  padding-block: 6px;
 }
 
 .settings-item-info {
@@ -2372,20 +2406,37 @@ main {
 }
 
 .settings-item-name {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .settings-item-desc {
-  margin-top: 2px;
   font-size: 12px;
+  line-height: 16px;
   color: var(--text-dim);
 }
 
 .settings-item-control {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.settings-item-control select,
+.settings-item-control input[type='text'] {
+  height: var(--control-h);
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-item-control .preset-view-seg {
+  background: var(--bg);
 }
 
 .settings-plugin-list {
@@ -2410,37 +2461,45 @@ main {
   height: 20px;
   flex-shrink: 0;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-alt);
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-hover);
   cursor: pointer;
-  transition: background 0.15s;
 }
 
 .settings-toggle.on {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--tint);
 }
 
 .settings-toggle:disabled {
-  opacity: 0.4;
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .settings-toggle-knob {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--text);
-  transition: transform 0.15s;
+  background: var(--text-dim);
+  transition: transform 0.12s;
 }
 
 .settings-toggle.on .settings-toggle-knob {
   transform: translateX(16px);
-  background: var(--on-accent);
+  background: var(--tint-ink);
+}
+
+/* A plugin's own settings, opened from its Options button. */
+.settings-options-dialog {
+  width: min(480px, 92vw);
+  background: var(--surface-alt);
+}
+
+.settings-options-dialog .modal-actions {
+  margin-top: var(--space-3);
 }
 
 .settings-browse-modal {
@@ -2449,6 +2508,7 @@ main {
 
 /* Browse window: list on the left, the chosen plugin on the right. */
 .store-browser-card {
+  background: var(--surface);
   width: min(920px, 96vw);
   height: min(640px, 90vh);
   max-height: none;
@@ -2502,9 +2562,9 @@ main {
   gap: 2px;
   padding: 10px;
   text-align: left;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: transparent;
   color: var(--text);
   font: inherit;
   cursor: pointer;
@@ -2515,8 +2575,7 @@ main {
 }
 
 .store-list-item.selected {
-  border-color: var(--accent);
-  background: var(--surface-alt);
+  background: var(--surface-hover);
 }
 
 .store-list-item-title .plugin-store-badge {
@@ -2532,8 +2591,9 @@ main {
 }
 
 .store-detail-pane {
-  border-left: 1px solid var(--border);
-  padding-left: 16px;
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  padding: var(--space-4);
 }
 
 .store-detail-empty {
@@ -2684,26 +2744,39 @@ main {
   margin-bottom: 10px;
 }
 
-.settings-item-control select {
-  font-size: 13px;
+.watched-folder-list .preset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
-/* The window opens 480px wide: narrow sidebar, and controls drop under
-   their label instead of squeezing it. */
+a.btn {
+  text-decoration: none;
+}
+
+/* Narrow window: the page list becomes a row of tabs above the page, and a
+   row's control drops under its label instead of squeezing it. */
 @media (max-width: 640px) {
-  .settings-sidebar {
-    flex-basis: 124px;
-    padding: 12px 6px;
+  .sets {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .settings-page {
-    padding: 14px 14px 18px;
+  .subnav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .subnav button {
+    flex: none;
   }
 
   .settings-item,
   .settings-plugin-row {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .settings-item-control {

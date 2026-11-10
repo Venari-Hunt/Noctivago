@@ -97,7 +97,7 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     for (const listener of activateListeners) listener(id)
   }
 
-  function register({ id, title, icon, mount, mountSticky, onShow, onHide, onBeforeHide, onDestroy }) {
+  function register({ id, title, icon, hideButton, mount, mountSticky, onShow, onHide, onBeforeHide, onDestroy }) {
     if (tabs.has(id)) throw new Error(`Tab "${id}" is already registered`)
 
     const button = document.createElement('button')
@@ -112,8 +112,11 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     label.textContent = title
     button.appendChild(label)
     button.addEventListener('click', () => activate(id))
+    // A hideButton tab (Settings) has no tab-bar button: the nav's Settings
+    // button calls activate(). The detached button only carries the active class.
     const slot = slots.get(id)
-    if (slot?.isConnected) slot.replaceWith(button)
+    if (hideButton) slot?.remove()
+    else if (slot?.isConnected) slot.replaceWith(button)
     else tabBarEl.appendChild(button)
     slots.delete(id)
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { buildSidebar, pluginPageId } from '../domain/sidebar.js'
+import { buildSidebar } from '../domain/sidebar.js'
 import { splitByKind } from '../domain/pluginGroups.js'
 import { syncPlugins, subscribePluginRuntime, getPluginRuntime, describeWaiting } from '../../core/PluginLoader.js'
 import { listPluginSettingsPages, subscribePluginSettingsPages } from '../domain/pluginSettingsPages.js'
@@ -8,12 +8,17 @@ import { GeneralPage } from './GeneralPage.jsx'
 import { LibraryPage } from './LibraryPage.jsx'
 import { CorePluginsPage } from './CorePluginsPage.jsx'
 import { CommunityPluginsPage } from './CommunityPluginsPage.jsx'
-import { PluginOptionsPage } from './PluginOptionsPage.jsx'
+import { PluginOptionsDialog } from './PluginOptionsDialog.jsx'
+import { PrivacyPage } from './PrivacyPage.jsx'
+import { AboutPage } from './AboutPage.jsx'
 
-export function SettingsWindow({ noctivago, onClose }) {
+// The Settings page (a tab with no tab-bar button, see settings/index.jsx):
+// the list of pages on the left, the chosen page in a column on the right.
+export function SettingsPage({ noctivago }) {
   const [settings, setSettings] = useState(null)
   const [rawDescribed, setDescribed] = useState([])
   const [activeId, setActiveId] = useState('general')
+  const [optionsFor, setOptionsFor] = useState(null)
   const pluginPages = useSyncExternalStore(subscribePluginSettingsPages, listPluginSettingsPages)
   // Plugin changes apply live (core/PluginLoader.js); `loaded` is what's
   // actually running now, which lags the saved state only while a busy
@@ -56,20 +61,18 @@ export function SettingsWindow({ noctivago, onClose }) {
   )
 
   const loadedPages = pluginPages.filter((p) => described.find((d) => d.id === p.pluginId)?.loaded)
-  const groups = buildSidebar(loadedPages, described)
+  const pages = buildSidebar(described)
   const optionPageIds = new Set(loadedPages.map((p) => p.pluginId))
   const { core, community } = splitByKind(described)
-  const openOptions = (pluginId) => setActiveId(pluginPageId(pluginId))
-  const activePluginPage = loadedPages.find((p) => pluginPageId(p.pluginId) === activeId)
+  const optionsPage = loadedPages.find((p) => p.pluginId === optionsFor)
+  const optionsTitle = described.find((d) => d.id === optionsFor)?.manifest.name
 
   function renderPage() {
     switch (activeId) {
-      case 'general':
-        return <GeneralPage settings={settings} api={api} />
       case 'library':
         return <LibraryPage settings={settings} api={api} />
       case 'core-plugins':
-        return <CorePluginsPage plugins={core} pluginsApi={pluginsApi} optionPageIds={optionPageIds} onOpenOptions={openOptions} />
+        return <CorePluginsPage plugins={core} pluginsApi={pluginsApi} optionPageIds={optionPageIds} onOpenOptions={setOptionsFor} />
       case 'community-plugins':
         return (
           <CommunityPluginsPage
@@ -80,22 +83,22 @@ export function SettingsWindow({ noctivago, onClose }) {
             pluginsApi={pluginsApi}
             store={noctivago.pluginStore}
             optionPageIds={optionPageIds}
-            onOpenOptions={openOptions}
+            onOpenOptions={setOptionsFor}
           />
         )
+      case 'privacy':
+        return <PrivacyPage />
+      case 'about':
+        return <AboutPage autoUpdate={noctivago.autoUpdate} />
       default:
-        return activePluginPage ? <PluginOptionsPage page={activePluginPage} /> : <GeneralPage settings={settings} api={api} />
+        return <GeneralPage settings={settings} api={api} />
     }
   }
 
   return (
-    <div className="modal-card settings-window">
-      <Sidebar groups={groups} activeId={activeId} onSelect={setActiveId} />
-      <div className="settings-page">
-        <div className="settings-page-top">
-          <h2>Settings</h2>
-          <button className="btn btn-icon" type="button" title="Close" onClick={onClose}>✕</button>
-        </div>
+    <div className="sets">
+      <Sidebar pages={pages} activeId={activeId} onSelect={setActiveId} />
+      <div className="scol">
         {runtime.waiting.map((w) => (
           <div key={w.id} className="plugin-store-restart">
             <span>{describeWaiting(w)}</span>
@@ -103,6 +106,7 @@ export function SettingsWindow({ noctivago, onClose }) {
         ))}
         {settings ? renderPage() : <p className="plugin-store-dim">Loading…</p>}
       </div>
+      {optionsPage && <PluginOptionsDialog title={optionsTitle ?? optionsPage.title} page={optionsPage} onClose={() => setOptionsFor(null)} />}
     </div>
   )
 }

@@ -2,13 +2,13 @@ import { createTabHost } from './core/TabHost.js'
 import { loadPlugins } from './core/PluginLoader.js'
 import { installSliderDoubleClickReset } from './core/sliderReset.js'
 import { installNumberBoxStepper } from './core/numberBoxStepper.js'
-import { installSettingsMenu } from './settings/index.jsx'
+import { createSettingsTab } from './settings/index.jsx'
 import { installUpdateModal } from './core/UpdateModal.js'
 import { installSleepTimer } from './core/SleepTimer.js'
 import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { installRecordDialog } from './core/RecordDialog.js'
 import { installAddLinkDialog } from './core/AddLinkDialog.js'
-import { mountToolbar, updateToolbar } from './toolbar/index.jsx'
+import { mountToolbar, updateToolbar, setToolbarHandlers, setSettingsOpen } from './toolbar/index.jsx'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
 mountToolbar(document.getElementById('toolbar'), document.getElementById('nav-end'))
@@ -19,7 +19,6 @@ installRecordDialog()
 installAddLinkDialog()
 installUpdateModal()
 installSleepTimer()
-installSettingsMenu()
 
 // The BrowserWindow's initial title option gets overwritten by the loaded
 // page's own <title> tag once the page finishes loading (standard Electron/
@@ -41,5 +40,17 @@ const tabHost = createTabHost(
 // Registered synchronously, before any plugin loads, so the Mixer tab is
 // always present regardless of plugin state and always becomes tab 0.
 tabHost.register({ id: 'mixer', title: 'Mixer', mount: mountMixerTab, onShow: onShowMixerTab })
+
+// Settings is a page, not a dialog: a tab with no tab-bar button, opened from
+// the nav's Settings button, which toggles back to the tab you came from.
+tabHost.register(createSettingsTab())
+let lastTab = 'mixer'
+setToolbarHandlers({
+  onOpenSettings: () => tabHost.activate(tabHost.getActiveId() === 'settings' && tabHost.has(lastTab) ? lastTab : 'settings')
+})
+tabHost.onActivate((id) => {
+  if (id !== 'settings') lastTab = id
+  setSettingsOpen(id === 'settings')
+})
 
 loadPlugins(tabHost)

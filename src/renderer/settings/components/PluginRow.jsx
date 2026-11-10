@@ -27,7 +27,7 @@ export function PluginRow({ plugin, hasOptions, onToggle, onOpenOptions, onUnins
               <button className="btn btn-small btn-primary" type="button" onClick={update.onClick}>Update to v{update.version}</button>
             )}
             {hasOptions && (
-              <button className="btn btn-icon" type="button" title="Options" onClick={onOpenOptions}>⚙</button>
+              <button className="btn" type="button" onClick={onOpenOptions}>Options</button>
             )}
             {onUninstall && (
               <button className="btn btn-small btn-danger" type="button" onClick={onUninstall}>Uninstall</button>

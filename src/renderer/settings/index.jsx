@@ -1,26 +1,24 @@
 import { createRoot } from 'react-dom/client'
-import { SettingsWindow } from './components/SettingsWindow.jsx'
-import { setToolbarHandlers } from '../toolbar/index.jsx'
+import { SettingsPage } from './components/SettingsPage.jsx'
 
-// Wires the toolbar's gear button to the Settings window. The #settings-modal
-// element keeps owning visibility (a plain `hidden` class), because the
-// watch-folder dialog hides and re-shows it while it's open.
-export function installSettingsMenu() {
-  const modal = document.getElementById('settings-modal')
-  const root = createRoot(modal)
+// Settings is a page of its own (a tab with no tab-bar button, opened by the
+// nav's Settings button), not a dialog over a dimmed app. onShow re-reads
+// settings and the plugin list by giving the page a fresh key.
+export function createSettingsTab() {
+  let root = null
   let session = 0
-
-  function close() {
-    modal.classList.add('hidden')
-    root.render(null)
-  }
-
-  setToolbarHandlers({
-    onOpenSettings: () => {
-      // A fresh key per opening re-reads settings and the plugin list.
+  const render = () => root?.render(<SettingsPage key={session} noctivago={window.noctivago} />)
+  return {
+    id: 'settings',
+    title: 'Settings',
+    hideButton: true,
+    mount(section) {
+      root = createRoot(section)
+      render()
+    },
+    onShow() {
       session += 1
-      root.render(<SettingsWindow key={session} noctivago={window.noctivago} onClose={close} />)
-      modal.classList.remove('hidden')
+      render()
     }
-  })
+  }
 }
