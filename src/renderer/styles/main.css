@@ -1736,10 +1736,28 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-.sleep-read b {
+.sleep-read b,
+.sleep-readout {
   font-size: 40px;
   line-height: 48px;
   font-weight: 700;
+}
+
+.sleep-readout {
+  width: 220px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: center;
+  cursor: text;
+}
+
+.sleep-readout:hover,
+.sleep-readout:focus {
+  background: var(--surface-hover);
+  outline: none;
 }
 
 .sleep-dim {

@@ -266,7 +266,7 @@
         <h3>Sleep timer<button id="sleep-timer-close" class="btn btn-ghost btn-svg-icon" type="button" aria-label="Close"><span data-icon="x"></span></button></h3>
         <div id="sleep-timer-setup">
           <div class="sleep-read">
-            <b id="sleep-timer-readout">0 h 30</b>
+            <input id="sleep-timer-readout" class="sleep-readout" type="text" maxlength="9" value="0 h 30" aria-label="Timer length (type 1:30, 90 or 1h30)" />
             <span class="sleep-dim">ends at <input id="sleep-timer-at" class="sleep-endat" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" aria-label="Ends at" /></span>
           </div>
           <div class="sleep-ruler" id="sleep-timer-ruler">

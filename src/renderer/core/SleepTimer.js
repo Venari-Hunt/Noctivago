@@ -2,7 +2,7 @@ import { formatDuration } from '../util/time.js'
 import { targetFromTimeOfDay, durationInWords } from '../../shared/sleepTimerTime.js'
 import { setToolbarHandlers, updateToolbar } from '../toolbar/index.jsx'
 import { mockIconSvg } from '../components/mockIcons.jsx'
-import { clampMinutes, rulerPercent, minutesFromRuler, readoutText, endClock, wheelStep, stepMinutes, ACTION_THEN } from '../../shared/sleepRuler.js'
+import { clampMinutes, rulerPercent, minutesFromRuler, readoutText, endClock, wheelStep, stepMinutes, parseLengthText, ACTION_THEN } from '../../shared/sleepRuler.js'
 
 // Sleep timer - toolbar button + ruler popover (approved mock "sleep"). After a set duration the main
 // process (src/main/sleepTimer.js, which owns the actual setTimeout so it
@@ -37,7 +37,7 @@ function refreshDisplay() {
 
 function renderSetup() {
   const { minutes, mode } = setup
-  els.readout.textContent = readoutText(minutes)
+  if (document.activeElement !== els.readout) els.readout.value = readoutText(minutes)
   els.range.value = String(Math.min(480, minutes))
   els.range.style.setProperty('--p', rulerPercent(minutes) + '%')
   if (mode === 'at') {
@@ -281,7 +281,8 @@ export function installSleepTimer() {
     setup = { ...setup, mode: 'in', minutes: minutesFromRuler(els.range.value) }
     renderSetup()
   })
-  els.ruler.addEventListener(
+  // Side-scroll works anywhere over the setup area, not only on the ruler.
+  els.setup.addEventListener(
     'wheel',
     (e) => {
       const step = wheelStep(e)
@@ -292,6 +293,18 @@ export function installSleepTimer() {
     },
     { passive: false }
   )
+  els.readout.addEventListener('focus', () => els.readout.select())
+  const applyTypedLength = () => {
+    const minutes = parseLengthText(els.readout.value)
+    if (minutes != null) setup = { ...setup, mode: 'in', minutes }
+    els.readout.blur()
+    renderSetup()
+  }
+  els.readout.addEventListener('change', applyTypedLength)
+  els.readout.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') applyTypedLength()
+  })
+  els.atInput.addEventListener('focus', () => els.atInput.select())
   els.atInput.addEventListener('change', applyTypedEnd)
   els.atInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') applyTypedEnd()

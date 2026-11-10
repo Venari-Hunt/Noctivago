@@ -40,3 +40,17 @@ describe('sleep ruler', () => {
     assert.equal(stepMinutes(1438, 5), 1440)
   })
 })
+
+import { parseLengthText } from '../src/shared/sleepRuler.js'
+describe('typed length', () => {
+  test('forms', () => {
+    assert.equal(parseLengthText('90'), 90)
+    assert.equal(parseLengthText('1:30'), 90)
+    assert.equal(parseLengthText('1h30'), 90)
+    assert.equal(parseLengthText('3 h 00'), 180)
+    assert.equal(parseLengthText('2h'), 120)
+    assert.equal(parseLengthText('45 min'), 45)
+    assert.equal(parseLengthText('abc'), null)
+    assert.equal(parseLengthText(''), null)
+  })
+})

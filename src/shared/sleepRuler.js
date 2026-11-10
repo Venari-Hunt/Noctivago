@@ -61,3 +61,14 @@ export const ACTION_THEN = {
   sleep: 'sleep the PC',
   shutdown: 'shut down the PC'
 }
+
+// Typed length -> minutes, or null. Accepts "90", "1:30", "1h30", "1 h 30", "2h", "45m".
+export function parseLengthText(text) {
+  const t = String(text ?? '').trim().toLowerCase()
+  let m
+  if ((m = /^(\d+)\s*:\s*(\d{1,2})$/.exec(t))) return clampMinutes(Number(m[1]) * 60 + Number(m[2]))
+  if ((m = /^(\d+)\s*h\s*(\d{1,2})$/.exec(t))) return clampMinutes(Number(m[1]) * 60 + Number(m[2]))
+  if ((m = /^(?:(\d+)\s*h(?:ours?|rs?)?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?$/.exec(t)) && (m[1] || m[2])) return clampMinutes(Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0))
+  if ((m = /^(\d+)$/.exec(t))) return clampMinutes(Number(m[1]))
+  return null
+}
