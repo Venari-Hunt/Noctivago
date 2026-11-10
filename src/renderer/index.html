@@ -261,51 +261,39 @@
       </div>
     </div>
 
-    <div id="sleep-timer-modal" class="modal hidden">
-      <div class="modal-card">
-        <h2>Sleep timer</h2>
+    <div id="sleep-timer-modal" class="sleep-pop-wrap hidden">
+      <div class="sleep-pop" role="dialog" aria-label="Sleep timer">
+        <h3>Sleep timer<button id="sleep-timer-close" class="btn btn-ghost btn-svg-icon" type="button" aria-label="Close"><span data-icon="x"></span></button></h3>
         <div id="sleep-timer-setup">
-          <p class="modal-hint">When the time is up, Noctívago does the action you pick.</p>
-          <fieldset class="sleep-timer-mode">
-            <legend>Set the timer</legend>
-            <label><input type="radio" name="sleep-timer-mode" value="in" checked /> In a number of minutes</label>
-            <label><input type="radio" name="sleep-timer-mode" value="at" /> At a set time</label>
-          </fieldset>
-          <label class="field-label" id="sleep-timer-minutes-field">Minutes
-            <input id="sleep-timer-minutes" type="number" min="1" max="1440" step="1" value="30" />
-          </label>
-          <div class="sleep-timer-presets" id="sleep-timer-presets">
-            <button class="btn btn-small" type="button" data-min="15">15m</button>
-            <button class="btn btn-small" type="button" data-min="30">30m</button>
-            <button class="btn btn-small" type="button" data-min="45">45m</button>
-            <button class="btn btn-small" type="button" data-min="60">1h</button>
-            <button class="btn btn-small" type="button" data-min="90">1h 30m</button>
-            <button class="btn btn-small" type="button" data-min="120">2h</button>
+          <div class="sleep-read">
+            <b id="sleep-timer-readout">0 h 30</b>
+            <span class="sleep-dim">ends at <input id="sleep-timer-at" class="sleep-endat" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" aria-label="Ends at" /></span>
           </div>
-          <label class="field-label hidden" id="sleep-timer-at-field">Time of day
-            <input id="sleep-timer-at" type="time" />
-          </label>
-          <p class="modal-hint hidden" id="sleep-timer-at-hint"></p>
-          <fieldset class="sleep-timer-action">
-            <legend>When the time is up</legend>
-            <label><input type="radio" name="sleep-timer-action" value="stop" checked /> Stop all sounds</label>
-            <label><input type="radio" name="sleep-timer-action" value="displays" /> Turn off the displays, keep the sound playing</label>
-            <label><input type="radio" name="sleep-timer-action" value="sleep" /> Put the computer to sleep</label>
-            <label><input type="radio" name="sleep-timer-action" value="shutdown" /> Shut down the computer</label>
-          </fieldset>
+          <div class="sleep-ruler" id="sleep-timer-ruler">
+            <input id="sleep-timer-range" type="range" min="0" max="480" step="5" value="30" aria-label="Time" />
+            <div class="sleep-ticks"><span>0 h</span><span>1 h</span><span>2 h</span><span>3 h</span><span>4 h</span><span>5 h</span><span>6 h</span><span>7 h</span><span>8 h</span></div>
+          </div>
+          <div class="sleep-acts" role="group" aria-label="When it ends">
+            <button type="button" data-action="stop" aria-pressed="true"><span data-icon="volume-x" data-size="20"></span>Stop sounds</button>
+            <button type="button" data-action="displays" aria-pressed="false"><span data-icon="eye-off" data-size="20"></span>Displays off</button>
+            <button type="button" data-action="sleep" aria-pressed="false"><span data-icon="moon" data-size="20"></span>Sleep PC</button>
+            <button type="button" data-action="shutdown" aria-pressed="false"><span data-icon="power" data-size="20"></span>Shut down PC</button>
+          </div>
         </div>
         <div id="sleep-timer-active" class="hidden">
-          <p class="sleep-timer-countdown"><span id="sleep-timer-countdown-value">--:--</span></p>
-          <p id="sleep-timer-active-action" class="modal-hint"></p>
+          <div class="sleep-read">
+            <b id="sleep-timer-countdown-value">--:--</b>
+            <span id="sleep-timer-active-action" class="sleep-dim"></span>
+          </div>
         </div>
-        <label class="settings-row sleep-timer-autostart-row">
-          <input id="sleep-timer-autostart" type="checkbox" />
-          Start this timer every time Noctívago opens
-        </label>
-        <div class="modal-actions">
-          <button id="sleep-timer-close" class="btn" type="button">Close</button>
-          <button id="sleep-timer-cancel" class="btn btn-danger hidden" type="button">Cancel timer</button>
-          <button id="sleep-timer-start" class="btn btn-primary" type="button">Start</button>
+        <div class="sleep-foot">
+          <div id="sleep-timer-autostart-row" class="sleep-lrow">
+            <span>Start when the app opens</span>
+            <button id="sleep-timer-autostart" class="settings-toggle" type="button" role="switch" aria-checked="false" aria-label="Start when the app opens"><span class="settings-toggle-knob"></span></button>
+          </div>
+          <button id="sleep-timer-add" class="btn hidden" type="button">Add 15 min</button>
+          <button id="sleep-timer-cancel" class="btn btn-primary hidden" type="button">Cancel timer</button>
+          <button id="sleep-timer-start" class="btn btn-primary" type="button"><span data-icon="moon"></span>Start timer</button>
         </div>
       </div>
     </div>

@@ -1694,47 +1694,177 @@ main {
   cursor: pointer;
 }
 
-.sleep-timer-presets {
+/* Sleep timer: a ruler popover above the player's moon (approved mock "sleep" / "sleeprun"). */
+.sleep-pop-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+.sleep-pop {
+  position: absolute;
+  right: var(--space-5);
+  bottom: 80px;
+  width: min(560px, calc(100vw - 48px));
+  background: var(--surface-alt);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.5);
+  overflow: hidden;
+}
+
+.sleep-pop.running {
+  width: min(360px, calc(100vw - 48px));
+}
+
+.sleep-pop h3 {
+  margin: 0;
+  padding: var(--space-3) var(--space-2) var(--space-1) var(--space-4);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sleep-read {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-4) var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.sleep-read b {
+  font-size: 40px;
+  line-height: 48px;
+  font-weight: 700;
+}
+
+.sleep-dim {
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sleep-endat {
+  width: 72px;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-hover);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+
+.sleep-endat::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.sleep-ruler {
+  padding: 0 var(--space-4);
+}
+
+.sleep-ruler input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  background: transparent;
+  cursor: ew-resize;
+  --p: 0%;
+}
+
+.sleep-ruler input[type='range']::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, var(--accent) var(--p), var(--surface-hover) var(--p));
+}
+
+.sleep-ruler input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 24px;
+  margin-top: -8px;
+  border-radius: 6px;
+  background: var(--text);
+}
+
+.sleep-ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sleep-acts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.sleep-acts button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  min-height: 72px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.sleep-acts button:hover {
+  color: var(--text);
+}
+
+.sleep-acts button[aria-pressed='true'] {
+  background: var(--tint);
+  color: var(--tint-ink);
+  font-weight: 600;
+}
+
+.sleep-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: -4px 0 16px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
 }
 
-.sleep-timer-mode,
-.sleep-timer-action {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px 4px;
-  margin: 0 0 8px;
-}
-
-.sleep-timer-mode {
-  margin-bottom: 14px;
-}
-
-.sleep-timer-mode legend,
-.sleep-timer-action legend {
-  font-size: 11px;
-  color: var(--text-dim);
-  padding: 0 4px;
-}
-
-.sleep-timer-mode label,
-.sleep-timer-action label {
+.sleep-lrow {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  margin-bottom: 8px;
+  gap: var(--space-3);
+  min-height: 32px;
+  margin-right: auto;
+  font-size: 14px;
 }
 
-.sleep-timer-countdown {
-  font-size: 34px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  margin: 8px 0 4px;
-  color: var(--accent);
+.sleep-pop.running .sleep-lrow {
+  flex: 1 1 100%;
+}
+
+.sleep-foot .btn-icon-text,
+.sleep-foot .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .update-version-row {

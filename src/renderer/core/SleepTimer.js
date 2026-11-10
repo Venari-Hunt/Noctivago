@@ -1,19 +1,15 @@
 import { formatDuration } from '../util/time.js'
 import { targetFromTimeOfDay, durationInWords } from '../../shared/sleepTimerTime.js'
 import { setToolbarHandlers, updateToolbar } from '../toolbar/index.jsx'
+import { mockIconSvg } from '../components/mockIcons.jsx'
+import { clampMinutes, rulerPercent, minutesFromRuler, readoutText, endClock, wheelStep, stepMinutes, ACTION_THEN } from '../../shared/sleepRuler.js'
 
-// Sleep timer - toolbar button + modal. After a set duration the main
+// Sleep timer - toolbar button + ruler popover (approved mock "sleep"). After a set duration the main
 // process (src/main/sleepTimer.js, which owns the actual setTimeout so it
 // survives the window being minimised to the tray) fires an event; a
 // non-destructive "stop all sounds" is handled here, while "sleep" /
 // "shutdown" first pop a 30-second warning modal that can still cancel it.
 
-const ACTION_ACTIVE_TEXT = {
-  stop: 'All sounds will stop when the timer ends.',
-  displays: 'Your displays will turn off when the timer ends — the sound keeps playing. Move the mouse or press a key to wake them.',
-  sleep: 'The computer will go to sleep when the timer ends — you can still cancel then.',
-  shutdown: 'The computer will shut down when the timer ends — you can still cancel then.'
-}
 const WARNING_SECONDS = 30
 
 let els = null
@@ -21,6 +17,9 @@ let displayInterval = null
 let warningInterval = null
 let noticeInterval = null
 let firesAt = null
+// What the ruler shows while setting: minutes, how they were set ('in' =
+// ruler/scroll, 'at' = typed end time), the typed time, and the action.
+let setup = { minutes: 30, mode: 'in', timeOfDay: '', action: 'stop' }
 
 function showModal(el) {
   el.classList.remove('hidden')
@@ -36,60 +35,69 @@ function refreshDisplay() {
   updateToolbar({ sleepRemaining: text })
 }
 
+function renderSetup() {
+  const { minutes, mode } = setup
+  els.readout.textContent = readoutText(minutes)
+  els.range.value = String(Math.min(480, minutes))
+  els.range.style.setProperty('--p', rulerPercent(minutes) + '%')
+  if (mode === 'at') {
+    els.atInput.value = setup.timeOfDay
+  } else if (document.activeElement !== els.atInput) {
+    els.atInput.value = endClock(minutes)
+  }
+  for (const btn of els.acts) btn.setAttribute('aria-pressed', String(btn.dataset.action === setup.action))
+}
+
+function setAutoStartSwitch(on) {
+  els.autoStart.setAttribute('aria-checked', String(on))
+  els.autoStart.classList.toggle('on', on)
+}
+
 function applyState(state) {
   const active = Boolean(state && state.active)
   firesAt = active ? state.firesAt : null
 
   updateToolbar({ sleepActive: active })
+  els.pop.classList.toggle('running', active)
   els.setup.classList.toggle('hidden', active)
   els.activeBox.classList.toggle('hidden', !active)
   els.startBtn.classList.toggle('hidden', active)
+  els.addBtn.classList.toggle('hidden', !active)
   els.cancelBtn.classList.toggle('hidden', !active)
 
   clearInterval(displayInterval)
   displayInterval = null
   if (active) {
-    els.activeAction.textContent = ACTION_ACTIVE_TEXT[state.action] || ''
+    const endsAt = new Date(state.firesAt)
+    const clock = String(endsAt.getHours()).padStart(2, '0') + ':' + String(endsAt.getMinutes()).padStart(2, '0')
+    els.activeAction.textContent = `then ${ACTION_THEN[state.action] || ACTION_THEN.stop}, at ${clock}`
     refreshDisplay()
     displayInterval = setInterval(refreshDisplay, 1000)
+  } else {
+    renderSetup()
   }
 }
 
-function chosenAction() {
-  const checked = els.setup.querySelector('input[name="sleep-timer-action"]:checked')
-  return checked ? checked.value : 'stop'
-}
-
-function chosenMode() {
-  const checked = els.setup.querySelector('input[name="sleep-timer-mode"]:checked')
-  return checked ? checked.value : 'in'
-}
-
-// Shows/hides the minutes vs. time-of-day inputs and keeps the "that's in
-// about …" hint current for the 'at' mode.
-function updateModeUI() {
-  const at = chosenMode() === 'at'
-  els.minutesField.classList.toggle('hidden', at)
-  els.presets.classList.toggle('hidden', at)
-  els.atField.classList.toggle('hidden', !at)
-  els.atHint.classList.toggle('hidden', !at)
-  if (at) {
-    const target = targetFromTimeOfDay(els.atInput.value)
-    if (!target) {
-      els.atHint.textContent = 'Pick a time.'
-    } else {
-      const secs = Math.round((target.getTime() - Date.now()) / 1000)
-      const when = target.getDate() === new Date().getDate() ? 'today' : 'tomorrow'
-      els.atHint.textContent = `That's in ${formatDuration(secs)} — ${when}.`
-    }
+// Typed end time -> minutes from now (and the time to remember). Bad text
+// leaves the ruler as it was and puts the old time back.
+function applyTypedEnd() {
+  const target = targetFromTimeOfDay(els.atInput.value)
+  if (!target) {
+    renderSetup()
+    return
   }
+  const minutes = clampMinutes(Math.ceil((target.getTime() - Date.now()) / 60000))
+  const hh = String(target.getHours()).padStart(2, '0')
+  const mm = String(target.getMinutes()).padStart(2, '0')
+  setup = { ...setup, mode: 'at', minutes, timeOfDay: hh + ':' + mm }
+  renderSetup()
 }
 
 // Reads the chosen mode into { durationSeconds } (+ prefs to remember), or
 // null if the input is invalid (and focuses it).
 function readDuration() {
-  if (chosenMode() === 'at') {
-    const target = targetFromTimeOfDay(els.atInput.value)
+  if (setup.mode === 'at') {
+    const target = targetFromTimeOfDay(setup.timeOfDay)
     if (!target) {
       els.atInput.focus()
       return null
@@ -97,22 +105,34 @@ function readDuration() {
     return {
       durationSeconds: Math.max(1, Math.round((target.getTime() - Date.now()) / 1000)),
       mode: 'at',
-      timeOfDay: els.atInput.value
+      timeOfDay: setup.timeOfDay
     }
   }
-  const minutes = Number(els.minutesInput.value)
-  if (!Number.isFinite(minutes) || minutes < 1) {
-    els.minutesInput.focus()
-    return null
-  }
-  return { durationSeconds: minutes * 60, mode: 'in', minutes }
+  return { durationSeconds: setup.minutes * 60, mode: 'in', minutes: setup.minutes }
 }
 
 async function start() {
   const dur = readDuration()
   if (!dur) return
-  const state = await window.noctivago.sleepTimer.start({ ...dur, action: chosenAction() })
+  const state = await window.noctivago.sleepTimer.start({ ...dur, action: setup.action })
   applyState(state)
+}
+
+// Adds 15 minutes to the running timer: restarts it for what is left plus 15,
+// resending the remembered prefs unchanged.
+async function addFifteen() {
+  const [state, settings] = await Promise.all([window.noctivago.sleepTimer.get(), window.noctivago.settings.get()])
+  if (!state.active) return
+  const left = Math.max(1, (state.firesAt - Date.now()) / 1000)
+  applyState(
+    await window.noctivago.sleepTimer.start({
+      durationSeconds: left + 15 * 60,
+      action: state.action,
+      minutes: settings.sleepTimerMinutes,
+      mode: settings.sleepTimerMode,
+      timeOfDay: settings.sleepTimerTimeOfDay
+    })
+  )
 }
 
 async function cancel() {
@@ -182,19 +202,24 @@ function beginAutoStartNotice({ startsAt, seconds, action }) {
 }
 
 export function installSleepTimer() {
+  const modal = document.getElementById('sleep-timer-modal')
+  for (const slot of modal.querySelectorAll('[data-icon]')) {
+    slot.outerHTML = mockIconSvg(slot.dataset.icon, Number(slot.dataset.size) || 16)
+  }
   els = {
-    modal: document.getElementById('sleep-timer-modal'),
+    modal,
+    pop: modal.querySelector('.sleep-pop'),
     setup: document.getElementById('sleep-timer-setup'),
     activeBox: document.getElementById('sleep-timer-active'),
-    minutesInput: document.getElementById('sleep-timer-minutes'),
-    minutesField: document.getElementById('sleep-timer-minutes-field'),
-    presets: document.getElementById('sleep-timer-presets'),
-    atField: document.getElementById('sleep-timer-at-field'),
+    readout: document.getElementById('sleep-timer-readout'),
+    range: document.getElementById('sleep-timer-range'),
+    ruler: document.getElementById('sleep-timer-ruler'),
+    acts: [...modal.querySelectorAll('.sleep-acts button')],
     atInput: document.getElementById('sleep-timer-at'),
-    atHint: document.getElementById('sleep-timer-at-hint'),
     countdownValue: document.getElementById('sleep-timer-countdown-value'),
     activeAction: document.getElementById('sleep-timer-active-action'),
     startBtn: document.getElementById('sleep-timer-start'),
+    addBtn: document.getElementById('sleep-timer-add'),
     cancelBtn: document.getElementById('sleep-timer-cancel'),
     closeBtn: document.getElementById('sleep-timer-close'),
     warning: document.getElementById('sleep-timer-warning'),
@@ -210,45 +235,71 @@ export function installSleepTimer() {
     noticeSkip: document.getElementById('sleep-timer-autostart-skip')
   }
 
+  const close = () => hideModal(els.modal)
+
   const open = async () => {
     const [state, settings] = await Promise.all([
       window.noctivago.sleepTimer.get(),
       window.noctivago.settings.get()
     ])
     if (!state.active) {
-      els.minutesInput.value = settings.sleepTimerMinutes ?? 30
-      els.atInput.value = settings.sleepTimerTimeOfDay ?? ''
-      const actionRadio = els.setup.querySelector(
-        `input[name="sleep-timer-action"][value="${settings.sleepTimerAction ?? 'stop'}"]`
-      )
-      if (actionRadio) actionRadio.checked = true
-      const modeRadio = els.setup.querySelector(
-        `input[name="sleep-timer-mode"][value="${settings.sleepTimerMode ?? 'in'}"]`
-      )
-      if (modeRadio) modeRadio.checked = true
-      updateModeUI()
+      const at = settings.sleepTimerMode === 'at' ? targetFromTimeOfDay(settings.sleepTimerTimeOfDay) : null
+      setup = {
+        mode: at ? 'at' : 'in',
+        timeOfDay: at ? settings.sleepTimerTimeOfDay : '',
+        minutes: at ? clampMinutes(Math.ceil((at.getTime() - Date.now()) / 60000)) : clampMinutes(settings.sleepTimerMinutes ?? 30),
+        action: settings.sleepTimerAction ?? 'stop'
+      }
     }
-    els.autoStart.checked = Boolean(settings.sleepTimerAutoStart)
+    setAutoStartSwitch(Boolean(settings.sleepTimerAutoStart))
     applyState(state)
     showModal(els.modal)
   }
 
   setToolbarHandlers({ onOpenSleepTimer: open })
-  els.closeBtn.addEventListener('click', () => hideModal(els.modal))
+  els.closeBtn.addEventListener('click', close)
+  // A click on the empty area around the popover closes it.
+  els.modal.addEventListener('mousedown', (e) => {
+    if (e.target === els.modal) close()
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !els.modal.classList.contains('hidden')) close()
+  })
   els.startBtn.addEventListener('click', start)
+  els.addBtn.addEventListener('click', addFifteen)
   els.cancelBtn.addEventListener('click', cancel)
-  els.autoStart.addEventListener('change', () => {
-    window.noctivago.settings.setSleepTimerAutoStartEnabled(els.autoStart.checked)
+  els.autoStart.addEventListener('click', () => {
+    const on = els.autoStart.getAttribute('aria-checked') !== 'true'
+    setAutoStartSwitch(on)
+    window.noctivago.settings.setSleepTimerAutoStartEnabled(on)
   })
 
-  for (const radio of els.setup.querySelectorAll('input[name="sleep-timer-mode"]')) {
-    radio.addEventListener('change', updateModeUI)
-  }
-  els.atInput.addEventListener('input', updateModeUI)
-
-  for (const btn of els.presets.querySelectorAll('button')) {
+  // Setting the time: drag the thumb, side-scroll (or Shift+wheel) over the
+  // ruler, or type the end time. Ruler and scroll set minutes; typing sets a
+  // time of day.
+  els.range.addEventListener('input', () => {
+    setup = { ...setup, mode: 'in', minutes: minutesFromRuler(els.range.value) }
+    renderSetup()
+  })
+  els.ruler.addEventListener(
+    'wheel',
+    (e) => {
+      const step = wheelStep(e)
+      if (step === 0) return
+      e.preventDefault()
+      setup = { ...setup, mode: 'in', minutes: stepMinutes(setup.minutes, step) }
+      renderSetup()
+    },
+    { passive: false }
+  )
+  els.atInput.addEventListener('change', applyTypedEnd)
+  els.atInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') applyTypedEnd()
+  })
+  for (const btn of els.acts) {
     btn.addEventListener('click', () => {
-      els.minutesInput.value = btn.dataset.min
+      setup = { ...setup, action: btn.dataset.action }
+      renderSetup()
     })
   }
 
