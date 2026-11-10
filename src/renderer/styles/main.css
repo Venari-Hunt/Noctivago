@@ -521,8 +521,8 @@ main {
 .dropdown-icon {
   flex: none;
   display: inline-flex;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   color: var(--text-dim);
 }
 
@@ -1104,16 +1104,21 @@ main {
 }
 
 .tag-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-right: -4px;
   border: none;
+  border-radius: 50%;
   background: none;
   color: inherit;
-  font-size: 12px;
-  line-height: 1;
   cursor: pointer;
   padding: 0;
 }
 
 .tag-chip-remove:hover {
+  background: var(--surface);
   color: var(--danger);
 }
 
