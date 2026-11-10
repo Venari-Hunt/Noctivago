@@ -3,18 +3,23 @@
   /* Dark theme: a dark gray page (never pure black), lighter raised surfaces, one yellow
      accent. Text sitting on a yellow fill is --on-accent (black), never
      white - white on yellow is unreadable. */
-  --bg: #121212;
-  --surface: #1a1a1a;
-  --surface-alt: #222222;
-  --surface-hover: #2c2c2c;
-  --border: #333333;
-  --border-strong: #484848;
-  --text: #f5f5f5;
-  --text-dim: #8f8f8f;
-  --accent: #ffc933;
-  --accent-strong: #f0b400;
-  --accent-soft: rgba(255, 201, 51, 0.12);
-  --on-accent: #000000;
+  --bg: #141417;
+  --surface: #1b1b1f;
+  --surface-alt: #232328;
+  --surface-hover: #2d2d33;
+  --border: #2a2a30;
+  --border-strong: #3c3c44;
+  --text: #ece9e2;
+  --text-dim: #a3a09a;
+  --accent: #e0b84c;
+  --accent-strong: #e9c563;
+  /* The desktop look (2026-11-05): graphite surfaces, a flat amber tint for
+     main buttons and selected states, solid amber only for Play and level marks. */
+  --tint: #3a2f12;
+  --tint-hover: #473a17;
+  --tint-ink: #ffd45c;
+  --accent-soft: #3a2f12;
+  --on-accent: #1a1500;
   --danger: #ff6b6b;
   --danger-strong: #e04f4f;
   --danger-soft: rgba(255, 107, 107, 0.12);
@@ -25,8 +30,8 @@
      instead of each piece picking its own size. */
   --control-h: 32px;
   --control-h-sm: 26px;
-  --radius-sm: 6px;
-  --radius: 8px;
+  --radius-sm: 12px;
+  --radius: 12px;
   --radius-lg: 12px;
   --space-1: 4px;
   --space-2: 8px;
@@ -265,33 +270,39 @@ main {
   height: var(--control-h);
   padding: 0 var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface-alt);
+  border: 1px solid transparent;
+  background: var(--surface-hover);
   color: var(--text);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
 .btn:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
+  background: #36363d;
+}
+
+.btn:active {
+  background: #28282e;
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  background: var(--tint);
+  border-color: transparent;
+  color: var(--tint-ink);
   font-weight: 600;
 }
 
 .btn-primary:hover {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
+  background: var(--tint-hover);
+}
+
+.btn-primary:active {
+  background: #30270f;
 }
 
 .btn:disabled {
@@ -300,13 +311,11 @@ main {
 }
 
 .btn:disabled:hover {
-  background: var(--surface-alt);
-  border-color: var(--border);
+  background: var(--surface-hover);
 }
 
 .btn-primary:disabled:hover {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--tint);
 }
 
 /* Square icon-only button (Play/Pause, Mute, Solo, Settings, +). */
@@ -346,15 +355,15 @@ main {
 
 .btn-svg-icon-solo-active,
 .btn-active {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  color: var(--tint-ink);
+  background: var(--tint);
+  border-color: transparent;
 }
 
 .btn-svg-icon-solo-active:hover,
 .btn-active:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: var(--tint-hover);
+  border-color: transparent;
 }
 
 /* Icon + label (owner: "if you feel like it's gonna be confusing use
