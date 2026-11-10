@@ -78,4 +78,28 @@ describe('Reverse in the saved clip matches the live preview', { skip: !fs.exist
     assert.ok(after > 0.1, `echo after the click: ${after}`)
     assert.ok(before < 0.01, `nothing before the click: ${before}`)
   })
+
+  // The loop wraps: a repeat that runs past the clip end must come back in at
+  // the start, as the live feedback loop does (v0.1.276). Reversed, the click
+  // from 0.2 s lands near the end, so its 0.5 s repeat lands past the end.
+  test('echo tail wraps around the loop end', async () => {
+    const early = path.join(userData, 'early.wav')
+    execFileSync(ffmpeg, ['-y', '-v', 'error', '-f', 'lavfi', '-i', `aevalsrc=0.9*lt(abs(t-0.2)\\,0.001):s=${RATE}:d=4`, '-c:a', 'pcm_f32le', early])
+    const result = await renderLoopClip({
+      id: 'wrap-echo',
+      inputPath: early,
+      loopStart: 0,
+      loopEnd: 4,
+      crossfadeSeconds: 0.02,
+      speedPitch: { speed: 1, pitchSemitones: 0, reversed: true },
+      filters: { echoDelayMs: 500, echoDecay: 0.5 }
+    })
+    assert.equal(result.ok, true, result.error)
+    const samples = decodeMono(path.join(userData, 'clips', 'wrap-echo.wav'))
+    let click = 0
+    for (let i = 1; i < samples.length; i++) if (Math.abs(samples[i]) > Math.abs(samples[click])) click = i
+    const wrapped = peakNear(samples, click + Math.round(0.5 * RATE))
+    assert.ok(Math.abs(samples.length / RATE - 4) < 0.1, `clip keeps its length, not the echo tail: ${samples.length / RATE}`)
+    assert.ok(wrapped > 0.1, `wrapped echo: ${wrapped}`)
+  })
 })

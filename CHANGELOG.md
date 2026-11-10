@@ -8,6 +8,7 @@ bullet on a single line — the in-app screen wraps them itself.
 
 ## v0.1.275 — Reverse saves the way Remix plays it
 
+- **Fixed: a saved sound with Echo no longer ends in a long echo tail.** The saved loop kept its length and the echo wraps around the loop end, like the live preview, so the loop no longer jumps from the end to the middle.
 - **Changed: Speed, Pitch and Reverse now run before the filters when a sound is saved, the same order the Remix preview plays them in.** Echo on a reversed sound now repeats after each sound instead of swelling into it, and echo timing no longer stretches with Speed. Needs Remix 1.2.4, which plays Reverse live.
 
 ## v0.1.273 — Compress sounds already in your library
