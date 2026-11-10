@@ -104,7 +104,9 @@ export function readWav(file) {
     const id = buf.toString('ascii', pos, pos + 4)
     const size = buf.readUInt32LE(pos + 4)
     if (id === 'fmt ') {
-      fmt = { format: buf.readUInt16LE(pos + 8), channels: buf.readUInt16LE(pos + 10), sampleRate: buf.readUInt32LE(pos + 12), bits: buf.readUInt16LE(pos + 22) }
+      // WAVE_FORMAT_EXTENSIBLE (0xFFFE) keeps the real format in its sub-format GUID.
+      const tag = buf.readUInt16LE(pos + 8)
+      fmt = { format: tag === 0xfffe ? buf.readUInt16LE(pos + 8 + 24) : tag, channels: buf.readUInt16LE(pos + 10), sampleRate: buf.readUInt32LE(pos + 12), bits: buf.readUInt16LE(pos + 22) }
     } else if (id === 'data') {
       data = buf.subarray(pos + 8, Math.min(buf.length, pos + 8 + size))
       break
@@ -167,13 +169,16 @@ export function needsPitchPass(speedPitch) {
   return p.speed !== 1 || p.pitchSemitones !== 0 || p.dopplerEnabled
 }
 
-export async function pitchShiftWavFile(inFile, outFile, speedPitch) {
+export async function pitchShiftChannels(channels, sampleRate, speedPitch) {
   const p = pitchPassParams(speedPitch)
-  const { channels, sampleRate } = readWav(inFile)
   const duration = channels[0].length / sampleRate
   const semitonesAt = p.dopplerEnabled
     ? (t) => p.pitchSemitones + dopplerSemitones(t, duration, p.dopplerClosestFraction, p.dopplerIntensitySemitones, p.dopplerReversed, p.dopplerSharpness)
     : () => p.pitchSemitones
-  const out = await stretchChannels(channels, sampleRate, { rate: p.speed, semitonesAt })
-  writeWavFloat(outFile, out, sampleRate)
+  return stretchChannels(channels, sampleRate, { rate: p.speed, semitonesAt })
+}
+
+export async function pitchShiftWavFile(inFile, outFile, speedPitch) {
+  const { channels, sampleRate } = readWav(inFile)
+  writeWavFloat(outFile, await pitchShiftChannels(channels, sampleRate, speedPitch), sampleRate)
 }

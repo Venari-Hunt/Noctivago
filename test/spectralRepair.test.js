@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { buildSpectralRepairFilter, normalizeSpectralRepair } from '../src/main/ffmpeg/spectralRepair.js'
+import { spectralRepairRegionsForClip, normalizeSpectralRepair } from '../src/main/ffmpeg/spectralRepair.js'
 
 // Same electron stub as loopClipSeam.test.js: loopClip.js and runFfmpeg.js
 // only need `app` for userData / isPackaged.
@@ -61,17 +61,20 @@ describe('normalizeSpectralRepair', () => {
   })
 })
 
-describe('buildSpectralRepairFilter', () => {
-  test('null when nothing applies', () => {
-    assert.equal(buildSpectralRepairFilter(undefined, 0, 10), null)
-    assert.equal(buildSpectralRepairFilter([], 0, 10), null)
+describe('spectralRepairRegionsForClip', () => {
+  test('empty when nothing applies', () => {
+    assert.deepEqual(spectralRepairRegionsForClip(undefined, 0, 10), [])
+    assert.deepEqual(spectralRepairRegionsForClip([], 0, 10), [])
     // Entirely outside the loop.
-    assert.equal(buildSpectralRepairFilter([{ startSec: 12, endSec: 13, lowHz: 100, highHz: 200 }], 0, 10), null)
+    assert.deepEqual(spectralRepairRegionsForClip([{ startSec: 12, endSec: 13, lowHz: 100, highHz: 200 }], 0, 10), [])
   })
   test('shifts region times by loopStart and clips them to the loop', () => {
-    const f = buildSpectralRepairFilter([{ startSec: 1, endSec: 4, lowHz: 100, highHz: 200, reductionDb: 20 }], 2, 10)
-    assert.match(f, /between\(pts\/sr,0,2\)/)
-    assert.match(f, /between\(b\*sr\/\(2\*nb\),100,200\)\*0\.9\)/)
+    const [r] = spectralRepairRegionsForClip([{ startSec: 1, endSec: 4, lowHz: 100, highHz: 200, reductionDb: 20 }], 2, 10)
+    assert.equal(r.startSec, 0)
+    assert.equal(r.endSec, 2)
+    assert.equal(r.lowHz, 100)
+    assert.equal(r.highHz, 200)
+    assert.equal(r.reductionDb, 20)
   })
 })
 
@@ -93,16 +96,18 @@ describe('spectral repair on the real ffmpeg', { skip: !fs.existsSync(ffmpeg) &&
 
   after(() => fs.rmSync(dir, { recursive: true, force: true }))
 
-  // Mirrors doRender's pre-processing read: -ss loopStart before -i, so the
-  // filter sees t=0 at loopStart.
-  test('cuts only inside the box, on the loop-relative timeline', () => {
+  // Mirrors doRender: the clip starts at loopStart, boxes are shifted by it.
+  test('cuts only inside the box, on the loop-relative timeline', async () => {
     const loopStart = 2
-    const af = buildSpectralRepairFilter([{ startSec: 4, endSec: 5, lowHz: 2000, highHz: 4000, reductionDb: 60 }], loopStart, 8)
+    const regions = spectralRepairRegionsForClip([{ startSec: 4, endSec: 5, lowHz: 2000, highHz: 4000, reductionDb: 60 }], loopStart, 8)
+    const clip = path.join(dir, 'clip-in.wav')
     const out = path.join(dir, 'cut.wav')
-    execFileSync(ffmpeg, ['-y', '-v', 'error', '-ss', String(loopStart), '-t', '6', '-i', source, '-af', af, '-c:a', 'pcm_f32le', out])
+    execFileSync(ffmpeg, ['-y', '-v', 'error', '-ss', String(loopStart), '-t', '6', '-i', source, '-c:a', 'pcm_f32le', clip])
+    const { runClipPasses } = await import('../src/main/ffmpeg/clipPasses.js')
+    await runClipPasses(clip, out, { speedPitch: null, spectralRegions: regions })
     const dry = decodeMono(source)
     const wet = decodeMono(out)
-    assert.ok(Math.abs(wet.length / RATE - 6) < 0.01, `length ${wet.length / RATE}`)
+    assert.ok(Math.abs(wet.length / RATE - 6) < 0.01)
     // Source 4.1-4.9s is output 2.1-2.9s: 3kHz gone, 500Hz untouched.
     assert.ok(toneDb(wet, 3000, 2.1, 2.9) < toneDb(dry, 3000, 4.1, 4.9) - 30)
     assert.ok(Math.abs(toneDb(wet, 500, 2.1, 2.9) - toneDb(dry, 500, 4.1, 4.9)) < 0.2)

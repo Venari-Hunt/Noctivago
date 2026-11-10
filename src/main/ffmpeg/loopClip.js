@@ -7,8 +7,8 @@ import { resolveFfmpegPath } from './ffmpegPath.js'
 import { buildPanFilter, normalizePan, parseChannelCount } from './panFilter.js'
 import { getOrCreateReverbIR } from './reverbIR.js'
 import { hasVolumeEnvelope, renderVolumeEnvelopeWav } from './volumeEnvelope.js'
-import { buildSpectralRepairFilter } from './spectralRepair.js'
-import { needsPitchPass, pitchShiftWavFile } from './pitchShift.js'
+import { spectralRepairRegionsForClip } from './spectralRepair.js'
+import { needsClipPasses, runClipPasses } from './clipPasses.js'
 import { eqBandStageCount } from '../../shared/eqBands.js'
 
 const pending = new Map()
@@ -705,7 +705,6 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   const tmpPath = `${outputPath}.tmp`
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
-  const pitchActive = needsPitchPass(speedPitch)
   const reverseChain = buildReverseChain(speedPitch)
   // Reverb (afir convolution) needs a second ffmpeg *input* (the impulse
   // response) - it can't join buildFilterChain's plain comma-separated -af
@@ -726,12 +725,13 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // still the flat neutral default" so a freshly-toggled-on-but-untouched
   // envelope doesn't force the slow path for nothing.
   const envelopeActive = hasVolumeEnvelope(filters?.volumeEnvelope)
-  // Spectral repair boxes are timed against the trimmed region (afftfilt's
-  // pts), so they force the single linear pre-processing read too - same
-  // reason as noise reduction above.
-  const spectralChain = buildSpectralRepairFilter(filters?.spectralRepairs, loopStart, loopEnd)
+  // Spectral repair boxes are timed against the trimmed region, so they take
+  // the single linear pre-processing read too - same reason as noise reduction
+  // above (the clip passes, clipPasses.js).
+  const spectralRegions = spectralRepairRegionsForClip(filters?.spectralRepairs, loopStart, loopEnd)
+  const passesActive = needsClipPasses(speedPitch, spectralRegions)
 
-  if (!pitchActive && !reverseChain && !reverbActive && !noiseChain && !envelopeActive && !spectralChain) {
+  if (!passesActive && !reverseChain && !reverbActive && !noiseChain && !envelopeActive) {
     try {
       await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, pan: filters?.pan, outputPath })
       return { ok: true }
@@ -786,11 +786,11 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     // the save now does the same. Audible difference: echo on a reversed
     // sound repeats after each sound instead of swelling into it, and echo
     // delay no longer stretches with Speed - both now match what Remix plays.
-    if (pitchActive) {
-      // Speed, Pitch and Doppler need the whole trimmed clip in memory, so
-      // ffmpeg hands it over as float audio, the pitch pass transforms it,
-      // and ffmpeg takes it back (reverse, then 16-bit).
-      const preChain = [noiseChain, spectralChain].filter(Boolean).join(',')
+    if (passesActive) {
+      // Spectral repair and Speed/Pitch/Doppler need the whole trimmed clip in
+      // memory, so ffmpeg hands it over as float audio (after noise reduction),
+      // the passes transform it, and ffmpeg takes it back (reverse, then 16-bit).
+      const preChain = [noiseChain].filter(Boolean).join(',')
       await runFfmpegToFile([
         '-y',
         '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
@@ -798,7 +798,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
         '-vn',
         '-c:a', 'pcm_f32le', '-ar', '44100', '-f', 'wav', tmpPitchInPath
       ])
-      await pitchShiftWavFile(tmpPitchInPath, tmpPitchOutPath, speedPitch)
+      await runClipPasses(tmpPitchInPath, tmpPitchOutPath, { speedPitch, spectralRegions })
       await runFfmpegToFile([
         '-y',
         '-i', tmpPitchOutPath,
@@ -807,7 +807,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
         '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
       ])
     } else {
-      const preChain = [noiseChain, spectralChain, reverseChain].filter(Boolean).join(',')
+      const preChain = [noiseChain, reverseChain].filter(Boolean).join(',')
       await runFfmpegToFile([
         '-y',
         '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,

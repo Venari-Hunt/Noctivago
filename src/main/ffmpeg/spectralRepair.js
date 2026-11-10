@@ -3,17 +3,12 @@
 // box gets turned down, so a cough, a bird chirp or a phone buzz can be
 // removed without touching the rest of the sound at those same frequencies.
 // Audacity's SpectralEditMulti.ny does it with a biquad filter crossfaded
-// against the dry signal at the time edges. This does it in one ffmpeg stage
-// instead: afftfilt scales the FFT bins inside each box, and its own
-// overlap-add (Hann window, 75% overlap) spreads every on/off transition over
+// against the dry signal at the time edges. This does it with one STFT stage
+// (src/shared/spectralRepairDsp.js, Hann window, 75% overlap): the bins inside
+// each box are scaled, and the overlap-add spreads every on/off transition over
 // about one window (~90 ms at 44.1kHz), so the box edges fade rather than
-// click - no dry/wet split, no second input, and no latency to line up
-// (verified against the bundled ffmpeg 6.1.1: a 3kHz tone inside the box
-// drops ~40dB, a 500Hz tone outside it is unchanged to within 0.01dB).
-//
-// Two afftfilt facts found by testing, not in its docs: `pts` is in samples
-// (the input time base is 1/sr), so seconds are pts/sr; and bin `b` sits at
-// b*sr/(2*nb) Hz.
+// click. The same code runs live in the Remix preview (an AudioWorklet), so the
+// save matches what was heard. It replaced an ffmpeg afftfilt stage.
 //
 // Region times are absolute seconds in the source file (like the noise
 // reduction sample), so a region stays on the same event when the loop is
@@ -55,25 +50,20 @@ function fmt(n) {
   return Number(n.toFixed(6)).toString()
 }
 
-// Builds the afftfilt fragment for the regions that overlap
-// [loopStart, loopEnd), or null when none do. Each region contributes one
-// factor (1 - inTime*inBand*(1-gain)); overlapping boxes multiply, so two
+// The boxes that overlap [loopStart, loopEnd), clipped to it and shifted so
+// time 0 is loopStart (the trimmed clip's own timeline), ready for the pass in
+// spectralRepairPass.js. Empty when none do. Overlapping boxes multiply, so two
 // -20dB boxes over the same spot give -40dB there.
-export function buildSpectralRepairFilter(regions, loopStart, loopEnd) {
-  if (!Array.isArray(regions) || regions.length === 0) return null
-  const factors = []
+export function spectralRepairRegionsForClip(regions, loopStart, loopEnd) {
+  if (!Array.isArray(regions) || regions.length === 0) return []
+  const out = []
   for (const raw of regions.slice(0, MAX_SPECTRAL_REPAIRS)) {
     const region = normalizeSpectralRepair(raw)
     if (!region) continue
     const t0 = Math.max(region.startSec, loopStart) - loopStart
     const t1 = Math.min(region.endSec, loopEnd) - loopStart
     if (t1 - t0 < 0.005) continue
-    const loss = 1 - Math.pow(10, -region.reductionDb / 20)
-    factors.push(
-      `(1-between(pts/sr,${fmt(t0)},${fmt(t1)})*between(b*sr/(2*nb),${fmt(region.lowHz)},${fmt(region.highHz)})*${fmt(loss)})`
-    )
+    out.push({ ...region, startSec: t0, endSec: t1 })
   }
-  if (factors.length === 0) return null
-  const gain = factors.join('*')
-  return `afftfilt=real='re*${gain}':imag='im*${gain}'`
+  return out
 }
