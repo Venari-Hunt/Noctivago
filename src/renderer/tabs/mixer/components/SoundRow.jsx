@@ -158,7 +158,11 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
   }, [])
 
   const onCardClick = (evt) => {
-    if (evt.target.closest(OWN_CLICK)) return
+    // composedPath is taken at click time: pressing Mute swaps its icon, so by now
+    // evt.target may be detached and closest() would miss the button (the click
+    // then fell through and pulled the sound out of the mix).
+    const path = evt.nativeEvent.composedPath?.() ?? [evt.target]
+    if (path.some((node) => node.matches?.(OWN_CLICK))) return
     if (state.selectMode) callbacks.onToggleSelect(entry.id)
     else if (!missing && !state.loading) callbacks.onToggleIncluded(entry.id)
   }

@@ -997,6 +997,7 @@ main {
 }
 
 .sound-row-info {
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1108,6 +1109,9 @@ main {
 }
 
 .sound-row-tags {
+  position: relative;
+  align-self: stretch;
+  width: 100%;
   display: flex;
   flex-wrap: nowrap;
   min-height: 24px;
@@ -1138,6 +1142,21 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tag-chip-fixed {
+  flex: none;
+}
+
+.tag-chip-hide {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tag-chip-more {
+  flex: none;
+  cursor: default;
 }
 
 .tag-chip-remove {

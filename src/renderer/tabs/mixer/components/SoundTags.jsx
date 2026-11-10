@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { applyTagSuggestion, matchingTags, mergeTypedTags } from '../domain/soundRow.js'
 
 // Comma-separated, with Obsidian-style autocomplete from every tag already
@@ -88,10 +88,40 @@ export function SoundTags({ tags, allTags, editToken, onChange }) {
     if (editToken) setAdding(true)
   }, [editToken])
 
+  // Show every tag that fits whole; the rest fold into a "+N" chip (its title lists
+  // them). Chips are always rendered so they can be measured; the ones that do not
+  // fit are taken out of the layout (.tag-chip-hide), never squeezed to "n…".
+  const rowRef = useRef(null)
+  const [fit, setFit] = useState(tags.length)
+  useLayoutEffect(() => {
+    const row = rowRef.current
+    if (!row) return undefined
+    const measure = () => {
+      const chips = [...row.querySelectorAll('.tag-chip-fixed')]
+      const gap = 4
+      const moreWidth = 36 + gap
+      const reserved = (row.querySelector('.tag-input-wrapper')?.offsetWidth ?? 0) + gap
+      let used = reserved
+      let count = 0
+      for (const chip of chips) {
+        const rest = chips.length - count - 1
+        if (used + chip.offsetWidth + gap + (rest > 0 ? moreWidth : 0) > row.clientWidth) break
+        used += chip.offsetWidth + gap
+        count++
+      }
+      setFit(count)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [tags, adding])
+  const hidden = tags.slice(fit)
+
   return (
-    <div className="sound-row-tags">
-      {tags.map((tag) => (
-        <span key={tag} className="tag-chip">
+    <div className="sound-row-tags" ref={rowRef}>
+      {tags.map((tag, i) => (
+        <span key={tag} className={'tag-chip tag-chip-fixed' + (i >= fit ? ' tag-chip-hide' : '')}>
           <span className="tag-chip-name">{tag}</span>
           <button
             type="button"
@@ -106,6 +136,11 @@ export function SoundTags({ tags, allTags, editToken, onChange }) {
           </button>
         </span>
       ))}
+      {hidden.length > 0 && (
+        <span className="tag-chip tag-chip-more" title={hidden.join(', ')}>
+          +{hidden.length}
+        </span>
+      )}
       {adding ? (
         <TagInput
           tags={tags}
