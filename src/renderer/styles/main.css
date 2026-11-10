@@ -1097,32 +1097,46 @@ main {
   border: 0;
 }
 
-.sound-row-group-badge {
+.sound-row-group-line {
   display: inline-flex;
   align-items: center;
-  flex: 0 0 auto;
-  height: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 0 8px;
-  border-radius: 6px;
-  /* Colors are set inline per group (tabs/mixer/domain/soundRow.js groupBadgeColors) so each
-     Sound Group keeps its own stable color; this is only the fallback. */
-  background: rgba(187, 154, 247, 0.18);
-  color: #c6adf9;
-  border: 0;
-  cursor: pointer;
-  font-family: inherit;
-  filter: brightness(1);
-  transition: filter 0.1s ease;
+  gap: 6px;
   max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-dim);
+  cursor: pointer;
+  /* Set per group on the element (soundRow.js groupBadgeColors); this is the fallback. */
+  --group-color: #c6adf9;
+}
+
+.sound-row-group-line i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--group-color);
+}
+
+.sound-row-group-line span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sound-row-group-badge:hover {
-  filter: brightness(1.35);
+.sound-row-group-line b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sound-row-group-line:hover b {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 .sound-row-tags {
@@ -1905,8 +1919,13 @@ main {
   background: var(--danger);
 }
 
-.sound-row-group-badge.clipped {
-  box-shadow: 0 0 0 2px var(--danger);
+.sound-row-group-line.clipped i {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgb(255 107 107 / 0.35);
+}
+
+.sound-row-group-line.clipped b {
+  color: var(--danger);
 }
 
 /* Settings > Community plugins > Browse (was the Plugins tab, plugins/plugin-store). */

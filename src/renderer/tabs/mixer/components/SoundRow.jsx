@@ -21,23 +21,27 @@ function sourceTitle(entry) {
   return undefined
 }
 
-// Clicking opens the same menu as right-clicking the row. ui/levelMeters.js
-// lights it red when the group's bus clips and caches its title; keying on
-// the name remounts it on rename so that cache can't go stale.
-function GroupBadge({ name, id, colorSlot, onOpenMenu }) {
+// "● Group frogs": a quiet line under the sound info (not a chip, not a tag). The dot
+// carries the group's own color. Clicking opens the same menu as right-clicking the row.
+// ui/levelMeters.js turns it red when the group's bus clips and caches its title; keying
+// on the name remounts it on rename so that cache can't go stale.
+function GroupLine({ name, id, colorSlot, onOpenMenu }) {
   return (
     <button
       type="button"
-      className="sound-row-group-badge"
+      className="sound-row-group-line"
       title={`In the "${name}" sound group - click to change`}
-      style={id ? groupBadgeColors(id, colorSlot) : undefined}
+      style={id ? { '--group-color': groupBadgeColors(id, colorSlot).color } : undefined}
       data-meter-group={id ?? undefined}
       onClick={(evt) => {
         evt.stopPropagation()
         onOpenMenu(evt)
       }}
     >
-      {name}
+      <i aria-hidden="true" />
+      <span>
+        Group <b>{name}</b>
+      </span>
     </button>
   )
 }
@@ -189,10 +193,10 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
         <span className="sound-row-meta" title={sourceTitle(entry)}>{formatMeta(entry)}</span>
         {state.error && <span className="sound-row-error">{state.error}</span>}
       </div>
+      {state.groupName && (
+        <GroupLine key={state.groupName} name={state.groupName} id={state.groupId} colorSlot={state.groupColorSlot} onOpenMenu={openMenu} />
+      )}
       <div className="sound-row-info">
-        {state.groupName && (
-          <GroupBadge key={state.groupName} name={state.groupName} id={state.groupId} colorSlot={state.groupColorSlot} onOpenMenu={openMenu} />
-        )}
         <SoundTags
           tags={entry.tags ?? []}
           allTags={allTags}
