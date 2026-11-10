@@ -2,7 +2,8 @@ import { formatDuration } from '../util/time.js'
 import { targetFromTimeOfDay, durationInWords } from '../../shared/sleepTimerTime.js'
 import { setToolbarHandlers, updateToolbar } from '../toolbar/index.jsx'
 import { mockIconSvg } from '../components/mockIcons.jsx'
-import { clampMinutes, rulerPercent, minutesFromRuler, readoutText, endClock, wheelStep, stepMinutes, parseLengthText, ACTION_THEN } from '../../shared/sleepRuler.js'
+import { clampMinutes, splitMinutes, roll, minutesFromFields, endClock, ACTION_THEN } from '../../shared/sleepWheel.js'
+import { installWheel } from './ridgedWheel.js'
 
 // Sleep timer - toolbar button + ruler popover (approved mock "sleep"). After a set duration the main
 // process (src/main/sleepTimer.js, which owns the actual setTimeout so it
@@ -19,7 +20,8 @@ let noticeInterval = null
 let firesAt = null
 // What the ruler shows while setting: minutes, how they were set ('in' =
 // ruler/scroll, 'at' = typed end time), the typed time, and the action.
-let setup = { minutes: 30, mode: 'in', timeOfDay: '', action: 'stop' }
+let setup = { minutes: 30, mode: 'in', timeOfDay: '', action: 'stop', unit: 'min' }
+let wheel = null
 
 function showModal(el) {
   el.classList.remove('hidden')
@@ -35,16 +37,20 @@ function refreshDisplay() {
   updateToolbar({ sleepRemaining: text })
 }
 
-function renderSetup() {
+function renderSetup(force = false) {
   const { minutes, mode } = setup
-  if (document.activeElement !== els.readout) els.readout.value = readoutText(minutes)
-  els.range.value = String(Math.min(480, minutes))
-  els.range.style.setProperty('--p', rulerPercent(minutes) + '%')
+  const { h, min } = splitMinutes(minutes)
+  // A field being typed in keeps its text until it loses focus.
+  if (force || document.activeElement !== els.hInput) els.hInput.value = h || ''
+  if (force || document.activeElement !== els.minInput) els.minInput.value = min || ''
+  els.hInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'h')
+  els.minInput.closest('.sleep-unit').classList.toggle('active', setup.unit === 'min')
   if (mode === 'at') {
     els.atInput.value = setup.timeOfDay
   } else if (document.activeElement !== els.atInput) {
     els.atInput.value = endClock(minutes)
   }
+  for (const btn of els.presets) btn.setAttribute('aria-pressed', String(Number(btn.dataset.min) === minutes))
   for (const btn of els.acts) btn.setAttribute('aria-pressed', String(btn.dataset.action === setup.action))
 }
 
@@ -211,9 +217,12 @@ export function installSleepTimer() {
     pop: modal.querySelector('.sleep-pop'),
     setup: document.getElementById('sleep-timer-setup'),
     activeBox: document.getElementById('sleep-timer-active'),
-    readout: document.getElementById('sleep-timer-readout'),
-    range: document.getElementById('sleep-timer-range'),
-    ruler: document.getElementById('sleep-timer-ruler'),
+    hInput: document.getElementById('sleep-timer-h'),
+    minInput: document.getElementById('sleep-timer-min'),
+    wheel: document.getElementById('sleep-timer-wheel'),
+    less: document.getElementById('sleep-timer-less'),
+    more: document.getElementById('sleep-timer-more'),
+    presets: [...modal.querySelectorAll('#sleep-timer-presets button')],
     acts: [...modal.querySelectorAll('.sleep-acts button')],
     atInput: document.getElementById('sleep-timer-at'),
     countdownValue: document.getElementById('sleep-timer-countdown-value'),
@@ -248,12 +257,14 @@ export function installSleepTimer() {
         mode: at ? 'at' : 'in',
         timeOfDay: at ? settings.sleepTimerTimeOfDay : '',
         minutes: at ? clampMinutes(Math.ceil((at.getTime() - Date.now()) / 60000)) : clampMinutes(settings.sleepTimerMinutes ?? 30),
-        action: settings.sleepTimerAction ?? 'stop'
+        action: settings.sleepTimerAction ?? 'stop',
+        unit: 'min'
       }
     }
     setAutoStartSwitch(Boolean(settings.sleepTimerAutoStart))
     applyState(state)
     showModal(els.modal)
+    wheel.redraw()
   }
 
   setToolbarHandlers({ onOpenSleepTimer: open })
@@ -274,36 +285,46 @@ export function installSleepTimer() {
     window.noctivago.settings.setSleepTimerAutoStartEnabled(on)
   })
 
-  // Setting the time: drag the thumb, side-scroll (or Shift+wheel) over the
-  // ruler, or type the end time. Ruler and scroll set minutes; typing sets a
-  // time of day.
-  els.range.addEventListener('input', () => {
-    setup = { ...setup, mode: 'in', minutes: minutesFromRuler(els.range.value) }
+  // Setting the time: roll the wheel (drag it, side-scroll over the popover,
+  // Shift+wheel, arrow keys, minus/plus), type the hours and minutes, pick a
+  // preset, or type the end time. Wheel, fields and presets set minutes;
+  // typing the end time sets a time of day.
+  const tick = (up) => {
+    const r = roll(setup.minutes, setup.unit, up)
+    if (!r) return false
+    setup = { ...setup, mode: 'in', minutes: r.minutes, unit: r.unit }
     renderSetup()
-  })
-  // Side-scroll works anywhere over the setup area, not only on the ruler.
-  els.setup.addEventListener(
-    'wheel',
-    (e) => {
-      const step = wheelStep(e)
-      if (step === 0) return
-      e.preventDefault()
-      setup = { ...setup, mode: 'in', minutes: stepMinutes(setup.minutes, step) }
-      renderSetup()
-    },
-    { passive: false }
-  )
-  els.readout.addEventListener('focus', () => els.readout.select())
-  const applyTypedLength = () => {
-    const minutes = parseLengthText(els.readout.value)
-    if (minutes != null) setup = { ...setup, mode: 'in', minutes }
-    els.readout.blur()
-    renderSetup()
+    return true
   }
-  els.readout.addEventListener('change', applyTypedLength)
-  els.readout.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') applyTypedLength()
-  })
+  wheel = installWheel(els.wheel, tick)
+  els.wheel.addEventListener('pointerdown', () => document.activeElement?.blur?.())
+  els.less.addEventListener('click', () => wheel.nudge(false))
+  els.more.addEventListener('click', () => wheel.nudge(true))
+  // Side-scroll works anywhere over the setup area, not only on the wheel.
+  els.setup.addEventListener('wheel', (e) => wheel.wheel(e), { passive: false })
+  for (const input of [els.hInput, els.minInput]) {
+    input.addEventListener('focus', () => {
+      setup = { ...setup, unit: input.dataset.unit }
+      input.select()
+      renderSetup()
+    })
+    const commitFields = () => {
+      const minutes = minutesFromFields(els.hInput.value, els.minInput.value)
+      if (minutes != null) setup = { ...setup, mode: 'in', minutes }
+      renderSetup(true) // both fields show the tidied-up numbers, so a second commit adds nothing
+    }
+    input.addEventListener('change', commitFields)
+    input.addEventListener('blur', commitFields)
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur()
+    })
+  }
+  for (const btn of els.presets) {
+    btn.addEventListener('click', () => {
+      setup = { ...setup, mode: 'in', minutes: Number(btn.dataset.min), unit: Number(btn.dataset.min) % 60 === 0 ? 'h' : 'min' }
+      renderSetup()
+    })
+  }
   els.atInput.addEventListener('focus', () => els.atInput.select())
   els.atInput.addEventListener('change', applyTypedEnd)
   els.atInput.addEventListener('keydown', (e) => {

@@ -1736,28 +1736,10 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
-.sleep-read b,
-.sleep-readout {
+.sleep-read b {
   font-size: 40px;
   line-height: 48px;
   font-weight: 700;
-}
-
-.sleep-readout {
-  width: 220px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text);
-  font-family: inherit;
-  text-align: center;
-  cursor: text;
-}
-
-.sleep-readout:hover,
-.sleep-readout:focus {
-  background: var(--surface-hover);
-  outline: none;
 }
 
 .sleep-dim {
@@ -1782,43 +1764,150 @@ main {
   display: none;
 }
 
-.sleep-ruler {
-  padding: 0 var(--space-4);
+.sleep-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-4) var(--space-2);
 }
 
-.sleep-ruler input[type='range'] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 32px;
-  margin: 0;
-  background: transparent;
-  cursor: ew-resize;
-  --p: 0%;
-}
-
-.sleep-ruler input[type='range']::-webkit-slider-runnable-track {
-  height: 8px;
-  border-radius: 4px;
-  background: linear-gradient(to right, var(--accent) var(--p), var(--surface-hover) var(--p));
-}
-
-.sleep-ruler input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 24px;
-  margin-top: -8px;
-  border-radius: 6px;
-  background: var(--text);
-}
-
-.sleep-ticks {
+.sleep-unit {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--text-dim);
   font-size: 12px;
   line-height: 16px;
+}
+
+.sleep-unit input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 40px;
+  line-height: 48px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  text-align: center;
+  outline: none;
+}
+
+.sleep-unit input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.5;
+}
+
+.sleep-unit.active {
+  background: var(--tint);
+}
+
+.sleep-unit.active label {
+  color: var(--tint-ink);
+}
+
+.sleep-endrow {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+
+.sleep-roll {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 0 var(--space-4);
+}
+
+.sleep-roll-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sleep-roll-btn:hover {
+  background: var(--surface-hover);
+}
+
+.sleep-wheel {
+  position: relative;
+  height: 56px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  background: linear-gradient(to right, var(--surface), color-mix(in srgb, var(--text) 14%, var(--surface)) 50%, var(--surface));
+  box-shadow: inset 0 6px 8px -6px rgb(0 0 0 / 0.7), inset 0 -6px 8px -6px rgb(0 0 0 / 0.7);
+}
+
+.sleep-wheel.held {
+  cursor: grabbing;
+}
+
+.sleep-wheel canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.sleep-wheel::before,
+.sleep-wheel::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  width: 2px;
+  height: var(--space-2);
+  translate: -50% 0;
+  background: var(--tint-ink);
+}
+
+.sleep-wheel::before {
+  top: 0;
+}
+
+.sleep-wheel::after {
+  bottom: 0;
+}
+
+.sleep-presets {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.sleep-presets button {
+  flex: 1;
+  min-height: 32px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sleep-presets button:hover {
+  color: var(--text);
+}
+
+.sleep-presets button[aria-pressed='true'] {
+  background: var(--tint);
+  color: var(--tint-ink);
+  font-weight: 600;
 }
 
 .sleep-acts {

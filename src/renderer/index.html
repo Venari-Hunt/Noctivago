@@ -265,13 +265,18 @@
       <div class="sleep-pop" role="dialog" aria-label="Sleep timer">
         <h3>Sleep timer<button id="sleep-timer-close" class="btn btn-ghost btn-svg-icon" type="button" aria-label="Close"><span data-icon="x"></span></button></h3>
         <div id="sleep-timer-setup">
-          <div class="sleep-read">
-            <input id="sleep-timer-readout" class="sleep-readout" type="text" maxlength="9" value="0 h 30" aria-label="Timer length (type 1:30, 90 or 1h30)" />
-            <span class="sleep-dim">ends at <input id="sleep-timer-at" class="sleep-endat" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" aria-label="Ends at" /></span>
+          <div class="sleep-fields">
+            <div class="sleep-unit"><input id="sleep-timer-h" data-unit="h" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Hours" /><label for="sleep-timer-h">Hr</label></div>
+            <div class="sleep-unit"><input id="sleep-timer-min" data-unit="min" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Minutes" /><label for="sleep-timer-min">Min</label></div>
+            <span class="sleep-dim sleep-endrow">ends at <input id="sleep-timer-at" class="sleep-endat" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" aria-label="Ends at" /></span>
           </div>
-          <div class="sleep-ruler" id="sleep-timer-ruler">
-            <input id="sleep-timer-range" type="range" min="0" max="480" step="5" value="30" aria-label="Time" />
-            <div class="sleep-ticks"><span>0 h</span><span>1 h</span><span>2 h</span><span>3 h</span><span>4 h</span><span>5 h</span><span>6 h</span><span>7 h</span><span>8 h</span></div>
+          <div class="sleep-roll">
+            <button id="sleep-timer-less" class="sleep-roll-btn" type="button" aria-label="One less"><span data-icon="minus" data-size="20"></span></button>
+            <div id="sleep-timer-wheel" class="sleep-wheel" role="slider" tabindex="0" aria-label="Roll the picked unit (drag, side-scroll or arrow keys)"><canvas></canvas></div>
+            <button id="sleep-timer-more" class="sleep-roll-btn" type="button" aria-label="One more"><span data-icon="plus" data-size="20"></span></button>
+          </div>
+          <div id="sleep-timer-presets" class="sleep-presets" role="group" aria-label="Common times">
+            <button type="button" data-min="15">15m</button><button type="button" data-min="30">30m</button><button type="button" data-min="45">45m</button><button type="button" data-min="60">1h</button><button type="button" data-min="90">1h 30m</button><button type="button" data-min="120">2h</button>
           </div>
           <div class="sleep-acts" role="group" aria-label="When it ends">
             <button type="button" data-action="stop" aria-pressed="true"><span data-icon="volume-x" data-size="20"></span>Stop sounds</button>
