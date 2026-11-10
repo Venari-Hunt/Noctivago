@@ -2,11 +2,22 @@ import { useEffect, useState } from 'react'
 import { parseDuration } from '../../util/time.js'
 import { formatHms } from '../domain/formatHms.js'
 import { openUpdateModal, openWhatsNewModal } from '../../core/UpdateModal.js'
+import { getAudioOutputChoice, listAudioOutputs, setAudioOutputChoice } from '../../core/devAudioOutput.js'
 import { SettingItem } from './SettingItem.jsx'
 import { Toggle } from './Toggle.jsx'
 
 export function GeneralPage({ settings, api }) {
   const [interval, setIntervalText] = useState(formatHms(settings.autoUpdateIntervalSeconds))
+
+  const [output, setOutput] = useState(getAudioOutputChoice())
+  const [outputs, setOutputs] = useState([])
+  useEffect(() => {
+    listAudioOutputs().then(setOutputs)
+  }, [])
+  function chooseOutput(choice) {
+    setOutput(choice)
+    setAudioOutputChoice(choice)
+  }
 
   useEffect(() => setIntervalText(formatHms(settings.autoUpdateIntervalSeconds)), [settings.autoUpdateIntervalSeconds])
 
@@ -46,6 +57,18 @@ export function GeneralPage({ settings, api }) {
         description="Download, install and restart when an update is found, after a 5-second countdown you can cancel."
       >
         <Toggle checked={settings.autoInstallUpdates} label="Install updates automatically" onChange={(v) => api.update((s) => s.setAutoInstallUpdatesEnabled(v))} />
+      </SettingItem>
+
+      <h3 className="settings-page-heading">Audio</h3>
+      <SettingItem
+        name="Output device"
+        description="Where Noctívago plays. Automatic is your system default, or the Yeti in a dev build."
+      >
+        <select aria-label="Output device" value={output} onChange={(e) => chooseOutput(e.target.value)}>
+          <option value="auto">Automatic</option>
+          <option value="default">System default</option>
+          {outputs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+        </select>
       </SettingItem>
 
       <h3 className="settings-page-heading">Window</h3>

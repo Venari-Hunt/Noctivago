@@ -5,6 +5,10 @@ after an update installs, and used for GitHub release notes. One entry per
 released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
+## v0.1.276 — Pick where the sound plays
+
+- **New: Settings → General → Audio → Output device.** Choose which speakers or headphones Noctívago plays through, and change it while it is playing. Automatic keeps your system default. The choice is remembered on this PC.
+
 
 ## v0.1.275 — Reverse saves the way Remix plays it
 

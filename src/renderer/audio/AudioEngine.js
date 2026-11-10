@@ -1,4 +1,4 @@
-import { routeDevAudioOutput } from '../core/devAudioOutput.js'
+import { registerAudioOutput } from '../core/devAudioOutput.js'
 import { WholeMixChain } from './WholeMixChain.js'
 import { SoundGroupChain } from './SoundGroupChain.js'
 import { ClipMeter } from './clipMeter.js'
@@ -12,7 +12,7 @@ export class AudioEngine {
     // saved whole-mix settings is loaded.
     this.wholeMix = new WholeMixChain(this.context, this.context.destination)
     this.masterGain.connect(this.wholeMix.input)
-    routeDevAudioOutput(this.context)
+    registerAudioOutput(this.context)
 
     // Sound Groups (see SoundGroupChain.js) - a named submix bus scoped to
     // whichever preset is currently loaded. groupChains is keyed by group
