@@ -70,3 +70,29 @@ test('renderLoopClip saves Speed 2 as half the length and Reverse flips Doppler'
   }
   assert.ok(slope('dop') * slope('dopr') < 0, 'reverse flips the bend: ' + slope('dop') + ' vs ' + slope('dopr'))
 })
+
+test('renderLoopClip saves Noise reduction: hiss goes down, the tone stays', { skip: !fs.existsSync(ffmpeg) && 'bundled ffmpeg not installed' }, async () => {
+  const { renderLoopClip } = await import('../src/main/ffmpeg/loopClip.js')
+  const noisy = path.join(dir, 'noisy.wav')
+  // Quiet hiss for the whole 8 s, a 1 kHz tone from 4 s on.
+  execFileSync(ffmpeg, ['-y', '-v', 'error', '-f', 'lavfi', '-i', `anoisesrc=d=8:c=white:a=0.05:r=${RATE}:seed=3`, '-f', 'lavfi', '-i', `sine=f=1000:d=4:r=${RATE}`, '-filter_complex', '[1]adelay=4000|4000[t];[0][t]amix=inputs=2:normalize=0', '-c:a', 'pcm_s16le', noisy])
+  const base = { id: 'noise-off', inputPath: noisy, loopStart: 0, loopEnd: 8, crossfadeSeconds: 0.1, speedPitch: null }
+  const off = await renderLoopClip({ ...base, filters: {} })
+  const on = await renderLoopClip({ ...base, id: 'noise-on', filters: { denoiseEnabled: true, denoiseStrengthDb: 18, denoiseSampleStartSec: 0, denoiseSampleEndSec: 3 } })
+  assert.equal(off.ok && on.ok, true)
+  const a = decodeMono(path.join(dir, 'clips', 'noise-off.wav'))
+  const b = decodeMono(path.join(dir, 'clips', 'noise-on.wav'))
+  const rms = (x, t0, t1) => Math.sqrt(x.slice(Math.round(t0 * RATE), Math.round(t1 * RATE)).reduce((s, v) => s + v * v, 0) / ((t1 - t0) * RATE))
+  // The crossfade rotates the loop, so look at whole halves: the hiss-only half is quieter, and so is the whole.
+  assert.ok(rms(b, 0, 7.5) < rms(a, 0, 7.5), 'denoised clip is quieter overall')
+  const tone = (x) => {
+    let c = 0
+    let s = 0
+    for (let i = 0; i < x.length; i++) {
+      c += x[i] * Math.cos((2 * Math.PI * 1000 * i) / RATE)
+      s += x[i] * Math.sin((2 * Math.PI * 1000 * i) / RATE)
+    }
+    return (2 * Math.hypot(c, s)) / x.length
+  }
+  assert.ok(Math.abs(20 * Math.log10(tone(b) / tone(a))) < 1.5, 'tone level kept')
+})

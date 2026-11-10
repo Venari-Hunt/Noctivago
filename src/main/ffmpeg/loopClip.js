@@ -8,7 +8,7 @@ import { buildPanFilter, normalizePan, parseChannelCount } from './panFilter.js'
 import { getOrCreateReverbIR } from './reverbIR.js'
 import { hasVolumeEnvelope, renderVolumeEnvelopeWav } from './volumeEnvelope.js'
 import { spectralRepairRegionsForClip } from './spectralRepair.js'
-import { needsClipPasses, runClipPasses } from './clipPasses.js'
+import { needsClipPasses, noiseReductionForClip, runClipPasses } from './clipPasses.js'
 import { eqBandStageCount } from '../../shared/eqBands.js'
 
 const pending = new Map()
@@ -210,84 +210,6 @@ export function buildGateFilter(filters) {
   const attack = Math.max(1, Number(filters?.gateAttackMs) || 10)
   const release = Math.max(1, Number(filters?.gateReleaseMs) || 150)
   return `agate=threshold=${thresholdLin.toFixed(6)}:range=${rangeLin.toFixed(6)}:attack=${attack}:release=${release}:ratio=9000:detection=rms`
-}
-
-// Noise reduction (Remix, Sound mode) - ffmpeg's FFT denoiser `afftdn`, run
-// in its two-step "sample a noise-only region, then subtract that profile"
-// mode via an asendcmd cue (`afftdn sample_noise start/stop`), the direct
-// analogue of Audacity's "Get noise profile -> apply" workflow. Verified
-// against the real bundled binary before writing this: a -30dB white-noise
-// floor under an intermittent tone dropped ~13-15dB (hiss and hum alike)
-// with the tone left untouched to the measured 0.1dB.
-//
-// afftdn's `nf` (noise floor, -80..-20) only matters up to the point
-// sample_noise refines the per-band profile, but the sampled region's own
-// measured RMS level is still the best starting estimate - and there's no
-// live preview to tune it by ear (see below) - so doRender measures the
-// noise region's RMS first (measureRegionRmsDb) and passes it in as `nf`.
-// `nr` (1..48 here, 0.01..97 in ffmpeg) is the user-facing strength knob.
-//
-// The sample window is stored as absolute file seconds (denoiseSampleStartSec
-// /EndSec, alongside the trim Start/End) but used *relative to loopStart*,
-// because this only ever runs inside doRender's pre-processing pass, which
-// reads `-ss loopStart -t (loopEnd-loopStart)`. An unset or degenerate
-// window falls back to the first ~1.5s of the trimmed region. Returns null
-// when disabled or the region is too short to sample - callers then skip the
-// whole pass, leaving the default render path byte-identical.
-//
-// There is no Web Audio equivalent of a spectral-subtraction denoiser, so
-// unlike highpass/lowpass/gain/EQ/gate this has no live preview - it's
-// bake-only, heard via buffer mode / Remix's "Saved audio" toggle, same as
-// Doppler and Reverse.
-const NOISE_MEASURE_SAMPLE_RATE = 32000
-
-async function measureRegionRmsDb(inputPath, start, duration) {
-  if (duration <= 0) return null
-  let sumSq = 0
-  let count = 0
-  await runFfmpegPipe(
-    [
-      '-ss', start.toFixed(6), '-t', duration.toFixed(6), '-i', inputPath,
-      '-vn', '-ac', '1', '-ar', String(NOISE_MEASURE_SAMPLE_RATE), '-f', 's16le', 'pipe:1'
-    ],
-    (chunk) => {
-      for (let i = 0; i + 1 < chunk.length; i += 2) {
-        const s = chunk.readInt16LE(i)
-        sumSq += s * s
-        count += 1
-      }
-    }
-  )
-  if (count === 0) return null
-  const rms = Math.sqrt(sumSq / count) / 32768
-  return rms > 0 ? 20 * Math.log10(rms) : -120
-}
-
-function resolveNoiseWindow(filters, loopStart, loopEnd) {
-  const duration = loopEnd - loopStart
-  let ns = Number(filters.denoiseSampleStartSec)
-  let ne = Number(filters.denoiseSampleEndSec)
-  if (!Number.isFinite(ns) || !Number.isFinite(ne) || ne - ns < 0.1) {
-    ns = loopStart
-    ne = loopStart + Math.min(1.5, duration / 3)
-  }
-  ns = Math.min(Math.max(ns, loopStart), loopEnd)
-  ne = Math.min(Math.max(ne, ns), loopEnd)
-  return { ns, ne }
-}
-
-export async function buildNoiseReductionChain(inputPath, filters, loopStart, loopEnd) {
-  if (!filters?.denoiseEnabled) return null
-  const duration = loopEnd - loopStart
-  if (!(duration > 0.2)) return null
-  const nr = Math.min(48, Math.max(1, Number(filters.denoiseStrengthDb) || 12))
-  const { ns, ne } = resolveNoiseWindow(filters, loopStart, loopEnd)
-  if (ne - ns < 0.05) return null
-  const measuredDb = await measureRegionRmsDb(inputPath, ns, ne - ns)
-  const nf = measuredDb == null ? -40 : Math.min(-20, Math.max(-80, measuredDb))
-  const relStart = (ns - loopStart).toFixed(3)
-  const relEnd = (ne - loopStart).toFixed(3)
-  return `asendcmd=c='${relStart} afftdn sample_noise start; ${relEnd} afftdn sample_noise stop',afftdn=nr=${nr}:nf=${nf.toFixed(1)}`
 }
 
 // Maps one EQ band's chosen type to the real ffmpeg filter that implements
@@ -712,12 +634,10 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // isolated pass, same as speed/pitch/reverse - see the pre-pass branch
   // below and applyReverbPass above.
   const reverbActive = Boolean(filters?.reverbMix > 0 && filters?.reverbSizeMs > 0)
-  // Noise reduction (afftdn + a sample_noise asendcmd cue) also forces the
-  // pre-processing pass: its asendcmd timestamps only line up on a single
-  // linear read of the trimmed region, not the three separate tail/head/main
-  // reads renderCrossfadedLoop does. Building it measures the noise region
-  // (one short decode) so it's resolved once here, before the fast-path check.
-  const noiseChain = await buildNoiseReductionChain(inputPath, filters, loopStart, loopEnd)
+  // Noise reduction also takes the pre-processing pass: its sample window is
+  // timed against a single linear read of the trimmed region, not the three
+  // separate tail/head/main reads renderCrossfadedLoop does.
+  const noiseSettings = noiseReductionForClip(filters, loopStart, loopEnd)
   // Volume envelope (v1, Loop mode) also forces the pre-processing pass -
   // like reverb, amultiply-ing a control-signal WAV against the audio needs
   // a second ffmpeg input, so it can't join buildFilterChain's plain -af
@@ -729,9 +649,9 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
   // the single linear pre-processing read too - same reason as noise reduction
   // above (the clip passes, clipPasses.js).
   const spectralRegions = spectralRepairRegionsForClip(filters?.spectralRepairs, loopStart, loopEnd)
-  const passesActive = needsClipPasses(speedPitch, spectralRegions)
+  const passesActive = needsClipPasses(speedPitch, spectralRegions, noiseSettings)
 
-  if (!passesActive && !reverseChain && !reverbActive && !noiseChain && !envelopeActive) {
+  if (!passesActive && !reverseChain && !reverbActive && !envelopeActive) {
     try {
       await renderCrossfadedLoop({ inputPath, loopStart, loopEnd, filters, crossfadeSeconds, pan: filters?.pan, outputPath })
       return { ok: true }
@@ -776,7 +696,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     const filterChain = buildFilterChain(filters)
     // Noise reduction runs first - it should subtract the sampled noise
     // profile from the raw trimmed source, before highpass/EQ/gate colour it
-    // (afftdn's profile was measured against that same unshaped signal).
+    // (the noise profile is taken from that same unshaped signal).
     // Spectral repair next, still before anything that shifts time
     // (speed/pitch/reverse), since its boxes are in source time.
     // Speed/pitch/reverse then run BEFORE the gate/highpass/lowpass/gain/
@@ -790,15 +710,13 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
       // Spectral repair and Speed/Pitch/Doppler need the whole trimmed clip in
       // memory, so ffmpeg hands it over as float audio (after noise reduction),
       // the passes transform it, and ffmpeg takes it back (reverse, then 16-bit).
-      const preChain = [noiseChain].filter(Boolean).join(',')
       await runFfmpegToFile([
         '-y',
         '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
-        ...(preChain ? ['-af', preChain] : []),
         '-vn',
         '-c:a', 'pcm_f32le', '-ar', '44100', '-f', 'wav', tmpPitchInPath
       ])
-      await runClipPasses(tmpPitchInPath, tmpPitchOutPath, { speedPitch, spectralRegions })
+      await runClipPasses(tmpPitchInPath, tmpPitchOutPath, { speedPitch, spectralRegions, noiseSettings })
       await runFfmpegToFile([
         '-y',
         '-i', tmpPitchOutPath,
@@ -807,7 +725,7 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
         '-c:a', 'pcm_s16le', '-ar', '44100', '-f', 'wav', tmpIntermediatePath
       ])
     } else {
-      const preChain = [noiseChain, reverseChain].filter(Boolean).join(',')
+      const preChain = reverseChain
       await runFfmpegToFile([
         '-y',
         '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
