@@ -18,6 +18,7 @@ import { startLevelMeters } from '../../ui/levelMeters.js'
 import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipReport.js'
 import { openClipReport } from './components/ClipReport.jsx'
 import { mountRecommendedPlugins } from './components/RecommendedPlugins.jsx'
+import { mockIconSvg } from '../../components/mockIcons.jsx'
 import { mountAddSound, setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
 
 const api = window.noctivago
@@ -224,7 +225,8 @@ function renderTagFilterBar() {
   for (const entry of state.library) for (const tag of entry.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
   const allTags = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b))
   els.tagFilterBtn.classList.toggle('hidden', allTags.length === 0)
-  els.tagFilterBtn.textContent = state.activeTagFilter ? `Tag: ${state.activeTagFilter}` : 'Tags'
+  els.tagFilterBtn.innerHTML = mockIconSvg('tag')
+  els.tagFilterBtn.append(state.activeTagFilter ? `Tag: ${state.activeTagFilter}` : 'Tags')
   els.tagFilterBtn.classList.toggle('btn-primary', Boolean(state.activeTagFilter))
   els.tagFilterBtn.setAttribute('aria-expanded', String(tagPopOpen))
   els.tagFilterPop.classList.toggle('hidden', !tagPopOpen || allTags.length === 0)
@@ -335,7 +337,7 @@ function toggleSelectSound(id) {
 }
 
 function updateBulkSelectUI() {
-  els.bulkSelectToggle.textContent = state.selectMode ? 'Cancel select' : 'Select…'
+  els.bulkSelectToggle.textContent = state.selectMode ? 'Done' : 'Select'
   els.bulkSelectToggle.classList.toggle('btn-active', state.selectMode)
   els.bulkSelectBar.classList.toggle('hidden', !state.selectMode)
   const count = state.selectedIds.size
@@ -2196,7 +2198,7 @@ export function mount(container) {
   container.innerHTML = `
     <div id="recommended-plugins"></div>
     <div class="sound-list-controls">
-      <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
+      <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds" />
       <button id="tag-filter-btn" class="btn hidden" type="button" aria-haspopup="true" aria-expanded="false" title="Show only sounds with one tag">Tags</button>
       <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
       <select id="sound-group" class="sound-group-select" title="Group by"></select>

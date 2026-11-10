@@ -39,11 +39,11 @@ export function presetIndicator(presetName, mixCount = 0) {
 // `title` keeps the "all" scope (vs. a single sound) on hover even though
 // the glyph doesn't say it.
 export function playButtonTitle(playing) {
-  return playing ? 'Pause all' : 'Play all'
+  return playing ? 'Pause mix' : 'Play mix'
 }
 
 export function muteButtonTitle(muted) {
-  return muted ? 'Unmute' : 'Mute'
+  return muted ? 'Unmute all' : 'Mute all'
 }
 
 export function sleepButtonTitle(active) {

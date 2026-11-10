@@ -15,6 +15,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `src/renderer/` — `main.js` bootstrap; `core/TabHost.js`, `core/PluginLoader.js`; `toolbar/` the top bar (React; state pushed in by the Mixer, sleep timer, main.js); `components/` icons shared across screens; `settings/` the Settings window (React; plugin toggles, Restricted mode, store Browse); `tabs/mixer/` the Mixer; `audio/` engine, sources, clip meters; `ui/` Mixer-only widgets.
 - Official plugins (Remix, Export, Composite, Browse Sounds, Community) live in their own repos, `Venari-Hunt/noctivago-<id>`, and install from the store; `dev-plugins/` holds dev-only test fixtures.
 - `scripts/cdp-shot.mjs` — screenshots the running dev app (`npm run dev -- --remoteDebuggingPort 9222`): `node scripts/cdp-shot.mjs <out.png> [--width 1280] [--height 800] [--eval "<js>"]`; flaky while the window is hidden in the tray.
+- `scripts/mock-diff.mjs` — compares the approved desktop mock with the running dev app (controls, labels, icons by drawing, heights) per region: `node scripts/mock-diff.mjs [--screen mixer] [--width 1280]`; run it before calling a redesign step done. Differences caused only by data (preset name, playing state, a plugin not installed) are expected.
 
 ## Docs (read only the one a task touches)
 
