@@ -26,6 +26,18 @@
 // { keepSlot: true }: a hidden placeholder keeps its place in the tab bar, and
 // registering the same id again puts the new button back there instead of at
 // the end.
+// The approved mock's icon for each built-in tab; a tab not listed shows its name only.
+const TAB_ICONS = {
+  mixer: 'sliders-horizontal',
+  'browse-sounds': 'search',
+  remix: 'audio-waveform',
+  composite: 'layers',
+  export: 'upload',
+  community: 'heart'
+}
+
+import { mockIconSvg } from '../components/mockIcons.jsx'
+
 export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
   const tabs = new Map()
   const slots = new Map()
@@ -91,7 +103,12 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'tab-button'
-    button.textContent = title
+    button.title = title
+    const iconName = TAB_ICONS[id]
+    if (iconName) button.insertAdjacentHTML('afterbegin', mockIconSvg(iconName))
+    const label = document.createElement('span')
+    label.textContent = title
+    button.appendChild(label)
     button.addEventListener('click', () => activate(id))
     const slot = slots.get(id)
     if (slot?.isConnected) slot.replaceWith(button)

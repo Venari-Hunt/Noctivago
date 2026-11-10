@@ -1,4 +1,4 @@
-import { MoonIcon, MuteIcon, PauseAllIcon, PlayAllIcon, VolumeIcon } from '../../components/icons.jsx'
+import { MockIcon } from '../../components/mockIcons.jsx'
 import { muteButtonTitle, playButtonTitle, sleepButtonTitle } from '../domain/toolbar.js'
 import { GlobalVolume } from './GlobalVolume.jsx'
 
@@ -7,17 +7,17 @@ export function Transport({ state, handlers }) {
   return (
     <>
       <button className="btn btn-play" type="button" title={playButtonTitle(state.playing)} onClick={handlers.onPlayPause}>
-        {state.playing ? <PauseAllIcon /> : <PlayAllIcon />}
+        <MockIcon name={state.playing ? 'pause' : 'play'} size={24} />
       </button>
       <div className="toolbar-group toolbar-actions">
         {state.sleepActive ? (
           <button className="btn btn-ghost sleep-timer-remaining" type="button" title={sleepButtonTitle(true)} onClick={handlers.onOpenSleepTimer}>
-            <MoonIcon />
+            <MockIcon name="moon" />
             {state.sleepRemaining}
           </button>
         ) : (
           <button className="btn btn-ghost btn-svg-icon" type="button" title={sleepButtonTitle(false)} onClick={handlers.onOpenSleepTimer}>
-            <MoonIcon />
+            <MockIcon name="moon" size={20} />
           </button>
         )}
         <button
@@ -26,7 +26,7 @@ export function Transport({ state, handlers }) {
           title={muteButtonTitle(state.muted)}
           onClick={handlers.onMuteToggle}
         >
-          {state.muted ? <MuteIcon size={16} /> : <VolumeIcon size={16} />}
+          <MockIcon name={state.muted ? 'volume-x' : 'volume-2'} size={20} />
         </button>
         <GlobalVolume gain={state.volumeGain} onInput={handlers.onVolumeInput} />
       </div>

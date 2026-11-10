@@ -174,6 +174,13 @@ body {
   height: 24px;
 }
 
+@container (max-width: 900px) {
+  .tab-button span,
+  .nav-button span {
+    display: none;
+  }
+}
+
 @container (max-width: 560px) {
   .toolbar {
     padding: 0 var(--space-3);
