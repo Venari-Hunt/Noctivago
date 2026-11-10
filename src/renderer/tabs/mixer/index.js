@@ -340,8 +340,7 @@ function updateBulkSelectUI() {
   const count = state.selectedIds.size
   els.bulkSelectCount.textContent = `${count} selected`
   const hasSelection = count > 0
-  for (const button of els.bulkSelectPresetButtons) button.disabled = !hasSelection
-  els.bulkSelectReset.disabled = !hasSelection
+  els.bulkSelectPreset.disabled = !hasSelection
 }
 
 // Applies one effect preset's HP/LP/Gain/Echo/Reverb to every selected
@@ -2205,17 +2204,18 @@ export function mount(container) {
     </div>
     <div id="bulk-select-bar" class="bulk-select-bar hidden">
       <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
-      <div class="bulk-select-presets">
-        <button class="btn btn-small" type="button" data-bulk-preset="muffled">Muffled</button>
-        <button class="btn btn-small" type="button" data-bulk-preset="phone">Over the Phone</button>
-        <button class="btn btn-small" type="button" data-bulk-preset="radio">On the Radio</button>
-        <button class="btn btn-small" type="button" data-bulk-preset="distant">Distant</button>
-        <button class="btn btn-small" type="button" data-bulk-preset="echo">Echo</button>
-        <button class="btn btn-small" type="button" data-bulk-preset="reverb">Reverb</button>
-        <button class="btn btn-small" type="button" data-bulk-preset="underwater">Underwater</button>
-        <button id="bulk-select-reset" class="btn btn-small" type="button">Reset filters</button>
-      </div>
-      <button id="bulk-select-done" class="btn btn-small" type="button">Done</button>
+      <select id="bulk-select-preset" aria-label="Apply an effect preset">
+        <option value="">Apply an effect preset</option>
+        <option value="muffled">Muffled</option>
+        <option value="phone">Over the Phone</option>
+        <option value="radio">On the Radio</option>
+        <option value="distant">Distant</option>
+        <option value="echo">Echo</option>
+        <option value="reverb">Reverb</option>
+        <option value="underwater">Underwater</option>
+        <option value="reset">Reset filters</option>
+      </select>
+      <button id="bulk-select-done" class="btn btn-primary" type="button">Done</button>
     </div>
     <ul id="sound-list" class="sound-list"></ul>
     <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
@@ -2227,8 +2227,7 @@ export function mount(container) {
   els.bulkSelectToggle = container.querySelector('#bulk-select-toggle')
   els.bulkSelectBar = container.querySelector('#bulk-select-bar')
   els.bulkSelectCount = container.querySelector('#bulk-select-count')
-  els.bulkSelectPresetButtons = container.querySelectorAll('[data-bulk-preset]')
-  els.bulkSelectReset = container.querySelector('#bulk-select-reset')
+  els.bulkSelectPreset = container.querySelector('#bulk-select-preset')
   els.bulkSelectDone = container.querySelector('#bulk-select-done')
   els.tagFilterBtn = container.querySelector('#tag-filter-btn')
   els.tagFilterPop = container.querySelector('#tag-filter-pop')
@@ -2275,10 +2274,12 @@ export function mount(container) {
     updateBulkSelectUI()
     render()
   })
-  for (const button of els.bulkSelectPresetButtons) {
-    button.addEventListener('click', () => applyBulkFilterPreset(BULK_FILTER_PRESETS[button.dataset.bulkPreset]))
-  }
-  els.bulkSelectReset.addEventListener('click', () => applyBulkFilterPreset(BULK_NEUTRAL_FILTERS))
+  els.bulkSelectPreset.addEventListener('change', async () => {
+    const key = els.bulkSelectPreset.value
+    els.bulkSelectPreset.value = ''
+    if (!key) return
+    await applyBulkFilterPreset(key === 'reset' ? BULK_NEUTRAL_FILTERS : BULK_FILTER_PRESETS[key])
+  })
   updateBulkSelectUI()
   // One settings read up front, reused by all three startup steps below
   // instead of each re-fetching its own copy: restore the master volume

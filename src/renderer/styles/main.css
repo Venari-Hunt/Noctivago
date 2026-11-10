@@ -603,13 +603,6 @@ main {
   white-space: nowrap;
 }
 
-.bulk-select-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  flex: 1;
-}
-
 .tag-filter-bar {
   display: flex;
   flex-wrap: wrap;
