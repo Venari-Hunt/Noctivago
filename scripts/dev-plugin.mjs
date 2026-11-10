@@ -23,5 +23,10 @@ const dest = path.join(process.env.APPDATA, 'noctivago-dev', 'plugins', manifest
 fs.mkdirSync(dest, { recursive: true })
 const files = new Set(['manifest.json', manifest.main, manifest.styles].filter(Boolean))
 for (const f of files) fs.copyFileSync(path.join(src, f), path.join(dest, f))
+// The app swaps a running plugin only when its version changes, so every copy
+// gets its own tag. A "-dev." prerelease passes the manifest check; keep
+// Settings > Update plugins automatically off in dev (docs/plugins.md).
+const stamped = { ...manifest, version: `${manifest.version.split("-dev.")[0]}-dev.${Date.now()}` }
+fs.writeFileSync(path.join(dest, 'manifest.json'), JSON.stringify(stamped, null, 2))
 fs.writeFileSync(path.join(dest, '.origin.json'), JSON.stringify({ repo }))
-console.log(`${manifest.id} ${manifest.version} -> ${dest} (${[...files].join(', ')})`)
+console.log(`${manifest.id} ${stamped.version} -> ${dest} (${[...files].join(', ')})`)

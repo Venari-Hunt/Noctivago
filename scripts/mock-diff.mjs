@@ -26,7 +26,13 @@ const EDGE = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C
 const REGIONS = [
   ['nav', '.nav', '.nav'],
   ['player', '.player', '.toolbar'],
-  ['mixer toolbar', '.tools', '.sound-list-controls']
+  ['mixer toolbar', '.tools', '.sound-list-controls'],
+  // Remix (step 11). Open the Remix tab and a sound in the app first; this
+  // script only switches the mock's screen (remix, remix-empty, remix-random,
+  // remix-scheduled).
+  ['remix bar', '.rbar', '.rx-bar'],
+  ['remix canvas', '.rcanvas', '.rx-canvas'],
+  ['remix side', '.rside', '.rx-side']
 ]
 
 // Runs inside each page. Returns the visible controls in DOM order.
@@ -98,6 +104,7 @@ async function main() {
       if (only?.length && !only.includes(name)) continue
       const m = await mock.evaluate(`${COLLECT}(${JSON.stringify(mockSel)})`)
       const a = await app.evaluate(`${COLLECT}(${JSON.stringify(appSel)})`)
+      if (!m && !a) continue // a region this screen does not have
       console.log(`\n== ${name} (mock ${mockSel} vs app ${appSel})`)
       if (!m || !a) { console.log(`  region missing: ${!m ? 'mock' : 'app'}`); problems++; continue }
       const norm = (x) => x.toLowerCase().replace(/…$/, '').replace(/s*d+ sounds? · saves as you go$/, '').trim()
