@@ -13,6 +13,7 @@ import { startPluginMigration } from './plugins/migration.js'
 import { registerFreesoundPreviewProtocol } from './freesound/protocol.js'
 import { initAutoUpdate } from './autoUpdate.js'
 import { initPluginAutoUpdate } from './plugins/autoUpdate.js'
+import { initPluginDevWatch } from './plugins/devWatch.js'
 import { getSettings } from './settings.js'
 import { initTray, setTrayEnabled, isAppQuitting, showWindow } from './tray.js'
 import { initThumbar } from './thumbar.js'
@@ -280,6 +281,7 @@ if (isFirstInstance) app.whenReady().then(() => {
   const win = createWindow()
   initAutoUpdate(win)
   initPluginAutoUpdate(win)
+  initPluginDevWatch(win)
   initTray(win)
   initThumbar(win)
   initSleepTimer(win)
