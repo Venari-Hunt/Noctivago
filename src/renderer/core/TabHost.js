@@ -36,7 +36,7 @@ const TAB_ICONS = {
   community: 'heart'
 }
 
-import { mockIconSvg } from '../components/mockIcons.jsx'
+import { hasMockIcon, mockIconSvg } from '../components/mockIcons.jsx'
 
 export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
   const tabs = new Map()
@@ -97,15 +97,17 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     for (const listener of activateListeners) listener(id)
   }
 
-  function register({ id, title, mount, mountSticky, onShow, onHide, onBeforeHide, onDestroy }) {
+  function register({ id, title, icon, mount, mountSticky, onShow, onHide, onBeforeHide, onDestroy }) {
     if (tabs.has(id)) throw new Error(`Tab "${id}" is already registered`)
 
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'tab-button'
     button.title = title
-    const iconName = TAB_ICONS[id]
-    if (iconName) button.insertAdjacentHTML('afterbegin', mockIconSvg(iconName))
+    // Built-in tabs have theirs above; a plugin names one in manifest.json ("icon");
+    // anything else, or an unknown name, gets the generic one so every tab has an icon.
+    const iconName = TAB_ICONS[id] ?? (hasMockIcon(icon) ? icon : 'sparkles')
+    button.insertAdjacentHTML('afterbegin', mockIconSvg(iconName))
     const label = document.createElement('span')
     label.textContent = title
     button.appendChild(label)

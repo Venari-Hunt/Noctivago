@@ -4,7 +4,7 @@
 
 The app is designed for outside contributors to add functionality as plugins rather than editing core — modeled on Obsidian's plugin architecture, but **deliberately not** copying its trust model (Obsidian plugins get raw Node/Electron access; here that's split by process, see below), since this codebase is more sandboxed (`contextIsolation: true`, no `nodeIntegration`, everything served through custom protocols rather than raw file access).
 
-**A plugin is a folder** containing `manifest.json` (`id`, `name`, `version`, `main` required; `mainProcess`, `styles`, `description`, `author`, `minAppVersion` optional) + a `main` entry file exporting a default class:
+**A plugin is a folder** containing `manifest.json` (`id`, `name`, `version`, `main` required; `mainProcess`, `styles`, `description`, `author`, `minAppVersion`, `icon` optional; `icon` names the tab icon, list in `types/plugin.d.ts`) + a `main` entry file exporting a default class:
 ```js
 export default class MyPlugin {
   constructor(app, manifest) { this.app = app }

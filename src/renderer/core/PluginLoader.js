@@ -92,7 +92,8 @@ async function load(id, manifest) {
     const appApi = {
       tabs: {
         register: (tabDef) => {
-          tabHost.register(tabDef)
+          // The tab's icon comes from the manifest unless the tab names its own.
+          tabHost.register({ icon: manifest.icon, ...tabDef })
           record.tabIds.add(tabDef.id)
           // Once the host took the tab down (teardown), a late call from the
           // old instance must not remove the next version's tab of that id.

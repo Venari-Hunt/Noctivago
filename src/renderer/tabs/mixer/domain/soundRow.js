@@ -5,7 +5,44 @@ export function formatMeta(entry) {
   const parts = []
   if (entry.durationSeconds != null) parts.push(formatDuration(entry.durationSeconds))
   if (entry.fileSizeBytes != null) parts.push(formatSize(entry.fileSizeBytes))
+  const source = sourceLabel(entry)
+  if (source) parts.push(source)
   return parts.join(' · ')
+}
+
+// Where a sound came from, when that is not just "a file you added".
+export function sourceLabel(entry) {
+  if (entry.compositeSource) return 'Composite'
+  if (entry.source?.type === 'freesound') return 'Freesound'
+  return ''
+}
+
+const num = (n) => String(Math.round(n * 10) / 10)
+
+// The second half of a card's play-type line, as in the mock: "any gap",
+// "20–120 s apart" for Random; "12:00, 00:00" or "every hour" for Scheduled.
+// A loop has none.
+export function playDetail(entry) {
+  if (entry.playMode === 'scatter') {
+    const s = entry.scatter ?? {}
+    if (s.gapFullyRandom) return 'any gap'
+    const min = Number(s.minGapSeconds)
+    const max = Number(s.maxGapSeconds)
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return ''
+    return min === max ? `${num(min)} s apart` : `${num(min)}–${num(max)} s apart`
+  }
+  if (entry.playMode === 'scheduled') {
+    const sch = entry.schedule ?? {}
+    if (sch.type === 'interval') {
+      const m = Number(sch.intervalMinutes)
+      if (!Number.isFinite(m) || m <= 0) return ''
+      return m === 60 ? 'every hour' : m % 60 === 0 ? `every ${m / 60} h` : `every ${num(m)} min`
+    }
+    const times = [...(sch.times ?? [])].filter(Boolean)
+    if (times.length === 0) return ''
+    return times.length > 2 ? `${times.slice(0, 2).join(', ')} +${times.length - 2}` : times.join(', ')
+  }
+  return ''
 }
 
 // Requested directly: a name truncated by window width should marquee-scroll

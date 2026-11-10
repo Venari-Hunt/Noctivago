@@ -199,7 +199,7 @@ export function buildSoundListSections(entries, playbackState, viewState) {
       }
     }
   }
-  const section = (label, list) => ({ label, rows: list.map((entry) => row(entry, label)) })
+  const section = (label, list) => ({ label, count: label == null ? null : list.length, rows: list.map((entry) => row(entry, label)) })
 
   if (viewState.groupMode !== 'none') {
     const sections = groupEntries(sorted, viewState.groupMode, playbackState).map((g) => section(g.label, g.entries))
@@ -207,9 +207,9 @@ export function buildSoundListSections(entries, playbackState, viewState) {
   }
   if (!nowPlaying) return { sections: [section(null, sorted)], draggable }
   const sections = [
-    section('Now Playing', nowPlaying.playing),
-    section('Current Mix', nowPlaying.inMix),
-    section('Everything Else', nowPlaying.rest)
+    // The mock's two groups: what is in the mix (audible ones first), then the rest.
+    section('In this mix', [...nowPlaying.playing, ...nowPlaying.inMix]),
+    section('Library', nowPlaying.rest)
   ].filter((s) => s.rows.length > 0)
   return { sections, draggable }
 }

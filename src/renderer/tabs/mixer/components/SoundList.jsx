@@ -7,7 +7,7 @@ import { SoundRow } from './SoundRow.jsx'
 function SoundList({ sections, draggable, callbacks, allTags, editRequest }) {
   return sections.map((section) => (
     <Fragment key={section.label ?? ''}>
-      {section.label != null && <li className="sound-group-header">{section.label}</li>}
+      {section.label != null && <li className="sound-group-header">{section.label}{section.count != null && <span>{section.count}</span>}</li>}
       {section.rows.map((row) => (
         <SoundRow
           key={row.key}

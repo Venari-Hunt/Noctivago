@@ -50,6 +50,8 @@ describe('validateManifest', () => {
 
   test('rejects a wrong type on an optional field', () => {
     assert.equal(validateManifest({ ...valid, styles: 42 }).ok, false)
+    assert.equal(validateManifest({ ...valid, icon: 42 }).ok, false)
+    assert.equal(validateManifest({ ...valid, icon: 'heart' }).ok, true)
   })
 
   test('every dev-plugins/ fixture manifest passes', () => {

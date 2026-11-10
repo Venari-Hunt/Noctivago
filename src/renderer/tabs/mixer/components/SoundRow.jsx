@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { formatMeta, groupBadgeColors, sideScrollDelta, wheelPosition } from '../domain/soundRow.js'
+import { formatMeta, playDetail, groupBadgeColors, sideScrollDelta, wheelPosition } from '../domain/soundRow.js'
 import { SoundName } from './SoundName.jsx'
 import { SoundTags } from './SoundTags.jsx'
 import { KnobLine, MissingControls, MixFoot } from './SoundControls.jsx'
@@ -11,29 +11,14 @@ import { SLIDER_STEPS } from '../../../../shared/volumeScale.js'
 // flips it in or out of the mix (or ticks it, in Select mode).
 const OWN_CLICK = 'button, input, select, textarea, a, label, .knob, .tag-chip, .level-meter, .sound-row-name-input, [contenteditable]'
 
-// Composite and Freesound sounds play like any other; the badge says where
-// they came from, and for Freesound keeps the license attribution visible.
-function SourceBadges({ entry }) {
-  return (
-    <>
-      {entry.compositeSource && (
-        <span
-          className="sound-row-composite-badge"
-          title={`Baked from ${entry.compositeSource.members.length} sounds - open the Composite tab to edit`}
-        >
-          Composite
-        </span>
-      )}
-      {entry.source?.type === 'freesound' && (
-        <span
-          className="sound-row-composite-badge"
-          title={`From Freesound.org, by ${entry.source.username || 'unknown'}${entry.source.license ? ` (${entry.source.license})` : ''}`}
-        >
-          Freesound
-        </span>
-      )}
-    </>
-  )
+// The source ("Freesound", "Composite") sits in the meta line; hovering it keeps the
+// license attribution and the composite hint visible.
+function sourceTitle(entry) {
+  if (entry.compositeSource) return `Baked from ${entry.compositeSource.members.length} sounds - open the Composite tab to edit`
+  if (entry.source?.type === 'freesound') {
+    return `From Freesound.org, by ${entry.source.username || 'unknown'}${entry.source.license ? ` (${entry.source.license})` : ''}`
+  }
+  return undefined
 }
 
 // Clicking opens the same menu as right-clicking the row. ui/levelMeters.js
@@ -195,17 +180,16 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
         />
       </div>
       {!missing && (
-        <div className="sound-row-mode">
+        <div className={'sound-row-mode sound-row-mode-' + playTypeOf(entry)}>
           <playType.Icon size={12} />
-          <span>{playType.label}</span>
+          <span>{playDetail(entry) ? `${playType.label} · ${playDetail(entry)}` : playType.label}</span>
         </div>
       )}
       <div className="sound-row-meta-line">
-        <span className="sound-row-meta">{formatMeta(entry)}</span>
+        <span className="sound-row-meta" title={sourceTitle(entry)}>{formatMeta(entry)}</span>
         {state.error && <span className="sound-row-error">{state.error}</span>}
       </div>
       <div className="sound-row-info">
-        <SourceBadges entry={entry} />
         {state.groupName && (
           <GroupBadge key={state.groupName} name={state.groupName} id={state.groupId} colorSlot={state.groupColorSlot} onOpenMenu={openMenu} />
         )}

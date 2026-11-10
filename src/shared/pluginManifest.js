@@ -13,7 +13,7 @@ const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/
 
 const REQUIRED_STRINGS = ['id', 'name', 'version', 'main']
-const OPTIONAL_STRINGS = ['description', 'author', 'minAppVersion', 'mainProcess', 'styles']
+const OPTIONAL_STRINGS = ['description', 'author', 'minAppVersion', 'mainProcess', 'styles', 'icon']
 // Fields naming a file inside the plugin's own folder.
 const FILE_FIELDS = ['main', 'mainProcess', 'styles']
 

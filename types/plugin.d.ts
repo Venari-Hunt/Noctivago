@@ -47,6 +47,14 @@ export interface PluginManifest {
   styles?: PluginRelativePath
   description?: string
   author?: string
+  /**
+   * Optional. Name of the icon drawn beside the tab title, one of: tag,
+   * sliders-horizontal, search, audio-waveform, layers, upload, heart, settings,
+   * moon, play, pause, plus, sparkles, star, bell, clock, folder, file-text, link,
+   * list, eye, zap, house, calendar, sun, user, download, gamepad-2, wifi.
+   * Missing or unknown: a generic sparkle. A tab can also pass its own `icon`.
+   */
+  icon?: string
   /** Informational for now; not yet enforced against the running app version. */
   minAppVersion?: VersionString
 }
@@ -144,6 +152,8 @@ export interface TabDefinition {
   id: string
   /** Tab button label. */
   title: string
+  /** Icon name (see `PluginManifest.icon`); defaults to the manifest's. */
+  icon?: string
   /** Called once, the first time the tab is shown. Render into `container`. */
   mount(container: HTMLElement): void
   /**
