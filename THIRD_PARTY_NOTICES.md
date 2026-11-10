@@ -44,3 +44,9 @@ Noctívago fetches a standalone `yt-dlp.exe` at install time
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) is released into the public
 domain (Unlicense) — no redistribution obligations, credited here as a
 courtesy.
+
+## Signalsmith Stretch (npm: signalsmith-stretch, MIT)
+
+Pitch and tempo for saved sounds (src/main/ffmpeg/pitchShift.js) and the same
+engine in the Remix preview. Copyright Geraint Luff / Signalsmith Audio. MIT
+License; its WASM core runs in-process, nothing is linked from GPL code.

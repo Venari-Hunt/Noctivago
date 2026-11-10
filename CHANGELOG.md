@@ -6,6 +6,13 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.277 — What you hear in Remix is what gets saved
+
+- **Changed: Pitch, Doppler, Spectral repair and Noise reduction are now heard live in Remix, and saved with the same code.** Before, Remix could not play them while you edited, and the save used a different tool, so the saved sound could differ from what you had in mind. Now the preview and the save run one engine each, so they match.
+- **Changed: Pitch and Doppler no longer change the tempo in the preview.** Speed and Pitch are independent, as they already were in the saved sound.
+- **Changed: Spectral repair and Noise reduction sound a little different from before.** The edges of a box fade over about 90 ms, and noise reduction removes the hiss you sampled, with Strength setting how hard. Re-listen to sounds that use them.
+- **Known: Noise reduction is only heard live for sounds shorter than 10 minutes.** Longer ones still save correctly.
+
 ## v0.1.276 — Pick where the sound plays
 
 - **New: Settings → General → Audio → Output device.** Choose which speakers or headphones Noctívago plays through, and change it while it is playing. Automatic keeps your system default. The choice is remembered on this PC.
