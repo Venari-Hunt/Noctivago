@@ -212,21 +212,78 @@ function visibleLibrary() {
   return entries
 }
 
+const TAG_POP_LIMIT = 10
+let tagPopOpen = false
+let tagPopShowAll = false
+let tagPopQuery = ''
+
+// Tags fold into one button; its popover lists the most used first, a find box
+// narrows them, "Show all" lifts the cap. Still one active tag at a time.
 function renderTagFilterBar() {
-  const allTags = [...new Set(state.library.flatMap((entry) => entry.tags ?? []))].sort((a, b) => a.localeCompare(b))
-  els.tagFilterBar.innerHTML = ''
-  els.tagFilterBar.classList.toggle('hidden', allTags.length === 0)
-  for (const tag of allTags) {
+  const counts = new Map()
+  for (const entry of state.library) for (const tag of entry.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  const allTags = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b))
+  els.tagFilterBtn.classList.toggle('hidden', allTags.length === 0)
+  els.tagFilterBtn.textContent = state.activeTagFilter ? `Tag: ${state.activeTagFilter}` : 'Tags'
+  els.tagFilterBtn.classList.toggle('btn-primary', Boolean(state.activeTagFilter))
+  els.tagFilterBtn.setAttribute('aria-expanded', String(tagPopOpen))
+  els.tagFilterPop.classList.toggle('hidden', !tagPopOpen || allTags.length === 0)
+  if (!tagPopOpen) return
+  const keepFocus = document.activeElement?.id === 'tag-find'
+  els.tagFilterPop.innerHTML = ''
+  const find = document.createElement('input')
+  find.id = 'tag-find'
+  find.type = 'text'
+  find.placeholder = 'Find a tag'
+  find.value = tagPopQuery
+  find.setAttribute('aria-label', 'Find a tag')
+  find.addEventListener('input', () => {
+    tagPopQuery = find.value
+    renderTagFilterBar()
+  })
+  els.tagFilterPop.appendChild(find)
+  const q = tagPopQuery.trim().toLowerCase()
+  let shown = allTags.filter((tag) => !q || tag.toLowerCase().includes(q))
+  const total = shown.length
+  if (!q && !tagPopShowAll) shown = shown.slice(0, TAG_POP_LIMIT)
+  const chips = document.createElement('div')
+  chips.className = 'tag-filter-bar'
+  for (const tag of shown) {
     const chip = document.createElement('button')
     chip.type = 'button'
     chip.className = 'tag-chip tag-filter-chip' + (state.activeTagFilter === tag ? ' tag-filter-chip-active' : '')
     chip.textContent = tag
+    chip.setAttribute('aria-pressed', String(state.activeTagFilter === tag))
     chip.addEventListener('click', () => {
       state.activeTagFilter = state.activeTagFilter === tag ? null : tag
+      tagPopOpen = false
       render()
     })
-    els.tagFilterBar.appendChild(chip)
+    chips.appendChild(chip)
   }
+  els.tagFilterPop.appendChild(chips)
+  if (!q && total > TAG_POP_LIMIT && !tagPopShowAll) {
+    const more = document.createElement('button')
+    more.type = 'button'
+    more.className = 'btn btn-ghost'
+    more.textContent = `Show all ${total} tags`
+    more.addEventListener('click', () => {
+      tagPopShowAll = true
+      renderTagFilterBar()
+    })
+    els.tagFilterPop.appendChild(more)
+  }
+  if (keepFocus) find.focus()
+}
+
+function toggleTagPop(open) {
+  tagPopOpen = open ?? !tagPopOpen
+  if (tagPopOpen) {
+    tagPopQuery = ''
+    tagPopShowAll = false
+  }
+  renderTagFilterBar()
+  if (tagPopOpen) els.tagFilterPop.querySelector('input')?.focus()
 }
 
 function render() {
@@ -2140,9 +2197,11 @@ export function mount(container) {
     <div id="recommended-plugins"></div>
     <div class="sound-list-controls">
       <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds…" />
+      <button id="tag-filter-btn" class="btn hidden" type="button" aria-haspopup="true" aria-expanded="false" title="Show only sounds with one tag">Tags</button>
       <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
       <select id="sound-group" class="sound-group-select" title="Group by"></select>
       <button id="bulk-select-toggle" class="btn" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
+      <div id="tag-filter-pop" class="tag-filter-pop hidden" role="menu"></div>
     </div>
     <div id="bulk-select-bar" class="bulk-select-bar hidden">
       <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
@@ -2158,7 +2217,6 @@ export function mount(container) {
       </div>
       <button id="bulk-select-done" class="btn btn-small" type="button">Done</button>
     </div>
-    <div id="tag-filter-bar" class="tag-filter-bar hidden"></div>
     <ul id="sound-list" class="sound-list"></ul>
     <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
   `
@@ -2172,7 +2230,8 @@ export function mount(container) {
   els.bulkSelectPresetButtons = container.querySelectorAll('[data-bulk-preset]')
   els.bulkSelectReset = container.querySelector('#bulk-select-reset')
   els.bulkSelectDone = container.querySelector('#bulk-select-done')
-  els.tagFilterBar = container.querySelector('#tag-filter-bar')
+  els.tagFilterBtn = container.querySelector('#tag-filter-btn')
+  els.tagFilterPop = container.querySelector('#tag-filter-pop')
   els.soundList = container.querySelector('#sound-list')
   els.emptyState = container.querySelector('#empty-state')
 
@@ -2196,6 +2255,13 @@ export function mount(container) {
   els.soundGroup.addEventListener('change', () => {
     state.groupMode = els.soundGroup.value
     render()
+  })
+  els.tagFilterBtn.addEventListener('click', () => toggleTagPop())
+  document.addEventListener('mousedown', (evt) => {
+    if (tagPopOpen && !els.tagFilterPop.contains(evt.target) && !els.tagFilterBtn.contains(evt.target)) toggleTagPop(false)
+  })
+  document.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Escape' && tagPopOpen) toggleTagPop(false)
   })
   els.bulkSelectToggle.addEventListener('click', () => {
     state.selectMode = !state.selectMode
