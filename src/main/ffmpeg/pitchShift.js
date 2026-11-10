@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url'
 import { dopplerSemitones, DEFAULT_DOPPLER_INTENSITY_SEMITONES, DEFAULT_DOPPLER_SHARPNESS } from '../../shared/doppler.js'
 
 const BLOCK_SAMPLES = 512
+// The size of the audio blocks a Web Audio worklet gets.
+const LIVE_BLOCK_SAMPLES = 128
 // The engine keeps tones below this in tune (its default); same as the live node.
 const TONALITY_HZ = 8000
 
@@ -63,6 +65,35 @@ export async function stretchChannels(channels, sampleRate, { rate = 1, semitone
   // The engine's own delay: the audio for output sample j comes out
   // outLatency samples later than the time map says, so run that much extra
   // and drop it from the front.
+  if (rate === 1) {
+    // Pitch only: feed the engine the way the live node is fed (audio in, audio
+    // out, no seeking). Seeking at rate 1 still stretches, which smears the sound
+    // and costs about half a dB; this is exactly what Remix plays, so the save
+    // is as loud as the preview. The engine's whole delay (in + out) comes off
+    // the front.
+    const live = LIVE_BLOCK_SAMPLES
+    const tail = bufferLength
+    const liveTotal = inLength + tail
+    for (let j = 0; j < liveTotal; j += live) {
+      wasm._setTransposeSemitones(semitonesAt(j / sampleRate), TONALITY_HZ / sampleRate)
+      wasm._setFormantSemitones(0, false)
+      wasm._setFormantBase(0)
+      for (let c = 0; c < channelCount; c++) {
+        const view = new Float32Array(heap(), inPtr(c), live)
+        const src = channels[c]
+        for (let k = 0; k < live; k++) view[k] = j + k < inLength ? src[j + k] : 0
+      }
+      wasm._process(live, live)
+      for (let c = 0; c < channelCount; c++) {
+        const view = new Float32Array(heap(), outPtr(c), live)
+        for (let k = 0; k < live; k++) {
+          const o = j + k - bufferLength
+          if (o >= 0 && o < outLength) out[c][o] = view[k]
+        }
+      }
+    }
+    return out
+  }
   const total = outLength + outLatency
   for (let j = 0; j < total; j += BLOCK_SAMPLES) {
     const n = Math.min(BLOCK_SAMPLES, total - j)
