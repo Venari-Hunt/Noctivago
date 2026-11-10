@@ -485,29 +485,53 @@ main {
   z-index: 20;
   display: flex;
   flex-direction: column;
-  min-width: 200px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  gap: 2px;
+  min-width: 220px;
+  background: var(--surface-alt);
   border-radius: var(--radius);
-  padding: var(--space-1);
+  padding: 4px;
   box-shadow: var(--shadow-pop);
 }
 
+.dropdown-menu hr {
+  width: 100%;
+  height: 1px;
+  border: 0;
+  background: var(--surface-hover);
+  margin: 4px 0;
+}
+
 .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   height: var(--control-h);
-  padding: 0 10px;
+  padding: 0 8px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   background: transparent;
   color: var(--text);
   text-align: left;
   font: inherit;
   font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.dropdown-icon {
+  flex: none;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--text-dim);
 }
 
 .dropdown-item:hover {
   background: var(--surface-hover);
+}
+
+.dropdown-item:hover .dropdown-icon {
+  color: var(--text);
 }
 
 .sound-search {
@@ -1263,8 +1287,7 @@ main {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(3px);
+  background: rgb(10 10 12 / 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1274,10 +1297,9 @@ main {
 
 .modal-card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  box-shadow: var(--shadow-pop);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.5);
   /* Grows with the window instead of a fixed 360px that squeezed content
      (preset names especially) into unreadable ellipsis on the default
      480px-wide window. Capped so a wide monitor doesn't stretch a short
@@ -1294,6 +1316,7 @@ main {
 .modal-card h2 {
   margin: 0 0 var(--space-4);
   font-size: 16px;
+  line-height: 24px;
   font-weight: 600;
 }
 
@@ -1486,7 +1509,7 @@ main {
 .modal-actions {
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
+  justify-content: center;
   margin-top: 16px;
 }
 

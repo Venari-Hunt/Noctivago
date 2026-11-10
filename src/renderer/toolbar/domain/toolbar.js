@@ -15,12 +15,12 @@ export const INITIAL_TOOLBAR_STATE = {
 
 // Order is the "+" menu's order. `id` is what onAddSound receives.
 export const ADD_SOUND_ITEMS = [
-  { id: 'file', label: 'Add file…' },
-  { id: 'folder-preset', label: 'Add folder as preset…' },
-  { id: 'folder-tag', label: 'Add folder as tag…' },
-  { id: 'watch-folder', label: 'Watch a folder…' },
-  { id: 'record', label: 'Record audio…' },
-  { id: 'link', label: 'Add from link…' }
+  { id: 'file', label: 'Add file…', icon: 'file' },
+  { id: 'link', label: 'Add from link…', icon: 'link' },
+  { id: 'record', label: 'Record audio…', icon: 'mic' },
+  { id: 'folder-preset', label: 'Add folder as preset…', icon: 'preset', divider: true },
+  { id: 'folder-tag', label: 'Add folder as tag…', icon: 'tag' },
+  { id: 'watch-folder', label: 'Watch a folder…', icon: 'eye' }
 ]
 
 export function presetIndicator(presetName) {
