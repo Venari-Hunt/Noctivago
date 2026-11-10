@@ -898,7 +898,14 @@ async function doRender({ id, inputPath, loopStart, loopEnd, filters, crossfadeS
     // (afftdn's profile was measured against that same unshaped signal).
     // Spectral repair next, still before anything that shifts time
     // (speed/pitch/reverse), since its boxes are in source time.
-    const preChain = [noiseChain, spectralChain, filterChain, speedPitchChain].filter(Boolean).join(',')
+    // Speed/pitch/reverse then run BEFORE the gate/highpass/lowpass/gain/
+    // echo/EQ chain (v0.1.275, one engine): the Remix live preview applies
+    // those filters to audio that is already sped up and reversed (its
+    // voices stream a reversed copy of the loop, then the filter chain), so
+    // the save now does the same. Audible difference: echo on a reversed
+    // sound repeats after each sound instead of swelling into it, and echo
+    // delay no longer stretches with Speed - both now match what Remix plays.
+    const preChain = [noiseChain, spectralChain, speedPitchChain, filterChain].filter(Boolean).join(',')
     await runFfmpegToFile([
       '-y',
       '-ss', loopStart.toFixed(6), '-t', (loopEnd - loopStart).toFixed(6), '-i', inputPath,
