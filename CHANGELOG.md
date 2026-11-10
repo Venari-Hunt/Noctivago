@@ -15,6 +15,10 @@ bullet on a single line — the in-app screen wraps them itself.
 - **Fixed: a saved sound with Echo no longer ends in a long echo tail.** The saved loop kept its length and the echo wraps around the loop end, like the live preview, so the loop no longer jumps from the end to the middle.
 - **Changed: Speed, Pitch and Reverse now run before the filters when a sound is saved, the same order the Remix preview plays them in.** Echo on a reversed sound now repeats after each sound instead of swelling into it, and echo timing no longer stretches with Speed. Needs Remix 1.2.4, which plays Reverse live.
 
+## v0.1.274 — Softer dark background
+
+- **Changed: the app background is now dark gray instead of pure black.** Raised panels are a step lighter so layers still read clearly.
+
 ## v0.1.273 — Compress sounds already in your library
 
 - **New: Settings → Library → Compress library sounds.** WAV sounds stored in your library become FLAC: the same sound, about half the space. Each file is checked to decode to exactly the same audio before it is kept; the few that can't be stored exactly stay WAV. The change finishes when Noctívago next starts, so nothing you are playing is interrupted. Sounds you play from their own folder are never touched.
