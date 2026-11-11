@@ -48,6 +48,9 @@ jobs:
           $version = "$next-nightly.$day.${{ github.run_number }}"
           npm version $version --no-git-tag-version --allow-same-version
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # Publish into the pre-release made below, not as a full release.
+          (Get-Content electron-builder.yml) -replace '^  releaseType: release$', '  releaseType: prerelease' | Set-Content electron-builder.yml
+          if (-not (Select-String -Path electron-builder.yml -Pattern '^  releaseType: prerelease$' -Quiet)) { throw 'releaseType not switched' }
 
       - name: Create the pre-release (avoids electron-builder's parallel-upload race)
         shell: pwsh
@@ -56,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish
-        run: npm run build && npx electron-builder --win --publish always -c.publish.releaseType=prerelease
+        run: npm run build && npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
