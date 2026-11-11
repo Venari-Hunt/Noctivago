@@ -46,7 +46,14 @@ const REGIONS = [
   ['composite name', '.tools:has(.fl)', '.cp-tools:has(.cp-fl)'],
   ['composite timeline', '.tl', '.cp-tl'],
   ['composite clip', '.clipedit', '.cp-clipedit'],
-  ['composite actions', '.tools:has(.pri)', '.cp-tools:has(.cp-pri)']
+  ['composite actions', '.tools:has(.pri)', '.cp-tools:has(.cp-pri)'],
+  // Export (step 16). Open the Export tab in the matching state first
+  // (export = Audio only, export-video = Video only + Visualization,
+  // export-phone, export-run, export-done).
+  ['export form', '.ecol > .card:first-child', '.ex-col > .ex-card:first-child'],
+  ['export video', '.ecol > .card:has(.tiles4)', '#export-video-card:not([hidden])'],
+  ['export options', '.ecol > .card:has(h2):last-child', '#export-options-card:not([hidden])'],
+  ['export summary', '.sum', '.ex-sum']
 ]
 
 // Runs inside each page. Returns the visible controls in DOM order.
