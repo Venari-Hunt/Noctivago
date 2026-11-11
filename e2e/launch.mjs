@@ -23,9 +23,21 @@ async function waitForPort(port, ms = 30000) {
   throw new Error('app did not open its DevTools port')
 }
 
-export async function launchApp() {
+// Copies a local plugin build (../noctivago-plugin-repos/noctivago-<id>, built
+// with npm run build) into the profile, as scripts/dev-plugin.mjs does.
+function installPlugin(profile, id) {
+  const src = path.join(root, '..', 'noctivago-plugin-repos', `noctivago-${id}`)
+  const manifest = JSON.parse(fs.readFileSync(path.join(src, 'manifest.json'), 'utf8'))
+  const dest = path.join(process.env.APPDATA, profile, 'plugins', id)
+  fs.mkdirSync(dest, { recursive: true })
+  for (const f of new Set(['manifest.json', manifest.main, manifest.styles].filter(Boolean))) fs.copyFileSync(path.join(src, f), path.join(dest, f))
+  fs.writeFileSync(path.join(dest, '.origin.json'), JSON.stringify({ repo: `Venari-Hunt/noctivago-${id}` }))
+}
+
+export async function launchApp({ plugins = [] } = {}) {
   const port = 9300 + (process.pid % 500)
   const profile = `noctivago-e2e-${process.pid}`
+  for (const id of plugins) installPlugin(profile, id)
   const electronPath = createRequire(root + '/package.json')('electron')
   const child = spawn(electronPath, [root, `--remote-debugging-port=${port}`, '--mute-audio'], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, NOCTIVAGO_PROFILE: profile },
