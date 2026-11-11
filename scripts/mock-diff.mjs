@@ -8,7 +8,7 @@
 // Edge (the mock is opened in a throwaway headless Edge on port 9333).
 // Icons are compared by their drawing (path data), not by name, so an old-app
 // icon where the mock has a Phosphor one shows up as a difference.
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
@@ -37,9 +37,11 @@ const REGIONS = [
 
 // Runs inside each page. Returns the visible controls in DOM order.
 const COLLECT = `((sel) => {
-  const root = document.querySelector(sel)
-  if (!root) return null
   const visible = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' }
+  // Remix has one grid per scope (Sound, Group, Preset); take the one on screen.
+  const all = [...document.querySelectorAll(sel)]
+  const root = all.find(visible) || all[0]
+  if (!root) return null
   const drawing = (svg) => {
     if (!svg) return null
     const use = svg.querySelector('use')
@@ -89,6 +91,7 @@ async function cdp(port, targetFilter) {
 
 async function main() {
   if (!EDGE) throw new Error('Edge not found')
+  killMockEdge() // a leftover from a crashed run would answer on 9333
   const url = pathToFileURL(MOCK).href + `?screen=${screen}&width=${width}`
   const edge = spawn(EDGE, ['--headless=new', '--remote-debugging-port=9333', `--window-size=${width + 40},900`, '--user-data-dir=' + process.env.TEMP + '/mock-diff-edge', '--no-first-run', url], { stdio: 'ignore' })
   try {
@@ -129,6 +132,13 @@ async function main() {
     process.exitCode = problems ? 1 : 0
   } finally {
     edge.kill()
+    killMockEdge()
   }
+}
+
+// edge.kill() only ends the launcher; the headless browser lives on and the
+// next run would read its old screen. End every process on our profile.
+function killMockEdge() {
+  spawnSync('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -like '*mock-diff-edge*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"], { stdio: 'ignore' })
 }
 main().catch((e) => { console.error(e.message); process.exit(2) })
