@@ -78,6 +78,7 @@ async function main() {
         returnByValue: true
       })
       if (r.exceptionDetails) throw new Error(`--eval threw: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`)
+      if (r.result?.value !== undefined) console.log(`eval: ${typeof r.result.value === 'string' ? r.result.value : JSON.stringify(r.result.value)}`)
     }
     // Let layout and any transition settle after the resize.
     await new Promise((r) => setTimeout(r, 400))

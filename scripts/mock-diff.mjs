@@ -40,7 +40,13 @@ const REGIONS = [
   ['browse sources', '.tools.sub', '.bs-tools.bs-sub'],
   ['browse empty', '.empty', '.bs-empty:not(.hidden)'],
   ['browse card', '.tile.rcard', '.bs-tile'],
-  ['browse preview', '.pvbar', '.bs-pvbar']
+  ['browse preview', '.pvbar', '.bs-pvbar'],
+  // Composite (step 15). Open the Composite tab with two clips placed and
+  // one selected first (screen composite).
+  ['composite name', '.tools:has(.fl)', '.cp-tools:has(.cp-fl)'],
+  ['composite timeline', '.tl', '.cp-tl'],
+  ['composite clip', '.clipedit', '.cp-clipedit'],
+  ['composite actions', '.tools:has(.pri)', '.cp-tools:has(.cp-pri)']
 ]
 
 // Runs inside each page. Returns the visible controls in DOM order.
