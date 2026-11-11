@@ -53,7 +53,13 @@ const REGIONS = [
   ['export form', '.ecol > .card:first-child', '.ex-col > .ex-card:first-child'],
   ['export video', '.ecol > .card:has(.tiles4)', '#export-video-card:not([hidden])'],
   ['export options', '.ecol > .card:has(h2):last-child', '#export-options-card:not([hidden])'],
-  ['export summary', '.sum', '.ex-sum']
+  ['export summary', '.sum', '.ex-sum'],
+  // Community (step 17). Open the Community tab on the matching view first
+  // (community = Browse, community-mine = My uploads, community-share).
+  ['community switch', '.tools.sub', '.cm-tools.cm-sub'],
+  ['community search', '.tools:has(input[aria-label="Search presets"])', '#community-browse:not([hidden]) .cm-tools'],
+  ['community card', '.tiles.wide > .pcard', '.cm-tiles .cm-pcard'],
+  ['community share', '.sharef .card', '#community-share:not([hidden]) .cm-card']
 ]
 
 // Runs inside each page. Returns the visible controls in DOM order.
