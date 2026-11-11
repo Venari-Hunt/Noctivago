@@ -10,3 +10,27 @@ If this repository is public, `electron-updater`'s GitHub provider can read rele
 
 **itch.io** gets the exact same installer the GitHub release just published, pushed via Butler in the same workflow run (`.github/workflows/release.yml`, skips itself gracefully until `ITCH_BUTLER_API_KEY` is set as a repo secret). This used to be a second, separate build made deliberately without a private-repo update token so a working repo-clone credential wouldn't end up on a public download page — now that the repo itself is public and that token is gone entirely (see the note above), there's nothing left to keep the two builds apart, so it's one build, published twice.
 
+
+## Stable and Nightly channels
+
+Settings, Updates, **Update channel** picks Stable (default) or Nightly (`settings.updateChannel`).
+
+- **Nightly builds:** `.github/workflows/nightly.yml` runs on every push to `master`. It tests, versions the build as the next patch with a nightly tag (`2.0.1-nightly.20261111.42`), publishes it as a GitHub **pre-release**, and keeps the newest 10 nightlies.
+- **Stable builds:** the tag release in `release.yml`, unchanged. GitHub's `/releases/latest`, which Stable checks, never returns a pre-release.
+- **In the app** (`autoUpdate.js` `applyUpdateChannel()`): Nightly sets `allowPrerelease`. Stable on a nightly version sets `allowDowngrade`, so the newest stable (an older version) installs over it. Switching channel checks right away and offers it in the Update modal.
+
+## Data that survives a downgrade
+
+Going back from Nightly to Stable means an older app opens data a newer one wrote. How other apps handle it, and what Noctívago copies:
+
+- Firefox: `compatibility.ini` stamps the last version that opened a profile and refuses an older one (downgrade protection). Here: `userData/data-version.json` stamps `{ schema, version }`.
+- Chrome: snapshots user data after each major update and on rollback restores the newest snapshot not newer than the version being run (`chrome/browser/downgrade/snapshot_manager.cc`). Here: `userData/snapshots/<previous version>/` holds a copy of `library.json`, `presets.json`, `settings.json`, `community.json` on every upgrade. Kept: the newest 3, plus the newest of each schema, plus every set-aside copy.
+- Joplin: an older app meeting a newer "profile version" stops with a fatal error. That is what this avoids.
+
+**The rule for every change to saved data** (library, presets, settings, community stores):
+
+1. **Additive only.** Add new fields; keep writing the old ones while a stable release still reads them; never rename, remove or change the meaning or type of a field in the same release that starts using its replacement (expand, then contract a release later). Code that rewrites an entry spreads the stored object, so fields it does not know survive.
+2. **Readers tolerate.** Missing field = default; unknown field = ignore and keep.
+3. **Only when 1 is impossible**, raise `DATA_SCHEMA` in `src/shared/dataSchema.js`, in the same commit as the change. Then a downgrade restores the last snapshot from before the change (newer data is moved to a `-set-aside` snapshot and a dialog says so, with a Show folder button). Work done in the newer version is not shown in the older one, but nothing is deleted.
+
+Audio in `sounds/` is not snapshotted (files are only added or removed, never rewritten), and `clips/` is a cache. `updateChannel` is carried over a restore, so a downgrade never flips the channel back to Nightly. Tests: `test/dataGuard.test.js`.

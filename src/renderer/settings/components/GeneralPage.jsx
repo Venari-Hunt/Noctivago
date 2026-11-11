@@ -47,6 +47,19 @@ export function GeneralPage({ settings, api }) {
           <button className="btn" type="button" onClick={openUpdateModal}>Check now…</button>
           <button className="btn" type="button" onClick={openWhatsNewModal}>What's new</button>
         </SettingItem>
+        <SettingItem
+          name="Update channel"
+          description={
+            settings.updateChannel === 'nightly'
+              ? 'Nightly: every change, as soon as it is merged. May have bugs. Your library is backed up before each update.'
+              : 'Stable: tested releases only. Switching back from Nightly installs the latest stable version and keeps your library.'
+          }
+        >
+          <div className="preset-view-seg" role="group" aria-label="Update channel">
+            <button type="button" aria-pressed={settings.updateChannel !== 'nightly'} onClick={() => api.update((s) => s.setUpdateChannel('stable'))}>Stable</button>
+            <button type="button" aria-pressed={settings.updateChannel === 'nightly'} onClick={() => api.update((s) => s.setUpdateChannel('nightly'))}>Nightly</button>
+          </div>
+        </SettingItem>
         <SettingItem name="Automatically check for updates">
           <Toggle checked={settings.autoUpdateEnabled} label="Automatically check for updates" onChange={(v) => api.update((s) => s.setAutoUpdateEnabled(v))} />
         </SettingItem>

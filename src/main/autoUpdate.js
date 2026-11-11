@@ -6,6 +6,7 @@ import {
   setLastRunVersion,
   setUpdateRestart,
   setAutoUpdateEnabled as persistAutoUpdateEnabled,
+  setUpdateChannel as persistUpdateChannel,
   setAutoUpdateIntervalSeconds as persistAutoUpdateIntervalSeconds
 } from './settings.js'
 import { changelogTextBetween } from './changelog.js'
@@ -37,6 +38,24 @@ autoUpdater.logger = log
 // need two separate "are you sure"s.
 autoUpdater.autoDownload = false
 autoUpdater.autoInstallOnAppQuit = false
+
+// Stable or Nightly. Nightly builds are GitHub pre-releases versioned as the
+// next patch with a nightly tag (2.0.1-nightly.20261111.4), published by
+// .github/workflows/nightly.yml; Stable builds are normal releases.
+// - Nightly: allowPrerelease lets the GitHub provider pick pre-releases.
+// - Stable: only /releases/latest (GitHub leaves pre-releases out). While a
+//   nightly is installed, allowDowngrade lets that older stable install over
+//   it, so choosing Stable really goes back (electron-updater's documented
+//   use of allowDowngrade). The saved data is protected by dataGuard.js.
+export function isPrereleaseVersion(version) {
+  return /-/.test(String(version))
+}
+
+function applyUpdateChannel() {
+  const nightly = getSettings().updateChannel === 'nightly'
+  autoUpdater.allowPrerelease = nightly
+  autoUpdater.allowDowngrade = !nightly && isPrereleaseVersion(app.getVersion())
+}
 
 // Ambient-sound apps tend to get left running for hours or days at a
 // stretch - the original startup-only check meant anyone who doesn't
@@ -164,6 +183,7 @@ function detectWhatsNew() {
 export function initAutoUpdate(win) {
   mainWindow = win
   detectWhatsNew()
+  applyUpdateChannel()
 
   // electron-updater only makes sense for an installed, packaged app - it
   // has no meaningful feed to check against a dev build, and would just
@@ -386,6 +406,21 @@ export function setAutoUpdateIntervalSeconds(seconds) {
   if (app.isPackaged && recheckIntervalId) {
     stopPeriodicChecks()
     startPeriodicChecks()
+  }
+  return settings
+}
+
+// Settings' Update channel. Switching checks right away, so going back to
+// Stable offers the stable version (an older one) in the Update modal at
+// once instead of at the next periodic check.
+export function setUpdateChannel(channel) {
+  const settings = persistUpdateChannel(channel)
+  applyUpdateChannel()
+  dismissedVersion = null
+  if (app.isPackaged) {
+    manualCheckPending = true
+    setState({ status: 'checking', errorMessage: null })
+    runCheck()
   }
   return settings
 }
