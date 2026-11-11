@@ -3260,13 +3260,28 @@ a.btn {
   gap: var(--space-3);
 }
 
-/* Rail: rises from the player, the Mixer stays in view. */
+/* Rail: rises from the bottom of the window over the media bar, the Mixer
+   dimmed behind a scrim (step 13d, mock-noctivago-presets-modal: .host
+   inset 0, .panel bottom 0, radius 16 16 0 0). */
+.presets-host[data-view='rail'] {
+  pointer-events: auto;
+  top: var(--title-bar-h);
+}
+
+.presets-host[data-view='rail'] .presets-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(8 8 10 / 0.6);
+}
+
 .presets-host[data-view='rail'] .presets-panel {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 72px;
-  box-shadow: 0 -16px 48px rgb(0 0 0 / 0.4);
+  bottom: 0;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 0 0 1px var(--border), 0 24px 64px rgb(0 0 0 / 0.5);
+  animation: presets-rise 180ms ease-out;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
     'title tools close'
@@ -3618,4 +3633,13 @@ a.btn {
   .presets-host[data-view='rail'] .preset-cards {
     padding-right: var(--space-4);
   }
+}
+
+@keyframes presets-rise {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presets-host[data-view='rail'] .presets-panel { animation: none; }
 }

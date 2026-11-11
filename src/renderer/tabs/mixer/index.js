@@ -174,6 +174,10 @@ const els = {
   groupCreateConfirm: document.getElementById('group-create-confirm')
 }
 
+// Presets rail head: Import and New blank carry the mock's icons (step 13d).
+els.importPresetBtn.innerHTML = `${mockIconSvg('download')}Import`
+els.newPresetBlankBtn.innerHTML = `${mockIconSvg('plus')}New blank`
+
 let pickedFile = null
 let pickedFolder = null
 // Folder-name tag text for the "Add folder as preset" dialog's own tag
