@@ -1,0 +1,72 @@
+name: Nightly
+
+# A build of every change merged to master, published as a GitHub pre-release.
+# Apps on the Nightly update channel install it; Stable never sees it,
+# because GitHub's /releases/latest (what Stable checks) skips pre-releases.
+# Version: the next patch with a nightly tag, e.g. 2.0.1-nightly.20261111.42,
+# so it sorts above the current stable (2.0.0) and below the next one
+# (2.0.1). electron-builder writes nightly.yml for that channel itself.
+
+on:
+  # While 2.0 is built on its own branch, nightlies come from there (that
+  # branch's copy of this file pushes on ui-redesign); on master it runs by hand.
+  workflow_dispatch:
+
+env:
+  # Empty: the next patch of package.json. The 2.0 branch sets 2.0.0.
+  NIGHTLY_BASE: ''
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Nightly version
+        shell: pwsh
+        run: |
+          if ($env:NIGHTLY_BASE) { $next = $env:NIGHTLY_BASE } else {
+            $base = ((Get-Content package.json | ConvertFrom-Json).version -replace '-.*', '').Split('.')
+            $next = "$($base[0]).$($base[1]).$([int]$base[2] + 1)"
+          }
+          $day = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
+          $version = "$next-nightly.$day.${{ github.run_number }}"
+          npm version $version --no-git-tag-version --allow-same-version
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Create the pre-release (avoids electron-builder's parallel-upload race)
+        shell: pwsh
+        run: gh release create "v$env:VERSION" --prerelease --title "Nightly $env:VERSION" --notes "Automatic build of ${{ github.sha }}. Nightly builds may have bugs; switch back to Stable in Settings, Updates."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        run: npm run build && npx electron-builder --win --publish always -c.publish.releaseType=prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+          COMMUNITY_API_URL: ${{ vars.COMMUNITY_API_URL }}
+
+      - name: Keep the newest 10 nightlies
+        shell: pwsh
+        run: |
+          $old = gh release list --limit 200 --json tagName,isPrerelease,createdAt | ConvertFrom-Json |
+            Where-Object { $_.isPrerelease -and $_.tagName -like '*-nightly.*' } |
+            Sort-Object createdAt -Descending | Select-Object -Skip 10
+          foreach ($r in $old) { gh release delete $r.tagName --cleanup-tag --yes }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
