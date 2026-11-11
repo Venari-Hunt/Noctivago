@@ -5,6 +5,7 @@ const api = {
   // directly through a plain `electron` import (that surface only exposes
   // ipcRenderer/contextBridge/etc. here), so this goes through IPC instead.
   isPackaged: () => ipcRenderer.invoke('app:isPackaged'),
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     setAutoUpdateEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoUpdateEnabled', enabled),

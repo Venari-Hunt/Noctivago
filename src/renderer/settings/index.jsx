@@ -7,7 +7,8 @@ import { SettingsPage } from './components/SettingsPage.jsx'
 export function createSettingsTab() {
   let root = null
   let session = 0
-  const render = () => root?.render(<SettingsPage key={session} noctivago={window.noctivago} />)
+  let page = null
+  const render = () => root?.render(<SettingsPage key={session} noctivago={window.noctivago} initialPage={page} />)
   return {
     id: 'settings',
     title: 'Settings',
@@ -16,9 +17,16 @@ export function createSettingsTab() {
       root = createRoot(section)
       render()
     },
+    // Open on a given page (the ? shortcut opens Help); the page resets on the next normal show.
+    showPage(id) {
+      page = id
+      session += 1
+      render()
+    },
     onShow() {
       session += 1
       render()
+      page = null
     }
   }
 }

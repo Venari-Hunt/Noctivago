@@ -235,6 +235,7 @@ export interface Preset {
 
 export interface NoctivagoApi {
   isPackaged(): Promise<boolean>
+  toggleFullscreen(): Promise<void>
   settings: {
     get(): Promise<Payload>
     [setter: `set${string}`]: (value: any) => Promise<any>

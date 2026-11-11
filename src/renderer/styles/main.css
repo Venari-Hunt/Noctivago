@@ -3717,3 +3717,17 @@ a.btn {
 @media (prefers-reduced-motion: reduce) {
   .presets-host[data-view='rail'] .presets-panel { animation: none; }
 }
+
+/* Settings > Help: a key cap (the mock's .kbd). */
+.kbd {
+  display: inline-block;
+  min-width: 24px;
+  height: 24px;
+  padding-inline: 8px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 24px;
+  text-align: center;
+}

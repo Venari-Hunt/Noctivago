@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -69,6 +69,12 @@ function sanitizeExportName(name) {
 
 export function registerIpcHandlers() {
   ipcMain.handle('app:isPackaged', () => app.isPackaged)
+
+  // F11 (the keymap in the renderer): full screen on and off for the asking window.
+  ipcMain.handle('window:toggleFullscreen', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.setFullScreen(!win.isFullScreen())
+  })
 
   // One-way: the renderer reports every play/pause transition so the
   // Windows taskbar thumbnail toolbar button (src/main/thumbar.js) can keep

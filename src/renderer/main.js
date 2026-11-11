@@ -4,6 +4,7 @@ import { installSliderDoubleClickReset } from './core/sliderReset.js'
 import { installNumberBoxStepper } from './core/numberBoxStepper.js'
 import { createSettingsTab } from './settings/index.jsx'
 import { installUpdateModal } from './core/UpdateModal.js'
+import { installKeymap } from './core/keymap.js'
 import { installSleepTimer } from './core/SleepTimer.js'
 import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { installRecordDialog } from './core/RecordDialog.js'
@@ -43,10 +44,18 @@ tabHost.register({ id: 'mixer', title: 'Mixer', mount: mountMixerTab, onShow: on
 
 // Settings is a page, not a dialog: a tab with no tab-bar button, opened from
 // the nav's Settings button, which toggles back to the tab you came from.
-tabHost.register(createSettingsTab())
+const settingsTab = createSettingsTab()
+tabHost.register(settingsTab)
 let lastTab = 'mixer'
-setToolbarHandlers({
-  onOpenSettings: () => tabHost.activate(tabHost.getActiveId() === 'settings' && tabHost.has(lastTab) ? lastTab : 'settings')
+const toggleSettings = () => tabHost.activate(tabHost.getActiveId() === 'settings' && tabHost.has(lastTab) ? lastTab : 'settings')
+setToolbarHandlers({ onOpenSettings: toggleSettings })
+installKeymap({
+  tabHost,
+  toggleSettings,
+  showHelp: () => {
+    settingsTab.showPage('help')
+    if (tabHost.getActiveId() !== 'settings') tabHost.activate('settings')
+  }
 })
 tabHost.onActivate((id) => {
   if (id !== 'settings') lastTab = id

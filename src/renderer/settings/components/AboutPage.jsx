@@ -4,6 +4,7 @@ import { openWhatsNewModal } from '../../core/UpdateModal.js'
 import { Group } from './Group.jsx'
 import { SettingItem } from './SettingItem.jsx'
 
+const PROFILE_URL = 'https://github.com/Venari-Hunt'
 const SOURCE_URL = 'https://github.com/Venari-Hunt/Noctivago'
 
 export function AboutPage({ autoUpdate }) {
@@ -20,7 +21,9 @@ export function AboutPage({ autoUpdate }) {
         <p>{version ? `Version ${version}. ` : ''}Ambient sound mixer for Windows, open source.</p>
       </section>
       <Group title="Project">
-        <SettingItem name="Made by" description="Venari" />
+        <SettingItem name="Made by" description="Venari">
+          <a className="btn" href={PROFILE_URL} target="_blank" rel="noreferrer">GitHub</a>
+        </SettingItem>
         <SettingItem name="What's new" description="Full release notes">
           <button className="btn" type="button" onClick={openWhatsNewModal}>Open</button>
         </SettingItem>

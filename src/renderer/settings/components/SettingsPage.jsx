@@ -10,14 +10,15 @@ import { CorePluginsPage } from './CorePluginsPage.jsx'
 import { CommunityPluginsPage } from './CommunityPluginsPage.jsx'
 import { PluginOptionsDialog } from './PluginOptionsDialog.jsx'
 import { PrivacyPage } from './PrivacyPage.jsx'
+import { HelpPage } from './HelpPage.jsx'
 import { AboutPage } from './AboutPage.jsx'
 
 // The Settings page (a tab with no tab-bar button, see settings/index.jsx):
 // the list of pages on the left, the chosen page in a column on the right.
-export function SettingsPage({ noctivago }) {
+export function SettingsPage({ noctivago, initialPage = null }) {
   const [settings, setSettings] = useState(null)
   const [rawDescribed, setDescribed] = useState([])
-  const [activeId, setActiveId] = useState('general')
+  const [activeId, setActiveId] = useState(initialPage ?? 'general')
   const [optionsFor, setOptionsFor] = useState(null)
   const pluginPages = useSyncExternalStore(subscribePluginSettingsPages, listPluginSettingsPages)
   // Plugin changes apply live (core/PluginLoader.js); `loaded` is what's
@@ -86,6 +87,8 @@ export function SettingsPage({ noctivago }) {
             onOpenOptions={setOptionsFor}
           />
         )
+      case 'help':
+        return <HelpPage />
       case 'privacy':
         return <PrivacyPage />
       case 'about':
