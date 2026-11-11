@@ -8,10 +8,10 @@ import { installSleepTimer } from './core/SleepTimer.js'
 import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { installRecordDialog } from './core/RecordDialog.js'
 import { installAddLinkDialog } from './core/AddLinkDialog.js'
-import { mountToolbar, updateToolbar, setToolbarHandlers, setSettingsOpen } from './toolbar/index.jsx'
+import { mountToolbar, setToolbarHandlers, setSettingsOpen } from './toolbar/index.jsx'
 import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
 
-mountToolbar(document.getElementById('toolbar'), document.getElementById('nav-end'))
+mountToolbar(document.getElementById('toolbar'), document.getElementById('nav-end'), document.getElementById('preset-pill-slot'))
 installSliderDoubleClickReset()
 installNumberBoxStepper()
 installWatchFolderDialog()
@@ -28,7 +28,7 @@ installSleepTimer()
 window.noctivago.isPackaged().then((isPackaged) => {
   document.title = isPackaged ? 'Noctívago' : 'Noctívago (Dev)'
   document.getElementById('title-bar-name').textContent = document.title
-  updateToolbar({ isDev: !isPackaged })
+  document.getElementById('title-bar-dev').hidden = isPackaged
 })
 
 const tabHost = createTabHost(

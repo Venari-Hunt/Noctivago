@@ -3,7 +3,6 @@
 // (the Mixer, the sleep timer, main.js) push it in through toolbar/index.jsx.
 
 export const INITIAL_TOOLBAR_STATE = {
-  isDev: false,
   presetName: null,
   // How many sounds are in the mix (the player's subtitle).
   mixCount: 0,
@@ -25,14 +24,13 @@ export const ADD_SOUND_ITEMS = [
   { id: 'watch-folder', label: 'Watch a folder…', icon: 'eye' }
 ]
 
-export function presetIndicator(presetName, mixCount = 0) {
-  const hasPreset = Boolean(presetName)
-  const sounds = mixCount === 1 ? '1 sound' : `${mixCount} sounds`
+// The title-bar preset pill: the preset name, then '· N sounds' in dim text.
+export function presetPill(presetName, mixCount = 0) {
+  if (!presetName) return { label: 'No preset', count: '', title: 'No preset loaded: click to pick one' }
   return {
-    hasPreset,
-    label: hasPreset ? presetName : 'No preset',
-    sub: hasPreset ? `${sounds} · saves as you go` : mixCount > 0 ? `${sounds} in the mix` : 'No sounds yet',
-    title: hasPreset ? `Editing preset "${presetName}"` : 'No preset loaded'
+    label: presetName,
+    count: '· ' + (mixCount === 1 ? '1 sound' : mixCount + ' sounds'),
+    title: 'Preset playing in the Mixer: click for the presets'
   }
 }
 

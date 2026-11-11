@@ -1,15 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ADD_SOUND_ITEMS, presetIndicator, sleepButtonTitle } from '../src/renderer/toolbar/domain/toolbar.js'
+import { ADD_SOUND_ITEMS, presetPill, sleepButtonTitle } from '../src/renderer/toolbar/domain/toolbar.js'
 
-test('the preset indicator dims to "No preset" until one is loaded', () => {
-  assert.deepEqual(presetIndicator(null), { hasPreset: false, label: 'No preset', sub: 'No sounds yet', title: 'No preset loaded' })
-  assert.deepEqual(presetIndicator('Rain', 3), { hasPreset: true, label: 'Rain', sub: '3 sounds · saves as you go', title: 'Editing preset "Rain"' })
+test('the preset pill says "No preset" until one is loaded', () => {
+  assert.deepEqual(presetPill(null), { label: 'No preset', count: '', title: 'No preset loaded: click to pick one' })
+  assert.equal(presetPill('Rain', 3).label, 'Rain')
 })
 
-test('the preset subtitle counts the mix, with and without a preset', () => {
-  assert.equal(presetIndicator('Rain', 1).sub, '1 sound · saves as you go')
-  assert.equal(presetIndicator(null, 2).sub, '2 sounds in the mix')
+test('the preset pill counts the mix', () => {
+  assert.equal(presetPill('Rain', 1).count, '· 1 sound')
+  assert.equal(presetPill('Rain', 10).count, '· 10 sounds')
 })
 
 test('the sleep button says when a timer is running', () => {

@@ -2,12 +2,12 @@ import { MockIcon } from '../../components/mockIcons.jsx'
 import { muteButtonTitle, playButtonTitle, sleepButtonTitle } from '../domain/toolbar.js'
 import { GlobalVolume } from './GlobalVolume.jsx'
 
-// Play sits alone in the middle of the player; the rest hangs off its right.
+// Play sits alone in the middle of the media bar; the rest hangs off its right.
 export function Transport({ state, handlers }) {
   return (
     <>
       <button className="btn btn-play" type="button" title={playButtonTitle(state.playing)} onClick={handlers.onPlayPause}>
-        <MockIcon name={state.playing ? 'pause' : 'play'} size={24} />
+        <MockIcon name={state.playing ? 'pause' : 'play'} size={20} />
       </button>
       <div className="toolbar-group toolbar-actions">
         {state.sleepActive ? (

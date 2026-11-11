@@ -21,6 +21,7 @@ import { openClipReport } from './components/ClipReport.jsx'
 import { mountRecommendedPlugins } from './components/RecommendedPlugins.jsx'
 import { mockIconSvg } from '../../components/mockIcons.jsx'
 import { mountAddSound, setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
+import { showPresetPill, presetPillState } from '../../toolbar/presetPill.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -148,8 +149,6 @@ const els = {
   addFolderTagConfirm: document.getElementById('add-folder-tag-confirm'),
 
   presetsModal: document.getElementById('presets-modal'),
-  updateActivePresetBtn: document.getElementById('update-active-preset'),
-  updateActivePresetLabel: document.getElementById('update-active-preset-label'),
   presetAutosaveToggle: document.getElementById('preset-autosave-toggle'),
   newPresetName: document.getElementById('new-preset-name'),
   newPresetBlankBtn: document.getElementById('new-preset-blank'),
@@ -1660,19 +1659,14 @@ async function refreshPresetList() {
   updateActivePresetButtonState(presets)
 }
 
-// Shows/labels the "Save changes" button for whatever preset was last
-// loaded (state.activePresetId - set by loadPreset, never cleared just by
-// editing the mix by hand, see loadPreset's own comment) - hidden entirely
-// if nothing's been loaded yet, or if that preset was deleted since.
+// Names the last loaded preset (state.activePresetId - set by loadPreset,
+// never cleared just by editing the mix by hand) in the title-bar pill, or
+// "No preset" if nothing is loaded or it was deleted since. Saving now lives
+// in the pill too (step 13d): the modal's own Save changes button is gone.
 function updateActivePresetButtonState(presets) {
   const active = presets.find((p) => p.id === state.activePresetId)
   setActivePresetIndicator(active?.name ?? null)
-  if (!active) {
-    els.updateActivePresetBtn.classList.add('hidden')
-    return
-  }
-  els.updateActivePresetBtn.classList.remove('hidden')
-  els.updateActivePresetLabel.textContent = `Save "${active.name}" now`
+  if (!active && presetDirty) setPresetDirty(false)
 }
 
 // The top-bar preset-name indicator (index.html, left of the Play-all
@@ -1763,6 +1757,8 @@ setToolbarHandlers({
   onVolumeInput: onGlobalVolumeInput,
   onMuteToggle: toggleGlobalMute,
   onOpenPresets: openPresetsModal,
+  onPillSave: () => savePresetChanges(),
+  onPillCancel: () => cancelPresetChanges(),
   onAddSound: (id) => ADD_SOUND_ACTIONS[id]()
 })
 
@@ -1818,7 +1814,11 @@ function currentMixSounds() {
 // - The pending write captures the preset id and bails if the active preset
 //   changed during the debounce, so a fast A->B switch can't write A's mix
 //   into B.
-const PRESET_AUTOSAVE_DEBOUNCE_MS = 600
+// 1.2 s of quiet after the last edit (step 13d: the pill shows "Changes made"
+// with a pulsing dot while edits keep coming, then Saving, then Changes saved).
+const PRESET_AUTOSAVE_DEBOUNCE_MS = 1200
+// Saving stays on screen at least this long, so it reads as a step, not a flicker.
+const PILL_SAVING_MIN_MS = 1100
 let presetAutosaveReady = false
 let presetAutosaveLoading = false
 let presetAutosaveTimer = null
@@ -1828,6 +1828,12 @@ let presetAutosaveTimer = null
 // var (rather than re-reading api.settings.get() on every mix edit) since
 // autosaveActivePreset() can fire on every volume drag.
 let presetAutosaveUserEnabled = true
+// Save changes as I go OFF: the mix differs from the saved preset; the pill
+// shows Unsaved changes with Cancel and Save.
+let presetDirty = false
+// Bumped on every edit, so a save that started before a newer edit does not
+// claim "Changes saved" over the newer "Changes made".
+let presetEditSeq = 0
 
 
 // BUG FIX (v0.1.223): state.activePresetSounds used to be set only when a
@@ -1843,16 +1849,44 @@ function adoptActivePresetSounds(preset) {
   for (const entry of state.library) reconcileSource(entry)
 }
 
+function setPresetDirty(dirty) {
+  presetDirty = dirty
+  if (dirty) showPresetPill('prompt')
+  else if (presetPillState() === 'prompt') showPresetPill('norm')
+}
+
+// Writes the mix into the active preset with the pill's Saving > Changes saved.
+async function writePresetWithPill(presetId) {
+  const seq = presetEditSeq
+  showPresetPill('saving')
+  const [updated] = await Promise.all([
+    api.presets.updateSounds(presetId, currentMixSounds()),
+    new Promise((resolve) => setTimeout(resolve, PILL_SAVING_MIN_MS))
+  ])
+  adoptActivePresetSounds(updated)
+  if (seq === presetEditSeq && presetPillState() === 'saving') showPresetPill(updated ? 'saved' : 'norm')
+  return updated
+}
+
 function autosaveActivePreset() {
-  if (!presetAutosaveReady || presetAutosaveLoading || !presetAutosaveUserEnabled) return
+  if (!presetAutosaveReady || presetAutosaveLoading) return
   const presetId = state.activePresetId
-  if (!presetId || state.included.size === 0) return
+  if (!presetId) return
+  presetEditSeq++
+  if (!presetAutosaveUserEnabled) {
+    setPresetDirty(true)
+    return
+  }
+  if (state.included.size === 0) return
+  showPresetPill('made')
   clearTimeout(presetAutosaveTimer)
   presetAutosaveTimer = setTimeout(async () => {
     presetAutosaveTimer = null
-    if (state.activePresetId !== presetId || state.included.size === 0) return
-    const updated = await api.presets.updateSounds(presetId, currentMixSounds())
-    adoptActivePresetSounds(updated)
+    if (state.activePresetId !== presetId || state.included.size === 0) {
+      showPresetPill('norm')
+      return
+    }
+    const updated = await writePresetWithPill(presetId)
     if (updated && !els.presetsModal.classList.contains('hidden')) {
       els.presetSaveHint.classList.add('ok')
       els.presetSaveHint.textContent = `Autosaved changes to "${updated.name}".`
@@ -1870,23 +1904,39 @@ async function flushPresetAutosave() {
   clearTimeout(presetAutosaveTimer)
   presetAutosaveTimer = null
   const presetId = state.activePresetId
-  if (!presetId || state.included.size === 0) return
-  adoptActivePresetSounds(await api.presets.updateSounds(presetId, currentMixSounds()))
-}
-
-els.updateActivePresetBtn.addEventListener('click', async () => {
-  if (!state.activePresetId) return
-  if (state.included.size === 0) {
-    els.presetSaveHint.classList.remove('ok')
-    els.presetSaveHint.textContent = 'Add at least one sound to the mix before saving.'
+  if (!presetId || state.included.size === 0) {
+    showPresetPill('norm')
     return
   }
-  const updated = await api.presets.updateSounds(state.activePresetId, currentMixSounds())
+  const updated = await api.presets.updateSounds(presetId, currentMixSounds())
   adoptActivePresetSounds(updated)
-  els.presetSaveHint.classList.add('ok')
-  els.presetSaveHint.textContent = updated ? `Saved changes to "${updated.name}".` : 'Could not save - that preset may have been deleted.'
-  await refreshPresetList()
-})
+  showPresetPill(updated ? 'saved' : 'norm')
+}
+
+// The pill's Save (Save changes as I go OFF): writes the mix into the loaded
+// preset. An empty mix is never saved; the Presets modal opens and says why.
+async function savePresetChanges() {
+  if (!state.activePresetId) return
+  if (state.included.size === 0) {
+    await openPresetsModal()
+    setPresetHint('Add at least one sound to the mix before saving.', false)
+    return
+  }
+  presetDirty = false
+  const updated = await writePresetWithPill(state.activePresetId)
+  if (!updated) setPresetHint('Could not save - that preset may have been deleted.', false)
+  if (!els.presetsModal.classList.contains('hidden')) await refreshPresetList()
+}
+
+// The pill's Cancel: the mix goes back to the saved preset.
+// The pill answers at once: reloading a big mix can take seconds.
+async function cancelPresetChanges() {
+  presetDirty = false
+  showPresetPill('canceled')
+  const presets = await api.presets.list()
+  const active = presets.find((p) => p.id === state.activePresetId)
+  if (active) await loadPreset(active, { play: state.playing.size > 0 })
+}
 
 // Save the current mix as a new preset (the "Save mix as new" card), start a
 // blank one (New blank), or rename: all three share the name row.
@@ -1957,12 +2007,19 @@ els.newPresetBlankBtn.addEventListener('click', () => openPresetNameRow('blank')
 els.presetAutosaveToggle.addEventListener('change', () => {
   presetAutosaveUserEnabled = els.presetAutosaveToggle.checked
   api.settings.setPresetAutosaveEnabled(presetAutosaveUserEnabled)
+  // Turned on with unsaved edits: they save now, as they would have.
+  if (presetAutosaveUserEnabled && presetDirty) {
+    presetDirty = false
+    autosaveActivePreset()
+  }
 })
 
 // Only touches sounds that actually changed between the current mix and the
 // preset being loaded, so sounds common to both keep playing uninterrupted
 // (just a volume update) instead of being stopped and immediately restarted.
-async function loadPreset(preset) {
+// play: false (the pill's Cancel on a paused mix) restores the preset's
+// sounds and volumes without starting any of them.
+async function loadPreset(preset, { play = true } = {}) {
   // Land any pending autosave against the *current* preset before we switch
   // away from it, then suppress autosave for the duration of this load (it
   // churns state.included / state.volumes heavily while converging on the
@@ -1970,13 +2027,15 @@ async function loadPreset(preset) {
   await flushPresetAutosave()
   presetAutosaveLoading = true
   try {
-    await loadPresetInner(preset)
+    await loadPresetInner(preset, { play })
   } finally {
     presetAutosaveLoading = false
   }
+  // A fresh load matches its saved preset.
+  if (presetDirty) setPresetDirty(false)
 }
 
-async function loadPresetInner(preset) {
+async function loadPresetInner(preset, { play = true } = {}) {
   // A group solo from the *previous* preset means nothing once its sounds
   // are gone from the mix - releasing it here avoids leaving unrelated
   // sounds from the newly-loaded preset stuck muted by a stale solo.
@@ -2016,8 +2075,11 @@ async function loadPresetInner(preset) {
     state.volumes.set(item.soundId, item.volume)
     if (state.playing.has(item.soundId)) {
       state.sources.get(item.soundId)?.setVolume(item.volume)
-    } else {
+    } else if (play) {
       await startPlayback(item.soundId, entry)
+    } else if (!state.included.has(item.soundId)) {
+      state.included.add(item.soundId)
+      persistIncluded(item.soundId, true)
     }
   }
 

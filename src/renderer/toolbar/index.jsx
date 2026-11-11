@@ -4,6 +4,7 @@ import { INITIAL_TOOLBAR_STATE } from './domain/toolbar.js'
 import { Toolbar } from './components/Toolbar.jsx'
 import { NavEnd } from './components/NavEnd.jsx'
 import { AddSoundMenu } from './components/AddSoundMenu.jsx'
+import { mountPresetPill, setPresetPillPreset } from './presetPill.js'
 
 // The app-wide top bar. Each piece of its state has one owner that pushes it
 // in (the Mixer: preset, playing, volume, mute, "+" menu; core/SleepTimer.js:
@@ -25,11 +26,17 @@ function render() {
   flushSync(() => root.render(<Toolbar state={state} handlers={handlerProxy} />))
 }
 
-// headerEl is the player bar at the bottom; navEndEl is the right end of the
-// top nav (Settings).
-export function mountToolbar(headerEl, navEndEl) {
+// headerEl is the media bar at the bottom; navEndEl is the right end of the
+// top nav (Settings); pillEl is the title bar's center (the preset pill).
+export function mountToolbar(headerEl, navEndEl, pillEl) {
   root = createRoot(headerEl)
   render()
+  mountPresetPill(pillEl, {
+    onOpen: () => handlerProxy.onOpenPresets(),
+    onSave: () => handlerProxy.onPillSave(),
+    onCancel: () => handlerProxy.onPillCancel()
+  })
+  setPresetPillPreset(state.presetName, state.mixCount)
   navRoot = createRoot(navEndEl)
   renderNav()
 }
@@ -53,6 +60,7 @@ export function mountAddSound(slotEl) {
 export function updateToolbar(patch) {
   state = { ...state, ...patch }
   render()
+  if ('presetName' in patch || 'mixCount' in patch) setPresetPillPreset(state.presetName, state.mixCount)
 }
 
 export function setToolbarHandlers(patch) {

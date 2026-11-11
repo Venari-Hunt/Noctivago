@@ -7,9 +7,16 @@
   </head>
   <body>
     <div id="app">
+      <!-- Title bar (Desktop 2.0 step 13d): app name left, the preset pill
+           centered (toolbar/presetPill.js), Windows draws min/max/close right. -->
       <div class="title-bar">
-        <img class="title-bar-icon" src="./assets/app-icon.png" alt="" />
-        <span id="title-bar-name" class="title-bar-name">Noctívago</span>
+        <span class="title-bar-start">
+          <img class="title-bar-icon" src="./assets/app-icon.png" alt="" />
+          <span id="title-bar-name" class="title-bar-name">Noctívago</span>
+          <span id="title-bar-dev" class="dev-badge" title="This is a development build - separate data from any installed copy" hidden>DEV</span>
+        </span>
+        <div id="preset-pill-slot" class="preset-pill-wrap"></div>
+        <span></span>
       </div>
       <nav class="nav">
         <span></span>
@@ -19,7 +26,7 @@
       </nav>
       <div id="tab-sticky-bar" class="tab-sticky-bar hidden"></div>
       <main id="tab-content"></main>
-      <!-- The player bar, rendered by toolbar/index.jsx -->
+      <!-- The media bar (mix Play, sleep timer, volume), rendered by toolbar/index.jsx -->
       <footer id="toolbar" class="toolbar"></footer>
     </div>
 
@@ -176,7 +183,6 @@
             Save changes as I go
             <input id="preset-autosave-toggle" class="preset-switch" type="checkbox" role="switch" aria-label="Save changes as I go" />
           </label>
-          <button id="update-active-preset" class="btn btn-ghost hidden" type="button"><span id="update-active-preset-label">Save changes</span></button>
           <button id="import-preset" class="btn btn-ghost" type="button">Import</button>
           <button id="new-preset-blank" class="btn btn-ghost" type="button" title="Start a new, empty preset">New blank</button>
         </div>
