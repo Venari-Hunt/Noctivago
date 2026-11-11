@@ -6,6 +6,7 @@ import { KnobLine, MissingControls, MixFoot } from './SoundControls.jsx'
 import { PLAY_TYPES, playTypeOf } from './VolumeKnob.jsx'
 import { PlayIcon, TrashIcon } from '../../../components/icons.jsx'
 import { SLIDER_STEPS } from '../../../../shared/volumeScale.js'
+import { MockIcon } from '../../../components/mockIcons.jsx'
 
 // A click on any of these keeps its own meaning; every other spot on the card
 // flips it in or out of the mix (or ticks it, in Select mode).
@@ -172,8 +173,14 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
           <input type="checkbox" checked={state.selected} onChange={() => callbacks.onToggleSelect(entry.id)} />
         </label>
       )}
-      <RowCorners entry={entry} callbacks={callbacks} />
-      {!missing && <KnobLine entry={entry} state={state} callbacks={callbacks} />}
+      {!missing && <RowCorners entry={entry} callbacks={callbacks} />}
+      {missing ? (
+        <div className="sound-row-lost-icon">
+          <MockIcon name="triangle-alert" size={24} />
+        </div>
+      ) : (
+        <KnobLine entry={entry} state={state} callbacks={callbacks} />
+      )}
       <div className="sound-row-name-row">
         <SoundName
           name={entry.name}
@@ -188,10 +195,14 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
         </div>
       )}
       <div className="sound-row-meta-line">
-        <span className="sound-row-meta" title={sourceTitle(entry)}>{formatMeta(entry)}</span>
+        {missing ? (
+          <span className="sound-row-meta sound-row-lost-text" title={sourceTitle(entry)}>File not found. The rest of the mix keeps playing.</span>
+        ) : (
+          <span className="sound-row-meta" title={sourceTitle(entry)}>{formatMeta(entry)}</span>
+        )}
         {state.error && <span className="sound-row-error">{state.error}</span>}
       </div>
-      {state.groupName && (
+      {!missing && state.groupName && (
         <GroupLine key={state.groupName} name={state.groupName} id={state.groupId} colorSlot={state.groupColorSlot} onOpenMenu={openMenu} />
       )}
       <div className="sound-row-info">
@@ -203,7 +214,7 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
         />
       </div>
       {missing ? (
-        <MissingControls onRelink={() => callbacks.onRelink(entry.id)} />
+        <MissingControls onRelink={() => callbacks.onRelink(entry.id)} onRemove={() => callbacks.onRemove(entry.id)} />
       ) : (
         <MixFoot id={entry.id} state={state} callbacks={callbacks} />
       )}

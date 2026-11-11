@@ -33,6 +33,11 @@ function scheduleStabilityCheck(folderEntry, filePath, tags) {
   )
 }
 
+// An empty file is not done yet (a copy or download that has created it
+// but not written to it); wait for content, up to about four minutes.
+const MAX_EMPTY_CHECKS = 150
+const emptyChecks = new Map()
+
 function checkStable(folderEntry, filePath, tags) {
   pendingTimers.delete(filePath)
   fs.stat(filePath, (err, statsBefore) => {
@@ -44,6 +49,15 @@ function checkStable(folderEntry, filePath, tags) {
           scheduleStabilityCheck(folderEntry, filePath, tags) // still growing, wait again
           return
         }
+        if (statsAfter.size === 0) {
+          const tries = (emptyChecks.get(filePath) ?? 0) + 1
+          if (tries < MAX_EMPTY_CHECKS) {
+            emptyChecks.set(filePath, tries)
+            scheduleStabilityCheck(folderEntry, filePath, tags)
+          } else emptyChecks.delete(filePath)
+          return
+        }
+        emptyChecks.delete(filePath)
         const sound = library.importIfNew(filePath, folderEntry.keepCopy, tags)
         if (sound) notifyLibraryChanged()
       })

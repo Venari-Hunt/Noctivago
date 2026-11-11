@@ -164,6 +164,14 @@ export function listSounds() {
     if (entry.dateAdded === undefined) patch.dateAdded = Date.now()
     if (entry.dateCreated === undefined) patch.dateCreated = entry.dateAdded ?? patch.dateAdded
     if (entry.sortIndex === undefined) patch.sortIndex = entry.dateAdded ?? patch.dateAdded
+    // Desktop 2.0 step 18 ("Library data checks"): the size is read once when
+    // a sound is added. A file that was still empty then (four in the owner's
+    // library, written in full two days after they were added) showed 0 KB
+    // forever. Re-read a zero or unknown size once the file is there.
+    if (status === 'ok' && !entry.fileSizeBytes) {
+      const size = fileSize(resolvePlaybackPath(entry))
+      if (size > 0) patch.fileSizeBytes = size
+    }
     if (Object.keys(patch).length > 0) changed = true
     return { ...entry, ...patch }
   })

@@ -969,7 +969,8 @@ main {
 .sound-row-controls-missing {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 4px;
+  margin-top: 8px;
 }
 
 /* Present on every card, so it stays quiet until you reach for it. */
@@ -993,8 +994,26 @@ main {
   opacity: 0.4;
 }
 
+/* Desktop 2.0 step 18, mock .tile.lost: the card reads as a problem with a fix. */
 .sound-row-missing {
-  opacity: 0.7;
+  box-shadow: inset 0 0 0 2px #7a4a22;
+  justify-content: center;
+  min-height: 188px;
+  cursor: default;
+}
+
+.sound-row-lost-icon {
+  display: grid;
+  place-items: center;
+  color: #e8a25f;
+}
+
+.sound-row-missing .sound-row-meta {
+  white-space: normal;
+}
+
+.sound-row-missing .sound-row-info {
+  display: none;
 }
 
 .sound-row-selectable .sound-row-corner-l {
@@ -1591,6 +1610,43 @@ main {
   color: var(--text-dim);
   text-align: center;
   margin-top: 40px;
+}
+
+/* Desktop 2.0 step 18, mock .empty: why it is empty and the way out. */
+.mx-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.mx-empty > svg {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+
+.mx-empty h2 {
+  margin: 8px 0 0;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.mx-empty p {
+  margin: 0 0 8px;
+  max-width: 440px;
+  color: var(--text-dim);
+}
+
+.mx-empty-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
 }
 
 .hidden {
@@ -3079,76 +3135,94 @@ a.btn {
 /* In-app notifications (core/Notifications.js). Bottom-left: the bottom-right
    corner is taken by tabs' own scroll-to-top buttons. Above modals, so a
    notice raised while Settings is open is still seen. */
+/* Desktop 2.0 step 18: the mock's .toast (screens "notify" and "undo"),
+   centered above the player bar. A title, when there is one, carries the
+   tone in its color (green done, soft red failed). */
 .notify-stack {
   position: fixed;
-  left: 12px;
-  bottom: 12px;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
   z-index: 60;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
-  width: min(340px, calc(100vw - 24px));
+  width: max-content;
+  max-width: min(560px, calc(100vw - 24px));
   pointer-events: none;
 }
 
 .notify {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 10px 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-pop);
+  align-items: center;
+  gap: 16px;
+  padding: 8px 8px 8px 16px;
+  background: var(--surface-hover);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
   color: var(--text);
   font-size: 13px;
   pointer-events: auto;
 }
 
-.notify-success {
-  border-left-color: var(--success);
-}
-
-.notify-error {
-  border-left-color: var(--danger);
-}
-
 .notify-body {
-  flex: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   min-width: 0;
 }
 
 .notify-title {
+  width: 100%;
   font-weight: 600;
-  margin-bottom: 2px;
+}
+
+.notify-success .notify-title {
+  color: var(--success);
+}
+
+.notify-error .notify-title {
+  color: var(--danger);
 }
 
 .notify-message {
-  color: var(--text-dim);
+  flex: 1;
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.notify-title + .notify-message {
+  color: var(--text-dim);
 }
 
 .notify-actions {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 8px;
+}
+
+.notify-actions .btn {
+  background: #3c3c44;
 }
 
 .notify-close {
+  display: inline-grid;
+  place-items: center;
   flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: none;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
-  font-size: 12px;
-  padding: 2px 4px;
-  border-radius: 4px;
 }
 
 .notify-close:hover {
   color: var(--text);
-  background: var(--surface-alt);
+  background: #3c3c44;
 }
 
 /* Desktop 2.0 step 3: the whole card is the in-mix switch. The In Mix button

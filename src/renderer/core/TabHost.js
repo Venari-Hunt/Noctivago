@@ -103,6 +103,7 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'tab-button'
+    button.dataset.tabId = id
     button.title = title
     // Built-in tabs have theirs above; a plugin names one in manifest.json ("icon");
     // anything else, or an unknown name, gets the generic one so every tab has an icon.

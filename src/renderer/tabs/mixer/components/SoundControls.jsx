@@ -1,12 +1,17 @@
 import { VolumeKnob, playTypeOf } from './VolumeKnob.jsx'
-import { LinkIcon, MuteIcon, VolumeIcon } from '../../../components/icons.jsx'
+import { MuteIcon, VolumeIcon } from '../../../components/icons.jsx'
+import { MockIcon } from '../../../components/mockIcons.jsx'
 
-export function MissingControls({ onRelink }) {
+// Desktop 2.0 step 18 (mock screen "missing"): the file is gone, so the card
+// says so and offers the fix (Find file relinks) or Remove (with Undo).
+export function MissingControls({ onRelink, onRemove }) {
   return (
     <div className="sound-row-controls-missing">
-      <span className="sound-row-missing-label">Missing</span>
-      <button type="button" className="btn btn-small btn-icon-text" onClick={onRelink}>
-        <LinkIcon /> Relink
+      <button type="button" className="btn btn-icon-text" onClick={onRelink}>
+        <MockIcon name="link" /> Find file
+      </button>
+      <button type="button" className="btn btn-ghost" onClick={onRemove}>
+        Remove
       </button>
     </div>
   )

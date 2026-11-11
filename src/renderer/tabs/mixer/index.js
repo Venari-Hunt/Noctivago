@@ -20,6 +20,7 @@ import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipRepor
 import { openClipReport } from './components/ClipReport.jsx'
 import { mountRecommendedPlugins } from './components/RecommendedPlugins.jsx'
 import { mockIconSvg } from '../../components/mockIcons.jsx'
+import { notify } from '../../core/Notifications.js'
 import { mountAddSound, setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
 import { showPresetPill, presetPillState } from '../../toolbar/presetPill.js'
 
@@ -208,10 +209,48 @@ function refreshGlobalButton() {
   updateToolbar({ playing: state.playing.size > 0, mixCount: state.included.size })
 }
 
-const EMPTY_LIBRARY_TEXT = 'No sounds yet. Click "Add Sound" to import one.'
-const NO_SEARCH_MATCHES_TEXT = 'No sounds match your search.'
+// Desktop 2.0 step 18: the empty library and the empty search say why and
+// offer the way out (mock screens "first" and "none").
+const escapeText = (text) => String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+const BROWSE_TAB = '.tab-button[data-tab-id="browse-sounds"]'
+
+function emptyStateHtml(filtering) {
+  const button = (act, label, icon, cls = '') => `<button type="button" class="btn btn-icon-text ${cls}" data-empty="${act}">${icon ? mockIconSvg(icon) : ''}${label}</button>`
+  const browse = document.querySelector(BROWSE_TAB)
+  if (filtering && state.library.length > 0) {
+    const query = state.searchQuery.trim()
+    const title = query ? `No sound called "${escapeText(query)}"` : 'No sound with this tag'
+    const text = query ? 'Nothing in your library matches. Try fewer letters, or look for it online.' : 'Nothing in your library has this tag.'
+    return `${mockIconSvg('search', 40)}<h2>${title}</h2><p>${text}</p><div class="mx-empty-row">${button('clear', 'Clear search')}${browse && query ? button('browse', 'Search online', 'search') : ''}</div>`
+  }
+  return `${mockIconSvg('volume-2', 40)}<h2>Build your first mix</h2><p>Add a sound, then stack more on top: rain, wind, a far-off train. Each keeps its own volume.</p><div class="mx-empty-row">${button('add', 'Add sound', 'plus', 'btn-primary')}${browse ? button('browse', 'Browse sounds', 'search') : ''}${button('import', 'Import preset', 'download', 'btn-ghost')}</div>`
+}
+
+function onEmptyStateClick(evt) {
+  const act = evt.target.closest('[data-empty]')?.dataset.empty
+  if (act === 'clear') {
+    state.searchQuery = ''
+    state.activeTagFilter = null
+    els.soundSearch.value = ''
+    render()
+    els.soundSearch.focus()
+  } else if (act === 'browse') {
+    document.querySelector(BROWSE_TAB)?.click()
+  } else if (act === 'add') {
+    // After this click finishes, so the menu's outside-click close doesn't eat it.
+    evt.stopPropagation()
+    setTimeout(() => document.querySelector('#add-sound-slot button[aria-haspopup]')?.click(), 0)
+  } else if (act === 'import') {
+    els.importPresetBtn.click()
+  }
+}
 
 function visibleLibrary() {
+  if (pendingDeletes.size) return visibleLibraryAll().filter((entry) => !pendingDeletes.has(entry.id))
+  return visibleLibraryAll()
+}
+
+function visibleLibraryAll() {
   const query = state.searchQuery.trim().toLowerCase()
   let entries = state.library
   if (query) entries = entries.filter((entry) => entry.name.toLowerCase().includes(query))
@@ -297,7 +336,7 @@ function toggleTagPop(open) {
 function render() {
   const visible = visibleLibrary()
   const filtering = state.searchQuery.trim() || state.activeTagFilter
-  els.emptyState.textContent = filtering && state.library.length > 0 ? NO_SEARCH_MATCHES_TEXT : EMPTY_LIBRARY_TEXT
+  els.emptyState.innerHTML = emptyStateHtml(filtering)
   renderTagFilterBar()
   updateToolbar({ mixCount: state.included.size })
   // Every tag used anywhere in the *full* library (not just visible, which
@@ -1421,8 +1460,49 @@ async function testFireOneShot(id) {
   }
 }
 
-async function removeSound(id) {
+// Desktop 2.0 step 18 (mock screen "undo"): a deleted sound leaves the list
+// at once and a toast offers Undo; the library file goes only when the toast
+// closes without it. Quitting before then keeps the sound.
+const pendingDeletes = new Map()
+
+function removeSound(id) {
+  const entry = state.library.find((e) => e.id === id)
+  if (!entry || pendingDeletes.has(id)) return
   const wasInMix = state.included.has(id)
+  const snapshot = { wasInMix, volume: state.volumes.get(id), muted: state.mutedSounds.has(id) }
+  pendingDeletes.set(id, snapshot)
+  dropSoundFromMix(id, wasInMix)
+  render()
+  let undone = false
+  notify({
+    message: `Deleted "${entry.name}"`,
+    key: `sound-delete-${id}`,
+    timeoutMs: 6000,
+    actions: [{ label: 'Undo', icon: 'undo-2', onClick: () => { undone = true; undoRemoveSound(id) } }],
+    onClose: () => {
+      if (!undone) commitRemoveSound(id)
+    }
+  })
+}
+
+function undoRemoveSound(id) {
+  const snapshot = pendingDeletes.get(id)
+  if (!snapshot) return
+  pendingDeletes.delete(id)
+  if (snapshot.volume != null) state.volumes.set(id, snapshot.volume)
+  if (snapshot.muted) state.mutedSounds.add(id)
+  render()
+  if (snapshot.wasInMix) toggleIncluded(id)
+}
+
+async function commitRemoveSound(id) {
+  if (!pendingDeletes.has(id)) return
+  pendingDeletes.delete(id)
+  await api.library.remove(id)
+  await refreshList()
+}
+
+function dropSoundFromMix(id, wasInMix) {
   state.sources.get(id)?.dispose()
   state.sources.delete(id)
   engine.removeSoundMeter(id)
@@ -1433,8 +1513,6 @@ async function removeSound(id) {
   // Deleting a library sound that was in the loaded preset drops it from the
   // preset too (currentMixSounds no longer lists it).
   if (wasInMix) autosaveActivePreset()
-  await api.library.remove(id)
-  await refreshList()
 }
 
 async function relinkSound(id) {
@@ -2338,7 +2416,7 @@ export function mount(container) {
       <div id="tag-filter-pop" class="tag-filter-pop hidden" role="menu"></div>
     </div>
     <ul id="sound-list" class="sound-list"></ul>
-    <p id="empty-state" class="empty-state">No sounds yet. Click "Add Sound" to import one.</p>
+    <div id="empty-state" class="mx-empty" aria-live="polite"></div>
     <div id="bulk-select-bar" class="bulk-select-bar hidden">
       <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
       <select id="bulk-select-preset" aria-label="Apply an effect preset">
@@ -2369,6 +2447,7 @@ export function mount(container) {
   els.tagFilterPop = container.querySelector('#tag-filter-pop')
   els.soundList = container.querySelector('#sound-list')
   els.emptyState = container.querySelector('#empty-state')
+  els.emptyState.addEventListener('click', onEmptyStateClick)
 
   for (const { value, label } of SORT_MODES) {
     els.soundSort.appendChild(new Option(label, value))

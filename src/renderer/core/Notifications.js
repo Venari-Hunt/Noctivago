@@ -10,10 +10,19 @@
 //   timeoutMs: auto-close after this long; hovering pauses it. Omitted = it
 //        stays until closed, for things that may happen while nobody's
 //        looking (the app often runs all night).
-//   actions: [{ label, onClick }] buttons; clicking one also closes it.
+//   actions: [{ label, onClick, icon? }] buttons; clicking one also closes it.
+//        icon: a mock icon name drawn before the label (Undo uses 'undo-2').
+//   onClose: called once however it closes (timeout, Dismiss, an action,
+//        replaced by the same key, or pushed out of a full stack).
+//
+// Desktop 2.0 step 18: drawn as the mock's toast (screens "notify" and
+// "undo"), centered above the player bar.
+
+import { mockIconSvg } from '../components/mockIcons.jsx'
 
 const MAX_VISIBLE = 4
 const byKey = new Map()
+const closers = new WeakMap()
 let stack = null
 
 function ensureStack() {
@@ -26,7 +35,7 @@ function ensureStack() {
   return stack
 }
 
-export function notify({ message, title, tone = 'info', key, timeoutMs, actions = [] }) {
+export function notify({ message, title, tone = 'info', key, timeoutMs, actions = [], onClose }) {
   const host = ensureStack()
   const card = document.createElement('div')
   card.className = `notify notify-${tone}`
@@ -50,11 +59,14 @@ export function notify({ message, title, tone = 'info', key, timeoutMs, actions 
     for (const action of actions) {
       const button = document.createElement('button')
       button.type = 'button'
-      button.className = 'btn btn-small'
-      button.textContent = action.label
+      button.className = 'btn btn-icon-text'
+      if (action.icon) button.insertAdjacentHTML('afterbegin', mockIconSvg(action.icon))
+      button.append(action.label)
+      // The action runs before close(), so an onClose can tell "closed by
+      // this action" (Undo) from "timed out".
       button.addEventListener('click', () => {
-        close()
         action.onClick?.()
+        close()
       })
       row.appendChild(button)
     }
@@ -66,7 +78,7 @@ export function notify({ message, title, tone = 'info', key, timeoutMs, actions 
   closeButton.className = 'notify-close'
   closeButton.title = 'Dismiss'
   closeButton.setAttribute('aria-label', 'Dismiss')
-  closeButton.textContent = '✕'
+  closeButton.innerHTML = mockIconSvg('x')
   closeButton.addEventListener('click', () => close())
 
   card.append(body, closeButton)
@@ -78,20 +90,31 @@ export function notify({ message, title, tone = 'info', key, timeoutMs, actions 
   card.addEventListener('mouseenter', () => clearTimeout(timer))
   card.addEventListener('mouseleave', arm)
 
+  let closed = false
   function close() {
     clearTimeout(timer)
     card.remove()
     if (key && byKey.get(key)?.card === card) byKey.delete(key)
+    if (closed) return
+    closed = true
+    onClose?.()
   }
+  closers.set(card, close)
 
   const previous = key ? byKey.get(key) : null
   if (previous?.card.isConnected) {
     previous.card.replaceWith(card)
     previous.cancel()
+    closers.get(previous.card)?.()
   } else {
     host.appendChild(card)
     // Oldest first out once the stack is full.
-    while (host.children.length > MAX_VISIBLE) host.firstElementChild.remove()
+    while (host.children.length > MAX_VISIBLE) {
+      const oldest = host.firstElementChild
+      const closeOldest = closers.get(oldest)
+      if (closeOldest) closeOldest()
+      else oldest.remove()
+    }
   }
   if (key) byKey.set(key, { card, cancel: () => clearTimeout(timer) })
   arm()
