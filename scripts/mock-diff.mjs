@@ -32,7 +32,15 @@ const REGIONS = [
   // remix-scheduled).
   ['remix bar', '.rbar', '.rx-bar'],
   ['remix canvas', '.rcanvas', '.rx-canvas'],
-  ['remix side', '.rside', '.rx-side']
+  ['remix side', '.rside', '.rx-side'],
+  // Browse Sounds (step 14). Open the Browse tab in the app in the matching
+  // state first (browse = results with a preview playing, browse-first,
+  // browse-fail).
+  ['browse search', '.tools', '.bs-tools'],
+  ['browse sources', '.tools.sub', '.bs-tools.bs-sub'],
+  ['browse empty', '.empty', '.bs-empty:not(.hidden)'],
+  ['browse card', '.tile.rcard', '.bs-tile'],
+  ['browse preview', '.pvbar', '.bs-pvbar']
 ]
 
 // Runs inside each page. Returns the visible controls in DOM order.
