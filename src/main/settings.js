@@ -12,6 +12,9 @@ const store = new Store({
   defaults: {
     autoUpdateEnabled: true,
     autoUpdateIntervalSeconds: DEFAULT_AUTO_UPDATE_INTERVAL_SECONDS,
+    // 'stable' (releases only) or 'nightly' (a build of every change merged
+    // to main). See autoUpdate.js applyUpdateChannel().
+    updateChannel: 'stable',
     autoInstallUpdates: false,
     minimizeToTrayEnabled: false,
     wasPlayingOnClose: false,
@@ -219,6 +222,7 @@ export function getSettings() {
   return {
     autoUpdateEnabled: store.get('autoUpdateEnabled'),
     autoUpdateIntervalSeconds: store.get('autoUpdateIntervalSeconds'),
+    updateChannel: store.get('updateChannel') === 'nightly' ? 'nightly' : 'stable',
     autoInstallUpdates: store.get('autoInstallUpdates'),
     minimizeToTrayEnabled: store.get('minimizeToTrayEnabled'),
     wasPlayingOnClose: store.get('wasPlayingOnClose'),
@@ -305,6 +309,11 @@ export function takeUpdateRestart() {
   const saved = store.get('updateRestart') ?? null
   store.set('updateRestart', null)
   return saved && Number.isFinite(saved.at) ? saved : null
+}
+
+export function setUpdateChannel(channel) {
+  store.set('updateChannel', channel === 'nightly' ? 'nightly' : 'stable')
+  return getSettings()
 }
 
 export function setAutoUpdateEnabled(enabled) {

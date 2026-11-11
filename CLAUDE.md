@@ -7,6 +7,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `src/main/` — main process.
   - `index.js` — window, `sound://` (original file or baked loop clip) and `plugin://` protocols. In dev with 2+ displays, opens on the highest-numbered one (`devWindowPosition()`).
   - `ipc.js` IPC handlers · `library.js` sounds (electron-store) · `presets.js` saved mixes.
+  - `dataGuard.js` (second import, before any store) + `dataGuardCore.js` — data stamp, a snapshot per upgrade, restore on a downgrade across `src/shared/dataSchema.js` `DATA_SCHEMA`. **Store changes are additive** (rules: `docs/releasing.md` "Data that survives a downgrade").
   - `ffmpeg/` — `runFfmpeg.js` spawn wrapper, `ffmpegPath.js`, `loopClip.js`, `waveformPeaks.js`, `exportMix.js`.
   - `phone/` — "Export for phone": `phoneBundle.js` bakes a preset into a phone `.ncvpreset`, rules in `phoneBundleCore.js` (`docs/mobile.md`).
   - `plugins/` — `registry.js` manifests, `protocol.js` path guard, `invoke.js` plugin main-process calls, `store.js` plugin store.
@@ -24,7 +25,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `docs/community-presets.md` — Cloudflare backend, `.ncvpreset`.
 - `docs/watch-folders.md` — watched-folder import.
 - `docs/mobile.md` — phone player plan (React Native + react-native-audio-api, desktop bakes clips).
-- `docs/releasing.md` — releases, auto-update, itch.io.
+- `docs/releasing.md` — releases, auto-update, Stable and Nightly channels, data that survives a downgrade, itch.io.
 - `CHANGELOG.md` — dated release history (what exists). Old version numbers in docs are provenance, not things to re-verify.
 
 **Doc site:** `Venari-Hunt/noctivago-docs` (plain HTML, push to `main`). Update it whenever possible: any user-facing change updates its page, and each release updates What's new (`node tools/build-changelog.mjs <this repo>/CHANGELOG.md`) before the tag. Batch only if it's truly expensive, and never past the next major release.

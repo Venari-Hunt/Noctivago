@@ -1,5 +1,6 @@
-import { app, BrowserWindow, shell, protocol, screen, session } from 'electron'
+import { app, BrowserWindow, shell, protocol, screen, session, dialog } from 'electron'
 import './devMode.js' // must stay the first local import - see devMode.js
+import { getDataGuardResult, isFirstInstance } from './dataGuard.js' // second: before any store opens - see dataGuard.js
 import path from 'node:path'
 import fs from 'node:fs'
 import { Readable } from 'node:stream'
@@ -260,7 +261,7 @@ function bootstrapDefaultPreset() {
 // Only one copy of the app runs at a time. Launching it again (e.g. the
 // pinned taskbar icon while the window sits in the tray) brings the open
 // window back instead of starting a second instance.
-const isFirstInstance = app.requestSingleInstanceLock()
+// isFirstInstance comes from dataGuard.js, which takes the lock before any store opens.
 if (!isFirstInstance) app.quit()
 else app.on('second-instance', showWindow)
 
@@ -278,6 +279,7 @@ if (isFirstInstance) app.whenReady().then(() => {
   detectFreesoundSources()
   bootstrapDefaultPreset()
   const win = createWindow()
+  reportDataGuard(win)
   initAutoUpdate(win)
   initPluginAutoUpdate(win)
   initTray(win)
@@ -300,3 +302,40 @@ app.on('before-quit', stopWatching)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+// The data guard ran before anything else (dataGuard.js); log what it did
+// and, when it had to restore older data or set newer data aside, say so
+// once, with the folder that holds the newer copy.
+function reportDataGuard(win) {
+  const r = getDataGuardResult()
+  if (!r) return
+  if (r.action === 'error') {
+    log.error('Data guard failed', r.error)
+    return
+  }
+  log.info(`Data guard: ${r.action}${r.from ? ` (data last written by ${r.from.version}, schema ${r.from.schema})` : ''}`)
+  if (r.action !== 'restore' && r.action !== 'block') return
+  const restored = r.action === 'restore'
+  dialog
+    .showMessageBox(win, {
+      type: 'info',
+      title: 'Your library was restored',
+      // A snapshot of data from before the guard existed has no real version.
+      message: !restored
+        ? 'Started with an empty library.'
+        : r.snapshot.meta.version === '0.0.0'
+          ? 'Restored your library as it was before the update.'
+          : `Restored your library as it was in version ${r.snapshot.meta.version}.`,
+      detail:
+        `Version ${r.from.version} saves its data in a way this version can't read. ` +
+        (restored ? 'Changes made in that version are not shown here. ' : '') +
+        'Nothing was deleted: the newer data is kept in a folder, and installing that version again brings it back.',
+      buttons: ['OK', 'Show folder'],
+      defaultId: 0,
+      noLink: true
+    })
+    .then(({ response }) => {
+      if (response === 1) shell.openPath(r.asideDir)
+    })
+    .catch(() => {})
+}

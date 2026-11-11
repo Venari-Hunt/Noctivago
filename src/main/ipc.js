@@ -38,6 +38,7 @@ import {
 import {
   setAutoUpdateEnabled,
   setAutoUpdateIntervalSeconds,
+  setUpdateChannel,
   checkForUpdatesNow,
   getUpdateState,
   getWhatsNew,
@@ -78,6 +79,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:get', () => getSettings())
   ipcMain.handle('settings:setAutoUpdateEnabled', (_event, enabled) => setAutoUpdateEnabled(enabled))
   ipcMain.handle('settings:setAutoUpdateIntervalSeconds', (_event, seconds) => setAutoUpdateIntervalSeconds(seconds))
+  ipcMain.handle('settings:setUpdateChannel', (_event, channel) => setUpdateChannel(channel))
   ipcMain.handle('settings:setAutoInstallUpdatesEnabled', (_event, enabled) => setAutoInstallUpdatesEnabled(enabled))
   ipcMain.handle('autoUpdate:checkNow', () => checkForUpdatesNow())
   ipcMain.handle('autoUpdate:getState', () => getUpdateState())
