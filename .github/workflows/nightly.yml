@@ -8,9 +8,14 @@ name: Nightly
 # (2.0.1). electron-builder writes nightly.yml for that channel itself.
 
 on:
+  # 2.0 is built on ui-redesign: every push there is a 2.0 nightly.
   push:
-    branches: [master]
+    branches: [ui-redesign]
   workflow_dispatch:
+
+env:
+  # Empty: the next patch of package.json. The 2.0 branch sets 2.0.0.
+  NIGHTLY_BASE: '2.0.0'
 
 concurrency:
   group: nightly
@@ -35,8 +40,10 @@ jobs:
       - name: Nightly version
         shell: pwsh
         run: |
-          $base = ((Get-Content package.json | ConvertFrom-Json).version -replace '-.*', '').Split('.')
-          $next = "$($base[0]).$($base[1]).$([int]$base[2] + 1)"
+          if ($env:NIGHTLY_BASE) { $next = $env:NIGHTLY_BASE } else {
+            $base = ((Get-Content package.json | ConvertFrom-Json).version -replace '-.*', '').Split('.')
+            $next = "$($base[0]).$($base[1]).$([int]$base[2] + 1)"
+          }
           $day = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
           $version = "$next-nightly.$day.${{ github.run_number }}"
           npm version $version --no-git-tag-version --allow-same-version

@@ -15,9 +15,11 @@ If this repository is public, `electron-updater`'s GitHub provider can read rele
 
 Settings, Updates, **Update channel** picks Stable (default) or Nightly (`settings.updateChannel`).
 
-- **Nightly builds:** `.github/workflows/nightly.yml` runs on every push to `master`. It tests, versions the build as the next patch with a nightly tag (`2.0.1-nightly.20261111.42`), publishes it as a GitHub **pre-release**, and keeps the newest 10 nightlies.
+- **Nightly builds:** `.github/workflows/nightly.yml` tests, versions the build (`NIGHTLY_BASE` or the next patch, plus `-nightly.<date>.<run>`), publishes it as a GitHub **pre-release**, and keeps the newest 10 nightlies. While 2.0 is built, nightlies come from the `ui-redesign` branch (versioned `2.0.0-nightly...`, on every push there); on `master` it runs only by hand. Promoting a nightly: tag that commit as a stable release (owner says which).
 - **Stable builds:** the tag release in `release.yml`, unchanged. GitHub's `/releases/latest`, which Stable checks, never returns a pre-release.
 - **In the app** (`autoUpdate.js` `applyUpdateChannel()`): Nightly sets `allowPrerelease`. Stable on a nightly version sets `allowDowngrade`, so the newest stable (an older version) installs over it. Switching channel checks right away and offers it in the Update modal.
+
+- **Plugins on Nightly:** each plugin repo's 2.0 branch publishes a rolling `nightly` pre-release (shared `plugin-nightly.yml` in `noctivago-plugins`). On Nightly, `plugins/store.js` installs it when newer than the stable release; back on Stable, a plugin with a prerelease version is replaced by its stable release. Changing channel re-checks plugins at once.
 
 ## Data that survives a downgrade
 
