@@ -6,6 +6,11 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.278 — Stable or Nightly updates
+
+- **New: Settings → General → Updates → Update channel.** Stable (the default) gets tested releases only. Nightly gets the newest changes before they are released, and may have bugs.
+- **Going back to Stable is safe.** Switch back any time: the latest stable version installs over the nightly one. Noctívago now keeps a backup of your library at every update, and if an older version can't read data a newer one saved, it puts back the last copy it can read. Nothing is deleted.
+
 ## v0.1.276 — Pick where the sound plays
 
 - **New: Settings → General → Audio → Output device.** Choose which speakers or headphones Noctívago plays through, and change it while it is playing. Automatic keeps your system default. The choice is remembered on this PC.
