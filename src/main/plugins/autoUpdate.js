@@ -70,7 +70,9 @@ async function check() {
   }
 }
 
-function runCheck() {
+// Also run when the update channel changes, so Nightly plugins arrive (or
+// Stable ones come back) without waiting for the next timer.
+export function runCheck() {
   if (!running) running = check().finally(() => (running = null))
   return running
 }

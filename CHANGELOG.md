@@ -6,6 +6,10 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+## v0.1.279 — Plugins follow the update channel
+
+- **Plugins switch with the app.** On Nightly, plugins get their newest test builds too. Going back to Stable puts the stable plugins back, even when that means an older version.
+
 ## v0.1.278 — Stable or Nightly updates
 
 - **New: Settings → General → Updates → Update channel.** Stable (the default) gets tested releases only. Nightly gets the newest changes before they are released, and may have bugs.

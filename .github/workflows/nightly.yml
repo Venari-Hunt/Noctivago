@@ -5,7 +5,8 @@ name: Nightly
 # because GitHub's /releases/latest (what Stable checks) skips pre-releases.
 # Version: the next patch with a nightly tag, e.g. 2.0.1-nightly.20261111.42,
 # so it sorts above the current stable (2.0.0) and below the next one
-# (2.0.1). electron-builder writes nightly.yml for that channel itself.
+# (2.0.1). electron-builder writes latest.yml into the pre-release; the app
+# looks for nightly.yml first and falls back to it.
 
 on:
   # While 2.0 is built on its own branch, nightlies come from there (that
@@ -47,6 +48,9 @@ jobs:
           $version = "$next-nightly.$day.${{ github.run_number }}"
           npm version $version --no-git-tag-version --allow-same-version
           "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # Publish into the pre-release made below, not as a full release.
+          (Get-Content electron-builder.yml) -replace '^  releaseType: release$', '  releaseType: prerelease' | Set-Content electron-builder.yml
+          if (-not (Select-String -Path electron-builder.yml -Pattern '^  releaseType: prerelease$' -Quiet)) { throw 'releaseType not switched' }
 
       - name: Create the pre-release (avoids electron-builder's parallel-upload race)
         shell: pwsh
@@ -55,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish
-        run: npm run build && npx electron-builder --win --publish always -c.publish.releaseType=prerelease
+        run: npm run build && npx electron-builder --win --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}

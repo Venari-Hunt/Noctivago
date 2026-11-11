@@ -19,6 +19,8 @@ Settings, Updates, **Update channel** picks Stable (default) or Nightly (`settin
 - **Stable builds:** the tag release in `release.yml`, unchanged. GitHub's `/releases/latest`, which Stable checks, never returns a pre-release.
 - **In the app** (`autoUpdate.js` `applyUpdateChannel()`): Nightly sets `allowPrerelease`. Stable on a nightly version sets `allowDowngrade`, so the newest stable (an older version) installs over it. Switching channel checks right away and offers it in the Update modal.
 
+- **Plugins on Nightly:** each plugin repo's 2.0 branch publishes a rolling `nightly` pre-release (shared `plugin-nightly.yml` in `noctivago-plugins`). On Nightly, `plugins/store.js` installs it when newer than the stable release; back on Stable, a plugin with a prerelease version is replaced by its stable release. Changing channel re-checks plugins at once.
+
 ## Data that survives a downgrade
 
 Going back from Nightly to Stable means an older app opens data a newer one wrote. How other apps handle it, and what Noctívago copies:
