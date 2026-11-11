@@ -115,7 +115,31 @@ let catalogById = new Map()
 // names the newest plugin version that still runs here, and its release is
 // used instead (tag = that version). Returns { manifest, tag }; tag is null
 // for the latest release.
+//
+// On the Nightly update channel a plugin's rolling `nightly` pre-release
+// (published by its nightly workflow, same files) wins when it is newer, so a
+// Nightly app gets the plugins built with it. Stable never looks at it.
+const NIGHTLY_TAG = 'nightly'
+const onNightly = () => getSettings().updateChannel === 'nightly'
+
+async function resolveNightly(entry) {
+  try {
+    const manifest = checkReleaseManifest(await downloadJson(fileUrl(entry.repo, 'manifest.json', NIGHTLY_TAG)), entry.id)
+    return supportsApp(manifest, app.getVersion()) ? { manifest, tag: NIGHTLY_TAG } : null
+  } catch {
+    return null // no nightly for this plugin: use its stable release
+  }
+}
+
 async function resolveRelease(entry) {
+  if (!onNightly()) return resolveStableRelease(entry)
+  const [nightly, stable] = await Promise.all([resolveNightly(entry), resolveStableRelease(entry).catch((err) => ({ err }))])
+  if (nightly && (stable.err || compareVersions(nightly.manifest.version, stable.manifest.version) > 0)) return nightly
+  if (stable.err) throw stable.err
+  return stable
+}
+
+async function resolveStableRelease(entry) {
   const latest = checkReleaseManifest(await downloadJson(fileUrl(entry.repo, 'manifest.json')), entry.id)
   const appVersion = app.getVersion()
   if (supportsApp(latest, appVersion)) return { manifest: latest, tag: null }
@@ -176,6 +200,12 @@ export async function listCatalog() {
 // The installable release's manifest (the newest one this app can run), for
 // the detail view: version, mainProcess (shown as a warning before install),
 // and whether it's newer than the copy installed now.
+// Back on Stable with a plugin nightly installed (its version has a
+// prerelease part): the stable release replaces it even though it is older.
+function backToStable(installed, offered) {
+  return !onNightly() && /-/.test(installed) && offered !== installed
+}
+
 export async function checkLatest(id) {
   const entry = catalogById.get(id)
   if (!entry) throw new Error(`"${id}" isn't in the plugin list`)
@@ -185,7 +215,7 @@ export async function checkLatest(id) {
     version: manifest.version,
     mainProcess: Boolean(manifest.mainProcess),
     minAppVersion: manifest.minAppVersion ?? null,
-    updateAvailable: Boolean(local && compareVersions(manifest.version, local.version) > 0)
+    updateAvailable: Boolean(local && (compareVersions(manifest.version, local.version) > 0 || backToStable(local.version, manifest.version)))
   }
 }
 

@@ -12,6 +12,7 @@ import {
 import { changelogTextBetween } from './changelog.js'
 import { isExportInProgress, whenExportIdle } from './exportState.js'
 import { isAutoStartPending } from './sleepTimer.js'
+import { runCheck as checkPluginUpdates } from './plugins/autoUpdate.js'
 
 // __UPDATE_TOKEN__ is a build-time constant (see electron.vite.config.js) -
 // empty outside the CI release build. electron-updater's GitHub provider
@@ -417,6 +418,7 @@ export function setUpdateChannel(channel) {
   const settings = persistUpdateChannel(channel)
   applyUpdateChannel()
   dismissedVersion = null
+  checkPluginUpdates()
   if (app.isPackaged) {
     manualCheckPending = true
     setState({ status: 'checking', errorMessage: null })
