@@ -14,6 +14,8 @@ import { app } from 'electron'
 // library/presets/clips an actually-installed copy of the app was using.
 // Confirmed the hard way: testing in dev mode while the user was using that
 // same dev session as their real, daily-use instance.
+// NOCTIVAGO_PROFILE picks another scratch profile for an unpackaged run
+// (scripts/side-by-side.mjs runs two builds on two profile copies).
 if (!app.isPackaged) {
-  app.setName('noctivago-dev')
+  app.setName(process.env.NOCTIVAGO_PROFILE || 'noctivago-dev')
 }
