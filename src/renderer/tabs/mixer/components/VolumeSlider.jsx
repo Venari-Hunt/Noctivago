@@ -9,7 +9,7 @@ import { DRAG_THRESHOLD_PX, dragPosition } from '../domain/soundRow.js'
 // dispatches `input` itself; React's change tracking swallows that event.
 // defaultValue is the reset target, value is the live volume. onMove (optional)
 // hears the gain on every render and every drag step, for a knob that mirrors it.
-export function VolumeSlider({ volume, onChange, onMove }) {
+export function VolumeSlider({ label, volume, onChange, onMove }) {
   const ref = useRef(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -84,7 +84,7 @@ export function VolumeSlider({ volume, onChange, onMove }) {
   // The wrapper carries the centre-tick marker (::after).
   return (
     <span className="volume-slider-wrap">
-      <input ref={ref} type="range" min="0" max={SLIDER_STEPS} className="sound-row-volume" defaultValue={gainToSlider(DEFAULT_VOLUME)} />
+      <input ref={ref} type="range" min="0" max={SLIDER_STEPS} className="sound-row-volume" aria-label={label || 'Volume'} defaultValue={gainToSlider(DEFAULT_VOLUME)} />
     </span>
   )
 }

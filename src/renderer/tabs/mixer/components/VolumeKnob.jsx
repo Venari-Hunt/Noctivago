@@ -27,7 +27,7 @@ function formatPercent(gain) {
 // ring, so a horizontal drag still sets the volume. The arc and the percent
 // follow it through onMove, without a React re-render (the Mixer doesn't
 // re-render while dragging).
-export function VolumeKnob({ volume, muted, playType, onChange }) {
+export function VolumeKnob({ label, volume, muted, playType, onChange }) {
   const ringRef = useRef(null)
   const pctRef = useRef(null)
   const { Icon } = PLAY_TYPES[playType]
@@ -44,7 +44,7 @@ export function VolumeKnob({ volume, muted, playType, onChange }) {
       <i className="knob-unity" />
       <span className="knob-mid">{muted ? <MuteIcon size={24} /> : <Icon size={24} />}</span>
       <span className="knob-pct" ref={pctRef}>{formatPercent(volume)}</span>
-      <VolumeSlider volume={volume} onChange={onChange} onMove={onMove} />
+      <VolumeSlider label={label} volume={volume} onChange={onChange} onMove={onMove} />
     </div>
   )
 }

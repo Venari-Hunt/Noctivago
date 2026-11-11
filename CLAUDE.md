@@ -18,6 +18,7 @@ Windows ambient sound mixer. Electron + React (older screens still plain JS/DOM)
 - `scripts/dev-plugin.mjs` — copies a local plugin build into the dev app (live swap); see docs/plugins.md "Dev loop".
 - `scripts/cdp-shot.mjs` — screenshots the running dev app (`npm run dev -- --remoteDebuggingPort 9222`): `node scripts/cdp-shot.mjs <out.png> [--width 1280] [--height 800] [--eval "<js>"]`; flaky while the window is hidden in the tray.
 - `scripts/mock-diff.mjs` — compares the approved desktop mock with the running dev app (controls, labels, icons by drawing, heights) per region: `node scripts/mock-diff.mjs [--screen mixer] [--width 1280]`; run it before calling a redesign step done. Differences caused only by data (preset name, playing state, a plugin not installed) are expected.
+- `scripts/ui-audit.mjs` — shoots every tab and Settings page of the running dev app at 480, 800 and 1280 and flags sideways overflow, unnamed controls, targets under 24 px and text under 4.5:1: `node scripts/ui-audit.mjs <out-dir> [--widths 480,800,1280] [--only mixer,export]`; writes a contact.html sheet.
 
 ## Docs (read only the one a task touches)
 

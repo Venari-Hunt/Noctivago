@@ -33,7 +33,7 @@ export function KnobLine({ entry, state, callbacks }) {
       >
         {muted ? <MuteIcon /> : <VolumeIcon />}
       </button>
-      <VolumeKnob volume={volume} muted={muted} playType={playTypeOf(entry)} onChange={(gain) => callbacks.onVolumeChange(id, gain)} />
+      <VolumeKnob label={`Volume of ${entry.name}`} volume={volume} muted={muted} playType={playTypeOf(entry)} onChange={(gain) => callbacks.onVolumeChange(id, gain)} />
       {/* "S" like a DAW's solo button. Accent when active, not the mute red:
           soloed means audible on purpose. */}
       <button
