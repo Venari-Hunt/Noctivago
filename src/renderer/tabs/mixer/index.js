@@ -2815,6 +2815,24 @@ document.addEventListener('library:linked', refreshList)
     if (Number.isFinite(position)) onGlobalVolumeInput(positionToGain(position))
   })
   window.addEventListener('noctivago:remix-toggle-mute', () => toggleGlobalMute())
+  // Remix's library drill-in panel (group members, a preset's loose sounds)
+  // sets one sound's volume in the loaded preset: the same path as that
+  // card's slider here (live gain, library volume, preset autosave). The
+  // card redraws once the drag settles. `applied` tells Remix not to write
+  // the preset itself.
+  let remixVolumeRender = null
+  window.addEventListener('noctivago:remix-set-sound-volume', (e) => {
+    const d = e.detail
+    const volume = Number(d?.volume)
+    if (!d?.soundId || d.presetId !== state.activePresetId || !Number.isFinite(volume)) return
+    changeVolume(d.soundId, Math.max(0, volume))
+    d.applied = true
+    clearTimeout(remixVolumeRender)
+    remixVolumeRender = setTimeout(render, 150)
+  })
+  window.addEventListener('noctivago:remix-toggle-sound-mute', (e) => {
+    if (e.detail?.soundId) toggleMute(e.detail.soundId)
+  })
   // Synchronous request/response, same shape as request-analyser - the
   // Remix tab's Play/Pause icon and Group-mode Solo button need to reflect
   // real Mixer state (is anything playing, is this preset the active one,
@@ -2828,5 +2846,9 @@ document.addEventListener('library:linked', refreshList)
     d.soloedGroupId = state.soloedGroupId
     d.volumePosition = gainToPosition(globalVolumeGain)
     d.muted = state.globalMuted
+    // Per-sound state for Remix's drill-in panel.
+    d.soundVolumes = Object.fromEntries(state.volumes)
+    d.mutedSoundIds = [...state.mutedSounds]
+    d.soloedSoundId = state.soloedSoundId ?? null
   })
 }
