@@ -25,4 +25,7 @@ jobs:
       # unpacking it ("The file exists", "Access is denied"; 2026-10-18).
       - run: npx install-electron --no
 
+      # Some tests run ffmpeg; --ignore-scripts skipped its binary download.
+      - run: node node_modules/ffmpeg-static/install.js
+
       - run: npm test
