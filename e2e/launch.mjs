@@ -34,13 +34,13 @@ function installPlugin(profile, id) {
   fs.writeFileSync(path.join(dest, '.origin.json'), JSON.stringify({ repo: `Venari-Hunt/noctivago-${id}` }))
 }
 
-export async function launchApp({ plugins = [], pickPath = null } = {}) {
+export async function launchApp({ plugins = [], pickPath = null, communityUrl = null } = {}) {
   const port = 9300 + (process.pid % 500)
   const profile = `noctivago-e2e-${process.pid}`
   for (const id of plugins) installPlugin(profile, id)
   const electronPath = createRequire(root + '/package.json')('electron')
   const child = spawn(electronPath, [root, `--remote-debugging-port=${port}`, '--mute-audio'], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, NOCTIVAGO_PROFILE: profile, ...(pickPath ? { NOCTIVAGO_E2E_FOLDER: pickPath } : {}) },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, NOCTIVAGO_PROFILE: profile, ...(pickPath ? { NOCTIVAGO_E2E_FOLDER: pickPath } : {}), ...(communityUrl ? { NOCTIVAGO_COMMUNITY_URL: communityUrl } : {}) },
     stdio: ['ignore', 'inherit', 'inherit']
   })
   await waitForPort(port)
