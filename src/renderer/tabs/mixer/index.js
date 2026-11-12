@@ -2449,11 +2449,15 @@ export function mount(container) {
   els.emptyState = container.querySelector('#empty-state')
   els.emptyState.addEventListener('click', onEmptyStateClick)
 
-  for (const { value, label } of SORT_MODES) {
-    els.soundSort.appendChild(new Option(label, value))
+  for (const { value, label, icon } of SORT_MODES) {
+    const o = new Option(label, value)
+    if (icon) o.dataset.icon = icon
+    els.soundSort.appendChild(o)
   }
-  for (const { value, label } of GROUP_MODES) {
-    els.soundGroup.appendChild(new Option(label, value))
+  for (const { value, label, icon } of GROUP_MODES) {
+    const o = new Option(label, value)
+    if (icon) o.dataset.icon = icon
+    els.soundGroup.appendChild(o)
   }
   els.soundSort.value = state.sortMode
   els.soundGroup.value = state.groupMode

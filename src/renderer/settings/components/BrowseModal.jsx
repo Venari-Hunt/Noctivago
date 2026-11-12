@@ -77,7 +77,7 @@ export function BrowseModal({ store, restrictedMode, described, optionPageIds, o
             </div>
             <div className="plugin-store-toolbar">
               <select aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value)}>
-                {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                {SORTS.map((s) => <option key={s.id} value={s.id} data-icon={s.icon}>{s.label}</option>)}
               </select>
               <button type="button" className={`plugin-store-pill${onlyInstalled ? ' active' : ''}`} onClick={() => setOnlyInstalled((v) => !v)}>
                 Installed only

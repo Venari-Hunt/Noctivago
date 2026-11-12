@@ -2,22 +2,22 @@ import { assignGroupColorSlots } from './soundRow.js'
 import { DEFAULT_VOLUME } from '../../../../shared/volumeScale.js'
 
 export const SORT_MODES = [
-  { value: 'name-asc', label: 'Name (A-Z)' },
-  { value: 'name-desc', label: 'Name (Z-A)' },
-  { value: 'date-added-desc', label: 'Recently added' },
-  { value: 'date-added-asc', label: 'Oldest added' },
-  { value: 'date-created-desc', label: 'Recently created' },
-  { value: 'date-created-asc', label: 'Oldest created' },
-  { value: 'custom', label: 'Custom order' }
+  { value: 'name-asc', label: 'Name (A-Z)', icon: 'name' },
+  { value: 'name-desc', label: 'Name (Z-A)', icon: 'name' },
+  { value: 'date-added-desc', label: 'Recently added', icon: 'clock' },
+  { value: 'date-added-asc', label: 'Oldest added', icon: 'clock' },
+  { value: 'date-created-desc', label: 'Recently created', icon: 'clock' },
+  { value: 'date-created-asc', label: 'Oldest created', icon: 'clock' },
+  { value: 'custom', label: 'Custom order', icon: 'sort' }
 ]
 
 export const GROUP_MODES = [
-  { value: 'none', label: 'No grouping' },
-  { value: 'alphabetical', label: 'Group: Alphabetical' },
-  { value: 'date-added', label: 'Group: Date added' },
-  { value: 'date-created', label: 'Group: Date created' },
-  { value: 'tags', label: 'Group: Tags' },
-  { value: 'sound-group', label: 'Group: Sound Group' }
+  { value: 'none', label: 'No grouping', icon: 'none' },
+  { value: 'alphabetical', label: 'Group: Alphabetical', icon: 'name' },
+  { value: 'date-added', label: 'Group: Date added', icon: 'clock' },
+  { value: 'date-created', label: 'Group: Date created', icon: 'clock' },
+  { value: 'tags', label: 'Group: Tags', icon: 'filter' },
+  { value: 'sound-group', label: 'Group: Sound Group', icon: 'folder' }
 ]
 
 function compareBySortMode(a, b, sortMode) {

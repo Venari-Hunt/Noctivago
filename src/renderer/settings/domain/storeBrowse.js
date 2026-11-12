@@ -2,9 +2,9 @@
 // sorting and the download count label. No DOM.
 
 export const SORTS = [
-  { id: 'downloads', label: 'Most downloaded' },
-  { id: 'name', label: 'Name' },
-  { id: 'updated', label: 'Recently updated' }
+  { id: 'downloads', label: 'Most downloaded', icon: 'sort' },
+  { id: 'name', label: 'Name', icon: 'name' },
+  { id: 'updated', label: 'Recently updated', icon: 'clock' }
 ]
 
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })

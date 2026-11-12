@@ -25,7 +25,7 @@ export function LibraryPage({ settings, api }) {
         >
           <select value={settings.ytDlpCookiesBrowser ?? 'none'} onChange={(e) => api.update((s) => s.setYtDlpCookiesBrowser(e.target.value))}>
             {COOKIE_BROWSERS.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
+              <option key={value} value={value} data-icon={value === 'none' ? 'none' : 'globe'}>{label}</option>
             ))}
           </select>
         </SettingItem>

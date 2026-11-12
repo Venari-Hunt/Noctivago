@@ -89,9 +89,9 @@ export function GeneralPage({ settings, api }) {
           description="Where Noctívago plays. Automatic is your system default, or the Yeti in a dev build."
         >
           <select aria-label="Output device" value={output} onChange={(e) => chooseOutput(e.target.value)}>
-            <option value="auto">Automatic</option>
-            <option value="default">System default</option>
-            {outputs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+            <option value="auto" data-icon="speaker">Automatic</option>
+            <option value="default" data-icon="speaker">System default</option>
+            {outputs.map((d) => <option key={d.id} value={d.id} data-icon="speaker">{d.label}</option>)}
           </select>
         </SettingItem>
       </Group>

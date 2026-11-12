@@ -2,6 +2,7 @@ import { createTabHost } from './core/TabHost.js'
 import { loadPlugins } from './core/PluginLoader.js'
 import { installSliderDoubleClickReset } from './core/sliderReset.js'
 import { installNumberBoxStepper } from './core/numberBoxStepper.js'
+import { installSelectMenu } from './core/selectMenu.js'
 import { createSettingsTab } from './settings/index.jsx'
 import { installUpdateModal } from './core/UpdateModal.js'
 import { installKeymap } from './core/keymap.js'
@@ -15,6 +16,7 @@ import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/i
 mountToolbar(document.getElementById('toolbar'), document.getElementById('nav-end'), document.getElementById('preset-pill-slot'))
 installSliderDoubleClickReset()
 installNumberBoxStepper()
+installSelectMenu()
 installWatchFolderDialog()
 installRecordDialog()
 installAddLinkDialog()
