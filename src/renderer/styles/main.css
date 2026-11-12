@@ -576,6 +576,52 @@ main {
   width: 100%;
 }
 
+/* Mixer studio frame (approved mock mock-noctivago-mixer-studio): the
+   library rail on the left, the mix in the center, panes on the darkest
+   ground with 8 px gaps, as Remix does. A rail row is the in-mix switch. */
+body:has(.tab-panel:not(.hidden) .mx-studio) { background: #0f0f12; }
+main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 8px; overflow: hidden; }
+.mx-studio { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 8px; height: 100%; min-height: 0; }
+.mx-studio[data-rail='off'] { grid-template-columns: minmax(0, 1fr); }
+.mx-studio[data-rail='off'] .mx-lib { display: none; }
+.mx-pane { background: var(--bg); border-radius: 12px; min-height: 0; }
+.mx-center { position: relative; overflow: auto; padding: var(--space-4); scrollbar-width: thin; }
+.mx-ib { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--text-dim); cursor: pointer; }
+.mx-ib:hover { background: var(--surface); color: var(--text); }
+.mx-rail-show { display: none; position: absolute; top: var(--space-4); left: var(--space-4); z-index: 2; }
+.mx-studio[data-rail='off'] .mx-rail-show { display: grid; }
+.mx-lib { display: flex; flex-direction: column; gap: 12px; padding: 16px 12px 12px; overflow: hidden; }
+.mx-lib-h { display: flex; align-items: center; justify-content: space-between; margin: 0 4px; }
+.mx-lib-h h3 { margin: 0; font-size: 15px; line-height: 20px; font-weight: 700; color: var(--text); }
+.mx-lib-h h3 span { margin-left: 6px; color: var(--text-dim); font-weight: 400; font-size: 13px; }
+.mx-chips { display: flex; gap: 8px; padding: 0 4px; }
+.mx-chip { height: 32px; padding: 0 14px; border: 0; border-radius: 16px; background: var(--surface-alt); color: var(--text); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+.mx-chip:hover { background: var(--surface-hover); }
+.mx-chip[aria-pressed='true'] { background: var(--text); color: #141417; }
+.mx-search { display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 4px; padding: 0 12px; border-radius: 10px; background: var(--surface); color: var(--text-dim); }
+.mx-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; }
+.mx-search:has(input:focus-visible) { outline: 2px solid #8db8ff; outline-offset: 2px; }
+.mx-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
+.mx-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mx-item:hover { background: var(--surface); }
+.mx-item:disabled { cursor: default; opacity: .5; }
+.mx-thumb { width: 40px; height: 40px; border-radius: 8px; background: var(--surface-alt); display: grid; place-items: center; color: var(--text-dim); flex: none; }
+.mx-item.in .mx-thumb { background: var(--tint); color: var(--tint-ink); }
+.mx-txt { min-width: 0; flex: 1; }
+.mx-txt b { display: block; font-weight: 400; font-size: 14px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mx-item.in .mx-txt b { font-weight: 600; color: var(--text); }
+.mx-txt small { display: block; color: var(--text-dim); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mx-sw { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--text-dim); flex: none; opacity: 0; }
+.mx-item:hover .mx-sw, .mx-item:focus-visible .mx-sw { opacity: 1; }
+.mx-item.in .mx-sw { opacity: 1; color: var(--accent); }
+.mx-list-empty { margin: 24px 8px; color: var(--text-dim); font-size: 13px; line-height: 20px; text-align: center; }
+.mx-lfoot { display: flex; padding: 0 4px; }
+.mx-lfoot .add-sound-menu-wrapper, .mx-lfoot .add-sound-menu-wrapper > .btn { flex: 1; width: 100%; }
+.mx-lfoot .dropdown-menu { top: auto; bottom: calc(100% + 6px); left: 0; right: 0; }
+@media (max-width: 900px) {
+  .mx-studio { grid-template-columns: 232px minmax(0, 1fr); }
+}
+
 /* Mixer filter bar: search takes the flexible column, sort/group/Select sit
    beside it; on a narrow window search gets its own row above the other
    three rather than everything wrapping unevenly. */
