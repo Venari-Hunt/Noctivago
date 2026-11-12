@@ -70,8 +70,11 @@ export async function launchApp({ plugins = [], pickPath = null, communityUrl = 
     async close() {
       await browser.close().catch(() => {})
       child.kill()
-      await new Promise((r) => setTimeout(r, 500))
-      fs.rmSync(path.join(process.env.APPDATA || os.homedir(), profile), { recursive: true, force: true })
+      await new Promise((r) => setTimeout(r, 1000))
+      // The app can hold files a moment after it exits; a leftover scratch folder is harmless.
+      try {
+        fs.rmSync(path.join(process.env.APPDATA || os.homedir(), profile), { recursive: true, force: true, maxRetries: 5, retryDelay: 400 })
+      } catch {}
     }
   }
 }
