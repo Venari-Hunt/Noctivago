@@ -14,7 +14,7 @@ import { openAddLinkDialog } from '../../core/AddLinkDialog.js'
 import { openContextMenu } from '../../core/ContextMenu.js'
 import { MAX_BUFFER_CLIP_SECONDS, applySoundOverride } from '../../../shared/constants.js'
 import { effectiveMemberFluctuation, applyGroupShotOverride, groupDriftMemberKey } from '../../../shared/groupDrift.js'
-import { DEFAULT_VOLUME } from '../../../shared/volumeScale.js'
+import { DEFAULT_VOLUME, gainToPosition, positionToGain } from '../../../shared/volumeScale.js'
 import { startLevelMeters } from '../../ui/levelMeters.js'
 import { buildClipReport, lowerGain, lowerGroupGainDb } from './domain/clipReport.js'
 import { openClipReport } from './components/ClipReport.jsx'
@@ -1557,6 +1557,9 @@ function applyGlobalVolume() {
 let globalVolumeSaveTimer = null
 function onGlobalVolumeInput(gain) {
   globalVolumeGain = gain
+  // Remix's Group/Preset player drives this same volume (noctivago:remix-set-
+  // volume below), so the toolbar slider follows whichever control moved.
+  updateToolbar({ volumeGain: gain })
   if (state.globalMuted) {
     state.globalMuted = false
     updateGlobalMuteIcon()
@@ -2802,6 +2805,16 @@ document.addEventListener('library:linked', refreshList)
     applyGroupSolo(groupId, group.soundIds)
   })
   window.addEventListener('noctivago:remix-unsolo-group', () => releaseGroupSolo())
+  // Remix's Group/Preset player has a volume row (owner, 2026-11-11: it must
+  // not disappear outside Sound mode). Those modes play through the Mixer, so
+  // the row is the app's global volume, same as the toolbar slider. It sends
+  // a slider position (0..1, middle = unity) so the plugin needs no copy of
+  // the volume scale.
+  window.addEventListener('noctivago:remix-set-volume', (e) => {
+    const position = Number(e.detail?.position)
+    if (Number.isFinite(position)) onGlobalVolumeInput(positionToGain(position))
+  })
+  window.addEventListener('noctivago:remix-toggle-mute', () => toggleGlobalMute())
   // Synchronous request/response, same shape as request-analyser - the
   // Remix tab's Play/Pause icon and Group-mode Solo button need to reflect
   // real Mixer state (is anything playing, is this preset the active one,
@@ -2813,5 +2826,7 @@ document.addEventListener('library:linked', refreshList)
     d.activePresetId = state.activePresetId
     d.isPlaying = state.playing.size > 0
     d.soloedGroupId = state.soloedGroupId
+    d.volumePosition = gainToPosition(globalVolumeGain)
+    d.muted = state.globalMuted
   })
 }
