@@ -79,6 +79,10 @@ export class SoundGroupChain {
     // overrides theirs, so members move together instead of also drifting
     // on their own.
     this.panStage = new PanStage(context, 0)
+    // Group pan (owner, 2026-11-11): a fixed placement before the drift
+    // stage, so the drift wanders around it - the same two-stage shape a
+    // sound uses (SoundSource's panStage then driftPanStage).
+    this.staticPanStage = new PanStage(context, 0)
     this._panMod = new Modulator({
       onValue: (v) => this.panStage.setPan(v),
       neutral: 0,
@@ -116,7 +120,8 @@ export class SoundGroupChain {
     this.reverbSendGain.connect(this.reverbConvolver)
     this.reverbConvolver.connect(this.fluctGain)
 
-    this.fluctGain.connect(this.panStage.input)
+    this.fluctGain.connect(this.staticPanStage.input)
+    this.staticPanStage.output.connect(this.panStage.input)
     this.panStage.output.connect(this.limiter)
     this.limiter.connect(destination)
 
@@ -134,7 +139,7 @@ export class SoundGroupChain {
   }
 
   // config: { highpassHz, lowpassHz, gainDb, echoDelayMs, echoDecay,
-  // reverbSizeMs, reverbMix, occlusion, eq: [...] } or null / undefined for
+  // reverbSizeMs, reverbMix, occlusion, pan, eq: [...] } or null / undefined for
   // neutral. `occlusion` (v0.1.182) is folded into the effective
   // lowpass/reverb values here via applyOcclusionToFilters, rather than
   // being its own node - it's a UI-level convenience over the same two
@@ -148,6 +153,7 @@ export class SoundGroupChain {
     this.highpass.frequency.setTargetAtTime(c.highpassHz ?? 0, now, FILTER_SMOOTHING_SECONDS)
     this.lowpass.frequency.setTargetAtTime(c.lowpassHz ?? 20000, now, FILTER_SMOOTHING_SECONDS)
     this.gain.gain.setTargetAtTime(c.gainDb ? Math.pow(10, c.gainDb / 20) : 1, now, FILTER_SMOOTHING_SECONDS)
+    if (!this.staticPanStage.hasPan(c.pan ?? 0)) this.staticPanStage.setPan(c.pan ?? 0)
 
     this.echoDelay.delayTime.setTargetAtTime((c.echoDelayMs ?? 0) / 1000, now, FILTER_SMOOTHING_SECONDS)
     this.echoSendGain.gain.setTargetAtTime(c.echoDecay ?? 0, now, FILTER_SMOOTHING_SECONDS)
@@ -247,6 +253,7 @@ export class SoundGroupChain {
     this.fluctGain.disconnect()
     this._panMod.dispose()
     this.panStage.dispose()
+    this.staticPanStage.dispose()
     this.echoDelay.disconnect()
     this.echoSendGain.disconnect()
     this.echoFeedbackGain.disconnect()

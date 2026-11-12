@@ -157,6 +157,9 @@ export function normalizeGroupFilters(input) {
     // applyOcclusionToFilters for the full reasoning. Not part of
     // normalizeWholeMix - a whole preset has no "inside/outside" of itself.
     occlusion: clamp(src.occlusion, 0, 1, 0),
+    // Group pan (owner, 2026-11-11): the whole group placed left/right, -1..1.
+    // Pan drift wanders around it, like a sound's drift around its Pan.
+    pan: clamp(src.pan, -1, 1, 0),
     fluctuation: normalizeMixFluctuation(src.fluctuation, { groupAxes: true }),
     eq: Array.isArray(src.eq) ? src.eq.map(normalizeEqBand).filter(Boolean) : []
   }

@@ -61,6 +61,13 @@ describe('normalizeGroupFilters', () => {
     assert.equal(normalizeGroupFilters({ occlusion: -5 }).occlusion, 0)
   })
 
+  test('pan defaults to center and is clamped into -1..1', () => {
+    assert.equal(normalizeGroupFilters({}).pan, 0)
+    assert.equal(normalizeGroupFilters({ pan: -0.4 }).pan, -0.4)
+    assert.equal(normalizeGroupFilters({ pan: 3 }).pan, 1)
+    assert.equal(normalizeGroupFilters({ pan: 'x' }).pan, 0)
+  })
+
   test('has no fadeInSeconds field (group-specific difference from wholeMix)', () => {
     const result = normalizeGroupFilters({ fadeInSeconds: 10 })
     assert.equal(result.fadeInSeconds, undefined)
