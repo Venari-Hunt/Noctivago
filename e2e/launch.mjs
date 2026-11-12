@@ -3,6 +3,7 @@
 // (the same way scripts/cdp-shot.mjs does). Muted: no sound during tests.
 import { chromium } from 'playwright-core'
 import { spawn } from 'node:child_process'
+import net from 'node:net'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -34,8 +35,20 @@ function installPlugin(profile, id) {
   fs.writeFileSync(path.join(dest, '.origin.json'), JSON.stringify({ repo: `Venari-Hunt/noctivago-${id}` }))
 }
 
+// A free port, so test files running side by side never share one.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer()
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address()
+      srv.close(() => resolve(port))
+    })
+    srv.on('error', reject)
+  })
+}
+
 export async function launchApp({ plugins = [], pickPath = null, communityUrl = null } = {}) {
-  const port = 9300 + (process.pid % 500)
+  const port = await freePort()
   const profile = `noctivago-e2e-${process.pid}`
   for (const id of plugins) installPlugin(profile, id)
   const electronPath = createRequire(root + '/package.json')('electron')

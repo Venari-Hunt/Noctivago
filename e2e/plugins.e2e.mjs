@@ -125,12 +125,6 @@ describe('Remix', () => {
     for (const word of ['No box selected', 'Reduce by', 'Delete box', 'Clear all boxes']) assert.ok(text.includes(word), word)
   })
 
-  test('Save as copy adds a copy of the open sound to the library', async () => {
-    await panel().getByRole('button', { name: 'Trim', exact: true }).first().click()
-    await panel().getByRole('button', { name: 'Save as copy' }).click()
-    await page.waitForFunction(() => window.noctivago.library.list().then((l) => l.some((e) => e.name === 'E2E sound copy')), null, { timeout: 10000 })
-  })
-
   test('Group and Preset modes switch the screen', async () => {
     await panel().getByRole('button', { name: 'Group', exact: true }).first().click()
     await settle()
@@ -168,6 +162,20 @@ describe('Composite', () => {
     await openTab('Mixer')
     const names = await page.evaluate(() => window.noctivago.library.list().then((l) => l.map((e) => e.name)))
     assert.ok(names.includes('E2E weld'), `library has: ${names.join(', ')}`)
+  })
+})
+
+describe('Remix save as copy', () => {
+  test('Save as copy adds a copy of the open sound to the library', async () => {
+    await page.reload() // a clean Remix, as after a restart
+    await page.waitForSelector('.sound-row')
+    await app.dismissToasts()
+    await openTab('Remix')
+    await settle(1500)
+    await panel().locator('.rx-item', { hasText: 'E2E sound' }).first().click()
+    await settle(1500)
+    await panel().getByRole('button', { name: 'Save as copy' }).click()
+    await page.waitForFunction(() => window.noctivago.library.list().then((l) => l.some((e) => e.name === 'E2E sound copy')), null, { timeout: 10000 })
   })
 })
 
