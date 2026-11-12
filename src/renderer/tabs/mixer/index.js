@@ -6,6 +6,8 @@ import { BufferScheduledSource, StreamScheduledSource } from '../../audio/Schedu
 import { sortForDisplay, SORT_MODES, GROUP_MODES } from './domain/soundList.js'
 import { soundMenuItems, presetMenuItems, togglePresetSound, REMOVE_MENU_ITEM, duplicateName } from './domain/soundMenu.js'
 import { renderSoundList } from './components/SoundList.jsx'
+import { buildRailRows, groupToggleIds, RAIL_SCOPES } from './domain/libraryRail.js'
+import { renderRailList } from './components/LibraryRail.jsx'
 import { renderPresetCards, renderPresetImportList } from '../../ui/PresetsModal.js'
 import { presetCardData } from './domain/presetCard.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
@@ -55,6 +57,11 @@ const state = {
   sortMode: 'name-asc',
   groupMode: 'none',
   activeTagFilter: null,
+  // The library rail (mock-noctivago-mixer-studio): its chip, its own search,
+  // and whether it is hidden. Session-only.
+  railScope: 'All',
+  railQuery: '',
+  railHidden: false,
   // Bulk-apply an effect preset to several sounds at once (Board backlog
   // item, Audacity-Macros-shaped) - a lightweight multi-select layered onto
   // the existing list, not a new selection model that touches every other
@@ -367,7 +374,25 @@ function render() {
     allTags,
     state.editRequest
   )
+  renderRail()
   refreshGlobalButton()
+}
+
+function renderRail() {
+  if (!els.railList) return
+  const library = state.library.filter((entry) => !pendingDeletes.has(entry.id))
+  const rows = buildRailRows(sortForDisplay(library, state.sortMode), { included: state.included, groups: state.groups, scope: state.railScope, query: state.railQuery })
+  const emptyText = state.railQuery.trim() ? 'No sound matches.' : state.railScope === 'Groups' ? 'This preset has no groups yet.' : state.railScope === 'In mix' ? 'Nothing in the mix yet.' : 'Your library is empty.'
+  els.railCount.textContent = String(library.length)
+  for (const chip of els.railChips) chip.setAttribute('aria-pressed', String(chip.dataset.scope === state.railScope))
+  els.studio.dataset.rail = state.railHidden ? 'off' : 'on'
+  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncluded, onToggleGroup: toggleGroupInMix })
+}
+
+// A group row in the rail switches its members: any in the mix → all out,
+// none in → all in.
+async function toggleGroupInMix(row) {
+  for (const id of groupToggleIds(row.memberIds, state.included)) await toggleIncluded(id)
 }
 
 // Bulk-select (Board backlog: bulk-apply an effect preset to several sounds
@@ -2408,6 +2433,16 @@ async function restoreLastActivePreset(settings) {
 
 export function mount(container) {
   container.innerHTML = `
+    <div class="mx-studio" data-rail="on">
+    <aside class="mx-pane mx-lib" aria-label="Library">
+      <div class="mx-lib-h"><h3>Library<span id="mx-lib-count"></span></h3><button type="button" class="mx-ib" id="mx-rail-hide" title="Hide the library" aria-label="Hide the library">${mockIconSvg('chevron-left')}</button></div>
+      <div class="mx-chips" role="group" aria-label="Show">${RAIL_SCOPES.map((c) => `<button type="button" class="mx-chip" data-scope="${c}" aria-pressed="false">${c}</button>`).join('')}</div>
+      <label class="mx-search">${mockIconSvg('search')}<input id="mx-rail-search" type="text" placeholder="Search your sounds" aria-label="Search your sounds" /></label>
+      <div class="mx-list" id="mx-rail-list"></div>
+      <div class="mx-lfoot" id="add-sound-slot"></div>
+    </aside>
+    <section class="mx-pane mx-center" aria-label="Mix">
+    <button type="button" class="mx-ib mx-rail-show" id="mx-rail-show" title="Show the library" aria-label="Show the library">${mockIconSvg('chevron-right')}</button>
     <div id="recommended-plugins"></div>
     <div class="sound-list-controls">
       <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds" />
@@ -2415,7 +2450,6 @@ export function mount(container) {
       <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
       <select id="sound-group" class="sound-group-select" title="Group by"></select>
       <button id="bulk-select-toggle" class="btn" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
-      <div id="add-sound-slot"></div>
       <div id="tag-filter-pop" class="tag-filter-pop hidden" role="menu"></div>
     </div>
     <ul id="sound-list" class="sound-list"></ul>
@@ -2435,8 +2469,31 @@ export function mount(container) {
       </select>
       <button id="bulk-select-done" class="btn btn-primary" type="button">Done</button>
     </div>
+    </section>
+    </div>
   `
   els.soundSearch = container.querySelector('#sound-search')
+  els.studio = container.querySelector('.mx-studio')
+  els.railList = container.querySelector('#mx-rail-list')
+  els.railCount = container.querySelector('#mx-lib-count')
+  els.railChips = [...container.querySelectorAll('.mx-chip')]
+  for (const chip of els.railChips) {
+    chip.addEventListener('click', () => {
+      state.railScope = chip.dataset.scope
+      renderRail()
+    })
+  }
+  container.querySelector('#mx-rail-search').addEventListener('input', (evt) => {
+    state.railQuery = evt.target.value
+    renderRail()
+  })
+  const setRailHidden = (hidden) => {
+    state.railHidden = hidden
+    renderRail()
+    container.querySelector(hidden ? '#mx-rail-show' : '#mx-rail-hide').focus()
+  }
+  container.querySelector('#mx-rail-hide').addEventListener('click', () => setRailHidden(true))
+  container.querySelector('#mx-rail-show').addEventListener('click', () => setRailHidden(false))
   mountRecommendedPlugins(container.querySelector('#recommended-plugins'), window.noctivago)
   mountAddSound(container.querySelector('#add-sound-slot'))
   els.soundSort = container.querySelector('#sound-sort')
