@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, dialog } from 'electron'
 
 // Must be the very first local import in main/index.js, before anything that
 // might resolve app.getPath('userData') at module-eval time (library.js,
@@ -18,4 +18,13 @@ import { app } from 'electron'
 // (scripts/side-by-side.mjs runs two builds on two profile copies).
 if (!app.isPackaged) {
   app.setName(process.env.NOCTIVAGO_PROFILE || 'noctivago-dev')
+}
+
+// e2e/ tests (unpackaged only): NOCTIVAGO_E2E_FOLDER makes every "choose a folder
+// or file" dialog answer with that path, since a native dialog can't be clicked
+// from a test. A packaged build never reads it.
+if (!app.isPackaged && process.env.NOCTIVAGO_E2E_FOLDER) {
+  const answer = process.env.NOCTIVAGO_E2E_FOLDER
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [answer] })
+  dialog.showSaveDialog = async () => ({ canceled: false, filePath: answer })
 }
