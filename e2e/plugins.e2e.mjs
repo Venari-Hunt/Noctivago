@@ -163,6 +163,19 @@ describe('Composite', () => {
     const names = await page.evaluate(() => window.noctivago.library.list().then((l) => l.map((e) => e.name)))
     assert.ok(names.includes('E2E weld'), `library has: ${names.join(', ')}`)
   })
+
+  // Remix reopens in the mode it was left in (Preset here), which lists presets, not
+  // sounds. A check for the sound row right after reopening fails for that reason
+  // alone; it once read as "Remix shows only its title" (2026-11-11).
+  test('reopening Remix after the weld keeps its last mode, and Sound lists the sounds', async () => {
+    await openTab('Remix')
+    let text = await panel().innerText()
+    for (const word of ['PRESET', 'Default', 'whole mix']) assert.ok(text.includes(word), `${word} in: ${text.slice(0, 300)}`)
+    await panel().getByRole('button', { name: 'Sound', exact: true }).first().click()
+    await settle()
+    text = await panel().innerText()
+    for (const word of ['E2E sound', 'E2E weld']) assert.ok(text.includes(word), `${word} in: ${text.slice(0, 300)}`)
+  })
 })
 
 describe('Remix save as copy', () => {
