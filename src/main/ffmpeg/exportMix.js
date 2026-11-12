@@ -11,7 +11,8 @@ import { renderGainEnvelopeWav, hasVolumeFluctuation } from './gainEnvelope.js'
 import { renderPitchCommandFile, pitchCommandFilter, hasPitchFluctuation, samplePitchRatios } from './pitchEnvelope.js'
 import { hasPanFluctuation, panDriftGraph } from './panDrift.js'
 import { renderPanEnvelopeWav } from './panEnvelope.js'
-import { stereoPanMatrix } from '../../shared/pan.js'
+import { stereoPanMatrix, normalizePan } from '../../shared/pan.js'
+import { buildPanFilter } from './panFilter.js'
 import { effectiveMemberFluctuation, busFluctuation } from '../../shared/groupDrift.js'
 import { resolveFfmpegPath } from './ffmpegPath.js'
 import { renderVisualizationVideo } from './visualizationVideo.js'
@@ -615,6 +616,21 @@ async function tileLoopShotFull({ shot, durationSeconds, reporter }) {
 // position (live: before the limiter) doesn't matter for the bake.
 // v0.1.217: also applies a Sound Group's pan drift (panDrift.js) in the same
 // pass, after the volume drift - the live SoundGroupChain's order.
+// Group pan (owner, 2026-11-11): the whole bus placed left/right, after its
+// filters and reverb and before its pan drift - the live SoundGroupChain
+// order (staticPanStage, then panStage). Bus intermediates are stereo. A
+// centered group skips the pass, so its render is unchanged.
+async function applyStaticPanToTrack(track, pan, durationSeconds, reporter) {
+  const filter = buildPanFilter(pan, 2)
+  if (!filter) return track
+  const outPath = tempPath(INTERMEDIATE_EXT)
+  await runFfmpegToFile(
+    ['-y', '-i', track.path, '-af', filter, '-t', durationSeconds.toFixed(6), ...INTERMEDIATE_CODEC, outPath],
+    { onProgress: (sec) => reporter?.tick(sec, durationSeconds) }
+  )
+  return { path: outPath, offset: 0 }
+}
+
 async function applyBusDriftToTrack(track, fluctuation, durationSeconds, reporter) {
   const envPath = renderGainEnvelopeWav(fluctuation, durationSeconds)
   const panPath = renderPanEnvelopeWav(fluctuation, durationSeconds)
@@ -1044,6 +1060,11 @@ async function renderGroupBuses({ loopShots, batchTracks, groups, durationSecond
       // pass (volume is attenuation only, so post-limiter is safe; live, the
       // pan stage sits just before the limiter - pan never adds more than
       // +3 dB to a channel and the limiter only catches overs).
+      const groupPan = normalizePan(groupFilters?.pan ?? 0)
+      if (groupPan !== 0) {
+        bus = await applyStaticPanToTrack(bus, groupPan, durationSeconds, reporter)
+        ownPaths.push(bus.path)
+      }
       const busDrift = busFluctuation(groupFilters?.fluctuation)
       if (hasBusFluctuation(busDrift)) {
         bus = await applyBusDriftToTrack(bus, busDrift, durationSeconds, reporter)
