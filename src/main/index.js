@@ -215,6 +215,15 @@ function createWindow() {
     }
   })
 
+  // Renderer errors (the app and its plugins) go to main.log too: the installed
+  // build has no DevTools, so this is the only way to read them afterwards.
+  win.webContents.on('console-message', (event) => {
+    if (event.level !== 'error') return
+    // electron-log echoes main-log lines into the renderer console ("10:16:29.790 › ..."); logging those again would loop.
+    if (/^\d\d:\d\d:\d\d\.\d{3} › /.test(event.message)) return
+    log.error(`renderer: ${event.message} (${event.sourceId}:${event.lineNumber})`)
+  })
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
