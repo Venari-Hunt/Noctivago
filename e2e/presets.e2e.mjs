@@ -35,7 +35,7 @@ before(async () => {
     await window.noctivago.presets.save({ name: 'E2E preset', sounds: [{ soundId: sound.id, volume: 0.5 }] })
   }, wavPath)
   await page.reload()
-  await page.waitForSelector('.sound-row')
+  await page.waitForSelector('.mx-item')
   await app.dismissToasts()
 })
 after(async () => {
@@ -73,7 +73,7 @@ describe('preset pill', () => {
   test('Save changes as I go OFF: an edit shows Unsaved changes with Cancel and Save', async () => {
     await page.evaluate(() => window.noctivago.settings.setPresetAutosaveEnabled(false))
     await page.reload()
-    await page.waitForSelector('.sound-row')
+    await page.waitForSelector('.mx-item')
     await app.dismissToasts()
     await pill().click()
     await settle()

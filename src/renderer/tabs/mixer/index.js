@@ -3,9 +3,9 @@ import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
 import { BufferScheduledSource, StreamScheduledSource } from '../../audio/ScheduledSoundSource.js'
-import { sortForDisplay, SORT_MODES, GROUP_MODES } from './domain/soundList.js'
+import { sortForDisplay, buildMixSections, mixMeta, MIX_ARRANGES, MIX_SORTS } from './domain/soundList.js'
 import { soundMenuItems, presetMenuItems, togglePresetSound, REMOVE_MENU_ITEM, duplicateName } from './domain/soundMenu.js'
-import { renderSoundList } from './components/SoundList.jsx'
+import { renderSections } from './components/SoundList.jsx'
 import { buildRailRows, groupToggleIds, RAIL_SCOPES } from './domain/libraryRail.js'
 import { renderRailList } from './components/LibraryRail.jsx'
 import { renderPresetCards, renderPresetImportList } from '../../ui/PresetsModal.js'
@@ -53,10 +53,13 @@ const BULK_NEUTRAL_FILTERS = { highpassHz: 0, lowpassHz: 20000, gainDb: 0, echoD
 
 const state = {
   library: [],
-  searchQuery: '',
+  // The rail lists the library by name.
   sortMode: 'name-asc',
-  groupMode: 'none',
-  activeTagFilter: null,
+  // The center (mock-noctivago-mixer-studio): arrange tab, Sorting field, and
+  // the cards just taken out (dimmed until the owner leaves the screen).
+  mixArrange: 'all',
+  mixSort: 'mix',
+  mixLeaving: new Set(),
   // The library rail (mock-noctivago-mixer-studio): its chip, its own search,
   // and whether it is hidden. Session-only.
   railScope: 'All',
@@ -221,27 +224,20 @@ function refreshGlobalButton() {
 const escapeText = (text) => String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const BROWSE_TAB = '.tab-button[data-tab-id="browse-sounds"]'
 
-function emptyStateHtml(filtering) {
+// Empty library: the first-mix card with its ways in. A library with an empty
+// mix: the mock's line (the rail on the left is where sounds come from).
+function emptyStateHtml() {
   const button = (act, label, icon, cls = '') => `<button type="button" class="btn btn-icon-text ${cls}" data-empty="${act}">${icon ? mockIconSvg(icon) : ''}${label}</button>`
   const browse = document.querySelector(BROWSE_TAB)
-  if (filtering && state.library.length > 0) {
-    const query = state.searchQuery.trim()
-    const title = query ? `No sound called "${escapeText(query)}"` : 'No sound with this tag'
-    const text = query ? 'Nothing in your library matches. Try fewer letters, or look for it online.' : 'Nothing in your library has this tag.'
-    return `${mockIconSvg('search', 40)}<h2>${title}</h2><p>${text}</p><div class="mx-empty-row">${button('clear', 'Clear search')}${browse && query ? button('browse', 'Search online', 'search') : ''}</div>`
+  if (libraryNow().length > 0) {
+    return '<p class="mx-empty-mix"><b>The mix is empty</b>Pick sounds in the library on the left, or browse for new ones.</p>'
   }
   return `${mockIconSvg('volume-2', 40)}<h2>Build your first mix</h2><p>Add a sound, then stack more on top: rain, wind, a far-off train. Each keeps its own volume.</p><div class="mx-empty-row">${button('add', 'Add sound', 'plus', 'btn-primary')}${browse ? button('browse', 'Browse sounds', 'search') : ''}${button('import', 'Import preset', 'download', 'btn-ghost')}</div>`
 }
 
 function onEmptyStateClick(evt) {
   const act = evt.target.closest('[data-empty]')?.dataset.empty
-  if (act === 'clear') {
-    state.searchQuery = ''
-    state.activeTagFilter = null
-    els.soundSearch.value = ''
-    render()
-    els.soundSearch.focus()
-  } else if (act === 'browse') {
+  if (act === 'browse') {
     document.querySelector(BROWSE_TAB)?.click()
   } else if (act === 'add') {
     // After this click finishes, so the menu's outside-click close doesn't eat it.
@@ -252,113 +248,35 @@ function onEmptyStateClick(evt) {
   }
 }
 
-function visibleLibrary() {
-  if (pendingDeletes.size) return visibleLibraryAll().filter((entry) => !pendingDeletes.has(entry.id))
-  return visibleLibraryAll()
+// The library minus sounds waiting out their Delete toast.
+function libraryNow() {
+  if (!pendingDeletes.size) return state.library
+  return state.library.filter((entry) => !pendingDeletes.has(entry.id))
 }
 
-function visibleLibraryAll() {
-  const query = state.searchQuery.trim().toLowerCase()
-  let entries = state.library
-  if (query) entries = entries.filter((entry) => entry.name.toLowerCase().includes(query))
-  if (state.activeTagFilter) entries = entries.filter((entry) => entry.tags?.includes(state.activeTagFilter))
-  return entries
-}
-
-const TAG_POP_LIMIT = 10
-let tagPopOpen = false
-let tagPopShowAll = false
-let tagPopQuery = ''
-
-// Tags fold into one button; its popover lists the most used first, a find box
-// narrows them, "Show all" lifts the cap. Still one active tag at a time.
-function renderTagFilterBar() {
-  const counts = new Map()
-  for (const entry of state.library) for (const tag of entry.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
-  const allTags = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b))
-  els.tagFilterBtn.classList.toggle('hidden', allTags.length === 0)
-  els.tagFilterBtn.innerHTML = mockIconSvg('tag')
-  els.tagFilterBtn.append(state.activeTagFilter ? `Tag: ${state.activeTagFilter}` : 'Tags')
-  els.tagFilterBtn.classList.toggle('btn-primary', Boolean(state.activeTagFilter))
-  els.tagFilterBtn.setAttribute('aria-expanded', String(tagPopOpen))
-  els.tagFilterPop.classList.toggle('hidden', !tagPopOpen || allTags.length === 0)
-  if (!tagPopOpen) return
-  const keepFocus = document.activeElement?.id === 'tag-find'
-  els.tagFilterPop.innerHTML = ''
-  const find = document.createElement('input')
-  find.id = 'tag-find'
-  find.type = 'text'
-  find.placeholder = 'Find a tag'
-  find.value = tagPopQuery
-  find.setAttribute('aria-label', 'Find a tag')
-  find.addEventListener('input', () => {
-    tagPopQuery = find.value
-    renderTagFilterBar()
-  })
-  els.tagFilterPop.appendChild(find)
-  const q = tagPopQuery.trim().toLowerCase()
-  let shown = allTags.filter((tag) => !q || tag.toLowerCase().includes(q))
-  const total = shown.length
-  if (!q && !tagPopShowAll) shown = shown.slice(0, TAG_POP_LIMIT)
-  const chips = document.createElement('div')
-  chips.className = 'tag-filter-bar'
-  for (const tag of shown) {
-    const chip = document.createElement('button')
-    chip.type = 'button'
-    chip.className = 'tag-chip tag-filter-chip' + (state.activeTagFilter === tag ? ' tag-filter-chip-active' : '')
-    chip.textContent = tag
-    chip.setAttribute('aria-pressed', String(state.activeTagFilter === tag))
-    chip.addEventListener('click', () => {
-      state.activeTagFilter = state.activeTagFilter === tag ? null : tag
-      tagPopOpen = false
-      render()
-    })
-    chips.appendChild(chip)
-  }
-  els.tagFilterPop.appendChild(chips)
-  if (!q && total > TAG_POP_LIMIT && !tagPopShowAll) {
-    const more = document.createElement('button')
-    more.type = 'button'
-    more.className = 'btn btn-ghost'
-    more.textContent = `Show all ${total} tags`
-    more.addEventListener('click', () => {
-      tagPopShowAll = true
-      renderTagFilterBar()
-    })
-    els.tagFilterPop.appendChild(more)
-  }
-  if (keepFocus) find.focus()
-}
-
-function toggleTagPop(open) {
-  tagPopOpen = open ?? !tagPopOpen
-  if (tagPopOpen) {
-    tagPopQuery = ''
-    tagPopShowAll = false
-  }
-  renderTagFilterBar()
-  if (tagPopOpen) els.tagFilterPop.querySelector('input')?.focus()
-}
-
+// The center (mock-noctivago-mixer-studio): the mix's head, then only the
+// sounds in the mix as knob cards. Finding a sound is the rail's job.
 function render() {
-  const visible = visibleLibrary()
-  const filtering = state.searchQuery.trim() || state.activeTagFilter
-  els.emptyState.innerHTML = emptyStateHtml(filtering)
-  renderTagFilterBar()
+  const library = libraryNow()
+  els.emptyState.innerHTML = emptyStateHtml()
   updateToolbar({ mixCount: state.included.size })
-  // Every tag used anywhere in the *full* library (not just visible, which
-  // may already be search/tag-filtered) - drives each row's "+ tag"
-  // autocomplete, same computation renderTagFilterBar() already does for
-  // its own chip bar.
+  renderMixHead(library)
+  // Every tag used anywhere in the library - drives each card's "+ tag" autocomplete.
   const allTags = [...new Set(state.library.flatMap((entry) => entry.tags ?? []))].sort((a, b) => a.localeCompare(b))
-  renderSoundList(
+  const sections = buildMixSections(library, state, {
+    arrange: state.mixArrange,
+    sort: state.mixSort,
+    leaving: state.mixLeaving,
+    selectMode: state.selectMode,
+    selectedIds: state.selectedIds
+  })
+  renderSections(
     els.soundList,
     els.emptyState,
-    visible,
-    state,
-    { sortMode: state.sortMode, groupMode: state.groupMode, selectMode: state.selectMode, selectedIds: state.selectedIds },
+    sections,
+    false,
     {
-      onToggleIncluded: toggleIncluded,
+      onToggleIncluded: toggleIncludedFromCenter,
       onVolumeChange: changeVolume,
       onToggleMute: toggleMute,
       onToggleSolo: toggleSolo,
@@ -378,15 +296,56 @@ function render() {
   refreshGlobalButton()
 }
 
+// Kind, preset name and the "5 sounds · 2 groups · 3 random" line; the
+// arrange tabs and the Sorting field mirror state.
+function renderMixHead(library) {
+  if (!els.mixTitle) return
+  const name = activePresetName
+  els.mixKind.textContent = name ? 'Preset in the Mixer' : 'Mix in the Mixer'
+  els.mixTitle.textContent = name ?? 'Unsaved mix'
+  els.mixTitle.title = name ?? ''
+  els.mixMeta.textContent = mixMeta(library, state)
+  for (const tab of els.mixTabs) tab.setAttribute('aria-pressed', String(tab.dataset.arrange === state.mixArrange))
+  if (els.mixSort.value !== state.mixSort) els.mixSort.value = state.mixSort
+}
+
+// A card taken out of the mix stays, dimmed, until the owner leaves the
+// screen or changes the arrangement (the mock's "leaving" card): clicking it
+// again puts it back. Each switch says so in a toast with Undo (one at a
+// time, the newest wins).
+async function toggleIncludedFromCenter(id) {
+  const entry = state.library.find((s) => s.id === id)
+  if (!entry || entry.status === 'missing' || state.loading.has(id)) return
+  const wasIn = state.included.has(id)
+  if (wasIn) state.mixLeaving.add(id)
+  else state.mixLeaving.delete(id)
+  await toggleIncluded(id)
+  if (state.included.has(id) === wasIn) return
+  notify({
+    message: wasIn ? `Took "${entry.name}" out of the mix` : `Added "${entry.name}"`,
+    key: 'mix-switch',
+    timeoutMs: 5000,
+    actions: [{
+      label: 'Undo',
+      icon: 'undo-2',
+      onClick: async () => {
+        if (state.included.has(id) === wasIn) return // already switched back
+        state.mixLeaving.delete(id)
+        await toggleIncluded(id)
+      }
+    }]
+  })
+}
+
 function renderRail() {
   if (!els.railList) return
-  const library = state.library.filter((entry) => !pendingDeletes.has(entry.id))
+  const library = libraryNow()
   const rows = buildRailRows(sortForDisplay(library, state.sortMode), { included: state.included, groups: state.groups, scope: state.railScope, query: state.railQuery })
   const emptyText = state.railQuery.trim() ? 'No sound matches.' : state.railScope === 'Groups' ? 'This preset has no groups yet.' : state.railScope === 'In mix' ? 'Nothing in the mix yet.' : 'Your library is empty.'
   els.railCount.textContent = String(library.length)
   for (const chip of els.railChips) chip.setAttribute('aria-pressed', String(chip.dataset.scope === state.railScope))
   els.studio.dataset.rail = state.railHidden ? 'off' : 'on'
-  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncluded, onToggleGroup: toggleGroupInMix })
+  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix })
 }
 
 // A group row in the rail switches its members: any in the mix → all out,
@@ -632,6 +591,7 @@ async function toggleGroupMembershipNow(presetId, groupId, soundId) {
   if (presetId === state.activePresetId) {
     state.groups = saved?.groups ?? updated
     engine.setSoundGroups(state.groups)
+    renderMixHead(libraryNow()) // the head counts groups
     for (const [id, source] of state.sources) engine.routeSound(id, source)
     render()
   }
@@ -670,6 +630,7 @@ els.groupCreateConfirm.addEventListener('click', async () => {
   if (presetId === state.activePresetId) {
     state.groups = saved?.groups ?? [...current, newGroup]
     engine.setSoundGroups(state.groups)
+    renderMixHead(libraryNow()) // the head counts groups
     for (const [id, source] of state.sources) engine.routeSound(id, source)
     render()
   }
@@ -1297,6 +1258,7 @@ function setGroupGainDb(groupId, nextGainDb) {
     if (presetId !== state.activePresetId) return
     state.groups = saved?.groups ?? updated
     engine.setSoundGroups(state.groups)
+    renderMixHead(libraryNow()) // the head counts groups
     window.dispatchEvent(new CustomEvent('noctivago:sound-groups-changed', { detail: { presetId, joinedSoundId: null } }))
   })
   return _groupMembershipQueue
@@ -1785,8 +1747,13 @@ function updateActivePresetButtonState(presets) {
 // the preset in hand and don't all round-trip through refreshPresetList),
 // plus updateActivePresetButtonState above for renames / external edits.
 function setActivePresetIndicator(name) {
-  updateToolbar({ presetName: name || null })
+  activePresetName = name || null
+  updateToolbar({ presetName: activePresetName })
+  renderMixHead(libraryNow())
 }
+
+// The loaded preset's name, for the center head (null = no preset).
+let activePresetName = null
 
 function openPresetCardMenu(preset, x, y) {
   if (!preset) return
@@ -2205,6 +2172,7 @@ async function loadPresetInner(preset, { play = true } = {}) {
   state.groups = preset.groups ?? []
   state.groupFilterPreviews.clear()
   engine.setSoundGroups(state.groups)
+  renderMixHead(libraryNow()) // the head counts groups
   for (const [id, source] of state.sources) engine.routeSound(id, source)
   // Sounds above started before this preset's groups were installed, so a
   // group's pan-drift override (effectiveFluctuation) needs re-applying.
@@ -2359,6 +2327,7 @@ els.presetImportConfirm.addEventListener('click', async () => {
 // refreshList for every entry) is what actually pushes changed filters/loop
 // points into any already-playing or already-paused-but-cached source.
 export function onShow() {
+  state.mixLeaving.clear()
   refreshList()
 }
 
@@ -2423,6 +2392,7 @@ async function restoreLastActivePreset(settings) {
   state.groups = preset.groups ?? []
   state.groupFilterPreviews.clear()
   engine.setSoundGroups(state.groups)
+  renderMixHead(libraryNow()) // the head counts groups
   window.dispatchEvent(new CustomEvent('noctivago:active-preset-changed', { detail: { presetId: preset.id } }))
   // No live sources exist yet at this point in mount()'s startup sequence -
   // future ones (from maybeResumeOnLaunch just after, or the user pressing
@@ -2442,37 +2412,41 @@ export function mount(container) {
       <div class="mx-lfoot" id="add-sound-slot"></div>
     </aside>
     <section class="mx-pane mx-center" aria-label="Mix">
-    <button type="button" class="mx-ib mx-rail-show" id="mx-rail-show" title="Show the library" aria-label="Show the library">${mockIconSvg('chevron-right')}</button>
-    <div id="recommended-plugins"></div>
-    <div class="sound-list-controls">
-      <input id="sound-search" type="text" class="sound-search" placeholder="Search sounds" />
-      <button id="tag-filter-btn" class="btn hidden" type="button" aria-haspopup="true" aria-expanded="false" title="Show only sounds with one tag">Tags</button>
-      <select id="sound-sort" class="sound-sort-select" title="Sort"></select>
-      <select id="sound-group" class="sound-group-select" title="Group by"></select>
-      <button id="bulk-select-toggle" class="btn" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select…</button>
-      <div id="tag-filter-pop" class="tag-filter-pop hidden" role="menu"></div>
-    </div>
-    <ul id="sound-list" class="sound-list"></ul>
-    <div id="empty-state" class="mx-empty" aria-live="polite"></div>
-    <div id="bulk-select-bar" class="bulk-select-bar hidden">
-      <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
-      <select id="bulk-select-preset" aria-label="Apply an effect preset">
-        <option value="">Apply an effect preset</option>
-        <option value="muffled">Muffled</option>
-        <option value="phone">Over the Phone</option>
-        <option value="radio">On the Radio</option>
-        <option value="distant">Distant</option>
-        <option value="echo">Echo</option>
-        <option value="reverb">Reverb</option>
-        <option value="underwater">Underwater</option>
-        <option value="reset">Reset filters</option>
-      </select>
-      <button id="bulk-select-done" class="btn btn-primary" type="button">Done</button>
-    </div>
+      <div class="mx-head">
+        <div class="mx-kind" id="mx-kind">Mix in the Mixer</div>
+        <h2 class="mx-title" id="mx-title">Unsaved mix</h2>
+        <div class="mx-meta" id="mx-meta"></div>
+        <div class="mx-acts">
+          <button type="button" class="mx-ib mx-rail-show" id="mx-rail-show" title="Show the library" aria-label="Show the library">${mockIconSvg('chevron-right')}</button>
+          <span class="mx-pair" role="group" aria-label="History"><button type="button" class="mx-ib" disabled title="Undo (not built yet)" aria-label="Undo">${mockIconSvg('undo-2')}</button><button type="button" class="mx-ib" disabled title="Redo (not built yet)" aria-label="Redo">${mockIconSvg('redo-2')}</button></span>
+          <button id="bulk-select-toggle" class="btn btn-ghost" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select</button>
+          <button id="mx-save-new" class="btn btn-icon-text" type="button" title="Save this mix as a new preset">${mockIconSvg('copy')}Save as new</button>
+        </div>
+      </div>
+      <div class="mx-tabs" role="group" aria-label="Arrange">${MIX_ARRANGES.map((a) => `<button type="button" class="mx-tab" data-arrange="${a.value}" aria-pressed="false">${a.label}</button>`).join('')}<div class="mx-tabs-r"><label class="mx-sort-lbl" for="mx-sort">Sorting</label><select id="mx-sort" class="mx-sort">${MIX_SORTS.map((o) => `<option value="${o.value}" data-icon="${o.icon}">${o.label}</option>`).join('')}</select></div></div>
+      <div class="mx-cards">
+        <div id="recommended-plugins"></div>
+        <ul id="sound-list" class="sound-list"></ul>
+        <div id="empty-state" class="mx-empty" aria-live="polite"></div>
+        <div id="bulk-select-bar" class="bulk-select-bar hidden">
+          <span id="bulk-select-count" class="bulk-select-count">0 selected</span>
+          <select id="bulk-select-preset" aria-label="Apply an effect preset">
+            <option value="">Apply an effect preset</option>
+            <option value="muffled">Muffled</option>
+            <option value="phone">Over the Phone</option>
+            <option value="radio">On the Radio</option>
+            <option value="distant">Distant</option>
+            <option value="echo">Echo</option>
+            <option value="reverb">Reverb</option>
+            <option value="underwater">Underwater</option>
+            <option value="reset">Reset filters</option>
+          </select>
+          <button id="bulk-select-done" class="btn btn-primary" type="button">Done</button>
+        </div>
+      </div>
     </section>
     </div>
   `
-  els.soundSearch = container.querySelector('#sound-search')
   els.studio = container.querySelector('.mx-studio')
   els.railList = container.querySelector('#mx-rail-list')
   els.railCount = container.querySelector('#mx-lib-count')
@@ -2496,50 +2470,35 @@ export function mount(container) {
   container.querySelector('#mx-rail-show').addEventListener('click', () => setRailHidden(false))
   mountRecommendedPlugins(container.querySelector('#recommended-plugins'), window.noctivago)
   mountAddSound(container.querySelector('#add-sound-slot'))
-  els.soundSort = container.querySelector('#sound-sort')
-  els.soundGroup = container.querySelector('#sound-group')
+  els.mixKind = container.querySelector('#mx-kind')
+  els.mixTitle = container.querySelector('#mx-title')
+  els.mixMeta = container.querySelector('#mx-meta')
+  els.mixTabs = [...container.querySelectorAll('.mx-tab')]
+  els.mixSort = container.querySelector('#mx-sort')
   els.bulkSelectToggle = container.querySelector('#bulk-select-toggle')
   els.bulkSelectBar = container.querySelector('#bulk-select-bar')
   els.bulkSelectCount = container.querySelector('#bulk-select-count')
   els.bulkSelectPreset = container.querySelector('#bulk-select-preset')
   els.bulkSelectDone = container.querySelector('#bulk-select-done')
-  els.tagFilterBtn = container.querySelector('#tag-filter-btn')
-  els.tagFilterPop = container.querySelector('#tag-filter-pop')
   els.soundList = container.querySelector('#sound-list')
   els.emptyState = container.querySelector('#empty-state')
   els.emptyState.addEventListener('click', onEmptyStateClick)
 
-  for (const { value, label, icon } of SORT_MODES) {
-    const o = new Option(label, value)
-    if (icon) o.dataset.icon = icon
-    els.soundSort.appendChild(o)
+  // Changing the arrangement lets the dimmed "just taken out" cards go, as the mock does.
+  for (const tab of els.mixTabs) {
+    tab.addEventListener('click', () => {
+      state.mixArrange = tab.dataset.arrange
+      state.mixLeaving.clear()
+      render()
+    })
   }
-  for (const { value, label, icon } of GROUP_MODES) {
-    const o = new Option(label, value)
-    if (icon) o.dataset.icon = icon
-    els.soundGroup.appendChild(o)
-  }
-  els.soundSort.value = state.sortMode
-  els.soundGroup.value = state.groupMode
-
-  els.soundSearch.addEventListener('input', () => {
-    state.searchQuery = els.soundSearch.value
+  els.mixSort.addEventListener('change', () => {
+    state.mixSort = els.mixSort.value
     render()
   })
-  els.soundSort.addEventListener('change', () => {
-    state.sortMode = els.soundSort.value
-    render()
-  })
-  els.soundGroup.addEventListener('change', () => {
-    state.groupMode = els.soundGroup.value
-    render()
-  })
-  els.tagFilterBtn.addEventListener('click', () => toggleTagPop())
-  document.addEventListener('mousedown', (evt) => {
-    if (tagPopOpen && !els.tagFilterPop.contains(evt.target) && !els.tagFilterBtn.contains(evt.target)) toggleTagPop(false)
-  })
-  document.addEventListener('keydown', (evt) => {
-    if (evt.key === 'Escape' && tagPopOpen) toggleTagPop(false)
+  container.querySelector('#mx-save-new').addEventListener('click', async () => {
+    await openPresetsModal()
+    openPresetNameRow('save')
   })
   els.bulkSelectToggle.addEventListener('click', () => {
     state.selectMode = !state.selectMode
@@ -2759,6 +2718,7 @@ document.addEventListener('library:linked', refreshList)
     state.groups = preset?.groups ?? []
     state.groupFilterPreviews.clear()
     engine.setSoundGroups(state.groups)
+    renderMixHead(libraryNow()) // the head counts groups
     // "Adding to group adds to mix" (owner request, 2026-09-17: a group's
     // sounds silently weren't in the mix at all, easy to miss since a
     // group's member checklist looks like membership on its own).

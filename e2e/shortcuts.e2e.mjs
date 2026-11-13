@@ -49,15 +49,15 @@ describe('keyboard shortcuts', () => {
     await page.keyboard.press('Control+f')
     await settle()
     assert.equal(await activeTab(), 'mixer')
-    assert.equal(await page.evaluate(() => document.activeElement?.id), 'sound-search')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'mx-rail-search')
   })
 
   test('keys typed in the search field are left alone (no ?, no Space shortcut)', async () => {
     await page.keyboard.type('a ?b')
     await settle()
     assert.equal(await settingsOpen(), false)
-    assert.equal(await page.inputValue('#sound-search'), 'a ?b')
-    await page.fill('#sound-search', '')
+    assert.equal(await page.inputValue('#mx-rail-search'), 'a ?b')
+    await page.fill('#mx-rail-search', '')
   })
 
   test('F11 reaches the main process without an error', async () => {
