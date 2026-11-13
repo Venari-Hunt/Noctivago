@@ -23,6 +23,9 @@ describe('matchShortcut', () => {
     assert.deepEqual(matchShortcut(ev('?')), { id: 'help' })
     assert.equal(matchShortcut(ev('?'), { typing: true }), null)
   })
+  test('Ctrl+M is the Remix marker key', () => {
+    assert.deepEqual(matchShortcut(ev('m', { ctrlKey: true })), { id: 'marker' })
+  })
   test('every listed shortcut has a title and keys', () => {
     for (const s of SHORTCUTS) assert.ok(s.title && s.keys.length)
   })
