@@ -168,7 +168,15 @@ test('Spectral repair: a box over the second tone takes it 20+ dB down, live and
   // Drag a box across the whole trim, 1.2-1.9 kHz (the canvas is log-Hz, 30 Hz at the bottom to 20 kHz).
   const canvas = page.locator('#editor-spectral-canvas')
   await page.locator('#editor-mode-panel-sound [data-rx-view="spec"]').click()
-  await page.waitForTimeout(800)
+  await page.waitForTimeout(1500)
+  // Sharp spectrogram: two pure tones are two thin lines. A blurry 16-row image stretched over the canvas makes them 28+ px thick each.
+  const bright = await canvas.evaluate((c) => {
+    const d = c.getContext('2d').getImageData(Math.floor(c.width * 0.7), 0, 1, c.height).data
+    let n = 0
+    for (let i = 0; i < c.height; i++) if (d[i * 4] > 200) n++
+    return { n, height: c.height }
+  })
+  assert.ok(bright.n <= 30, `spectrogram looks blurry: ${bright.n} of ${bright.height} rows are bright for two thin tones`)
   await canvas.scrollIntoViewIfNeeded()
   const box = await canvas.boundingBox()
   const yFor = (hz) => box.y + box.height * (1 - Math.log(hz / 30) / Math.log(20000 / 30))
