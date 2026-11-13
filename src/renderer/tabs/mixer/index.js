@@ -275,7 +275,8 @@ function render() {
     els.soundList,
     els.emptyState,
     sections,
-    false,
+    // Drag to reorder only where the order on screen is the mix order itself.
+    state.mixSort === 'mix' && state.mixArrange === 'all' && !state.selectMode,
     {
       onToggleIncluded: toggleIncludedFromCenter,
       onVolumeChange: changeVolume,
@@ -286,7 +287,7 @@ function render() {
       onRelink: relinkSound,
       onRename: renameSound,
       onTagsChange: changeTags,
-      onReorderDrop: reorderByDrop,
+      onReorderDrop: reorderMixByDrop,
       onContextMenu: openSoundContextMenu,
       onToggleSelect: toggleSelectSound
     },
@@ -442,6 +443,20 @@ async function reorderByDrop(draggedId, targetId) {
   withoutDragged.splice(targetIndex, 0, draggedId)
   await api.library.reorderSounds(withoutDragged)
   await refreshList()
+}
+
+// Dragging a card in Mix order: the dragged sound goes right before the one it
+// was dropped on. The mix order is the order of state.included, which is also
+// the order the loaded preset saves its sounds in.
+function reorderMixByDrop(draggedId, targetId) {
+  const ids = [...state.included].filter((id) => id !== draggedId)
+  const at = ids.indexOf(targetId)
+  if (at === -1 || !state.included.has(draggedId)) return
+  ids.splice(at, 0, draggedId)
+  state.included.clear()
+  for (const id of ids) state.included.add(id)
+  autosaveActivePreset()
+  render()
 }
 
 async function renameSound(id, name) {

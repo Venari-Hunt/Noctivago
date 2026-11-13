@@ -1,0 +1,375 @@
+{
+  "explained": [
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "All sounds will stop when the timer ends.",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "The computer will go to sleep when the timer ends — you can still cancel then.",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "The computer will shut down when the timer ends — you can still cancel then.",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Pick a time.",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Start a new, empty preset with this name",
+      "status": "reworded",
+      "why": "Presets rail: button now reads \"New blank\""
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Autosave changes to the loaded preset",
+      "status": "reworded",
+      "why": "Presets rail: now a switch labeled \"Save changes as I go\""
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Changes to the loaded preset save automatically as you edit the mix.",
+      "status": "reworded",
+      "why": "Presets rail: now a switch labeled \"Save changes as I go\""
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "New blank preset",
+      "status": "reworded",
+      "why": "Presets rail: button now reads \"New blank\""
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "When the time is up, Noctívago does the action you pick.",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Set the timer",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "In a number of minutes",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "At a set time",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "When the time is up",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Turn off the displays, keep the sound playing",
+      "status": "reworded",
+      "why": "Sleep timer redesign (ruler and wheel): same four actions and end-time field, new wording"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "No sounds yet. Click \"Add Sound\" to import one.",
+      "status": "reworded",
+      "why": "Mixer empty state rebuilt (emptyStateHtml)"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "No sounds match your search.",
+      "status": "reworded",
+      "why": "Mixer empty state rebuilt (emptyStateHtml)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:community",
+      "item": "btn hidden",
+      "status": "reworded",
+      "why": "CSS class list, not UI text"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:composite",
+      "item": "▶ Preview",
+      "status": "reworded",
+      "why": "Composite: Preview/Stop buttons kept (icon plus text)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:composite",
+      "item": "■ Stop",
+      "status": "reworded",
+      "why": "Composite: Preview/Stop buttons kept (icon plus text)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "Export a preset",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "Audio or video file",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "Both audio and video",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "Audio-reactive visualization",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "Choose video to loop…",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "▾ Log",
+      "status": "reworded",
+      "why": "Export: log toggle kept, arrows replaced by an icon"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "No video chosen — using the flat black screen.",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "No image chosen — using the flat black screen.",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "▸ Log",
+      "status": "reworded",
+      "why": "Export: log toggle kept, arrows replaced by an icon"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "Choose a video file to loop, or switch the video background to something else.",
+      "status": "reworded",
+      "why": "Export redesign: video choices live in the \"Flat black screen / Loop a video file / ...\" cards, same options"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "11px sans-serif",
+      "status": "reworded",
+      "why": "Canvas font string, not UI text"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "10px sans-serif",
+      "status": "reworded",
+      "why": "Canvas font string, not UI text"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "Click + to add a band",
+      "status": "reworded",
+      "why": "Remix: add-band and group solo kept, reworded"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "Gate threshold",
+      "status": "reworded",
+      "why": "Remix filter knobs: same controls, short labels (Threshold, Reduction, Attack, Release, Strength; noise sample button)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "Gate reduction",
+      "status": "reworded",
+      "why": "Remix filter knobs: same controls, short labels (Threshold, Reduction, Attack, Release, Strength; noise sample button)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "Gate attack",
+      "status": "reworded",
+      "why": "Remix filter knobs: same controls, short labels (Threshold, Reduction, Attack, Release, Strength; noise sample button)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "Gate release",
+      "status": "reworded",
+      "why": "Remix filter knobs: same controls, short labels (Threshold, Reduction, Attack, Release, Strength; noise sample button)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "NR strength",
+      "status": "reworded",
+      "why": "Remix filter knobs: same controls, short labels (Threshold, Reduction, Attack, Release, Strength; noise sample button)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "Noise sample from loop start",
+      "status": "reworded",
+      "why": "Remix filter knobs: same controls, short labels (Threshold, Reduction, Attack, Release, Strength; noise sample button)"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:remix",
+      "item": "Unsolo group",
+      "status": "reworded",
+      "why": "Remix: add-band and group solo kept, reworded"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Save current mix as new preset",
+      "status": "reworded",
+      "why": "Select toggle reads Select / Done; save-as-new is in the presets rail"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Cancel select",
+      "status": "reworded",
+      "why": "Select toggle reads Select / Done; save-as-new is in the presets rail"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "Autosave is off - use \"Save … now\" below to update this preset by hand.",
+      "status": "removed",
+      "why": "Tooltip dropped: the autosave switch is labeled \"Save changes as I go\" and shows its own state. Restore on request"
+    },
+    {
+      "kind": "strings",
+      "unit": "app",
+      "item": "No presets saved yet.",
+      "status": "removed",
+      "why": "Old presets modal empty text; the rail has its own empty states. Restore on request"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:browse-sounds",
+      "item": "Sorts Freesound results - YouTube results follow its own relevance order",
+      "status": "reworded",
+      "why": "Browse: same message, punctuation changed; Added now shows In library / Added"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:browse-sounds",
+      "item": "No preview playing",
+      "status": "removed",
+      "why": "Sticky preview bar name placeholder; the preview bar sits at the bottom of the tab now. Restore on request"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:browse-sounds",
+      "item": "YouTube search isn't available in this build — Freesound still works.",
+      "status": "reworded",
+      "why": "Browse: same message, punctuation changed; Added now shows In library / Added"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:browse-sounds",
+      "item": "Added ✓",
+      "status": "reworded",
+      "why": "Browse: same message, punctuation changed; Added now shows In library / Added"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:browse-sounds",
+      "item": "Another import is running — one at a time.",
+      "status": "reworded",
+      "why": "Browse: same message, punctuation changed; Added now shows In library / Added"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:composite",
+      "item": "Composite sound",
+      "status": "reworded",
+      "why": "Composite: \"Pick a sound\", \"Making the sound…\", \"Remaking the sound…\"; bake button reads Make sound"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:composite",
+      "item": "Select a sound…",
+      "status": "reworded",
+      "why": "Composite: \"Pick a sound\", \"Making the sound…\", \"Remaking the sound…\"; bake button reads Make sound"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:composite",
+      "item": "Re-baking…",
+      "status": "reworded",
+      "why": "Composite: \"Pick a sound\", \"Making the sound…\", \"Remaking the sound…\"; bake button reads Make sound"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:composite",
+      "item": "Baking…",
+      "status": "reworded",
+      "why": "Composite: \"Pick a sound\", \"Making the sound…\", \"Remaking the sound…\"; bake button reads Make sound"
+    },
+    {
+      "kind": "strings",
+      "unit": "plugin:export",
+      "item": "Choose an image to loop, or switch the video background to something else.",
+      "status": "reworded",
+      "why": "Export: image row reads \"Nothing chosen yet\" plus a choose button"
+    }
+  ]
+}
