@@ -64,10 +64,30 @@ function clamp(value, input) {
   return value
 }
 
+// A plain `input.value = x` is invisible to React (its value tracker only sees
+// the native setter), so a React onChange would never fire. Go through the
+// prototype setter, then fire the same bubbling input event.
+function setValue(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+  setter.call(input, String(value))
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 function applyStep(input, direction, evt) {
   const current = Number(input.value) || 0
-  input.value = String(clamp(computeNewValue(current, direction, evt, baseStep(input)), input))
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+  setValue(input, clamp(computeNewValue(current, direction, evt, baseStep(input)), input))
+}
+
+// Sliders and knobs (a knob is an invisible range input): the wheel moves 1%
+// of the travel per notch, Ctrl moves one `step` for fine control. Pure, so
+// the test can run it without a DOM.
+export function rangeWheelValue({ value, min, max, step }, direction, fine) {
+  const lo = Number(min) || 0
+  const hi = Number(max) || 100
+  const unit = Number(step) > 0 ? Number(step) : 1
+  const size = fine ? unit : Math.max(unit, (hi - lo) / 100)
+  const next = Number(value) + direction * size
+  return Math.round(Math.min(hi, Math.max(lo, next)) * 1000) / 1000
 }
 
 export function installNumberBoxStepper() {
@@ -75,7 +95,15 @@ export function installNumberBoxStepper() {
     'wheel',
     (evt) => {
       const el = evt.target
-      if (!(el instanceof HTMLInputElement) || el.type !== 'number') return
+      if (!(el instanceof HTMLInputElement) || evt.defaultPrevented) return
+      if (el.type === 'range') {
+        // Shift+wheel is the Mixer card's side-scroll, which turns its own volume.
+        if (el.disabled || evt.shiftKey || !evt.deltaY) return
+        evt.preventDefault()
+        setValue(el, rangeWheelValue(el, evt.deltaY < 0 ? 1 : -1, evt.ctrlKey))
+        return
+      }
+      if (el.type !== 'number') return
       evt.preventDefault()
       applyStep(el, evt.deltaY < 0 ? 1 : -1, evt)
     },
