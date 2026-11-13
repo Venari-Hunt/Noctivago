@@ -60,6 +60,25 @@ describe('Mixer', () => {
     assert.equal(await railRows().count(), 1)
   })
 
+  test('the rail preview plays the hovered row outside the mix, and stops on leaving the Mixer', async () => {
+    const prev = page.locator('#mx-rail-preview')
+    const play = prev.locator('.mx-pplay')
+    await railRows().first().hover()
+    await settle()
+    assert.equal(await prev.locator('.mx-now b').textContent(), 'E2E tone')
+    assert.match(await prev.locator('.mx-now small').textContent(), /0:02 · Loop/)
+    await play.click()
+    await page.waitForFunction(() => document.querySelector('#mx-rail-preview .mx-pplay')?.getAttribute('aria-label') === 'Pause preview')
+    await page.waitForFunction(() => document.querySelector('#mx-rail-preview .mx-pseek span')?.textContent !== '0:00', null, { timeout: 5000 })
+    assert.equal(await prev.locator('.mx-pseek span').last().textContent(), '0:02')
+    // Previewing changes nothing in the mix.
+    assert.equal(await rows().count(), 1)
+    await page.locator('#tab-bar .tab-button').nth(1).click()
+    await page.waitForFunction(() => document.querySelector('#mx-rail-preview .mx-pplay')?.getAttribute('aria-label') === 'Play preview')
+    await page.locator('#tab-bar .tab-button').first().click()
+    await settle()
+  })
+
   test('taking a card out leaves it dimmed with an Undo toast; Undo puts it back', async () => {
     await rows().locator('.sound-row-meta-line').click()
     await settle()

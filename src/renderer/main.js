@@ -11,7 +11,7 @@ import { installWatchFolderDialog } from './core/WatchFolderDialog.js'
 import { installRecordDialog } from './core/RecordDialog.js'
 import { installAddLinkDialog } from './core/AddLinkDialog.js'
 import { mountToolbar, setToolbarHandlers, setSettingsOpen } from './toolbar/index.jsx'
-import { mount as mountMixerTab, onShow as onShowMixerTab } from './tabs/mixer/index.js'
+import { mount as mountMixerTab, onShow as onShowMixerTab, onHide as onHideMixerTab } from './tabs/mixer/index.js'
 
 mountToolbar(document.getElementById('toolbar'), document.getElementById('nav-end'), document.getElementById('preset-pill-slot'))
 installSliderDoubleClickReset()
@@ -42,7 +42,7 @@ const tabHost = createTabHost(
 
 // Registered synchronously, before any plugin loads, so the Mixer tab is
 // always present regardless of plugin state and always becomes tab 0.
-tabHost.register({ id: 'mixer', title: 'Mixer', mount: mountMixerTab, onShow: onShowMixerTab })
+tabHost.register({ id: 'mixer', title: 'Mixer', mount: mountMixerTab, onShow: onShowMixerTab, onHide: onHideMixerTab })
 
 // Settings is a page, not a dialog: a tab with no tab-bar button, opened from
 // the nav's Settings button, which toggles back to the tab you came from.
