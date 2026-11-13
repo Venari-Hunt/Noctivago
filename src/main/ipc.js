@@ -290,10 +290,11 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle('audio:getWaveformPeaks', async (_event, id, targetWidth, windowStart, windowEnd) => {
-    const entry = library.listSounds().find((s) => s.id === id)
-    const inputPath = library.getPlaybackPathForId(id)
-    if (!inputPath) return null
     try {
+      // Inside the try: a throw here used to reject the call, and Remix waited on "Loading waveform…" forever.
+      const entry = library.listSounds().find((s) => s.id === id)
+      const inputPath = library.getPlaybackPathForId(id)
+      if (!inputPath) return null
       // durationSeconds is normally learned lazily when a sound first plays
       // in the Mixer. A sound only ever opened in Composite/Remix may not
       // have it yet - probe it directly rather than returning no waveform,
@@ -570,6 +571,8 @@ export function registerIpcHandlers() {
       return { ok: false, cancelled: true, error: 'Export cancelled.' }
     } finally {
       endExport()
+      // Left set, the cancel flag would stop every later ffmpeg in the app (waveforms, spectrograms, clip bakes).
+      if (!isExportInProgress()) clearExportCancel()
     }
   })
 
