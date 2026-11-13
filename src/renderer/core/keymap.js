@@ -13,7 +13,11 @@ export function installKeymap({ tabHost, toggleSettings, showHelp }) {
     })
     if (!hit) return
     const run = () => {
-      if (hit.id === 'play') document.querySelector('.btn-play')?.click()
+      if (hit.id === 'play') {
+        // On the Remix tab Space drives its own preview (Sound mode, or Preset/Group mode), not the Mixer.
+        const remix = [...document.querySelectorAll('#editor-play-pause, #editor-mix-play-pause')].find((b) => b.offsetParent !== null)
+        ;(remix ?? document.querySelector('.btn-play'))?.click()
+      }
       else if (hit.id === 'search') {
         tabHost.activate('mixer')
         // Search lives in the library rail; open the rail first if it is hidden.
