@@ -8,6 +8,7 @@ import { soundMenuItems, presetMenuItems, togglePresetSound, REMOVE_MENU_ITEM, d
 import { renderSections } from './components/SoundList.jsx'
 import { buildRailRows, groupToggleIds, RAIL_SCOPES } from './domain/libraryRail.js'
 import { renderRailList } from './components/LibraryRail.jsx'
+import { mountRailPreview } from './components/RailPreview.jsx'
 import { renderPresetCards, renderPresetImportList } from '../../ui/PresetsModal.js'
 import { presetCardData } from './domain/presetCard.js'
 import { openWatchFolderPicker } from '../../core/WatchFolderDialog.js'
@@ -345,7 +346,7 @@ function renderRail() {
   els.railCount.textContent = String(library.length)
   for (const chip of els.railChips) chip.setAttribute('aria-pressed', String(chip.dataset.scope === state.railScope))
   els.studio.dataset.rail = state.railHidden ? 'off' : 'on'
-  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix })
+  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix, onPeek: (row) => els.railPreview?.peek(row) })
 }
 
 // A group row in the rail switches its members: any in the mix → all out,
@@ -2331,6 +2332,11 @@ export function onShow() {
   refreshList()
 }
 
+// Leaving the Mixer stops the rail preview (it loops until paused).
+export function onHide() {
+  els.railPreview?.stop()
+}
+
 // If the app was closed while something was playing, resume automatically
 // on next launch instead of opening to a silent, empty-feeling mix - user-
 // requested directly. Reads each sound's persisted `included` flag (see
@@ -2409,6 +2415,7 @@ export function mount(container) {
       <div class="mx-chips" role="group" aria-label="Show">${RAIL_SCOPES.map((c) => `<button type="button" class="mx-chip" data-scope="${c}" aria-pressed="false">${c}</button>`).join('')}</div>
       <label class="mx-search">${mockIconSvg('search')}<input id="mx-rail-search" type="text" placeholder="Search your sounds" aria-label="Search your sounds" /></label>
       <div class="mx-list" id="mx-rail-list"></div>
+      <section class="mx-prev" id="mx-rail-preview" aria-label="Preview"></section>
       <div class="mx-lfoot" id="add-sound-slot"></div>
     </aside>
     <section class="mx-pane mx-center" aria-label="Mix">
@@ -2449,6 +2456,7 @@ export function mount(container) {
   `
   els.studio = container.querySelector('.mx-studio')
   els.railList = container.querySelector('#mx-rail-list')
+  els.railPreview = mountRailPreview(container.querySelector('#mx-rail-preview'))
   els.railCount = container.querySelector('#mx-lib-count')
   els.railChips = [...container.querySelectorAll('.mx-chip')]
   for (const chip of els.railChips) {

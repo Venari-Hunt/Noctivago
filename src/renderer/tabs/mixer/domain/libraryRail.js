@@ -58,3 +58,12 @@ export function groupToggleIds(memberIds, included) {
   const anyIn = memberIds.some((id) => included.has(id))
   return memberIds.filter((id) => included.has(id) === anyIn)
 }
+
+// The preview at the rail foot plays one sound: the last row hovered or
+// focused. Group rows and missing files can't be previewed, so they keep the
+// current target. Returns the new target ({ id, name, meta }) or current.
+export function peekTarget(current, row) {
+  if (!row || row.kind !== 'sound' || row.missing) return current
+  if (current && current.id === row.id && current.name === row.name && current.meta === row.meta) return current
+  return { id: row.id, name: row.name, meta: row.meta }
+}

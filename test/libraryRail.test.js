@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildRailRows, groupToggleIds } from '../src/renderer/tabs/mixer/domain/libraryRail.js'
+import { buildRailRows, groupToggleIds, peekTarget } from '../src/renderer/tabs/mixer/domain/libraryRail.js'
 
 const library = [
   { id: 'a', name: 'Rain on roof', playMode: 'loop', durationSeconds: 84 },
@@ -40,5 +40,23 @@ describe('groupToggleIds', () => {
   test('any member in → take those out; none in → put all in', () => {
     assert.deepEqual(groupToggleIds(['a', 'b'], new Set(['b'])), ['b'])
     assert.deepEqual(groupToggleIds(['a', 'b'], new Set()), ['a', 'b'])
+  })
+})
+
+describe('peekTarget', () => {
+  const rows = buildRailRows(library, { included: new Set(), groups })
+  test('a sound row becomes the target', () => {
+    assert.deepEqual(peekTarget(null, rows[0]), { id: 'a', name: 'Rain on roof', meta: '1:24 · Loop · Storm' })
+  })
+  test('the same row keeps the same object (no re-render, no restart)', () => {
+    const t = peekTarget(null, rows[1])
+    assert.equal(peekTarget(t, rows[1]), t)
+  })
+  test('missing files and group rows keep the current target', () => {
+    const t = peekTarget(null, rows[0])
+    assert.equal(peekTarget(t, rows[3]), t)
+    const groupRow = buildRailRows(library, { included: new Set(), groups, scope: 'Groups' })[0]
+    assert.equal(peekTarget(t, groupRow), t)
+    assert.equal(peekTarget(null, groupRow), null)
   })
 })
