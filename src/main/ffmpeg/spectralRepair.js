@@ -27,6 +27,20 @@ function finite(value, fallback) {
   return Number.isFinite(n) ? n : fallback
 }
 
+// A freehand shape: 3 to MAX_SHAPE_POINTS [sec, hz] pairs, or null (a plain box).
+const MAX_SHAPE_POINTS = 64
+function cleanPoints(points) {
+  if (!Array.isArray(points) || points.length < 3) return null
+  const out = []
+  for (const p of points.slice(0, MAX_SHAPE_POINTS)) {
+    const sec = finite(p?.[0], NaN)
+    const hz = finite(p?.[1], NaN)
+    if (!Number.isFinite(sec) || !Number.isFinite(hz)) return null
+    out.push([Math.max(0, sec), Math.min(Math.max(hz, MIN_HZ), MAX_HZ)])
+  }
+  return out
+}
+
 // Cleans one stored region into { startSec, endSec, lowHz, highHz,
 // reductionDb } with its bounds ordered and clamped, or null if it has no
 // area (zero length or zero bandwidth) or turns nothing down.
@@ -43,7 +57,8 @@ export function normalizeSpectralRepair(region) {
   const lowHz = Math.min(lo, hi)
   const highHz = Math.max(lo, hi)
   if (endSec - startSec < 0.005 || highHz - lowHz < 1 || reductionDb <= 0) return null
-  return { startSec, endSec, lowHz, highHz, reductionDb }
+  const points = cleanPoints(region.points)
+  return points ? { startSec, endSec, lowHz, highHz, reductionDb, points } : { startSec, endSec, lowHz, highHz, reductionDb }
 }
 
 function fmt(n) {
@@ -63,7 +78,7 @@ export function spectralRepairRegionsForClip(regions, loopStart, loopEnd) {
     const t0 = Math.max(region.startSec, loopStart) - loopStart
     const t1 = Math.min(region.endSec, loopEnd) - loopStart
     if (t1 - t0 < 0.005) continue
-    out.push({ ...region, startSec: t0, endSec: t1 })
+    out.push({ ...region, startSec: t0, endSec: t1, ...(region.points ? { points: region.points.map(([sec, hz]) => [sec - loopStart, hz]) } : {}) })
   }
   return out
 }
