@@ -6,6 +6,7 @@ export const OPTION_PAGES = [
   { id: 'core-plugins', title: 'Core plugins', icon: 'shield' },
   { id: 'community-plugins', title: 'Community plugins', icon: 'layers' },
   { id: 'help', title: 'Help', icon: 'circle-help' },
+  { id: 'advanced', title: 'Advanced', icon: 'sliders-horizontal' },
   { id: 'privacy', title: 'Privacy', icon: 'lock' },
   { id: 'about', title: 'About', icon: 'info' }
 ]

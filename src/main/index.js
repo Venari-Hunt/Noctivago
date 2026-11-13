@@ -16,6 +16,7 @@ import { initAutoUpdate } from './autoUpdate.js'
 import { initPluginAutoUpdate } from './plugins/autoUpdate.js'
 import { initPluginDevWatch } from './plugins/devWatch.js'
 import { getSettings } from './settings.js'
+import { isDevToolsShortcut } from '../shared/devToolsShortcut.js'
 import { initTray, setTrayEnabled, isAppQuitting, showWindow } from './tray.js'
 import { initThumbar } from './thumbar.js'
 import { initSleepTimer } from './sleepTimer.js'
@@ -222,6 +223,13 @@ function createWindow() {
     // electron-log echoes main-log lines into the renderer console ("10:16:29.790 › ..."); logging those again would loop.
     if (/^\d\d:\d\d:\d\d\.\d{3} › /.test(event.message)) return
     log.error(`renderer: ${event.message} (${event.sourceId}:${event.lineNumber})`)
+  })
+
+  // Settings > Advanced > Troubleshooting: the installed build has no menu, so DevTools opens by this shortcut once the owner turns it on.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (!isDevToolsShortcut(input) || !getSettings().developerTools) return
+    event.preventDefault()
+    win.webContents.toggleDevTools()
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {

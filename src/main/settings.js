@@ -20,6 +20,8 @@ const store = new Store({
     wasPlayingOnClose: false,
     eagerlyBakeOnImport: false,
     skipRemixLeaveConfirm: false,
+    // Settings > Advanced > Troubleshooting: Ctrl+Shift+I opens DevTools in the installed build.
+    developerTools: false,
     // When on, the Export pipeline (src/main/ffmpeg/exportMix.js) renders its
     // independent short passes several at a time instead of one after another,
     // and uses rubberband's faster (slightly lower quality) pitch mode - a
@@ -231,6 +233,7 @@ export function getSettings() {
     wasPlayingOnClose: store.get('wasPlayingOnClose'),
     eagerlyBakeOnImport: store.get('eagerlyBakeOnImport'),
     skipRemixLeaveConfirm: store.get('skipRemixLeaveConfirm'),
+    developerTools: store.get('developerTools') === true,
     fasterExport: store.get('fasterExport'),
     parallelMixdown: store.get('parallelMixdown'),
     exportVideoMode: resolveExportVideoMode(),
@@ -366,6 +369,11 @@ export function setEagerlyBakeOnImportEnabled(enabled) {
 // silently the way it always would have if the user clicked "Yes."
 export function setSkipRemixLeaveConfirmEnabled(enabled) {
   store.set('skipRemixLeaveConfirm', Boolean(enabled))
+  return getSettings()
+}
+
+export function setDeveloperToolsEnabled(enabled) {
+  store.set('developerTools', Boolean(enabled))
   return getSettings()
 }
 

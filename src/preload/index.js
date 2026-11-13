@@ -15,6 +15,7 @@ const api = {
     setMinimizeToTrayEnabled: (enabled) => ipcRenderer.invoke('settings:setMinimizeToTrayEnabled', enabled),
     setWasPlayingOnClose: (wasPlaying) => ipcRenderer.invoke('settings:setWasPlayingOnClose', wasPlaying),
     setEagerlyBakeOnImportEnabled: (enabled) => ipcRenderer.invoke('settings:setEagerlyBakeOnImportEnabled', enabled),
+    setDeveloperToolsEnabled: (enabled) => ipcRenderer.invoke('settings:setDeveloperToolsEnabled', enabled),
     setSkipRemixLeaveConfirmEnabled: (enabled) => ipcRenderer.invoke('settings:setSkipRemixLeaveConfirmEnabled', enabled),
     setSleepTimerAutoStartEnabled: (enabled) => ipcRenderer.invoke('settings:setSleepTimerAutoStartEnabled', enabled),
     setFasterExportEnabled: (enabled) => ipcRenderer.invoke('settings:setFasterExportEnabled', enabled),
@@ -32,6 +33,10 @@ const api = {
     setLastActivePresetId: (id) => ipcRenderer.invoke('settings:setLastActivePresetId', id),
     setPresetAutosaveEnabled: (enabled) => ipcRenderer.invoke('settings:setPresetAutosaveEnabled', enabled),
     setPresetsView: (view) => ipcRenderer.invoke('settings:setPresetsView', view)
+  },
+  troubleshooting: {
+    copyLogs: () => ipcRenderer.invoke('troubleshooting:copyLogs'),
+    reportBug: () => ipcRenderer.invoke('troubleshooting:reportBug')
   },
   autoUpdate: {
     checkNow: () => ipcRenderer.invoke('autoUpdate:checkNow'),

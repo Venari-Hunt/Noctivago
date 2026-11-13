@@ -62,6 +62,7 @@ export async function launchApp({ plugins = [], pickPath = null, communityUrl = 
   await page.waitForSelector('#tab-bar .tab-button')
   return {
     page,
+    port,
     // The dev fixture "broken-plugin-example" toasts a start-up error on purpose; it would sit over buttons.
     async dismissToasts() {
       await page.waitForTimeout(1500)
