@@ -16,7 +16,9 @@ export function installKeymap({ tabHost, toggleSettings, showHelp }) {
       if (hit.id === 'play') document.querySelector('.btn-play')?.click()
       else if (hit.id === 'search') {
         tabHost.activate('mixer')
-        document.getElementById('sound-search')?.focus()
+        // Search lives in the library rail; open the rail first if it is hidden.
+        if (document.querySelector('.mx-studio[data-rail="off"]')) document.getElementById('mx-rail-show')?.click()
+        document.getElementById('mx-rail-search')?.focus()
       } else if (hit.id === 'save') document.querySelector('[data-pill-save]')?.click()
       else if (hit.id === 'settings') toggleSettings()
       else if (hit.id === 'tab') document.querySelectorAll('#tab-bar .tab-button')[hit.tab]?.click()

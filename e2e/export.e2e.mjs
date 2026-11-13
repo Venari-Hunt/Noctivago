@@ -36,7 +36,7 @@ before(async () => {
     await window.noctivago.presets.save({ name: 'E2E mix', sounds: [{ soundId: sound.id, volume: 0.5 }] })
   }, wavPath)
   await page.reload()
-  await page.waitForSelector('.sound-row')
+  await page.waitForSelector('.mx-item')
   await app.dismissToasts()
 })
 after(async () => {

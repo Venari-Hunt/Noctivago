@@ -119,6 +119,7 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
     missing && 'sound-row-missing',
     state.selectMode && 'sound-row-selectable',
     state.selected && 'sound-row-selected',
+    state.leaving && 'sound-row-leaving',
     draggable && 'sound-row-draggable',
     drag.dragging && 'dragging'
   ]

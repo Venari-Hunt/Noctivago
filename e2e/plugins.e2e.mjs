@@ -48,7 +48,7 @@ before(async () => {
   })
   await page.evaluate((p) => window.noctivago.library.addSound({ path: p, name: 'E2E sound', keepCopy: true }), wavPath)
   await page.reload()
-  await page.waitForSelector('.sound-row')
+  await page.waitForSelector('.mx-item')
   await settle(2500)
   // The dev fixture's start-up error toast would sit over the buttons.
   for (const close of await page.locator('.notify-close').all()) await close.click()
@@ -181,7 +181,7 @@ describe('Composite', () => {
 describe('Remix save as copy', () => {
   test('Save as copy adds a copy of the open sound to the library', async () => {
     await page.reload() // a clean Remix, as after a restart
-    await page.waitForSelector('.sound-row')
+    await page.waitForSelector('.mx-item')
     await app.dismissToasts()
     await openTab('Remix')
     await settle(1500)

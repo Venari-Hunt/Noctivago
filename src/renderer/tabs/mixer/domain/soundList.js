@@ -161,31 +161,21 @@ function splitNowPlaying(sortedEntries, playbackState) {
   return { playing, inMix, rest }
 }
 
-// The list as sections of rows, each row carrying everything its card shows.
-// A tag-grouped entry can appear in several sections, so row keys include
-// the section.
-export function buildSoundListSections(entries, playbackState, viewState) {
-  const sorted = sortForDisplay(entries, viewState.sortMode)
-  const nowPlaying = viewState.groupMode === 'none' ? splitNowPlaying(sorted, playbackState) : null
-  // Disabled while grouped (explicitly, or by the automatic Now Playing
-  // split): a row can end up in a different section than where it was
-  // dragged from/to (a tag-grouped entry can appear in several sections; a
-  // Now-Playing row moves to Everything Else once it stops), which makes
-  // "which row did you actually drag" ambiguous.
-  const draggable = viewState.sortMode === 'custom' && viewState.groupMode === 'none' && !nowPlaying
-  // One pass over the preset's whole group list, so the badge colors are
-  // picked knowing about each other - a per-row decision can't tell that two
-  // groups came out the same color.
+// One row = everything its card shows. One pass over the preset's whole group
+// list, so the badge colors are picked knowing about each other - a per-row
+// decision can't tell that two groups came out the same color.
+function rowBuilder(playbackState, viewState, leaving = null) {
   const groupColorSlots = assignGroupColorSlots(playbackState.groups)
   const selectMode = Boolean(viewState.selectMode)
-
-  function row(entry, sectionLabel) {
+  return function row(entry, sectionLabel) {
     const soundGroup = playbackState.groups?.find((g) => g.soundIds.includes(entry.id)) ?? null
+    const included = playbackState.included.has(entry.id)
     return {
       key: `${sectionLabel ?? ''}/${entry.id}`,
       entry,
       state: {
-        included: playbackState.included.has(entry.id),
+        included,
+        leaving: Boolean(leaving?.has(entry.id)) && !included,
         loading: playbackState.loading.has(entry.id),
         error: playbackState.errors.get(entry.id) ?? null,
         volume: playbackState.volumes.get(entry.id) ?? DEFAULT_VOLUME,
@@ -199,6 +189,21 @@ export function buildSoundListSections(entries, playbackState, viewState) {
       }
     }
   }
+}
+
+// The list as sections of rows, each row carrying everything its card shows.
+// A tag-grouped entry can appear in several sections, so row keys include
+// the section.
+export function buildSoundListSections(entries, playbackState, viewState) {
+  const sorted = sortForDisplay(entries, viewState.sortMode)
+  const nowPlaying = viewState.groupMode === 'none' ? splitNowPlaying(sorted, playbackState) : null
+  // Disabled while grouped (explicitly, or by the automatic Now Playing
+  // split): a row can end up in a different section than where it was
+  // dragged from/to (a tag-grouped entry can appear in several sections; a
+  // Now-Playing row moves to Everything Else once it stops), which makes
+  // "which row did you actually drag" ambiguous.
+  const draggable = viewState.sortMode === 'custom' && viewState.groupMode === 'none' && !nowPlaying
+  const row = rowBuilder(playbackState, viewState)
   const section = (label, list) => ({ label, count: label == null ? null : list.length, rows: list.map((entry) => row(entry, label)) })
 
   if (viewState.groupMode !== 'none') {
@@ -212,4 +217,87 @@ export function buildSoundListSections(entries, playbackState, viewState) {
     section('Library', nowPlaying.rest)
   ].filter((s) => s.rows.length > 0)
   return { sections, draggable }
+}
+
+// The Mixer studio center (mock-noctivago-mixer-studio): only the sounds in
+// the mix, plus the ones just taken out (`leaving`: drawn dimmed until the
+// owner leaves the screen, so a card never jumps away under the cursor).
+export const MIX_ARRANGES = [
+  { value: 'all', label: 'All sounds' },
+  { value: 'group', label: 'By group' },
+  { value: 'type', label: 'By play type' }
+]
+
+export const MIX_SORTS = [
+  { value: 'mix', label: 'Mix order', icon: 'sort' },
+  { value: 'name', label: 'Name (A-Z)', icon: 'name' },
+  { value: 'loudest', label: 'Loudest first', icon: 'speaker' }
+]
+
+const PLAY_TYPE_SECTIONS = [
+  ['loop', 'Loop'],
+  ['random', 'Random'],
+  ['scheduled', 'Scheduled']
+]
+
+export function playTypeKey(entry) {
+  if (entry.playMode === 'scatter') return 'random'
+  if (entry.playMode === 'scheduled') return 'scheduled'
+  return 'loop'
+}
+
+// Mix order = the order the sounds went into the mix (`order`, from the
+// state.included Set); a leaving sound keeps the place it had.
+function sortMix(entries, sort, playbackState, order) {
+  const list = [...entries]
+  if (sort === 'name') return list.sort((a, b) => a.name.localeCompare(b.name))
+  if (sort === 'loudest') {
+    const vol = (e) => playbackState.volumes.get(e.id) ?? DEFAULT_VOLUME
+    return list.sort((a, b) => vol(b) - vol(a) || a.name.localeCompare(b.name))
+  }
+  const rank = new Map(order.map((id, i) => [id, i]))
+  return list.sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity))
+}
+
+// The line under the preset name: "5 sounds · 2 groups · 3 random" (random =
+// every sound that does not loop, as the mock counts it).
+export function mixMeta(entries, playbackState) {
+  const inMix = entries.filter((e) => playbackState.included.has(e.id))
+  const groups = new Set()
+  for (const e of inMix) {
+    const g = playbackState.groups?.find((x) => x.soundIds.includes(e.id))
+    if (g) groups.add(g.id)
+  }
+  const shots = inMix.filter((e) => playTypeKey(e) !== 'loop').length
+  return `${inMix.length} sound${inMix.length === 1 ? '' : 's'} · ${groups.size} group${groups.size === 1 ? '' : 's'} · ${shots} random`
+}
+
+// entries = the whole library. viewState = { arrange, sort, leaving (Set of
+// ids), order (ids in mix order), selectMode, selectedIds }. Returns sections
+// like buildSoundListSections; a group section carries its groupId.
+export function buildMixSections(entries, playbackState, viewState) {
+  const leaving = viewState.leaving ?? new Set()
+  const shown = entries.filter((e) => playbackState.included.has(e.id) || leaving.has(e.id))
+  if (shown.length === 0) return []
+  const order = viewState.order ?? [...playbackState.included]
+  const sorted = sortMix(shown, viewState.sort, playbackState, order)
+  const row = rowBuilder(playbackState, viewState, leaving)
+  const section = (label, list, extra = {}) => ({ label, count: list.length, rows: list.map((e) => row(e, label)), ...extra })
+
+  if (viewState.arrange === 'group') {
+    const buckets = new Map()
+    for (const entry of sorted) {
+      const g = playbackState.groups?.find((x) => x.soundIds.includes(entry.id)) ?? null
+      const key = g?.id ?? ''
+      if (!buckets.has(key)) buckets.set(key, { group: g, list: [] })
+      buckets.get(key).list.push(entry)
+    }
+    return [...buckets.entries()]
+      .sort(([ka, a], [kb, b]) => (ka === '') - (kb === '') || (a.group?.name ?? '').localeCompare(b.group?.name ?? ''))
+      .map(([key, { group, list }]) => section(group?.name ?? 'Not in a group', list, key ? { groupId: key } : {}))
+  }
+  if (viewState.arrange === 'type') {
+    return PLAY_TYPE_SECTIONS.map(([key, label]) => section(label, sorted.filter((e) => playTypeKey(e) === key))).filter((s) => s.rows.length > 0)
+  }
+  return [section('In this mix', sorted)]
 }

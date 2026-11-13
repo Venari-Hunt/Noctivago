@@ -31,6 +31,9 @@ before(async () => {
   await page.evaluate((p) => window.noctivago.library.addSound({ path: p, name: 'E2E tone', keepCopy: true }), wavPath)
   await page.reload()
   await page.waitForSelector('#tab-bar .tab-button')
+  await page.waitForSelector('.mx-item')
+  // The center lists only the mix: put the tone in from the library rail.
+  await railRows().first().click()
   await page.waitForSelector('.sound-row')
 })
 after(async () => {
@@ -39,20 +42,41 @@ after(async () => {
 })
 
 const rows = () => page.locator('.sound-row', { hasText: 'E2E tone' })
+const railRows = () => page.locator('.mx-item', { hasText: 'E2E tone' })
 
 describe('Mixer', () => {
   test('the added sound is listed once', async () => {
     assert.equal(await rows().count(), 1)
   })
 
-  test('search filters the list', async () => {
+  test('search filters the library rail', async () => {
+    await app.dismissToasts?.()
     await page.keyboard.press('Control+f')
     await page.keyboard.type('zzzz-no-match')
     await settle()
-    assert.equal(await rows().count(), 0)
-    await page.fill('#sound-search', '')
+    assert.equal(await railRows().count(), 0)
+    await page.fill('#mx-rail-search', '')
     await settle()
-    assert.equal(await rows().count(), 1)
+    assert.equal(await railRows().count(), 1)
+  })
+
+  test('taking a card out leaves it dimmed with an Undo toast; Undo puts it back', async () => {
+    await rows().locator('.sound-row-meta-line').click()
+    await settle()
+    assert.equal(await page.locator('.sound-row-leaving', { hasText: 'E2E tone' }).count(), 1)
+    const toast = page.locator('.notify', { hasText: 'Took "E2E tone" out of the mix' })
+    await toast.getByRole('button', { name: 'Undo' }).click()
+    await settle(800)
+    assert.equal(await page.locator('.sound-row-leaving').count(), 0)
+    assert.match(await page.locator('#mx-meta').innerText(), /^1 sound/)
+  })
+
+  test('the arrange tabs regroup the cards', async () => {
+    await page.locator('.mx-tab', { hasText: 'By play type' }).click()
+    await settle()
+    assert.match(await page.locator('.mx-cards .sound-group-header').first().innerText(), /Loop/)
+    await page.locator('.mx-tab', { hasText: 'All sounds' }).click()
+    await settle()
   })
 
   test('Delete shows a toast with Undo, and Undo brings the sound back', async () => {
@@ -63,7 +87,9 @@ describe('Mixer', () => {
     assert.equal(await toast.count(), 1)
     await toast.getByRole('button', { name: 'Undo' }).click()
     await settle()
-    assert.equal(await rows().count(), 1)
+    assert.equal(await railRows().count(), 1)
+    if (!(await rows().count())) await railRows().first().click()
+    await page.waitForSelector('.sound-row')
   })
 
   test('without Undo the sound is gone for good after the toast closes (6 s)', async () => {
@@ -75,5 +101,6 @@ describe('Mixer', () => {
     const names = await page.evaluate(() => window.noctivago.library.list().then((l) => l.map((e) => e.name)))
     assert.ok(!names.includes('E2E tone'))
     assert.equal(await rows().count(), 0)
+    assert.equal(await railRows().count(), 0)
   })
 })
