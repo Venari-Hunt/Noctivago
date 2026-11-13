@@ -67,3 +67,32 @@ test('streaming in small blocks gives the same result as one go', () => {
   }
   for (let i = 0; i < x.length; i += 97) assert.ok(Math.abs(out[i] - whole[i]) < 1e-5)
 })
+
+test('a freehand shape turns down only what is inside it', () => {
+  // A diagonal: tone at 3000 Hz is inside the shape for seconds 1-2, a second tone at 6000 Hz is not.
+  const a = tone(3000, 3)
+  const b = tone(6000, 3)
+  const mix = new Float32Array(a.length)
+  for (let i = 0; i < mix.length; i++) mix[i] = a[i] + b[i]
+  const region = {
+    startSec: 1, endSec: 2, lowHz: 2000, highHz: 7000, reductionDb: 40,
+    points: [[1, 2000], [2, 2000], [2, 4000], [1, 4000]] // covers 3000 Hz, not 6000 Hz, though the bounding box covers both
+  }
+  const [y] = repairChannels([mix], SR, [region])
+  const from = Math.round(SR * 1.4)
+  const to = Math.round(SR * 1.6)
+  assert.ok(Math.abs(db(rms(y, from, to)) - db(rms(b, 0, 4000))) < 0.5, `inside ${db(rms(y, from, to))}`)
+})
+
+test('a freehand triangle leaves the frequencies outside its slope alone', () => {
+  const lo = tone(500, 3)
+  const hi = tone(5000, 3)
+  const mix = new Float32Array(lo.length)
+  for (let i = 0; i < mix.length; i++) mix[i] = lo[i] + hi[i]
+  // narrow triangle around 500 Hz, apex at 5000 Hz only at the last instant
+  const region = { startSec: 1, endSec: 2, lowHz: 300, highHz: 5200, reductionDb: 40, points: [[1, 300], [2, 300], [1.5, 600]] }
+  const [y] = repairChannels([mix], SR, [region])
+  const from = Math.round(SR * 1.45)
+  const to = Math.round(SR * 1.55)
+  assert.ok(Math.abs(db(rms(y, from, to)) - db(rms(hi, 0, 4000))) < 0.6, `kept ${db(rms(y, from, to))}`)
+})

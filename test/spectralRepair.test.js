@@ -156,3 +156,12 @@ describe('spectral repair on the real ffmpeg', { skip: !fs.existsSync(ffmpeg) &&
     assert.ok(at(5, toneRow) < 30, `silent column ${at(5, toneRow)}`)
   })
 })
+
+test('a freehand shape keeps its points, clamped, and shifts with the trimmed clip', () => {
+  const region = { startSec: 4, endSec: 6, lowHz: 1000, highHz: 3000, reductionDb: 30, points: [[4, 1000], [6, 1000], [5, 3000], [5, 'x']] }
+  assert.equal(normalizeSpectralRepair(region).points, undefined, 'one bad point drops the shape back to a box')
+  region.points = [[4, 1000], [6, 1000], [5, 3000]]
+  assert.deepEqual(normalizeSpectralRepair(region).points, region.points)
+  const [clip] = spectralRepairRegionsForClip([region], 3, 10)
+  assert.deepEqual(clip.points, [[1, 1000], [3, 1000], [2, 3000]])
+})
