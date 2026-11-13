@@ -23,11 +23,12 @@ import { exportForPhone } from './phone/phoneBundle.js'
 import { beginExport, endExport, isExportInProgress, requestExportCancel, clearExportCancel, isExportCancelRequested } from './exportState.js'
 import { killRunningFfmpeg } from './ffmpeg/runFfmpeg.js'
 import { renderComposite } from './ffmpeg/composite.js'
+import { copyLogs, reportBug } from './troubleshooting.js'
 import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
 import { pluginMigrationSettled, takeStartupNotices } from './plugins/migration.js'
 import * as pluginStore from './plugins/store.js'
-import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setSleepTimerAutoStartEnabled, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumeGain, setLastActivePresetId, setPresetAutosaveEnabled, setPresetsView, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
+import { getSettings, setMinimizeToTrayEnabled, setAutoInstallUpdatesEnabled, setWasPlayingOnClose, setEagerlyBakeOnImportEnabled, setSkipRemixLeaveConfirmEnabled, setDeveloperToolsEnabled, setFasterExportEnabled, setParallelMixdownEnabled, setExportVideoMode, setExportInfoFileEnabled, setExportInfoPrompt, setYtDlpCookiesBrowser, setSleepTimerPrefs, setSleepTimerAutoStartEnabled, setLastExportFolder, setExportLoopVideoPath, setExportVideoBackground, setExportVisualizationOptions, setExportImagePath, setExportImageMotion, setGlobalVolumeGain, setLastActivePresetId, setPresetAutosaveEnabled, setPresetsView, setPluginEnabled, setRestrictedMode, setAutoUpdatePluginsEnabled, dismissRecommendedPlugins } from './settings.js'
 import {
   getSleepTimer,
   startSleepTimer,
@@ -102,6 +103,9 @@ export function registerIpcHandlers() {
   ipcMain.handle('settings:setWasPlayingOnClose', (_event, wasPlaying) => setWasPlayingOnClose(wasPlaying))
   ipcMain.handle('settings:setEagerlyBakeOnImportEnabled', (_event, enabled) => setEagerlyBakeOnImportEnabled(enabled))
   ipcMain.handle('settings:setSkipRemixLeaveConfirmEnabled', (_event, enabled) => setSkipRemixLeaveConfirmEnabled(enabled))
+  ipcMain.handle('settings:setDeveloperToolsEnabled', (_event, enabled) => setDeveloperToolsEnabled(enabled))
+  ipcMain.handle('troubleshooting:copyLogs', () => copyLogs())
+  ipcMain.handle('troubleshooting:reportBug', () => reportBug())
   ipcMain.handle('settings:setFasterExportEnabled', (_event, enabled) => setFasterExportEnabled(enabled))
   ipcMain.handle('settings:setParallelMixdownEnabled', (_event, enabled) => setParallelMixdownEnabled(enabled))
   ipcMain.handle('settings:setExportVideoMode', (_event, mode) => setExportVideoMode(mode))

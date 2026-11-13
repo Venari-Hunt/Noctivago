@@ -11,6 +11,7 @@ import { CommunityPluginsPage } from './CommunityPluginsPage.jsx'
 import { PluginOptionsDialog } from './PluginOptionsDialog.jsx'
 import { PrivacyPage } from './PrivacyPage.jsx'
 import { HelpPage } from './HelpPage.jsx'
+import { AdvancedPage } from './AdvancedPage.jsx'
 import { AboutPage } from './AboutPage.jsx'
 
 // The Settings page (a tab with no tab-bar button, see settings/index.jsx):
@@ -89,6 +90,8 @@ export function SettingsPage({ noctivago, initialPage = null }) {
         )
       case 'help':
         return <HelpPage />
+      case 'advanced':
+        return <AdvancedPage settings={settings} api={api} troubleshooting={noctivago.troubleshooting} />
       case 'privacy':
         return <PrivacyPage />
       case 'about':

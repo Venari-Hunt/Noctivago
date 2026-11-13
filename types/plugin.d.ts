@@ -240,6 +240,10 @@ export interface NoctivagoApi {
     get(): Promise<Payload>
     [setter: `set${string}`]: (value: any) => Promise<any>
   }
+  troubleshooting: {
+    copyLogs(): Promise<{ ok: boolean }>
+    reportBug(): Promise<{ ok: boolean }>
+  }
   autoUpdate: {
     checkNow(): Promise<any>
     getState(): Promise<Payload>

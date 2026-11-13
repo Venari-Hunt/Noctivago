@@ -72,11 +72,11 @@ describe('keyboard shortcuts', () => {
 })
 
 describe('Settings pages', () => {
-  test('sidebar lists Help between Community plugins and Privacy', async () => {
+  test('sidebar lists Help and Advanced between Community plugins and Privacy', async () => {
     await page.keyboard.press('Control+,')
     await settle()
     const names = await page.locator('.subnav button').allInnerTexts()
-    assert.deepEqual(names.slice(-4), ['Community plugins', 'Help', 'Privacy', 'About'])
+    assert.deepEqual(names.slice(-5), ['Community plugins', 'Help', 'Advanced', 'Privacy', 'About'])
   })
 
   test('About links the GitHub profile', async () => {

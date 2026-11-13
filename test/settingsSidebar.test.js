@@ -13,11 +13,11 @@ const described = [
 describe('settings sidebar', () => {
   test('lists the fixed pages', () => {
     assert.deepEqual(buildSidebar(described), OPTION_PAGES)
-    assert.deepEqual(OPTION_PAGES.map((p) => p.id), ['general', 'library', 'core-plugins', 'community-plugins', 'help', 'privacy', 'about'])
+    assert.deepEqual(OPTION_PAGES.map((p) => p.id), ['general', 'library', 'core-plugins', 'community-plugins', 'help', 'advanced', 'privacy', 'about'])
   })
 
   test('hides the Core plugins page when there are no core plugins', () => {
-    assert.deepEqual(buildSidebar([described[2]]).map((p) => p.id), ['general', 'library', 'community-plugins', 'help', 'privacy', 'about'])
+    assert.deepEqual(buildSidebar([described[2]]).map((p) => p.id), ['general', 'library', 'community-plugins', 'help', 'advanced', 'privacy', 'about'])
   })
 })
 
