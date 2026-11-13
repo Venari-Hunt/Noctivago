@@ -64,7 +64,7 @@ function formatDateGroupLabel(ms) {
 // one tag arbitrarily. Groups themselves are ordered independently of
 // sortMode (alphabetically, or newest-date-first); sortMode still governs
 // the order of entries *within* each group.
-function groupEntries(sortedEntries, groupMode, playbackState) {
+export function groupEntries(sortedEntries, groupMode, playbackState) {
   if (groupMode === 'alphabetical') {
     const buckets = new Map()
     for (const entry of sortedEntries) {

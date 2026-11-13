@@ -3,7 +3,7 @@ import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
 import { BufferScatterSource, StreamScatterSource } from '../../audio/ScatterSoundSource.js'
 import { BufferScheduledSource, StreamScheduledSource } from '../../audio/ScheduledSoundSource.js'
-import { sortForDisplay, buildMixSections, mixMeta, MIX_ARRANGES, MIX_SORTS } from './domain/soundList.js'
+import { sortForDisplay, groupEntries, SORT_MODES, GROUP_MODES, buildMixSections, mixMeta, MIX_ARRANGES, MIX_SORTS } from './domain/soundList.js'
 import { soundMenuItems, presetMenuItems, togglePresetSound, REMOVE_MENU_ITEM, duplicateName } from './domain/soundMenu.js'
 import { renderSections } from './components/SoundList.jsx'
 import { buildRailRows, groupToggleIds, RAIL_SCOPES } from './domain/libraryRail.js'
@@ -56,6 +56,7 @@ const state = {
   library: [],
   // The rail lists the library by name.
   sortMode: 'name-asc',
+  groupMode: 'none',
   // The center (mock-noctivago-mixer-studio): arrange tab, Sorting field, and
   // the cards just taken out (dimmed until the owner leaves the screen).
   mixArrange: 'all',
@@ -342,7 +343,19 @@ async function toggleIncludedFromCenter(id) {
 function renderRail() {
   if (!els.railList) return
   const library = libraryNow()
-  const rows = buildRailRows(sortForDisplay(library, state.sortMode), { included: state.included, groups: state.groups, scope: state.railScope, query: state.railQuery, tag: state.railTag })
+  const sorted = sortForDisplay(library, state.sortMode)
+  const railOpts = { included: state.included, groups: state.groups, scope: state.railScope, query: state.railQuery, tag: state.railTag }
+  // Group by only applies to sound rows (All / In mix); group and tag rows stay flat.
+  const soundScope = state.railScope === 'All' || state.railScope === 'In mix'
+  const rows = state.groupMode !== 'none' && soundScope
+    ? groupEntries(sorted, state.groupMode, { groups: state.groups, included: state.included, playing: new Set() }).flatMap((g) => {
+      const list = buildRailRows(g.entries, railOpts)
+      return list.length ? [{ kind: 'heading', id: g.label, name: g.label, count: list.length }, ...list] : []
+    })
+    : buildRailRows(sorted, railOpts)
+  els.railSort.value = state.sortMode
+  els.railGroup.value = state.groupMode
+  els.railGroup.disabled = !soundScope
   const emptyText = state.railQuery.trim() ? (state.railScope === 'Tags' ? 'No tag matches.' : 'No sound matches.') : state.railScope === 'Tags' ? 'No sound has a tag yet.' : state.railTag ? 'Nothing here has this tag.' : state.railScope === 'Groups' ? 'This preset has no groups yet.' : state.railScope === 'In mix' ? 'Nothing in the mix yet.' : 'Your library is empty.'
   els.railCount.textContent = String(library.length)
   for (const chip of els.railChips) chip.setAttribute('aria-pressed', String(chip.dataset.scope === state.railScope))
@@ -2427,6 +2440,10 @@ export function mount(container) {
       <div class="mx-lib-h"><h3>Library<span id="mx-lib-count"></span></h3><button type="button" class="mx-ib" id="mx-rail-hide" title="Hide the library" aria-label="Hide the library">${mockIconSvg('chevron-left')}</button></div>
       <div class="mx-chips" role="group" aria-label="Show">${RAIL_SCOPES.map((c) => `<button type="button" class="mx-chip" data-scope="${c}" aria-pressed="false">${c}</button>`).join('')}</div>
       <button type="button" class="mx-tagchip hidden" id="mx-rail-tag" title="Clear the tag filter"><span></span>${mockIconSvg('x')}</button>
+      <div class="mx-order">
+        <label>Sort<select id="mx-rail-sort" aria-label="Sort the library">${SORT_MODES.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}</select></label>
+        <label>Group<select id="mx-rail-group" aria-label="Group the library">${GROUP_MODES.map((o) => `<option value="${o.value}">${o.label.replace('Group: ', '').replace('Alphabetical', 'A-Z')}</option>`).join('')}</select></label>
+      </div>
       <label class="mx-search">${mockIconSvg('search')}<input id="mx-rail-search" type="text" placeholder="Search your sounds" aria-label="Search your sounds" /></label>
       <div class="mx-list" id="mx-rail-list"></div>
       <section class="mx-prev" id="mx-rail-preview" aria-label="Preview"></section>
@@ -2474,6 +2491,16 @@ export function mount(container) {
   els.railCount = container.querySelector('#mx-lib-count')
   els.railChips = [...container.querySelectorAll('.mx-chip')]
   els.railTagChip = container.querySelector('#mx-rail-tag')
+  els.railSort = container.querySelector('#mx-rail-sort')
+  els.railGroup = container.querySelector('#mx-rail-group')
+  els.railSort.addEventListener('change', () => {
+    state.sortMode = els.railSort.value
+    renderRail()
+  })
+  els.railGroup.addEventListener('change', () => {
+    state.groupMode = els.railGroup.value
+    renderRail()
+  })
   els.railTagChip.addEventListener('click', () => {
     state.railTag = null
     renderRail()

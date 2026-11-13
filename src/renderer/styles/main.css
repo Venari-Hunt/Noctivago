@@ -599,6 +599,11 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 8px; overflow: hidde
 .mx-tagchip svg { width: 12px; height: 12px; fill: currentColor; }
 .mx-chip:hover { background: var(--surface-hover); }
 .mx-chip[aria-pressed='true'] { background: var(--text); color: #141417; }
+.mx-order { display: flex; gap: 6px; padding: 0 4px; }
+.mx-order label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.mx-order select { flex: 1; min-width: 0; height: 28px; padding: 0 22px 0 8px; border: 0; border-radius: 8px; background-color: var(--surface-alt); background-position: right 6px center; font-size: 12px; }
+.mx-order select:disabled { opacity: .5; }
+.mx-list-h { display: flex; justify-content: space-between; margin: 8px 8px 2px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
 .mx-search { display: flex; align-items: center; gap: 8px; height: 36px; margin: 0 4px; padding: 0 12px; border-radius: 10px; background: var(--surface); color: var(--text-dim); }
 .mx-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; }
 .mx-search:has(input:focus-visible) { outline: 2px solid #8db8ff; outline-offset: 2px; }

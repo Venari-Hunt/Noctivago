@@ -7,6 +7,7 @@ import { PLAY_TYPES } from './VolumeKnob.jsx'
 // mock-noctivago-mixer-studio). The chips, search and Add sound around it are
 // plain DOM in the Mixer's mount().
 function RailRow({ row, onToggle, onToggleGroup, onPickTag, onPeek }) {
+  if (row.kind === 'heading') return <h4 className="mx-list-h">{row.name}<span>{row.count}</span></h4>
   if (row.kind === 'tag') {
     return (
       <button type="button" className="mx-item" data-id={row.id} title="Show only the sounds with this tag" onClick={() => onPickTag(row.id)}>
@@ -46,7 +47,7 @@ function RailRow({ row, onToggle, onToggleGroup, onPickTag, onPeek }) {
 
 function RailList({ rows, emptyText, onToggle, onToggleGroup, onPickTag, onPeek }) {
   if (!rows.length) return <p className="mx-list-empty">{emptyText}</p>
-  return rows.map((row) => <RailRow key={row.kind + row.id} row={row} onToggle={onToggle} onToggleGroup={onToggleGroup} onPickTag={onPickTag} onPeek={onPeek} />)
+  return rows.map((row, i) => <RailRow key={row.kind === 'heading' ? 'h' + i : row.kind + row.id + (i > 0 && rows.slice(0, i).some((r) => r.kind === row.kind && r.id === row.id) ? '#' + i : '')} row={row} onToggle={onToggle} onToggleGroup={onToggleGroup} onPickTag={onPickTag} onPeek={onPeek} />)
 }
 
 const roots = new WeakMap()

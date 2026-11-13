@@ -33,7 +33,6 @@ const OLD_FUNCTIONS = [
 
 // Dropped on purpose or not rebuilt yet: each needs a reason. Fix one, delete its line.
 const KNOWN_GAPS = {
-  'Group by (sort/group modes in the UI)': 'Library sort (Z-A, recently added/created, custom) and group by (alphabetical, date, tags, sound group) have no control in the new rail; the center only has Arrange tabs and Sorting for the mix.'
 }
 
 for (const [name, proof] of OLD_FUNCTIONS) {
