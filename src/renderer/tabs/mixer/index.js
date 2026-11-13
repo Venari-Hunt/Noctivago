@@ -65,6 +65,7 @@ const state = {
   // and whether it is hidden. Session-only.
   railScope: 'All',
   railQuery: '',
+  railTag: null,
   railHidden: false,
   // Bulk-apply an effect preset to several sounds at once (Board backlog
   // item, Audacity-Macros-shaped) - a lightweight multi-select layered onto
@@ -341,12 +342,24 @@ async function toggleIncludedFromCenter(id) {
 function renderRail() {
   if (!els.railList) return
   const library = libraryNow()
-  const rows = buildRailRows(sortForDisplay(library, state.sortMode), { included: state.included, groups: state.groups, scope: state.railScope, query: state.railQuery })
-  const emptyText = state.railQuery.trim() ? 'No sound matches.' : state.railScope === 'Groups' ? 'This preset has no groups yet.' : state.railScope === 'In mix' ? 'Nothing in the mix yet.' : 'Your library is empty.'
+  const rows = buildRailRows(sortForDisplay(library, state.sortMode), { included: state.included, groups: state.groups, scope: state.railScope, query: state.railQuery, tag: state.railTag })
+  const emptyText = state.railQuery.trim() ? (state.railScope === 'Tags' ? 'No tag matches.' : 'No sound matches.') : state.railScope === 'Tags' ? 'No sound has a tag yet.' : state.railTag ? 'Nothing here has this tag.' : state.railScope === 'Groups' ? 'This preset has no groups yet.' : state.railScope === 'In mix' ? 'Nothing in the mix yet.' : 'Your library is empty.'
   els.railCount.textContent = String(library.length)
   for (const chip of els.railChips) chip.setAttribute('aria-pressed', String(chip.dataset.scope === state.railScope))
   els.studio.dataset.rail = state.railHidden ? 'off' : 'on'
-  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix, onPeek: (row) => els.railPreview?.peek(row) })
+  // A picked tag stays a removable chip above the list while it filters.
+  if (state.railTag && !library.some((e) => e.tags?.includes(state.railTag))) state.railTag = null
+  els.railTagChip.classList.toggle('hidden', !state.railTag || state.railScope === 'Tags')
+  els.railTagChip.querySelector('span').textContent = state.railTag ? `Tag: ${state.railTag}` : ''
+  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix, onPickTag: pickRailTag, onPeek: (row) => els.railPreview?.peek(row) })
+}
+
+// A tag row in the rail filters the library to that tag and goes back to the
+// sound list, so the sounds can be switched in.
+function pickRailTag(tag) {
+  state.railTag = tag
+  state.railScope = 'All'
+  renderRail()
 }
 
 // A group row in the rail switches its members: any in the mix → all out,
@@ -2413,6 +2426,7 @@ export function mount(container) {
     <aside class="mx-pane mx-lib" aria-label="Library">
       <div class="mx-lib-h"><h3>Library<span id="mx-lib-count"></span></h3><button type="button" class="mx-ib" id="mx-rail-hide" title="Hide the library" aria-label="Hide the library">${mockIconSvg('chevron-left')}</button></div>
       <div class="mx-chips" role="group" aria-label="Show">${RAIL_SCOPES.map((c) => `<button type="button" class="mx-chip" data-scope="${c}" aria-pressed="false">${c}</button>`).join('')}</div>
+      <button type="button" class="mx-tagchip hidden" id="mx-rail-tag" title="Clear the tag filter"><span></span>${mockIconSvg('x')}</button>
       <label class="mx-search">${mockIconSvg('search')}<input id="mx-rail-search" type="text" placeholder="Search your sounds" aria-label="Search your sounds" /></label>
       <div class="mx-list" id="mx-rail-list"></div>
       <section class="mx-prev" id="mx-rail-preview" aria-label="Preview"></section>
@@ -2459,6 +2473,11 @@ export function mount(container) {
   els.railPreview = mountRailPreview(container.querySelector('#mx-rail-preview'))
   els.railCount = container.querySelector('#mx-lib-count')
   els.railChips = [...container.querySelectorAll('.mx-chip')]
+  els.railTagChip = container.querySelector('#mx-rail-tag')
+  els.railTagChip.addEventListener('click', () => {
+    state.railTag = null
+    renderRail()
+  })
   for (const chip of els.railChips) {
     chip.addEventListener('click', () => {
       state.railScope = chip.dataset.scope

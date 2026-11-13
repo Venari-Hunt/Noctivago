@@ -225,7 +225,8 @@ export function buildSoundListSections(entries, playbackState, viewState) {
 export const MIX_ARRANGES = [
   { value: 'all', label: 'All sounds' },
   { value: 'group', label: 'By group' },
-  { value: 'type', label: 'By play type' }
+  { value: 'type', label: 'By play type' },
+  { value: 'tag', label: 'By tag' }
 ]
 
 export const MIX_SORTS = [
@@ -295,6 +296,19 @@ export function buildMixSections(entries, playbackState, viewState) {
     return [...buckets.entries()]
       .sort(([ka, a], [kb, b]) => (ka === '') - (kb === '') || (a.group?.name ?? '').localeCompare(b.group?.name ?? ''))
       .map(([key, { group, list }]) => section(group?.name ?? 'Not in a group', list, key ? { groupId: key } : {}))
+  }
+  if (viewState.arrange === 'tag') {
+    // A sound with several tags shows under each; untagged ones go last.
+    const buckets = new Map()
+    for (const entry of sorted) {
+      for (const tag of entry.tags?.length ? entry.tags : ['']) {
+        if (!buckets.has(tag)) buckets.set(tag, [])
+        buckets.get(tag).push(entry)
+      }
+    }
+    return [...buckets.entries()]
+      .sort(([a], [b]) => (a === '') - (b === '') || a.localeCompare(b))
+      .map(([tag, list]) => section(tag || 'Untagged', list))
   }
   if (viewState.arrange === 'type') {
     return PLAY_TYPE_SECTIONS.map(([key, label]) => section(label, sorted.filter((e) => playTypeKey(e) === key))).filter((s) => s.rows.length > 0)
