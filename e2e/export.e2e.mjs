@@ -76,3 +76,41 @@ describe('Export', () => {
     })
   }
 })
+
+describe('Export: Open folder and Cancel export', () => {
+  const reset = async () => {
+    await page.locator('#tab-bar .tab-button', { hasText: 'Export' }).click()
+    const another = panel().getByRole('button', { name: /Export another/ })
+    if (await another.isVisible().catch(() => false)) await another.click()
+    await page.waitForSelector('#export-run')
+    await page.locator('#export-preset').selectOption({ label: 'E2E mix' })
+    await panel().getByText('Audio only', { exact: true }).click()
+    await panel().locator('#export-formats').getByText('FLAC', { exact: true }).click()
+  }
+
+  test('a finished export offers Open folder, and the app can reveal only files that exist', async () => {
+    await reset()
+    await page.locator('#export-length').fill('0:00:05')
+    await page.locator('#export-length').blur()
+    await page.locator('#export-run').click()
+    await panel().getByText('Export finished').waitFor({ timeout: 60000 })
+    await panel().getByRole('button', { name: /Open folder/ }).waitFor()
+    assert.equal(await page.evaluate(() => window.noctivago.export.reveal('C:\no\such\file.flac')), false)
+  })
+
+  test('Cancel export stops a long export, shows Export cancelled, and leaves no file behind', async () => {
+    await reset()
+    for (const e of fs.readdirSync(outDir, { recursive: true, withFileTypes: true })) if (e.isFile() && e.name.endsWith('.flac')) fs.rmSync(path.join(e.parentPath, e.name))
+    await page.locator('#export-length').fill('8:00:00')
+    await page.locator('#export-length').blur()
+    await page.locator('#export-run').click()
+    const cancel = panel().getByRole('button', { name: /Cancel export/ })
+    await cancel.waitFor({ timeout: 20000 })
+    await page.waitForTimeout(1500)
+    await cancel.click()
+    await panel().getByRole('heading', { name: 'Export cancelled' }).waitFor({ timeout: 30000 })
+    assert.equal(await panel().getByRole('button', { name: /Open folder/ }).count(), 0)
+    const files = fs.readdirSync(outDir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith('.flac'))
+    assert.equal(files.length, 0, 'the partial file was removed')
+  })
+})

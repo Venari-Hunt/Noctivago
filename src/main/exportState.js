@@ -23,6 +23,21 @@ export function endExport() {
   }
 }
 
+// Cancel: the Export screen's Cancel export button. The flag makes every
+// ffmpeg start fail at once (so the next step of a multi-pass render cannot
+// begin), and runFfmpeg.js kills the processes already running. Cleared when
+// the next export starts.
+let cancelRequested = false
+export function requestExportCancel() {
+  cancelRequested = true
+}
+export function clearExportCancel() {
+  cancelRequested = false
+}
+export function isExportCancelRequested() {
+  return cancelRequested
+}
+
 export function isExportInProgress() {
   return count > 0
 }

@@ -219,6 +219,8 @@ const api = {
     // "Export for phone" (docs/mobile.md): { presetId, outputPath } ->
     // { ok, path, soundCount, totalBytes, decodedMB, warnings } or { ok:false, error }.
     runPhone: (payload) => ipcRenderer.invoke('export:runPhone', payload),
+    cancel: () => ipcRenderer.invoke('export:cancel'),
+    reveal: (filePath) => ipcRenderer.invoke('export:reveal', filePath),
     writeInfoFile: (payload) => ipcRenderer.invoke('export:writeInfoFile', payload),
     writeLogFile: (payload) => ipcRenderer.invoke('export:writeLogFile', payload),
     // Progress updates while an export renders: { type:'step', label, fraction }

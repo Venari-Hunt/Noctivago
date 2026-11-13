@@ -20,7 +20,8 @@ import { suggestLoopPoints } from './ffmpeg/loopSuggest.js'
 import { extractSpectrogram } from './ffmpeg/spectrogram.js'
 import { exportMix } from './ffmpeg/exportMix.js'
 import { exportForPhone } from './phone/phoneBundle.js'
-import { beginExport, endExport, isExportInProgress } from './exportState.js'
+import { beginExport, endExport, isExportInProgress, requestExportCancel, clearExportCancel, isExportCancelRequested } from './exportState.js'
+import { killRunningFfmpeg } from './ffmpeg/runFfmpeg.js'
 import { renderComposite } from './ffmpeg/composite.js'
 import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
@@ -530,9 +531,10 @@ export function registerIpcHandlers() {
     // autoUpdate.js's guard covers the entire window an export could still
     // be running - see exportState.js.
     beginExport()
+    clearExportCancel()
     try {
       const settings = getSettings()
-      return await exportMix({
+      const result = await exportMix({
         sounds: resolvedSounds,
         durationSeconds,
         format,
@@ -558,9 +560,32 @@ export function registerIpcHandlers() {
           fps: settings.exportVisualizationFps
         }
       })
+      // exportMix reports a killed ffmpeg as a failed result, not a throw.
+      if (isExportCancelRequested()) throw new Error('Export cancelled.')
+      return result
+    } catch (err) {
+      // Cancel export kills ffmpeg, which surfaces here as a failed render.
+      if (!isExportCancelRequested()) throw err
+      try { fs.rmSync(outputPath, { force: true }) } catch { /* partial file, best effort */ }
+      return { ok: false, cancelled: true, error: 'Export cancelled.' }
     } finally {
       endExport()
     }
+  })
+
+  // The Export screen's Cancel export button: stops the running export.
+  ipcMain.handle('export:cancel', () => {
+    if (!isExportInProgress()) return false
+    requestExportCancel()
+    killRunningFfmpeg()
+    return true
+  })
+
+  // The Export screen's Open folder button: Explorer with the finished file selected.
+  ipcMain.handle('export:reveal', (_event, filePath) => {
+    if (typeof filePath !== 'string' || !fs.existsSync(filePath)) return false
+    shell.showItemInFolder(filePath)
+    return true
   })
 
   // "Export for phone" (src/main/phone/phoneBundle.js). Same progress channel
