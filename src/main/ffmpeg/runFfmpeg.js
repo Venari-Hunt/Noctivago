@@ -1,5 +1,23 @@
 import { spawn } from 'node:child_process'
 import { resolveFfmpegPath } from './ffmpegPath.js'
+import { isExportCancelRequested } from '../exportState.js'
+
+// Every ffmpeg this file starts is remembered while it runs, so Cancel export
+// can stop them all; once a cancel is requested no new one starts.
+const running = new Set()
+
+export function killRunningFfmpeg() {
+  for (const child of running) child.kill()
+}
+
+function spawnFfmpeg(args) {
+  if (isExportCancelRequested()) throw new Error('Export cancelled.')
+  const child = spawn(resolveFfmpegPath(), args, { windowsHide: true })
+  running.add(child)
+  child.once('close', () => running.delete(child))
+  child.once('error', () => running.delete(child))
+  return child
+}
 
 const STDERR_TAIL_CHARS = 4000
 
@@ -59,7 +77,7 @@ function latestProgressSeconds(text) {
 // `onProgress(outputSeconds)` fires as the render advances, if given.
 export function runFfmpegToFile(args, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveFfmpegPath(), args, { windowsHide: true })
+    const child = spawnFfmpeg(args)
     const getStderrTail = captureStderrTail(child.stderr)
 
     if (onProgress) {
@@ -91,8 +109,8 @@ export function runFfmpegToFile(args, { onProgress } = {}) {
 // either side fails, the other is stopped and that error is reported.
 export function runFfmpegChain(producerArgs, consumerArgs, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
-    const producer = spawn(resolveFfmpegPath(), producerArgs, { windowsHide: true })
-    const consumer = spawn(resolveFfmpegPath(), consumerArgs, { windowsHide: true })
+    const producer = spawnFfmpeg(producerArgs)
+    const consumer = spawnFfmpeg(consumerArgs)
     const producerTail = captureStderrTail(producer.stderr)
     const consumerTail = captureStderrTail(consumer.stderr)
     let failed = null
@@ -150,7 +168,7 @@ export function runFfmpegChain(producerArgs, consumerArgs, { onProgress } = {}) 
 // varispeed drift). `onProgress` works the same as runFfmpegToFile's.
 export function runFfmpegWithStdin(args, feed, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveFfmpegPath(), args, { windowsHide: true })
+    const child = spawnFfmpeg(args)
     const getStderrTail = captureStderrTail(child.stderr)
     let exited = false
     let exitError = null
@@ -219,7 +237,7 @@ export function runFfmpegWithStdin(args, feed, { onProgress } = {}) {
 // the whole output — used for piping raw PCM out for waveform extraction.
 export function runFfmpegPipe(args, onChunk) {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveFfmpegPath(), args, { windowsHide: true })
+    const child = spawnFfmpeg(args)
     const getStderrTail = captureStderrTail(child.stderr)
 
     // onChunk runs synchronously inside the stdout stream's own 'data' emit

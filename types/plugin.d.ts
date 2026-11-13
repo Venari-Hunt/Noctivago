@@ -405,6 +405,8 @@ export interface NoctivagoApi {
     runPhone(payload: Payload): Promise<any>
     writeInfoFile(payload: Payload): Promise<any>
     writeLogFile(payload: Payload): Promise<any>
+    cancel(): Promise<boolean>
+    reveal(filePath: string): Promise<boolean>
     onProgress(callback: (payload: any) => void): Unsubscribe
   }
   composite: {
