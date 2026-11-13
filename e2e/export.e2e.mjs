@@ -112,5 +112,8 @@ describe('Export: Open folder and Cancel export', () => {
     assert.equal(await panel().getByRole('button', { name: /Open folder/ }).count(), 0)
     const files = fs.readdirSync(outDir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith('.flac'))
     assert.equal(files.length, 0, 'the partial file was removed')
+    // The cancel must not outlive the export: other ffmpeg work (Remix waveforms) still runs.
+    const peaks = await page.evaluate(async () => { const [s] = await window.noctivago.library.list(); return window.noctivago.audio.getWaveformPeaks(s.id, 64) })
+    assert.ok(Array.isArray(peaks) && peaks.length === 64, 'waveform peaks still load after a cancel')
   })
 })
