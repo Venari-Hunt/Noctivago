@@ -6,7 +6,20 @@ import { PLAY_TYPES } from './VolumeKnob.jsx'
 // The library rail's list: a row is the in-mix switch (mock
 // mock-noctivago-mixer-studio). The chips, search and Add sound around it are
 // plain DOM in the Mixer's mount().
-function RailRow({ row, onToggle, onToggleGroup, onPeek }) {
+function RailRow({ row, onToggle, onToggleGroup, onPickTag, onPeek }) {
+  if (row.kind === 'heading') return <h4 className="mx-list-h">{row.name}<span>{row.count}</span></h4>
+  if (row.kind === 'tag') {
+    return (
+      <button type="button" className="mx-item" data-id={row.id} title="Show only the sounds with this tag" onClick={() => onPickTag(row.id)}>
+        <span className="mx-thumb"><MockIcon name="tag" /></span>
+        <span className="mx-txt">
+          <b>{row.name}</b>
+          <small>{row.meta}</small>
+        </span>
+        <span className="mx-sw" aria-hidden="true"><MockIcon name="chevron-right" /></span>
+      </button>
+    )
+  }
   const isGroup = row.kind === 'group'
   const Icon = isGroup ? null : PLAY_TYPES[row.playType].Icon
   const title = row.missing ? 'File missing: relink it from its card' : row.in ? 'In the mix: click to take out' : 'Click to add to the mix'
@@ -32,18 +45,18 @@ function RailRow({ row, onToggle, onToggleGroup, onPeek }) {
   )
 }
 
-function RailList({ rows, emptyText, onToggle, onToggleGroup, onPeek }) {
+function RailList({ rows, emptyText, onToggle, onToggleGroup, onPickTag, onPeek }) {
   if (!rows.length) return <p className="mx-list-empty">{emptyText}</p>
-  return rows.map((row) => <RailRow key={row.kind + row.id} row={row} onToggle={onToggle} onToggleGroup={onToggleGroup} onPeek={onPeek} />)
+  return rows.map((row, i) => <RailRow key={row.kind === 'heading' ? 'h' + i : row.kind + row.id + (i > 0 && rows.slice(0, i).some((r) => r.kind === row.kind && r.id === row.id) ? '#' + i : '')} row={row} onToggle={onToggle} onToggleGroup={onToggleGroup} onPickTag={onPickTag} onPeek={onPeek} />)
 }
 
 const roots = new WeakMap()
 
-export function renderRailList(el, rows, { emptyText, onToggle, onToggleGroup, onPeek }) {
+export function renderRailList(el, rows, { emptyText, onToggle, onToggleGroup, onPickTag, onPeek }) {
   let root = roots.get(el)
   if (!root) {
     root = createRoot(el)
     roots.set(el, root)
   }
-  flushSync(() => root.render(<RailList rows={rows} emptyText={emptyText} onToggle={onToggle} onToggleGroup={onToggleGroup} onPeek={onPeek} />))
+  flushSync(() => root.render(<RailList rows={rows} emptyText={emptyText} onToggle={onToggle} onToggleGroup={onToggleGroup} onPickTag={onPickTag} onPeek={onPeek} />))
 }

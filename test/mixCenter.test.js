@@ -62,3 +62,15 @@ test('the head meta counts sounds, groups and the ones that do not loop', () => 
   assert.equal(mixMeta(lib, playback()), '4 sounds · 2 groups · 2 random')
   assert.equal(mixMeta(lib, playback({ included: new Set(['a']) })), '1 sound · 0 groups · 0 random')
 })
+
+test('By tag: a sound shows under each of its tags, untagged last', () => {
+  const tagged = [
+    { id: 'a', name: 'Rain', playMode: 'loop', tags: ['Rain', 'Night'] },
+    { id: 'b', name: 'Owl', playMode: 'scatter', tags: ['Night'] },
+    { id: 'c', name: 'Bell', playMode: 'scheduled' }
+  ]
+  const p = playback({ included: new Set(['a', 'b', 'c']) })
+  const sections = buildMixSections(tagged, p, { arrange: 'tag', sort: 'name' })
+  assert.deepEqual(names(sections), [['Night', ['Owl', 'Rain']], ['Rain', ['Rain']], ['Untagged', ['Bell']]])
+  assert.equal(new Set(sections.flatMap((s) => s.rows.map((r) => r.key))).size, 4)
+})

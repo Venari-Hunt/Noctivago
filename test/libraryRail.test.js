@@ -60,3 +60,24 @@ describe('peekTarget', () => {
     assert.equal(peekTarget(null, groupRow), null)
   })
 })
+
+describe('Tags scope and tag filter', () => {
+  const tagged = [
+    { id: 'a', name: 'Rain', tags: ['Rain', 'Night'], playMode: 'loop' },
+    { id: 'b', name: 'Thunder', tags: ['Rain'], playMode: 'scatter' },
+    { id: 'c', name: 'Owl', playMode: 'loop' }
+  ]
+  test('Tags lists each tag A-Z with its counts, searchable', () => {
+    const rows = buildRailRows(tagged, { included: new Set(['a']), scope: 'Tags' })
+    assert.deepEqual(rows.map((r) => [r.kind, r.id, r.meta]), [
+      ['tag', 'Night', '1 sound · 1 in mix'],
+      ['tag', 'Rain', '2 sounds · 1 in mix']
+    ])
+    assert.deepEqual(buildRailRows(tagged, { included: new Set(), scope: 'Tags', query: 'ni' }).map((r) => r.id), ['Night'])
+  })
+
+  test('a picked tag limits the sound rows', () => {
+    assert.deepEqual(buildRailRows(tagged, { included: new Set(), tag: 'Rain' }).map((r) => r.id), ['a', 'b'])
+    assert.deepEqual(buildRailRows(tagged, { included: new Set(['c']), scope: 'In mix', tag: 'Rain' }).map((r) => r.id), [])
+  })
+})

@@ -4,7 +4,7 @@ import { formatDuration } from '../../../util/time.js'
 // whole library as one list, a row being the in-mix switch, with All / In mix
 // / Groups chips and its own search. Rules only, no DOM.
 
-export const RAIL_SCOPES = ['All', 'In mix', 'Groups']
+export const RAIL_SCOPES = ['All', 'In mix', 'Groups', 'Tags']
 
 const PLAY_LABEL = { loop: 'Loop', random: 'Random', scheduled: 'Scheduled' }
 
@@ -25,9 +25,30 @@ function soundMeta(entry, groupName) {
 
 // library: entries in display order. included: Set of ids in the mix.
 // groups: the active preset's Sound Groups ({ id, name, soundIds }).
-export function buildRailRows(library, { included, groups = [], scope = 'All', query = '' }) {
+// Every tag in the library with how many sounds carry it and how many of
+// those are in the mix, A-Z.
+export function tagCounts(library, included) {
+  const counts = new Map()
+  for (const entry of library) {
+    for (const tag of entry.tags ?? []) {
+      const c = counts.get(tag) ?? { total: 0, inMix: 0 }
+      c.total += 1
+      if (included.has(entry.id)) c.inMix += 1
+      counts.set(tag, c)
+    }
+  }
+  return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([tag, c]) => ({ tag, ...c }))
+}
+
+// tag: when set, sound rows are limited to sounds with that tag.
+export function buildRailRows(library, { included, groups = [], scope = 'All', query = '', tag = null }) {
   const q = query.trim().toLowerCase()
   const byId = new Map(library.map((entry) => [entry.id, entry]))
+  if (scope === 'Tags') {
+    return tagCounts(library, included)
+      .filter((t) => t.tag.toLowerCase().includes(q))
+      .map((t) => ({ kind: 'tag', id: t.tag, name: t.tag, meta: `${t.total} sound${t.total === 1 ? '' : 's'} · ${t.inMix} in mix` }))
+  }
   if (scope === 'Groups') {
     return groups
       .filter((g) => g.name.toLowerCase().includes(q))
@@ -40,7 +61,7 @@ export function buildRailRows(library, { included, groups = [], scope = 'All', q
   const groupOf = new Map()
   for (const g of groups) for (const id of g.soundIds) if (!groupOf.has(id)) groupOf.set(id, g.name)
   return library
-    .filter((entry) => (scope === 'All' || included.has(entry.id)) && entry.name.toLowerCase().includes(q))
+    .filter((entry) => (scope === 'All' || included.has(entry.id)) && entry.name.toLowerCase().includes(q) && (!tag || entry.tags?.includes(tag)))
     .map((entry) => ({
       kind: 'sound',
       id: entry.id,
