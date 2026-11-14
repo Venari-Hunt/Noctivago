@@ -1,12 +1,13 @@
 // Desktop 2.0 step 19: shoots every tab and Settings page of the running dev
 // app at 480, 800 and 1280 wide and checks what a script can check:
-// sideways overflow, controls with no name, targets under 24 px (WCAG 2.2
-// AA 2.5.8) and text under 4.5:1 contrast (3:1 for 18 px+ or 14 px bold).
+// the checks in scripts/ui-audit-checks.mjs (overflow, names, targets,
+// contrast, grid, radius, type, color, overlap, clipped text).
 // Start the app with: npm run dev -- --remoteDebuggingPort 9222
 // Usage: node scripts/ui-audit.mjs <out-dir> [--widths 480,800,1280] [--only mixer,export] [--port 9222]
 // Writes <out-dir>/<screen>-<width>.png, report.json and contact.html.
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { CHECK } from './ui-audit-checks.mjs'
 
 const args = process.argv.slice(2)
 const out = args.find((a, i) => !a.startsWith('--') && !(args[i - 1] ?? '').startsWith('--'))
@@ -42,52 +43,6 @@ async function connect() {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// Runs in the page. Returns problems on the visible tab panel (or overlay).
-const CHECK = `(() => {
-  const visible = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.05 && r.bottom > 0 && r.top < innerHeight }
-  const name = (el) => (el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || el.getAttribute('placeholder') || (el.id && document.querySelector('label[for="' + el.id + '"]')?.textContent) || el.closest('label')?.textContent || '').trim()
-  const where = (el) => { const t = el.closest('[data-tab-id]')?.dataset.tabId || ''; const c = (el.className && typeof el.className === 'string') ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : ''; return t + ' ' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + c }
-  const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
-  const rgba = (s) => { const m = s.match(/rgba?\\(([^)]+)\\)/); if (!m) return null; const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p[3] ?? 1] }
-  const bgOf = (el) => { for (let n = el; n; n = n.parentElement) { const c = rgba(getComputedStyle(n).backgroundColor); if (c && c[3] > 0.5) return c } return [17, 17, 20, 1] }
-  const scope = [...document.querySelectorAll('.modal-overlay, [role=dialog]')].find((d) => visible(d) && getComputedStyle(d).position === 'fixed') || document.querySelector('.tab-panel:not(.hidden)') || document.body
-  const problems = { overflow: [], unnamed: [], small: [], contrast: [] }
-  const se = document.scrollingElement
-  if (se.scrollWidth > se.clientWidth + 1) problems.overflow.push('page scrolls sideways: ' + se.scrollWidth + ' > ' + se.clientWidth)
-  for (const el of scope.querySelectorAll('*')) {
-    if (!visible(el)) continue
-    const s = getComputedStyle(el)
-    if ((s.overflowX === 'visible') && el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0 && el.children.length && !['svg', 'SVG'].includes(el.tagName)) {
-      const r = el.getBoundingClientRect()
-      if (r.right > innerWidth + 1) problems.overflow.push(where(el) + ' runs past the window (' + Math.round(r.right) + ' > ' + innerWidth + ')')
-    }
-  }
-  for (const el of scope.querySelectorAll('button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=switch], [role=tab]')) {
-    if (!visible(el) || el.disabled) continue
-    if (!name(el)) problems.unnamed.push(where(el))
-    const r = el.getBoundingClientRect()
-    if ((r.width < 24 || r.height < 24) && !['checkbox', 'radio', 'range'].includes(el.type) && !el.closest('p, li, .notify-message')) problems.small.push(where(el) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height))
-  }
-  for (const el of scope.querySelectorAll('*')) {
-    if (!visible(el)) continue
-    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())
-    if (!own) continue
-    const s = getComputedStyle(el)
-    if (el.closest('button:disabled, [aria-disabled=true], input:disabled, select:disabled')) continue
-    const fg = rgba(s.color); if (!fg) continue
-    const bg = bgOf(el)
-    const a = fg[3] * parseFloat(s.opacity || 1)
-    const mix = fg.slice(0, 3).map((v, i) => v * a + bg[i] * (1 - a))
-    const L1 = lum(mix), L2 = lum(bg.slice(0, 3))
-    const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05)
-    const size = parseFloat(s.fontSize), bold = parseInt(s.fontWeight) >= 700
-    const need = size >= 24 || (size >= 18.66 && bold) ? 3 : 4.5
-    if (ratio < need) problems.contrast.push(where(el) + ' "' + el.textContent.trim().slice(0, 30) + '" ' + ratio.toFixed(2) + ':1')
-  }
-  for (const k of Object.keys(problems)) problems[k] = [...new Set(problems[k])]
-  return problems
-})()`
-
 async function main() {
   await mkdir(out, { recursive: true })
   const cdp = await connect()
@@ -102,7 +57,9 @@ async function main() {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: HEIGHT, deviceScaleFactor: 1, mobile: false })
       await cdp.evaluate(s.go)
       await wait(700)
-      const problems = await cdp.evaluate(CHECK)
+      const { findings } = await cdp.evaluate(CHECK)
+      const problems = {}
+      for (const f of findings) (problems[f.check] ??= []).push(f.where + (f.detail ? ' ' + f.detail : ''))
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png' })
       const file = `${s.id}-${width}.png`
       await writeFile(path.join(out, file), Buffer.from(shot.data, 'base64'))
