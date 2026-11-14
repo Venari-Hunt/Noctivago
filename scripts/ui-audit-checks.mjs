@@ -38,7 +38,10 @@ export const CHECK = `(() => {
   const probe = document.createElement('i'); document.body.appendChild(probe)
   const tokens = new Set(['255,255,255', '0,0,0'])
   const rootStyle = getComputedStyle(document.documentElement)
-  for (const sheet of document.styleSheets) { let rules; try { rules = sheet.cssRules } catch { continue } for (const r of rules) if (r.selectorText === ':root' || r.selectorText === 'html') for (const p of r.style) if (p.startsWith('--')) { probe.style.color = ''; probe.style.color = 'var(' + p + ')'; const c = rgba(getComputedStyle(probe).color); if (c && probe.style.color) tokens.add(c.slice(0, 3).join(',')) } }
+  // Computed custom properties on :root (plugin sheets load cross-origin, so their rules are not readable).
+  const names = new Set([...rootStyle].filter((p) => p.startsWith('--')))
+  for (const sheet of document.styleSheets) { let rules; try { rules = sheet.cssRules } catch { continue } for (const r of rules) if (r.selectorText === ':root' || r.selectorText === 'html') for (const p of r.style) if (p.startsWith('--')) names.add(p) }
+  for (const p of names) { probe.style.color = ''; probe.style.color = 'var(' + p + ')'; const c = rgba(getComputedStyle(probe).color); if (c && probe.style.color) tokens.add(c.slice(0, 3).join(',')) }
   probe.remove()
   const isToken = (c) => !c || c[3] === 0 || tokens.has(c.slice(0, 3).join(','))
   const scope = [...document.querySelectorAll('.modal-overlay, [role=dialog], .modal:not(.hidden)')].find((d) => visible(d) && getComputedStyle(d).position === 'fixed') || document.querySelector('.tab-panel:not(.hidden)') || document.body
