@@ -32,20 +32,22 @@ const status = () => page.evaluate(() => { const d = {}; window.dispatchEvent(ne
 const row = (name) => panel.locator('.rx-mrow', { hasText: name })
 
 before(async () => {
-  const [a, b] = [makeWav('a', 9), makeWav('b', 21)]
+  const [a, b, c] = [makeWav('a', 9), makeWav('b', 21), makeWav('c', 33)]
   app = await launchApp({ plugins: ['remix'] })
   page = app.page
-  const made = await page.evaluate(async ([fa, fb]) => {
+  const made = await page.evaluate(async ([fa, fb, fc]) => {
     await window.noctivago.library.addSound({ path: fa, name: 'Member A', keepCopy: true })
     await window.noctivago.library.addSound({ path: fb, name: 'Member B', keepCopy: true })
+    await window.noctivago.library.addSound({ path: fc, name: 'Member C', keepCopy: true })
     const lib = await window.noctivago.library.list()
     const sa = lib.find((s) => s.name === 'Member A')
     const sb = lib.find((s) => s.name === 'Member B')
-    await window.noctivago.presets.save({ name: 'Member preset', sounds: [{ soundId: sa.id, volume: 0.5 }, { soundId: sb.id, volume: 0.5 }] })
+    const sc = lib.find((s) => s.name === 'Member C')
+    await window.noctivago.presets.save({ name: 'Member preset', sounds: [{ soundId: sa.id, volume: 0.5 }, { soundId: sb.id, volume: 0.5 }, { soundId: sc.id, volume: 0.5 }] })
     const p = (await window.noctivago.presets.list()).find((x) => x.name === 'Member preset')
     await window.noctivago.presets.updateGroups(p.id, [{ name: 'Pair', soundIds: [sa.id, sb.id] }])
-    return { a: sa.id, b: sb.id, preset: p.id }
-  }, [a, b])
+    return { a: sa.id, b: sb.id, c: sc.id, preset: p.id }
+  }, [a, b, c])
   Object.assign(ids, made)
   await page.reload()
   await page.waitForSelector('.sound-row')
@@ -75,8 +77,8 @@ test('each member row has play, S and the edit arrow', async () => {
   }
 })
 
-test('S is disabled until the preset is loaded in the Mixer', async () => {
-  assert.equal(await row('Member A').locator('.rx-mso').isDisabled(), true)
+test('S is enabled before the preset is loaded (it loads it first)', async () => {
+  assert.equal(await row('Member A').locator('.rx-mso').isDisabled(), false)
 })
 
 test('play previews that one sound and stops on the second press', async () => {
@@ -105,16 +107,28 @@ test('playing another row switches the preview', async () => {
 })
 
 test('S solos one member in the live mix and releases it', async () => {
-  await page.evaluate((presetId) => window.dispatchEvent(new CustomEvent('noctivago:remix-load-preset', { detail: { presetId } })), ids.preset)
-  await page.waitForTimeout(2500)
-  assert.equal((await status()).activePresetId, ids.preset, 'preset is live')
+  assert.notEqual((await status()).activePresetId, ids.preset, 'preset not live yet')
   const so = row('Member A').locator('.rx-mso')
   assert.equal(await so.isDisabled(), false)
   await so.click()
-  await page.waitForTimeout(800)
+  await page.waitForTimeout(4500)
+  assert.equal((await status()).activePresetId, ids.preset, 'S loaded the preset')
   assert.equal((await status()).soloedSoundId, ids.a)
   assert.equal(await row('Member A').locator('.rx-mso').getAttribute('aria-pressed'), 'true')
   await row('Member A').locator('.rx-mso').click()
   await page.waitForTimeout(800)
   assert.equal((await status()).soloedSoundId, null)
+})
+
+test('Preset mode: a sound outside groups has play and S too', async () => {
+  await panel.getByRole('button', { name: 'Preset', exact: true }).first().click()
+  await page.waitForTimeout(800)
+  await page.waitForTimeout(1000)
+  assert.equal(await row('Member C').locator('.rx-mso').count(), 1, 'S')
+  await row('Member C').locator('.rx-mpv').click()
+  await page.waitForTimeout(1200)
+  assert.equal((await status()).previewSoundId, ids.c, 'plays C')
+  await row('Member C').locator('.rx-mpv').click()
+  await page.waitForTimeout(600)
+  assert.equal((await status()).previewSoundId, null)
 })
