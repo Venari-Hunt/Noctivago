@@ -7,6 +7,8 @@ export const SHORTCUTS = [
   { id: 'search', title: 'Search sounds', keys: ['Ctrl', 'F'], ctrl: true, key: 'f' },
   { id: 'save', title: 'Save preset changes', keys: ['Ctrl', 'S'], ctrl: true, key: 's' },
   { id: 'settings', title: 'Open or close Settings', keys: ['Ctrl', ','], ctrl: true, key: ',' },
+  // Remix plugin: it handles the key itself; listed here so Help shows it.
+  { id: 'marker', title: 'Add a marker at the playhead (Remix)', keys: ['Ctrl', 'M'], ctrl: true, key: 'm' },
   { id: 'tab', title: 'Go to tab 1 to 9', keys: ['Ctrl', '1-9'], ctrl: true },
   { id: 'fullscreen', title: 'Full screen', keys: ['F11'], any: true, key: 'F11' },
   { id: 'help', title: 'Show shortcuts', keys: ['?'], plain: true, key: '?' }

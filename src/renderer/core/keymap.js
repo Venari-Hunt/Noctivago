@@ -28,6 +28,7 @@ export function installKeymap({ tabHost, toggleSettings, showHelp }) {
       else if (hit.id === 'tab') document.querySelectorAll('#tab-bar .tab-button')[hit.tab]?.click()
       else if (hit.id === 'fullscreen') window.noctivago.toggleFullscreen()
       else if (hit.id === 'help') showHelp()
+      // 'marker' (Ctrl+M) belongs to the Remix plugin's own key handler; nothing to run here.
     }
     event.preventDefault()
     run()
