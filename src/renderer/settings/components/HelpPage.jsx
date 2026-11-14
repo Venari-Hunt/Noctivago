@@ -24,7 +24,7 @@ export function HelpPage() {
       </Group>
       <Group title="Learn">
         <SettingItem name="How it works" description="Short guide on the docs site">
-          <a className="btn" href={DOCS_URL} target="_blank" rel="noreferrer">
+          <a className="btn btn-svg-icon" href={DOCS_URL} target="_blank" rel="noreferrer" aria-label="Open the guide" title="Open the guide">
             <MockIcon name="external-link" />
           </a>
         </SettingItem>

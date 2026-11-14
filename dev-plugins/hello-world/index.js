@@ -17,7 +17,7 @@ export default class HelloWorldPlugin {
       mount: (container) => {
         container.innerHTML = `
           <div style="padding: 16px;">
-            <h2>Hello from a plugin!</h2>
+            <h2 style="font-size: 20px; line-height: 28px; margin: 0 0 8px;">Hello from a plugin!</h2>
             <p>This tab was registered by a plugin loaded via <code>plugin://hello-world/index.js</code>, proving the full pipeline: manifest discovery, the plugin:// protocol, dynamic import, and tab registration.</p>
           </div>
         `

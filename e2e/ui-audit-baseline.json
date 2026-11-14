@@ -1,15 +1,4 @@
 [
-  "browse-sounds | color | browse-sounds button.bs-chip",
-  "export | small | export button#export-faster.ex-sw",
-  "export | small | export button#export-info-file.ex-sw",
-  "export | small | export button#export-parallel-mixdown.ex-sw",
-  "hello-world | type | hello-world h2",
   "remix | color | remix canvas#editor-canvas",
-  "remix | small | remix button",
-  "settings-advanced | small | settings button.settings-toggle",
-  "settings-community-plugins | small | settings button.settings-toggle",
-  "settings-general | small | settings button.settings-toggle",
-  "settings-help | grid | settings a.btn",
-  "settings-help | unnamed | settings a.btn",
-  "settings-library | small | settings button.settings-toggle"
+  "remix | small | remix button"
 ]
