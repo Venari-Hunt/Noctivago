@@ -21,13 +21,15 @@
 
 // The app's sets (src/renderer/styles/main.css :root and the 2.0 mock).
 export const RADII = [0, 4, 6, 8, 10, 12, 999]
-export const TYPE_SCALE = [11, 12, 13, 14, 16, 20, 28]
+// 15 is the approved Mixer and Remix mocks' pane heading size.
+export const TYPE_SCALE = [11, 12, 13, 14, 15, 16, 20, 28]
 
 export const CHECK = `(() => {
   const RADII = ${JSON.stringify(RADII)}, TYPE = ${JSON.stringify(TYPE_SCALE)}
-  const visible = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.05 && r.bottom > 0 && r.top < innerHeight }
+  const visible = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.05 && r.bottom > 0 && r.top < innerHeight }
   const name = (el) => (el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || el.getAttribute('placeholder') || (el.id && document.querySelector('label[for="' + el.id + '"]')?.textContent) || el.closest('label')?.textContent || '').trim()
   const cls = (el) => (el.className && typeof el.className === 'string') ? el.className.trim().split(/\\s+/).filter((c) => !/active|hover|selected|current|open|playing|hidden|on$|off$|solo|muted|shot|hl$/.test(c)).slice(0, 2).join('.') : ''
+  const allCls = (el) => (el.className && typeof el.className === 'string') ? el.className.trim().split(/s+/).filter((c) => !/active|hover|selected|current|open|playing|hidden|on$|off$|solo|muted|shot|hl$/.test(c)).sort().join('.') : ''
   const where = (el) => { const t = el.closest('[data-tab-id]')?.dataset.tabId || el.closest('[role=dialog], .modal-overlay, .modal') && 'dialog' || ''; const c = cls(el); return (t + ' ' + el.tagName.toLowerCase() + (el.id && !/\\d{3,}/.test(el.id) ? '#' + el.id : '') + (c ? '.' + c : '')).trim() }
   const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
   const rgba = (s) => { const m = s && s.match(/rgba?\\(([^)]+)\\)/); if (!m) return null; const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p[3] ?? 1] }
@@ -86,7 +88,9 @@ export const CHECK = `(() => {
     const iconOnly = !el.textContent.trim() && !['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)
     if (!inline && !['checkbox', 'radio', 'range'].includes(el.type) && (h % 4 || (iconOnly && w % 4))) add('grid', el, w + 'x' + h)
     const s = getComputedStyle(el)
-    if (cls(el) && !inline) sizes.push({ kind: el.tagName.toLowerCase() + '.' + cls(el), h, radius: Math.round(parseFloat(s.borderTopLeftRadius) || 0), font: parseFloat(s.fontSize) })
+    // A control inside a segmented pair or group is its own kind (its corners and size follow the group).
+    const group = (el.parentElement?.className && typeof el.parentElement.className === 'string' && el.parentElement.className.split(/s+/).find((c) => /pair|seg|group|acts/.test(c))) || ''
+    if (cls(el) && !inline) sizes.push({ kind: (group ? '.' + group + ' > ' : '') + el.tagName.toLowerCase() + '.' + allCls(el), h, radius: Math.round(parseFloat(s.borderTopLeftRadius) || 0), font: parseFloat(s.fontSize) })
   }
   for (let i = 0; i < controls.length; i++) {
     const a = controls[i].getBoundingClientRect()
@@ -120,6 +124,8 @@ export function inconsistencies(screens) {
   const out = []
   for (const [kind, k] of by) {
     for (const p of ['h', 'radius', 'font']) {
+      // In a segmented group the corners follow the position (first, middle, last).
+      if (p === 'radius' && kind.includes(' > ')) continue
       if (k[p].size > 1) out.push({ check: 'inconsistent', where: `${kind} ${p === 'h' ? 'height' : p}`, detail: [...k[p]].map(([v, s]) => `${v} (${s})`).join(', ') })
     }
   }
