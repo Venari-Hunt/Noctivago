@@ -35,6 +35,10 @@
   --radius-sm: 12px;
   --radius: 12px;
   --radius-lg: 12px;
+  --focus-ring: #8db8ff;
+  --text-faint: #6a6a72;
+  --success-ink: #9fd49a;
+  --radius-pill: 999px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -600,7 +604,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .mx-tagchip.hidden { display: none; }
 .mx-tagchip svg { width: 12px; height: 12px; fill: currentColor; }
 .mx-chip:hover { background: var(--surface-hover); }
-.mx-chip[aria-pressed='true'] { background: var(--text); color: #141417; }
+.mx-chip[aria-pressed='true'] { background: var(--text); color: var(--bg); }
 .mx-order { display: flex; gap: 6px; padding: 0 var(--space-1); }
 .mx-order label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
 .mx-order select { flex: 1; min-width: 0; height: 28px; padding: 0 22px 0 var(--space-2); border: 0; border-radius: 8px; background-color: var(--surface-alt); background-position: right 6px center; font-size: 12px; }
@@ -608,7 +612,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .mx-list-h { display: flex; justify-content: space-between; margin: var(--space-2) var(--space-2) 2px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
 .mx-search { display: flex; align-items: center; gap: var(--space-2); height: 36px; margin: 0 var(--space-1); padding: 0 var(--space-3); border-radius: 10px; background: var(--surface); color: var(--text-dim); }
 .mx-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; }
-.mx-search:has(input:focus-visible) { outline: 2px solid #8db8ff; outline-offset: 2px; }
+.mx-search:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .mx-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
 .mx-item { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2); border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .mx-item:hover { background: var(--surface); }
@@ -627,7 +631,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
    the name, then the seek bar with its times. Plays the row last hovered. */
 .mx-prev { flex: none; display: flex; flex-direction: column; gap: var(--space-1); margin: 0 var(--space-1); padding: 10px var(--space-3) var(--space-2); border-radius: 10px; background: var(--surface); }
 .mx-prow { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.mx-pplay { width: 32px; height: 32px; flex: none; border: 0; border-radius: 50%; padding: 0; background: var(--text); color: #141417; display: grid; place-items: center; cursor: pointer; }
+.mx-pplay { width: 32px; height: 32px; flex: none; border: 0; border-radius: 50%; padding: 0; background: var(--text); color: var(--bg); display: grid; place-items: center; cursor: pointer; }
 .mx-pplay:hover:not(:disabled) { transform: scale(1.04); }
 .mx-pplay:disabled { opacity: .38; cursor: default; }
 .mx-now { flex: 1; min-width: 0; }
@@ -640,7 +644,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .mx-pseek input:hover:not(:disabled)::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--accent) var(--p, 0%), var(--surface-hover) var(--p, 0%)); }
 .mx-pseek input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: var(--text); opacity: 0; }
 .mx-pseek input:hover:not(:disabled)::-webkit-slider-thumb, .mx-pseek input:active::-webkit-slider-thumb { opacity: 1; }
-.mx-pseek input:focus-visible { outline: 2px solid #8db8ff; outline-offset: 2px; border-radius: 4px; }
+.mx-pseek input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 .mx-lfoot { display: flex; padding: 0 var(--space-1); }
 .mx-lfoot .add-sound-menu-wrapper, .mx-lfoot .add-sound-menu-wrapper > .btn { flex: 1; width: 100%; }
 .mx-lfoot .dropdown-menu { top: auto; bottom: calc(100% + 6px); left: 0; right: 0; }
@@ -960,7 +964,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 }
 
 .sound-row-on.sound-row-muted .knob-value {
-  stroke: #6a6a72;
+  stroke: var(--text-faint);
 }
 
 .knob-unity {
@@ -1380,7 +1384,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
   font-size: 11px;
   height: 20px;
   padding: 0 var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--accent);
   background: var(--surface-alt);
   color: var(--text);
@@ -1472,7 +1476,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .preset-pill {
   position: relative;
   height: 36px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--text);
   font-size: 13px;
@@ -1552,7 +1556,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
   height: 28px;
   padding: 0 10px 0 var(--space-2);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -1578,7 +1582,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 }
 
 .pill-btn.pos {
-  color: #9fd49a;
+  color: var(--success-ink);
   background: rgba(159, 212, 154, 0.14);
 }
 
@@ -1609,7 +1613,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 }
 
 .pill-check path {
-  stroke: #9fd49a;
+  stroke: var(--success-ink);
   stroke-width: 2.5;
   fill: none;
   stroke-linecap: round;
@@ -2562,7 +2566,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .plugin-store-pill {
   height: var(--control-h-sm);
   padding: 0 var(--space-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface-alt);
   color: var(--text-dim);
@@ -2580,7 +2584,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .plugin-store-badge {
   margin-left: var(--space-2);
   padding: 1px var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-alt);
   border: 1px solid var(--border);
   color: var(--text-dim);
@@ -3403,7 +3407,7 @@ a.btn {
 }
 
 .notify-actions .btn {
-  background: #3c3c44;
+  background: var(--border-strong);
 }
 
 .notify-close {
@@ -3422,7 +3426,7 @@ a.btn {
 
 .notify-close:hover {
   color: var(--text);
-  background: #3c3c44;
+  background: var(--border-strong);
 }
 
 /* Desktop 2.0 step 3: the whole card is the in-mix switch. The In Mix button
@@ -3721,7 +3725,7 @@ a.btn {
 }
 
 .pcard-print .lp {
-  background: #6a6a72;
+  background: var(--text-faint);
 }
 
 .pcard-print .ev {
