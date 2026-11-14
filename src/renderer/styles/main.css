@@ -29,7 +29,7 @@
      a row mixing buttons, inputs, selects and sliders lines up on one grid
      instead of each piece picking its own size. */
   --control-h: 32px;
-  --control-h-sm: 26px;
+  --control-h-sm: 28px;
   --radius-sm: 12px;
   --radius: 12px;
   --radius-lg: 12px;
@@ -3266,10 +3266,16 @@ a.btn {
 }
 
 .recommended-plugins-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   background: none;
   border: none;
+  border-radius: var(--radius-sm);
   color: var(--text-dim);
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
 }
