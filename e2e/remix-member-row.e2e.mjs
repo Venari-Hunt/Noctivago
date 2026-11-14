@@ -1,5 +1,5 @@
-// End-to-end: Remix Group mode, a group's member rows (approved mock, 2026-11-13): each row has a play/stop
-// button that previews that one sound, and an S that solos it in the Mixer once the preset is loaded there.
+// End-to-end: Remix Group mode, a group's member rows (approved mock, 2026-11-13/14): each row has Play
+// and Loop (previews: e2e/remix-item-preview), and an S that solos it in the Mixer, loading the preset first.
 // Needs the Remix build in ../noctivago-plugin-repos/noctivago-remix.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -69,41 +69,17 @@ after(async () => {
   for (const f of files) fs.rmSync(f, { force: true })
 })
 
-test('each member row has play, S and the edit arrow', async () => {
+test('each member row has play, loop, S and the edit arrow', async () => {
   assert.equal(await panel.locator('.rx-mrow').count(), 2)
   for (const name of ['Member A', 'Member B']) {
     assert.equal(await row(name).locator('.rx-mpv').count(), 1, `${name} play button`)
     assert.equal(await row(name).locator('.rx-mso').count(), 1, `${name} S button`)
+    assert.equal(await row(name).locator('.rx-mlp').count(), 1, `${name} loop button`)
   }
 })
 
 test('S is enabled before the preset is loaded (it loads it first)', async () => {
   assert.equal(await row('Member A').locator('.rx-mso').isDisabled(), false)
-})
-
-test('play previews that one sound and stops on the second press', async () => {
-  const play = row('Member A').locator('.rx-mpv')
-  assert.equal(await play.getAttribute('aria-label'), 'Play Member A')
-  await play.click()
-  await page.waitForTimeout(1200)
-  assert.equal((await status()).previewSoundId, ids.a, 'the Mixer preview player plays A')
-  assert.equal(await row('Member A').locator('.rx-mpv').getAttribute('aria-label'), 'Stop Member A')
-  assert.ok((await row('Member A').getAttribute('class')).includes('rx-mrow-playing'))
-  assert.equal(await row('Member B').locator('.rx-mpv').getAttribute('aria-label'), 'Play Member B', 'B is not playing')
-  await row('Member A').locator('.rx-mpv').click()
-  await page.waitForTimeout(800)
-  assert.equal((await status()).previewSoundId, null, 'stopped')
-  assert.equal(await row('Member A').locator('.rx-mpv').getAttribute('aria-label'), 'Play Member A')
-})
-
-test('playing another row switches the preview', async () => {
-  await row('Member A').locator('.rx-mpv').click()
-  await page.waitForTimeout(800)
-  await row('Member B').locator('.rx-mpv').click()
-  await page.waitForTimeout(1000)
-  assert.equal((await status()).previewSoundId, ids.b)
-  await row('Member B').locator('.rx-mpv').click()
-  await page.waitForTimeout(600)
 })
 
 test('S solos one member in the live mix and releases it', async () => {
@@ -118,17 +94,4 @@ test('S solos one member in the live mix and releases it', async () => {
   await row('Member A').locator('.rx-mso').click()
   await page.waitForTimeout(800)
   assert.equal((await status()).soloedSoundId, null)
-})
-
-test('Preset mode: a sound outside groups has play and S too', async () => {
-  await panel.getByRole('button', { name: 'Preset', exact: true }).first().click()
-  await page.waitForTimeout(800)
-  await page.waitForTimeout(1000)
-  assert.equal(await row('Member C').locator('.rx-mso').count(), 1, 'S')
-  await row('Member C').locator('.rx-mpv').click()
-  await page.waitForTimeout(1200)
-  assert.equal((await status()).previewSoundId, ids.c, 'plays C')
-  await row('Member C').locator('.rx-mpv').click()
-  await page.waitForTimeout(600)
-  assert.equal((await status()).previewSoundId, null)
 })
