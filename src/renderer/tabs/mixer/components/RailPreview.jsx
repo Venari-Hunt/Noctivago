@@ -86,6 +86,17 @@ function createPlayer() {
       if (snap.playing) audio.pause()
       else play()
     },
+    // Remix's per-sound play button (group member rows): play this sound from
+    // the top, or stop it when it is already the one playing.
+    previewSound(row) {
+      if (snap.playing && snap.target?.id === row.id) {
+        audio.pause()
+        return
+      }
+      set({ target: row })
+      load(row.id)
+      play()
+    },
     seek(seconds) {
       if (!audio || !snap.dur) return
       audio.currentTime = seconds

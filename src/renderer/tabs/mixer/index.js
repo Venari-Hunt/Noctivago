@@ -2488,6 +2488,16 @@ export function mount(container) {
   els.studio = container.querySelector('.mx-studio')
   els.railList = container.querySelector('#mx-rail-list')
   els.railPreview = mountRailPreview(container.querySelector('#mx-rail-preview'))
+  // Remix's play button on a group member row drives this same player
+  // ('noctivago:remix-preview-sound'), and hears back which sound is playing.
+  let lastPreviewId = null
+  els.railPreview.subscribe(() => {
+    const s = els.railPreview.get()
+    const id = s.playing ? (s.target?.id ?? null) : null
+    if (id === lastPreviewId) return
+    lastPreviewId = id
+    window.dispatchEvent(new CustomEvent('noctivago:remix-preview-state', { detail: { soundId: id } }))
+  })
   els.railCount = container.querySelector('#mx-lib-count')
   els.railChips = [...container.querySelectorAll('.mx-chip')]
   els.railTagChip = container.querySelector('#mx-rail-tag')
@@ -2901,6 +2911,16 @@ document.addEventListener('library:linked', refreshList)
     clearTimeout(remixVolumeRender)
     remixVolumeRender = setTimeout(render, 150)
   })
+  window.addEventListener('noctivago:remix-preview-sound', (e) => {
+    const { soundId, stop } = e.detail ?? {}
+    if (stop) {
+      els.railPreview?.stop()
+      return
+    }
+    const entry = state.library.find((s) => s.id === soundId)
+    if (!entry || !els.railPreview) return
+    els.railPreview.previewSound({ id: entry.id, name: entry.name, meta: '' })
+  })
   window.addEventListener('noctivago:remix-toggle-sound-mute', (e) => {
     if (e.detail?.soundId) toggleMute(e.detail.soundId)
   })
@@ -2921,5 +2941,7 @@ document.addEventListener('library:linked', refreshList)
     d.soundVolumes = Object.fromEntries(state.volumes)
     d.mutedSoundIds = [...state.mutedSounds]
     d.soloedSoundId = state.soloedSoundId ?? null
+    const prev = els.railPreview?.get()
+    d.previewSoundId = prev?.playing ? (prev.target?.id ?? null) : null
   })
 }
