@@ -1,3 +1,4 @@
+import { createInFlight } from './domain/inFlight.js'
 import { AudioEngine } from '../../audio/AudioEngine.js'
 import { LocalFileSoundSource } from '../../audio/SoundSource.js'
 import { BufferSoundSource } from '../../audio/BufferSoundSource.js'
@@ -1011,7 +1012,12 @@ async function tryCreateBufferSource(entry, { oneShot = false } = {}) {
   }
 }
 
-async function getOrCreateSource(entry) {
+const sourceInFlight = createInFlight()
+function getOrCreateSource(entry) {
+  return sourceInFlight(entry.id, () => buildOrReuseSource(entry))
+}
+
+async function buildOrReuseSource(entry) {
   let source = state.sources.get(entry.id)
   // routeSound is idempotent (a no-op once already routed correctly, see its
   // own comment in AudioEngine.js) - calling it here too, not just right
