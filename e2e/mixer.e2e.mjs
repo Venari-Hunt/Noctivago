@@ -126,6 +126,17 @@ describe('Mixer', () => {
     await page.waitForSelector('.sound-row')
   })
 
+  test('the preview volume slider sets, mutes and is remembered', async () => {
+    const vol = page.locator('#mx-rail-preview input[aria-label="Preview volume"]')
+    assert.equal(await vol.inputValue(), '0.7')
+    await vol.fill('0.3')
+    assert.equal(await page.evaluate(() => localStorage.getItem('noctivago.previewVolume')), '0.3')
+    await page.click('#mx-rail-preview .mx-pmute')
+    assert.equal(await vol.inputValue(), '0')
+    await page.click('#mx-rail-preview .mx-pmute')
+    assert.equal(await vol.inputValue(), '0.3')
+  })
+
   test('without Undo the sound is gone for good after the toast closes (6 s)', async () => {
     await page.mouse.move(5, 5) // hovering a toast pauses its timer
     await rows().locator('.sound-row-remove').click()

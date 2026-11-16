@@ -13,10 +13,21 @@ import { peekTarget } from '../domain/libraryRail.js'
 // ear. It plays the original file (sound://<id>) outside the mix, on its own
 // AudioContext that follows the output-device setting.
 
+// Preview volume (owner, 2026-11-16): a slider under the seek bar, 70 % at
+// first, remembered in localStorage; the speaker button mutes.
 const PREVIEW_GAIN = 0.7
+const VOL_KEY = 'noctivago.previewVolume'
+function savedVolume() {
+  try {
+    const v = Number(localStorage.getItem(VOL_KEY))
+    return localStorage.getItem(VOL_KEY) !== null && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : PREVIEW_GAIN
+  } catch {
+    return PREVIEW_GAIN
+  }
+}
 
 function createPlayer() {
-  let snap = { target: null, playing: false, cur: 0, dur: 0 }
+  let snap = { target: null, playing: false, cur: 0, dur: 0, vol: savedVolume(), muted: false }
   const listeners = new Set()
   const set = (patch) => {
     snap = { ...snap, ...patch }
@@ -24,6 +35,12 @@ function createPlayer() {
   }
   let audio = null
   let ctx = null
+  let gain = null
+  const applyVolume = () => {
+    const v = snap.muted ? 0 : snap.vol
+    if (gain) gain.gain.value = v
+    else if (audio) audio.volume = v
+  }
 
   const ensureAudio = () => {
     if (audio) return audio
@@ -40,14 +57,14 @@ function createPlayer() {
     audio.addEventListener('error', () => set({ playing: false }))
     try {
       ctx = new AudioContext()
-      const gain = ctx.createGain()
-      gain.gain.value = PREVIEW_GAIN
+      gain = ctx.createGain()
       ctx.createMediaElementSource(audio).connect(gain).connect(ctx.destination)
       registerAudioOutput(ctx)
     } catch {
       ctx = null
-      audio.volume = PREVIEW_GAIN
+      gain = null
     }
+    applyVolume()
     return audio
   }
 
@@ -100,6 +117,17 @@ function createPlayer() {
       load(row.id)
       play()
     },
+    setVolume(v) {
+      set({ vol: Math.min(1, Math.max(0, v)), muted: false })
+      applyVolume()
+      try {
+        localStorage.setItem(VOL_KEY, String(snap.vol))
+      } catch {}
+    },
+    toggleMute() {
+      set({ muted: !snap.muted })
+      applyVolume()
+    },
     seek(seconds) {
       if (!audio || !snap.dur) return
       audio.currentTime = seconds
@@ -112,7 +140,8 @@ function createPlayer() {
 }
 
 function RailPreview({ player }) {
-  const { target, playing, cur, dur } = useSyncExternalStore(player.subscribe, player.get)
+  const { target, playing, cur, dur, vol, muted } = useSyncExternalStore(player.subscribe, player.get)
+  const shownVol = muted ? 0 : vol
   const pct = dur ? Math.min(100, (cur / dur) * 100) : 0
   return (
     <>
@@ -146,6 +175,22 @@ function RailPreview({ player }) {
           onChange={(e) => player.seek(Number(e.target.value))}
         />
         <span>{dur ? formatDuration(dur) : '0:00'}</span>
+      </div>
+      <div className="mx-pseek mx-pvol">
+        <button type="button" className="mx-pmute" aria-pressed={muted} aria-label={muted ? 'Unmute preview' : 'Mute preview'} title={muted ? 'Unmute preview' : 'Mute preview'} onClick={() => player.toggleMute()}>
+          <MockIcon name={shownVol === 0 ? 'volume-x' : 'volume-2'} />
+        </button>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={shownVol}
+          aria-label="Preview volume"
+          title={`Preview volume ${Math.round(shownVol * 100)}%`}
+          style={{ '--p': `${shownVol * 100}%` }}
+          onChange={(e) => player.setVolume(Number(e.target.value))}
+        />
       </div>
     </>
   )
