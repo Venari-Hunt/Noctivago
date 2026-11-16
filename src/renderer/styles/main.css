@@ -3,7 +3,7 @@
   /* Dark theme: a dark gray page (never pure black), lighter raised surfaces, one yellow
      accent. Text sitting on a yellow fill is --on-accent (black), never
      white - white on yellow is unreadable. */
-  --bg: #141417;
+  --bg: #19191d;
   --surface: #1b1b1f;
   --surface-alt: #232328;
   --surface-hover: #2d2d33;
@@ -606,7 +606,7 @@ main {
    library rail on the left, the mix in the center, panes on the darkest
    ground with 8 px gaps, as Remix does. A rail row is the in-mix switch. */
 body:has(.tab-panel:not(.hidden) .mx-studio) { background: var(--bg-studio); }
-main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); overflow: hidden; }
+main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: var(--space-2); overflow: hidden; }
 .mx-studio { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--space-2); height: 100%; min-height: 0; }
 .mx-studio[data-rail='off'] { grid-template-columns: minmax(0, 1fr); }
 .mx-studio[data-rail='off'] .mx-lib { display: none; }
