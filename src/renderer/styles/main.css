@@ -37,6 +37,11 @@
   --radius-lg: 12px;
   --focus-ring: #8db8ff;
   --bg-studio: #0f0f12;
+  --accent-press: #cda63e;
+  --accent-soft-press: #30270f;
+  --knob-off: #55555e;
+  --warn: #e8a25f;
+  --warn-edge: #7a4a22;
   --chip-blue-bg: #27303d;
   --chip-blue-ink: #a9c4e8;
   --text-faint: #6a6a72;
@@ -191,7 +196,7 @@ body {
 }
 
 .toolbar .btn-play:active {
-  background: #cda63e;
+  background: var(--accent-press);
 }
 
 .toolbar .btn-play svg {
@@ -353,7 +358,7 @@ main {
 }
 
 .btn-primary:active {
-  background: #30270f;
+  background: var(--accent-soft-press);
 }
 
 .btn:disabled {
@@ -963,7 +968,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 }
 
 .knob-value {
-  stroke: #55555e;
+  stroke: var(--knob-off);
   stroke-dasharray: calc(var(--p) * 0.75) 100;
 }
 
@@ -1119,7 +1124,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 
 /* Desktop 2.0 step 18, mock .tile.lost: the card reads as a problem with a fix. */
 .sound-row-missing {
-  box-shadow: inset 0 0 0 2px #7a4a22;
+  box-shadow: inset 0 0 0 2px var(--warn-edge);
   justify-content: center;
   min-height: 188px;
   cursor: default;
@@ -1128,7 +1133,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .sound-row-lost-icon {
   display: grid;
   place-items: center;
-  color: #e8a25f;
+  color: var(--warn);
 }
 
 .sound-row-missing .sound-row-meta {
@@ -1171,7 +1176,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px var(--space-2);
+  gap: var(--space-2);
   min-width: 0;
   justify-content: center;
   max-width: 100%;
@@ -1220,7 +1225,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
   width: 100%;
   max-width: 100%;
   height: var(--control-h-sm);
-  padding: 0 6px;
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   border: 1px solid var(--accent);
   background: var(--surface-alt);
@@ -1418,7 +1423,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 }
 
 .tag-autocomplete-option {
-  padding: 5px var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius);
   font-size: 12px;
   color: var(--text);
