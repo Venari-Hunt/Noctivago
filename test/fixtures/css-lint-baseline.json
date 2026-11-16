@@ -1,11 +1,6 @@
 {
   "raw-color | .btn-primary:active | background | #30270f": 1,
-  "raw-color | .global-volume-label .level-meter-master.clipped .level-meter-fill | background | #f28b82": 1,
   "raw-color | .knob-value | stroke | #55555e": 1,
-  "raw-color | .pcard-save span | color | #d8c58b": 1,
-  "raw-color | .pill-btn.neg | color | #f0907a": 1,
-  "raw-color | .preset-pill.done | background | #1f2a1e": 1,
-  "raw-color | .preset-pill.done | color | #b9e3b4": 1,
   "raw-color | .sound-row-lost-icon | color | #e8a25f": 1,
   "raw-color | .sound-row-missing | box-shadow | #7a4a22": 1,
   "raw-color | .toolbar .btn-play:active | background | #cda63e": 1,
