@@ -29,6 +29,9 @@ function createPlayer() {
     if (audio) return audio
     audio = new Audio()
     audio.preload = 'metadata'
+    // Without it Chromium treats sound:// as cross-origin and the
+    // MediaElementSource below outputs silence (owner, 2026-11-16: no sound).
+    audio.crossOrigin = 'anonymous'
     audio.loop = true
     audio.addEventListener('timeupdate', () => set({ cur: audio.currentTime }))
     audio.addEventListener('loadedmetadata', () => set({ dur: Number.isFinite(audio.duration) ? audio.duration : 0 }))

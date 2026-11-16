@@ -76,10 +76,16 @@ describe('Mixer', () => {
     await settle()
     assert.equal(await prev.locator('.mx-now b').textContent(), 'E2E tone')
     assert.match(await prev.locator('.mx-now small').textContent(), /0:02 · Loop/)
+    // Chromium logs this when a MediaElementSource is muted for CORS: playing, but silent.
+    const silent = []
+    const onConsole = (m) => { if (m.text().includes('outputs zeroes')) silent.push(m.text()) }
+    page.on('console', onConsole)
     await play.click()
     await page.waitForFunction(() => document.querySelector('#mx-rail-preview .mx-pplay')?.getAttribute('aria-label') === 'Pause preview')
     await page.waitForFunction(() => document.querySelector('#mx-rail-preview .mx-pseek span')?.textContent !== '0:00', null, { timeout: 5000 })
     assert.equal(await prev.locator('.mx-pseek span').last().textContent(), '0:02')
+    page.off('console', onConsole)
+    assert.deepEqual(silent, [], 'the preview is audible (not muted for CORS)')
     // Previewing changes nothing in the mix.
     assert.equal(await rows().count(), 1)
     await page.locator('#tab-bar .tab-button').nth(1).click()
