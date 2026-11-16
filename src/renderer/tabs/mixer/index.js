@@ -2441,8 +2441,8 @@ export function mount(container) {
       <div class="mx-chips" role="group" aria-label="Show">${RAIL_SCOPES.map((c) => `<button type="button" class="mx-chip" data-scope="${c}" aria-pressed="false">${c}</button>`).join('')}</div>
       <button type="button" class="mx-tagchip hidden" id="mx-rail-tag" title="Clear the tag filter"><span></span>${mockIconSvg('x')}</button>
       <div class="mx-order">
-        <label>Sort<select id="mx-rail-sort" aria-label="Sort the library">${SORT_MODES.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}</select></label>
-        <label>Group<select id="mx-rail-group" aria-label="Group the library">${GROUP_MODES.map((o) => `<option value="${o.value}">${o.label.replace('Group: ', '').replace('Alphabetical', 'A-Z')}</option>`).join('')}</select></label>
+        <label><span class="mx-order-word">Sort</span><select id="mx-rail-sort" aria-label="Sort the library">${SORT_MODES.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}</select></label>
+        <label><span class="mx-order-word">Group</span><select id="mx-rail-group" aria-label="Group the library">${GROUP_MODES.map((o) => `<option value="${o.value}">${o.label.replace('Group: ', '').replace('Alphabetical', 'A-Z')}</option>`).join('')}</select></label>
       </div>
       <label class="mx-search">${mockIconSvg('search')}<input id="mx-rail-search" type="text" placeholder="Search your sounds" aria-label="Search your sounds" /></label>
       <div class="mx-list" id="mx-rail-list"></div>
@@ -2532,6 +2532,12 @@ export function mount(container) {
   }
   container.querySelector('#mx-rail-hide').addEventListener('click', () => setRailHidden(true))
   container.querySelector('#mx-rail-show').addEventListener('click', () => setRailHidden(false))
+  // Below 860 px the library slides over the mix (main.css), so it starts
+  // hidden there and comes back when the window grows past it again.
+  const narrow = window.matchMedia('(max-width: 860px)')
+  const fitRail = () => { state.railHidden = narrow.matches; renderRail() }
+  narrow.addEventListener('change', fitRail)
+  if (narrow.matches) fitRail()
   mountRecommendedPlugins(container.querySelector('#recommended-plugins'), window.noctivago)
   mountAddSound(container.querySelector('#add-sound-slot'))
   els.mixKind = container.querySelector('#mx-kind')

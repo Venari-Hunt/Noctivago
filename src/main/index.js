@@ -155,8 +155,13 @@ function grantMicrophonePermission() {
   session.defaultSession.setPermissionCheckHandler((_webContents, permission) => ALLOWED.has(permission))
 }
 
-const WINDOW_WIDTH = 480
-const WINDOW_HEIGHT = 720
+// First-open size: the 2.0 desktop layout (library beside the mix), shrunk to
+// fit a smaller screen. Read after app ready (screen needs it).
+const WINDOW_PREFERRED = { width: 1280, height: 800 }
+function windowSize() {
+  const area = screen.getPrimaryDisplay().workAreaSize
+  return { width: Math.min(WINDOW_PREFERRED.width, area.width), height: Math.min(WINDOW_PREFERRED.height, area.height) }
+}
 
 // Dev-only: opens directly on the highest-numbered connected display instead
 // of the default (primary, centered) position - the user keeps working
@@ -176,19 +181,21 @@ function devWindowPosition() {
   const displays = screen.getAllDisplays()
   if (displays.length < 2) return {}
   const target = displays.reduce((best, d) => (d.bounds.x > best.bounds.x ? d : best))
+  const size = windowSize()
   return {
-    x: Math.round(target.bounds.x + (target.bounds.width - WINDOW_WIDTH) / 2),
-    y: Math.round(target.bounds.y + (target.bounds.height - WINDOW_HEIGHT) / 2)
+    x: Math.round(target.bounds.x + (target.bounds.width - size.width) / 2),
+    y: Math.round(target.bounds.y + (target.bounds.height - size.height) / 2)
   }
 }
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
+    ...windowSize(),
     ...devWindowPosition(),
-    minWidth: 380,
-    minHeight: 520,
+    // The smallest size every screen is laid out for (owner, 2026-11-16):
+    // below it layouts broke. Mixer and Remix go to one column near it.
+    minWidth: 560,
+    minHeight: 560,
     // Visually distinct from an installed build at a glance - the window
     // title bar is the one thing always visible regardless of what's on
     // screen, and it was too easy to lose track of which instance (a dev
