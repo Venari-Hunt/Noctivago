@@ -42,6 +42,11 @@
   --text-faint: #6a6a72;
   --success-ink: #9fd49a;
   --radius-pill: 999px;
+  --done-bg: #1f2a1e;
+  --done-ink: #b9e3b4;
+  --danger-ink: #f0907a;
+  --danger-meter: #f28b82;
+  --gold-ink: #d8c58b;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -1506,8 +1511,8 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 }
 
 .preset-pill.done {
-  background: #1f2a1e;
-  color: #b9e3b4;
+  background: var(--done-bg);
+  color: var(--done-ink);
 }
 
 .pill-row {
@@ -1576,7 +1581,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 
 .pill-btn.neg {
   margin-left: var(--space-1);
-  color: #f0907a;
+  color: var(--danger-ink);
   background: rgba(240, 144, 122, 0.1);
 }
 
@@ -1714,7 +1719,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 }
 
 .global-volume-label .level-meter-master.clipped .level-meter-fill {
-  background: #f28b82;
+  background: var(--danger-meter);
 }
 
 @container (max-width: 560px) {
@@ -3818,7 +3823,7 @@ a.btn {
 .pcard-save span {
   font-size: 12px;
   line-height: 16px;
-  color: #d8c58b;
+  color: var(--gold-ink);
 }
 
 /* The mock's switch, drawn on a checkbox so the existing change handler keeps working. */
