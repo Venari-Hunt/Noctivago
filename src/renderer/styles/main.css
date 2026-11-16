@@ -673,7 +673,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: var(--space-2); overfl
    meta 20; the actions share the title row, their right edge = the tabs'
    and the Sorting field's. The card area scrolls on its own, its scrollbar
    hugging the pane edge. */
-.mx-center { --sb: 10px; position: relative; display: flex; flex-direction: column; gap: var(--space-4); overflow: hidden; padding: var(--space-4) calc(var(--space-5) + var(--sb)) 0 var(--space-5); }
+.mx-center { --sb: 10px; container: mx-center / inline-size; position: relative; display: flex; flex-direction: column; gap: var(--space-4); overflow: hidden; padding: var(--space-4) calc(var(--space-5) + var(--sb)) 0 var(--space-5); }
 .mx-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 16px 40px 20px; column-gap: var(--space-5); flex: none; }
 .mx-kind { grid-column: 1; grid-row: 1; color: var(--text-dim); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .mx-title { grid-column: 1; grid-row: 2; align-self: center; margin: 0; font-size: 28px; line-height: 36px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -690,11 +690,11 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: var(--space-2); overfl
 .mx-ib:disabled { cursor: default; opacity: .45; }
 .mx-ib:disabled:hover { background: none; color: var(--text-dim); }
 .mx-tabs { display: flex; align-items: center; gap: var(--space-5); flex: none; border-bottom: 1px solid var(--border); }
-.mx-tab { position: relative; height: 40px; padding: 0 var(--space-2); border: 0; background: none; color: var(--text-dim); font: inherit; font-weight: 600; cursor: pointer; }
+.mx-tab { position: relative; height: 40px; flex: none; white-space: nowrap; padding: 0 var(--space-2); border: 0; background: none; color: var(--text-dim); font: inherit; font-weight: 600; cursor: pointer; }
 .mx-tab:hover { color: var(--text); }
 .mx-tab[aria-pressed='true'] { color: var(--text); }
 .mx-tab[aria-pressed='true']::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 1px; background: var(--accent); }
-.mx-tabs-r { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
+.mx-tabs-r { flex: none; margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
 .mx-sort-lbl { font-size: 12px; color: var(--text-dim); }
 .mx-tabs-r .mx-sort { width: 117px; height: 32px; padding: 0 calc(var(--space-5) + var(--space-1)) 0 var(--space-3); border: 0; border-radius: var(--radius); background-color: var(--surface-alt); background-position: right 8px center; font-size: 14px; }
 .mx-cards { flex: 1; min-height: 0; overflow: auto; margin-right: calc(-1 * var(--space-5) - var(--sb)); padding: var(--space-1) var(--space-5) var(--space-5) 0; scrollbar-gutter: stable; scrollbar-width: thin; display: flex; flex-direction: column; }
@@ -707,8 +707,32 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: var(--space-2); overfl
 .mx-cards .mx-empty { flex: 1; }
 .mx-empty .mx-empty-mix { margin: 0; max-width: 320px; text-align: center; color: var(--text-dim); font-size: 14px; line-height: 20px; }
 .mx-empty .mx-empty-mix b { display: block; margin-bottom: var(--space-1); color: var(--text); font-size: 16px; }
-@media (max-width: 900px) {
-  .mx-studio { grid-template-columns: 232px minmax(0, 1fr); }
+/* Below 1024 the Sort and Group words go (the selects keep their aria-label)
+   so the selects show their whole value. */
+@media (max-width: 1024px) {
+  .mx-order-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+/* Short windows: the preview module gives its height to the list. */
+@media (max-height: 620px) {
+  .mx-prev { display: none; }
+}
+/* Small windows (down to the 560 px minimum): the mix takes the whole width
+   and the library slides over it from the left while shown. At 860 the
+   two-column mix pane would drop below the width its tabs need. */
+@media (max-width: 860px) {
+  .mx-studio, .mx-studio[data-rail='off'] { position: relative; grid-template-columns: minmax(0, 1fr); }
+  .mx-studio[data-rail='on'] .mx-lib { position: absolute; inset: 0 auto 0 0; z-index: 5; width: min(280px, 86%); box-shadow: var(--shadow-pop); }
+  .mx-studio .mx-center { grid-column: 1; grid-row: 1; }
+}
+/* Narrow mix pane: the actions drop under the meta line, the view tabs
+   tighten and scroll sideways instead of wrapping, Sorting loses its label. */
+@container mx-center (max-width: 600px) {
+  .mx-tabs { gap: var(--space-3); overflow-x: auto; scrollbar-width: none; }
+  .mx-sort-lbl { display: none; }
+}
+@container mx-center (max-width: 520px) {
+  .mx-head { grid-template-columns: minmax(0, 1fr); grid-template-rows: 16px 40px 20px auto; row-gap: 0; }
+  .mx-acts { grid-column: 1; grid-row: 4; justify-self: start; margin-top: var(--space-3); }
 }
 
 /* Mixer filter bar: search takes the flexible column, sort/group/Select sit
