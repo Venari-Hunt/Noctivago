@@ -119,14 +119,14 @@ function RailPreview({ player }) {
           className="mx-pplay"
           disabled={!target}
           aria-label={playing ? 'Pause preview' : 'Play preview'}
-          title={target ? (playing ? 'Pause preview' : 'Hear it before it goes in the mix') : 'Hover a sound to preview it'}
+          title={target ? (playing ? 'Pause preview' : 'Hear it before it goes in the mix') : 'Select a sound to preview it'}
           onClick={() => player.toggle()}
         >
           <MockIcon name={playing ? 'pause' : 'play'} />
         </button>
         <span className="mx-now">
           <b>{target ? target.name : 'Preview'}</b>
-          <small>{target ? target.meta : 'Hover a sound, then press play'}</small>
+          <small>{target ? target.meta : 'Select a sound, then press play'}</small>
         </span>
       </div>
       <div className="mx-pseek">

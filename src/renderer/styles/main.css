@@ -634,18 +634,30 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: var(--space-2); overfl
 .mx-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: none; border: 0; outline: 0; color: var(--text); font: inherit; }
 .mx-search:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .mx-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; }
+/* Sound and group rows: the select button (thumb + text), then the in-mix
+   button at the end. Tag rows stay one button. */
 .mx-item { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+div.mx-item { gap: var(--space-2); padding: 0 var(--space-2) 0 0; cursor: default; }
 .mx-item:hover { background: var(--surface); }
-.mx-item:disabled { cursor: default; opacity: .5; }
+.mx-item.sel { background: var(--surface-alt); }
+.mx-item.missing { opacity: .5; }
+.mx-pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2); border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mx-pick:disabled { cursor: default; }
 .mx-thumb { width: 40px; height: 40px; border-radius: var(--radius-sm); background: var(--surface-alt); display: grid; place-items: center; color: var(--text-dim); flex: none; }
 .mx-item.in .mx-thumb { background: var(--tint); color: var(--tint-ink); }
 .mx-txt { min-width: 0; flex: 1; }
 .mx-txt b { display: block; font-weight: 400; font-size: 14px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mx-item.in .mx-txt b { font-weight: 600; color: var(--text); }
 .mx-txt small { display: block; color: var(--text-dim); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mx-sw { width: 28px; height: 28px; border-radius: var(--radius-sm); display: grid; place-items: center; color: var(--text-dim); flex: none; opacity: 0; }
-.mx-item:hover .mx-sw, .mx-item:focus-visible .mx-sw { opacity: 1; }
+.mx-sw { width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; display: grid; place-items: center; color: var(--text-dim); flex: none; opacity: 0; }
+button.mx-sw { cursor: pointer; }
+/* The in-mix button: faint on hover, lit on the selected row, always shown
+   (accent check) while the sound is in the mix. */
+.mx-item:hover .mx-sw, .mx-item:focus-visible .mx-sw, .mx-sw:focus-visible { opacity: .6; }
+.mx-item.sel .mx-sw { opacity: 1; background: var(--surface-hover); color: var(--text); }
+button.mx-sw:hover { opacity: 1; background: var(--surface-hover); color: var(--text); }
 .mx-item.in .mx-sw { opacity: 1; color: var(--accent); }
+button.mx-sw:disabled { cursor: default; }
 .mx-list-empty { margin: var(--space-5) var(--space-2); color: var(--text-dim); font-size: 13px; line-height: 20px; text-align: center; }
 /* Preview above Add sound (Remix's preview module look): the play disc and
    the name, then the seek bar with its times. Plays the row last hovered. */
