@@ -68,6 +68,7 @@ const state = {
   railQuery: '',
   railTag: null,
   railHidden: false,
+  railSelected: null, // "sound:<id>" or "group:<id>": the rail row clicked last
   // Bulk-apply an effect preset to several sounds at once (Board backlog
   // item, Audacity-Macros-shaped) - a lightweight multi-select layered onto
   // the existing list, not a new selection model that touches every other
@@ -364,7 +365,15 @@ function renderRail() {
   if (state.railTag && !library.some((e) => e.tags?.includes(state.railTag))) state.railTag = null
   els.railTagChip.classList.toggle('hidden', !state.railTag || state.railScope === 'Tags')
   els.railTagChip.querySelector('span').textContent = state.railTag ? `Tag: ${state.railTag}` : ''
-  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix, onPickTag: pickRailTag, onPeek: (row) => els.railPreview?.peek(row) })
+  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix, onPickTag: pickRailTag, selectedKey: state.railSelected, onSelect: selectRailRow })
+}
+
+// Clicking a rail row only selects it: the preview loads it (and keeps
+// playing if it was), the + button on that row lights up.
+function selectRailRow(row) {
+  state.railSelected = row.kind + ':' + row.id
+  els.railPreview?.peek(row)
+  renderRail()
 }
 
 // A tag row in the rail filters the library to that tag and goes back to the

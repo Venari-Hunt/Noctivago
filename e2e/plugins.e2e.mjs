@@ -91,7 +91,7 @@ describe('Remix', () => {
     await panel().getByText('E2E sound').first().click()
     await settle(2000)
     const text = await panel().innerText()
-    for (const word of ['Trim', 'Loop seam', 'EQ', 'Spectrum', 'Save as copy', 'Playback', 'Speed and pitch', 'Tone', 'Parametric EQ', 'Cleanup', 'Space', 'Drift']) {
+    for (const word of ['Trim', 'Loop seam', 'EQ', 'Spectrum', 'Save as copy', 'Playback', 'Speed and pitch', 'Tone', 'Parametric EQ', 'Cleanup', 'Space', 'Volume drift', 'Pitch drift', 'Pan drift']) {
       assert.ok(text.includes(word), word)
     }
     assert.match(text, /0:03/) // the 3 s test sound's length

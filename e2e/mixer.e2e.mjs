@@ -32,8 +32,8 @@ before(async () => {
   await page.reload()
   await page.waitForSelector('#tab-bar .tab-button')
   await page.waitForSelector('.mx-item')
-  // The center lists only the mix: put the tone in from the library rail.
-  await railRows().first().click()
+  // The center lists only the mix: put the tone in with the rail row's + button.
+  await railRows().first().locator('.mx-sw').click()
   await page.waitForSelector('.sound-row')
 })
 after(async () => {
@@ -60,10 +60,19 @@ describe('Mixer', () => {
     assert.equal(await railRows().count(), 1)
   })
 
-  test('the rail preview plays the hovered row outside the mix, and stops on leaving the Mixer', async () => {
+  test('clicking a rail row only selects it: the + lights up, the mix does not change', async () => {
+    const inMix = await rows().count()
+    await railRows().first().locator('.mx-pick').click()
+    await settle()
+    assert.equal(await rows().count(), inMix)
+    assert.match(await railRows().first().getAttribute('class'), /\bsel\b/)
+    assert.equal(await railRows().first().locator('.mx-sw').evaluate((el) => getComputedStyle(el).opacity), '1')
+  })
+
+  test('the rail preview plays the selected row outside the mix, and stops on leaving the Mixer', async () => {
     const prev = page.locator('#mx-rail-preview')
     const play = prev.locator('.mx-pplay')
-    await railRows().first().hover()
+    await railRows().first().locator('.mx-pick').click()
     await settle()
     assert.equal(await prev.locator('.mx-now b').textContent(), 'E2E tone')
     assert.match(await prev.locator('.mx-now small').textContent(), /0:02 · Loop/)
@@ -107,7 +116,7 @@ describe('Mixer', () => {
     await toast.getByRole('button', { name: 'Undo' }).click()
     await settle()
     assert.equal(await railRows().count(), 1)
-    if (!(await rows().count())) await railRows().first().click()
+    if (!(await rows().count())) await railRows().first().locator('.mx-sw').click()
     await page.waitForSelector('.sound-row')
   })
 
