@@ -677,6 +677,10 @@ button.mx-sw:disabled { cursor: default; }
 .mx-pseek input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: calc(-1 * var(--space-1)); border-radius: 50%; background: var(--text); opacity: 0; }
 .mx-pseek input:hover:not(:disabled)::-webkit-slider-thumb, .mx-pseek input:active::-webkit-slider-thumb { opacity: 1; }
 .mx-pseek input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--space-1); }
+/* Volume row: the mute button where the times sit, the same slider look. */
+.mx-pmute { width: 28px; height: 24px; flex: none; display: grid; place-items: center; margin-left: calc(-1 * var(--space-1)); padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-dim); cursor: pointer; }
+.mx-pmute:hover { background: var(--surface-hover); color: var(--text); }
+.mx-pmute[aria-pressed='true'] { color: var(--text); }
 .mx-lfoot { display: flex; padding: 0 var(--space-1); }
 .mx-lfoot .add-sound-menu-wrapper, .mx-lfoot .add-sound-menu-wrapper > .btn { flex: 1; width: 100%; }
 .mx-lfoot .dropdown-menu { top: auto; bottom: calc(100% + 6px); left: 0; right: 0; }
