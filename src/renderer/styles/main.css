@@ -796,7 +796,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .tag-filter-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
 
@@ -1253,7 +1253,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .sound-row-group-line {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   max-width: 100%;
   min-width: 0;
   padding: 0;
@@ -1524,7 +1524,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 14px;
+  padding: 0 var(--space-4);
   white-space: nowrap;
   opacity: 1;
   transition: opacity 160ms ease;
@@ -1790,7 +1790,7 @@ main:has(> .tab-panel:not(.hidden) .mx-studio) { padding: 0 var(--space-2); over
 .modal-card {
   background: var(--surface);
   border-radius: var(--radius);
-  padding: var(--space-4) 20px;
+  padding: var(--space-4) var(--space-4);
   box-shadow: 0 16px 48px rgb(0 0 0 / 0.5);
   /* Grows with the window instead of a fixed 360px that squeezed content
      (preset names especially) into unreadable ellipsis on the default
@@ -2747,7 +2747,7 @@ h2.gh.l {
   justify-content: space-between;
   gap: var(--space-4);
   min-height: 48px;
-  padding-block: 6px;
+  padding-block: var(--space-2);
 }
 
 .settings-item-info {
@@ -3267,7 +3267,7 @@ a.btn {
   background: var(--surface);
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  padding: var(--space-3) 14px;
+  padding: var(--space-3) var(--space-4);
   margin-bottom: var(--space-3);
 }
 
@@ -3722,7 +3722,7 @@ a.btn {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 3px;
+  gap: var(--space-1);
   height: 64px;
   margin-bottom: var(--space-2);
 }
