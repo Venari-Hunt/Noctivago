@@ -2796,13 +2796,16 @@ h2.gh.l {
 .settings-plugin-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   min-height: 48px;
   padding-block: var(--space-2);
 }
 
+/* A wide control (a device list) wraps under the label instead of squeezing it. */
 .settings-item-info {
+  flex: 1 1 220px;
   min-width: 0;
 }
 
@@ -2822,6 +2825,7 @@ h2.gh.l {
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
+  max-width: 100%;
   color: var(--text-dim);
 }
 
@@ -3245,7 +3249,7 @@ a.btn {
 
 /* Narrow window: the page list becomes a row of tabs above the page, and a
    row's control drops under its label instead of squeezing it. */
-@media (max-width: 640px) {
+@media (max-width: 700px) {
   .sets {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3257,14 +3261,16 @@ a.btn {
     scrollbar-width: thin;
   }
 
+  .subnav {
+    justify-content: center;
+  }
+
   .subnav button {
     flex: none;
   }
 
-  .settings-item,
-  .settings-plugin-row {
-    flex-wrap: wrap;
-    gap: var(--space-2);
+  .subnav button span {
+    display: none;
   }
 
   .settings-item-control {
