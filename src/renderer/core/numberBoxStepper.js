@@ -98,7 +98,8 @@ export function installNumberBoxStepper() {
       if (!(el instanceof HTMLInputElement) || evt.defaultPrevented) return
       if (el.type === 'range') {
         // Shift+wheel is the Mixer card's side-scroll, which turns its own volume.
-        if (el.disabled || evt.shiftKey || !evt.deltaY) return
+        // A knob's input turns only once the knob is selected (knobSelect.js).
+        if (el.disabled || evt.shiftKey || !evt.deltaY || el.closest('[data-knob]')) return
         evt.preventDefault()
         setValue(el, rangeWheelValue(el, evt.deltaY < 0 ? 1 : -1, evt.ctrlKey))
         return
