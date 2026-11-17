@@ -5,9 +5,9 @@ export function Sidebar({ pages, activeId, onSelect }) {
   return (
     <nav className="subnav" aria-label="Settings">
       {pages.map((page) => (
-        <button key={page.id} type="button" className={page.id === activeId ? 'cur' : ''} onClick={() => onSelect(page.id)}>
+        <button key={page.id} type="button" className={page.id === activeId ? 'cur' : ''} title={page.title} aria-label={page.title} onClick={() => onSelect(page.id)}>
           <MockIcon name={page.icon} />
-          {page.title}
+          <span>{page.title}</span>
         </button>
       ))}
     </nav>
