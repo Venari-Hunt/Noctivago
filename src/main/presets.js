@@ -252,14 +252,15 @@ export function updatePresetGroups(id, groups, { markIncluded } = {}) {
   const newlyJoined = [...after].filter((soundId) => !before.has(soundId))
 
   let sounds = presets[idx].sounds ?? []
+  const removedOverrides = { ...(presets[idx].removedOverrides ?? {}) }
   for (const soundId of newlyJoined) {
     if (!sounds.some((s) => s.soundId === soundId)) {
-      sounds = [...sounds, { soundId, volume: DEFAULT_SOUND_VOLUME, overrides: null }]
+      sounds = [...sounds, { soundId, volume: DEFAULT_SOUND_VOLUME, overrides: takeRemovedOverride(removedOverrides, soundId) }]
     }
     markIncluded?.(soundId, true)
   }
 
-  presets[idx] = { ...presets[idx], sounds, groups: normalized }
+  presets[idx] = { ...presets[idx], sounds, groups: normalized, removedOverrides }
   store.set('presets', presets)
   return presets[idx]
 }
@@ -295,18 +296,43 @@ export function updatePresetWholeMix(id, wholeMix) {
 // `overrides: null` and erased a pan the owner had just saved in Remix
 // ("changes made in the remix tab still aren't consistently transferring to
 // the mixer tab"). Only a sound new to the preset takes the caller's value.
+// BUG FIX (owner, 2026-11-17: "missclicked raven and took it out of the mix
+// for a moment but when i went back to put it on the mix again it went as a
+// loop and not as a scheduled"): a sound's preset settings (Raven's
+// Scheduled play mode) lived only on its sounds[] row, so leaving the mix
+// erased them and coming back got the sound's own defaults. A sound that
+// leaves now parks its overrides in removedOverrides { soundId: overrides },
+// and coming back (here or by joining a group) takes them again.
+function parkRemovedOverrides(preset, keptSoundIds) {
+  const kept = new Set(keptSoundIds)
+  const parked = { ...(preset.removedOverrides ?? {}) }
+  for (const s of preset.sounds ?? []) {
+    if (!kept.has(s.soundId) && s.overrides) parked[s.soundId] = s.overrides
+  }
+  return parked
+}
+
+// Removes and returns a parked override (null when none).
+function takeRemovedOverride(parked, soundId) {
+  const override = parked[soundId] ?? null
+  delete parked[soundId]
+  return override
+}
+
 export function updatePresetSounds(id, sounds) {
   const presets = store.get('presets')
   const idx = presets.findIndex((p) => p.id === id)
   if (idx === -1) return null
   const storedOverrides = new Map((presets[idx].sounds ?? []).map((s) => [s.soundId, s.overrides ?? null]))
+  const removedOverrides = parkRemovedOverrides(presets[idx], sounds.map((s) => s.soundId))
   presets[idx] = {
     ...presets[idx],
-    sounds: sounds.map((s) => ({
-      soundId: s.soundId,
-      volume: s.volume,
-      overrides: storedOverrides.has(s.soundId) ? storedOverrides.get(s.soundId) : normalizeSoundOverride(s.overrides)
-    }))
+    sounds: sounds.map((s) => {
+      if (storedOverrides.has(s.soundId)) return { soundId: s.soundId, volume: s.volume, overrides: storedOverrides.get(s.soundId) }
+      const parked = takeRemovedOverride(removedOverrides, s.soundId)
+      return { soundId: s.soundId, volume: s.volume, overrides: normalizeSoundOverride(s.overrides) ?? parked }
+    }),
+    removedOverrides
   }
   store.set('presets', presets)
   return presets[idx]

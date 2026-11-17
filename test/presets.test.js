@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { listPresets, normalizeWholeMix, normalizeGroupFilters, normalizeGroups, updatePresetGroups, savePreset, deletePreset, renamePreset, duplicatePreset, duplicatePresetName } from '../src/main/presets.js'
+import { listPresets, normalizeWholeMix, normalizeGroupFilters, normalizeGroups, updatePresetGroups, savePreset, updatePresetSounds, deletePreset, renamePreset, duplicatePreset, duplicatePresetName } from '../src/main/presets.js'
 
 describe('normalizeWholeMix', () => {
   test('null/undefined/non-object input is null', () => {
@@ -259,5 +259,43 @@ describe('Desktop 2.0 card menu: rename and duplicate', () => {
   test('duplicatePresetName skips taken names and strips an existing suffix', () => {
     assert.equal(duplicatePresetName('Rain', []), 'Rain (copy)')
     assert.equal(duplicatePresetName('Rain (copy)', ['Rain (copy)']), 'Rain (copy 2)')
+  })
+})
+
+describe('a sound that leaves the mix keeps its preset settings (owner, 2026-11-17: Raven came back as a loop)', () => {
+  const scheduled = { playMode: 'scheduled', schedule: { kind: 'hourly' } }
+
+  test('removed then re-added through the mix gets its overrides back', () => {
+    const preset = savePreset({ name: 'probe', sounds: [{ soundId: 'raven', volume: 0.5, overrides: scheduled }, { soundId: 'rain', volume: 1, overrides: null }], wholeMix: null, groups: [] })
+    try {
+      const out = updatePresetSounds(preset.id, [{ soundId: 'rain', volume: 1, overrides: null }])
+      assert.equal(out.sounds.some((s) => s.soundId === 'raven'), false)
+      assert.deepEqual(out.removedOverrides.raven, scheduled)
+      const back = updatePresetSounds(preset.id, [{ soundId: 'rain', volume: 1, overrides: null }, { soundId: 'raven', volume: 0.5, overrides: null }])
+      assert.deepEqual(back.sounds.find((s) => s.soundId === 'raven').overrides, scheduled)
+      assert.equal('raven' in back.removedOverrides, false)
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('re-added by joining a group also gets them back', () => {
+    const preset = savePreset({ name: 'probe', sounds: [{ soundId: 'raven', volume: 0.5, overrides: scheduled }], wholeMix: null, groups: [] })
+    try {
+      updatePresetSounds(preset.id, [])
+      const back = updatePresetGroups(preset.id, [{ name: 'outside', soundIds: ['raven'], filters: null }])
+      assert.deepEqual(back.sounds.find((s) => s.soundId === 'raven').overrides, scheduled)
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('a sound without overrides parks nothing', () => {
+    const preset = savePreset({ name: 'probe', sounds: [{ soundId: 'rain', volume: 1, overrides: null }], wholeMix: null, groups: [] })
+    try {
+      assert.deepEqual(updatePresetSounds(preset.id, []).removedOverrides, {})
+    } finally {
+      deletePreset(preset.id)
+    }
   })
 })

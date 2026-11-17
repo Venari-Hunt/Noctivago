@@ -135,6 +135,10 @@ const state = {
   // state.library, which recomputeEffectiveLibrary() keeps pointed at the
   // *effective* (baseline + active preset's override) view.
   activePresetSounds: [],
+  // Overrides of sounds that left the active preset's mix (main presets.js
+  // parkRemovedOverrides): they keep applying, so a sound put back starts
+  // with its preset settings (owner, 2026-11-17: Raven came back as a loop).
+  activePresetRemovedOverrides: {},
   baselineById: new Map()
 }
 
@@ -887,9 +891,10 @@ let includedSeeded = false
 // own comment for why). Recomputed on refreshList() and whenever the active
 // preset (or its sounds/overrides) changes.
 function recomputeEffectiveLibrary() {
-  const overridesById = new Map(
-    state.activePresetSounds.filter((s) => s.overrides).map((s) => [s.soundId, s.overrides])
-  )
+  const overridesById = new Map([
+    ...Object.entries(state.activePresetRemovedOverrides),
+    ...state.activePresetSounds.filter((s) => s.overrides).map((s) => [s.soundId, s.overrides])
+  ])
   state.library = [...state.baselineById.values()].map((entry) => applySoundOverride(entry, overridesById.get(entry.id)))
 }
 
@@ -1958,6 +1963,7 @@ let presetEditSeq = 0
 function adoptActivePresetSounds(preset) {
   if (!preset || preset.id !== state.activePresetId) return
   state.activePresetSounds = preset.sounds ?? []
+  state.activePresetRemovedOverrides = preset.removedOverrides ?? {}
   recomputeEffectiveLibrary()
   for (const entry of state.library) reconcileSource(entry)
 }
@@ -2174,6 +2180,7 @@ async function loadPresetInner(preset, { play = true } = {}) {
   // the loop) for exactly this reason.
   state.activePresetId = preset.id
   state.activePresetSounds = preset.sounds ?? []
+  state.activePresetRemovedOverrides = preset.removedOverrides ?? {}
   recomputeEffectiveLibrary()
   // BUG FIX (reported directly, "actively harmful"): which preset was
   // loaded was never persisted, so a restart/autoupdate silently dropped
@@ -2426,6 +2433,7 @@ async function restoreLastActivePreset(settings) {
 
   state.activePresetId = preset.id
   state.activePresetSounds = preset.sounds ?? []
+  state.activePresetRemovedOverrides = preset.removedOverrides ?? {}
   recomputeEffectiveLibrary()
   api.settings.setLastActivePresetId(preset.id)
   setActivePresetIndicator(preset.name)
