@@ -1770,6 +1770,9 @@ async function refreshPresetList() {
     onSaveNew: () => openPresetNameRow('save')
   })
   updateActivePresetButtonState(presets)
+  // Remix lists presets too (owner, 2026-11-17: a new one was missing there
+  // until a restart). Every create/rename/delete/import ends here.
+  window.dispatchEvent(new CustomEvent('noctivago:presets-changed'))
 }
 
 // Names the last loaded preset (state.activePresetId - set by loadPreset,
