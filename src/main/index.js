@@ -209,7 +209,10 @@ function createWindow() {
     // snap layouts and the system menu keep working. Height must match
     // --title-bar-h in main.css.
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#121212', symbolColor: '#8f8f8f', height: 48 },
+    // Colors = main.css tokens --bg (the title bar) and --text-dim (its text);
+    // main can't read CSS, so change them together (owner, 2026-11-17: the
+    // old #121212 left the buttons on a darker block than the bar).
+    titleBarOverlay: { color: '#19191d', symbolColor: '#a3a09a', height: 48 },
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
