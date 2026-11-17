@@ -1057,6 +1057,15 @@ button.mx-sw:disabled { cursor: default; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Selected (owner, 2026-11-14): the knob holds the focus, so the plain wheel
+   turns it (core/knobSelect.js). A ring just outside the arc; Esc or a click
+   elsewhere clears it. */
+.knob:focus-within {
+  border-radius: 50%;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .sound-row:hover .knob-pct,
 .knob:focus-within .knob-pct {
   opacity: 1;

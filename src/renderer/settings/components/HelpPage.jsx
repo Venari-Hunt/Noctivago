@@ -18,7 +18,7 @@ export function HelpPage() {
             ))}
           </SettingItem>
         ))}
-        <SettingItem name="Change volume" description="Over a card or a knob">
+        <SettingItem name="Change volume" description="Click a knob, then scroll. Side-scroll works over a card">
           <span className="kbd">Wheel</span>
         </SettingItem>
       </Group>

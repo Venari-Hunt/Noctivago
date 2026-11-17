@@ -36,7 +36,7 @@ export function VolumeKnob({ label, volume, muted, playType, onChange }) {
     if (pctRef.current) pctRef.current.textContent = formatPercent(gain)
   }
   return (
-    <div className="knob" ref={ringRef}>
+    <div className="knob" data-knob="" ref={ringRef}>
       <svg viewBox="0 0 72 72" aria-hidden="true">
         <circle className="knob-track" cx="36" cy="36" r="31" pathLength="100" />
         <circle className="knob-value" cx="36" cy="36" r="31" pathLength="100" />
