@@ -293,4 +293,42 @@ describe('Mixer undo history: delete', () => {
     assert.equal(await page.locator('#mx-redo').isDisabled(), true)
     assert.equal(await page.locator('.sound-row').count(), 0)
   })
+
+  test('older entries about a deleted sound are pruned: Ctrl+Z after the toast closes touches nothing and logs no error', async () => {
+    await page.evaluate((p) => window.noctivago.library.addSound({ path: p, name: 'Gust tone', keepCopy: true }), wavPath)
+    await page.reload()
+    await page.waitForSelector('.mx-item')
+    await app.dismissToasts()
+    await page.locator('.mx-item', { hasText: 'Gust tone' }).locator('.mx-sw').click()
+    await page.waitForSelector('.sound-row:has-text("Gust tone")')
+    await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.sound-row')].find((r) => r.textContent.includes('Gust tone'))
+      const el = row.querySelector('.sound-row-volume')
+      el.value = '300'
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await settle()
+    assert.equal(await undoTitle(), 'Undo volume of Gust tone')
+    await page.mouse.move(5, 5)
+    await page.click('#bulk-select-toggle')
+    await rowOf('Gust tone').locator('.sound-row-select input').check()
+    await press('Delete')
+    assert.equal(await undoTitle(), 'Undo delete Gust tone')
+    await page.mouse.move(5, 5)
+    await page.locator('.notify', { hasText: 'Deleted "Gust tone"' }).waitFor({ state: 'detached', timeout: 12000 })
+    await settle()
+    assert.ok(!(await libraryNames()).includes('Gust tone'))
+    assert.equal(await page.locator('#mx-undo').isDisabled(), true, 'volume, mix and delete entries about the gone sound are all pruned')
+    // Listen only now: startup logs unrelated errors (the broken example plugin, aborted streams).
+    const errors = []
+    const onPageError = (e) => errors.push(String(e))
+    const onConsole = (m) => { if (m.type() === 'error') errors.push(m.text()) }
+    page.on('pageerror', onPageError)
+    page.on('console', onConsole)
+    await press('Control+z')
+    await press('Control+Shift+z')
+    page.off('pageerror', onPageError)
+    page.off('console', onConsole)
+    assert.deepEqual(errors, [])
+  })
 })

@@ -19,7 +19,8 @@ export function createHistory({ cap = CAP, mergeMs = MERGE_MS, now = () => Date.
   const notify = () => { for (const fn of [...listeners]) fn() }
 
   // Returns the entry (so a caller can later remove() it), or undefined while an undo/redo runs.
-  function push({ label, undo, redo, mergeKey } = {}) {
+  // ids (optional): the sound ids the entry touches, so removeForIds() can drop it.
+  function push({ label, undo, redo, mergeKey, ids } = {}) {
     if (running) return undefined
     if (typeof undo !== 'function' || typeof redo !== 'function') {
       throw new TypeError('history.push needs undo and redo functions')
@@ -36,7 +37,7 @@ export function createHistory({ cap = CAP, mergeMs = MERGE_MS, now = () => Date.
       notify()
       return lastPushed
     }
-    const entry = { label: label ?? '', undo, redo, mergeKey }
+    const entry = { label: label ?? '', undo, redo, mergeKey, ids }
     undoStack.push(entry)
     if (undoStack.length > cap) undoStack.splice(0, undoStack.length - cap)
     redoStack = []
@@ -89,6 +90,19 @@ export function createHistory({ cap = CAP, mergeMs = MERGE_MS, now = () => Date.
       if (lastPushed === entry) lastPushed = null
       notify()
       return true
+    },
+    // Drops every entry (either stack) that names one of these sound ids (push({ ids })),
+    // for sounds whose files are gone: their setters would run on a sound that no longer exists.
+    removeForIds(ids) {
+      const gone = new Set(ids)
+      const hits = (e) => e.ids?.some((id) => gone.has(id))
+      const before = undoStack.length + redoStack.length
+      undoStack = undoStack.filter((e) => !hits(e))
+      redoStack = redoStack.filter((e) => !hits(e))
+      if (undoStack.length + redoStack.length === before) return 0
+      if (lastPushed && !undoStack.includes(lastPushed)) lastPushed = null
+      notify()
+      return before - undoStack.length - redoStack.length
     },
     clear() {
       if (!undoStack.length && !redoStack.length) { lastPushed = null; return }

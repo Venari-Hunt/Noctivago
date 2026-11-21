@@ -479,6 +479,7 @@ async function changeTags(id, tags, { fromHistory = false } = {}) {
     if (JSON.stringify(before) !== JSON.stringify(after)) {
       history.push({
         label: `tags of ${entry.name}`,
+        ids: [id],
         undo: () => changeTags(id, before, { fromHistory: true }),
         redo: () => changeTags(id, after, { fromHistory: true })
       })
@@ -523,6 +524,7 @@ async function renameSound(id, name, { fromHistory = false } = {}) {
     if (after !== before) {
       history.push({
         label: `rename ${before}`,
+        ids: [id],
         undo: () => renameSound(id, before, { fromHistory: true }),
         redo: () => renameSound(id, after, { fromHistory: true })
       })
@@ -1267,6 +1269,7 @@ function recordIncludedChange(id, name, added) {
   }
   history.push({
     label: added ? `add ${name} to the mix` : `remove ${name} from the mix`,
+    ids: [id],
     undo: () => back(!added),
     redo: () => back(added)
   })
@@ -1294,6 +1297,7 @@ function changeVolume(id, volume, { fromHistory = false } = {}) {
     history.push({
       label: `volume of ${soundNameOf(id)}`,
       mergeKey: `vol:${id}`,
+      ids: [id],
       undo: () => {
         changeVolume(id, before, { fromHistory: true })
         if (wasMuted && !state.mutedSounds.has(id)) toggleMute(id, { fromHistory: true })
@@ -1386,7 +1390,8 @@ async function applyClipFix(fix, resetLight) {
   }
   const label = 'Clip fix'
   let pending = null
-  history.push({ label, undo: () => (pending = rawUndo()), redo })
+  const ids = fix.kind === 'group' ? [] : fix.kind === 'sound' ? [fix.id] : [...state.included]
+  history.push({ label, ids, undo: () => (pending = rawUndo()), redo })
   return async () => {
     if (history.peekLabels().undo === label) {
       history.undo()
@@ -1420,6 +1425,7 @@ function toggleMute(id, { fromHistory = false } = {}) {
   if (!fromHistory) {
     history.push({
       label: `${wasMuted ? 'unmute' : 'mute'} ${soundNameOf(id)}`,
+      ids: [id],
       undo: () => toggleMute(id, { fromHistory: true }),
       redo: () => toggleMute(id, { fromHistory: true })
     })
@@ -1689,6 +1695,7 @@ async function commitRemoveSounds(batch) {
   if (!ids.length) return
   for (const id of ids) pendingDeletes.delete(id)
   if (batch.entry) history.remove(batch.entry)
+  history.removeForIds(ids) // older volume/mute/rename/tag entries about these sounds can no longer run
   for (const id of ids) await api.library.remove(id)
   await refreshList()
 }

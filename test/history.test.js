@@ -174,6 +174,33 @@ test('remove() notifies once and stops a merge into the removed entry', () => {
   assert.ok(!h.canUndo()) // b stood alone, it did not merge into the removed a
 })
 
+test('removeForIds() drops entries naming those ids from both stacks, keeps the rest', () => {
+  const { h, entry } = setup()
+  let calls = 0
+  h.push({ ...entry('a1'), ids: ['a'] })
+  h.push({ ...entry('b1'), ids: ['b'] })
+  h.push({ ...entry('ab'), ids: ['a', 'b'] })
+  h.push({ ...entry('none') })
+  h.undo() // 'none' goes to the redo stack
+  h.push({ ...entry('a2'), ids: ['a'] })
+  h.undo()
+  h.onChange(() => calls++)
+  assert.equal(h.removeForIds(['a']), 3) // a1, ab (undo) and a2 (redo)
+  assert.equal(calls, 1)
+  assert.deepEqual(h.peekLabels(), { undo: 'b1', redo: null })
+  assert.equal(h.removeForIds(['zzz']), 0)
+  assert.equal(calls, 1) // nothing removed, no notify
+})
+
+test('removeForIds() stops a merge into a removed entry', () => {
+  const { h, entry } = setup()
+  h.push({ ...entry('a'), mergeKey: 'k', ids: ['a'] })
+  h.removeForIds(['a'])
+  h.push({ ...entry('b'), mergeKey: 'k', ids: ['a'] })
+  h.undo()
+  assert.ok(!h.canUndo())
+})
+
 test('push without undo and redo functions throws', () => {
   const { h } = setup()
   assert.throws(() => h.push({ label: 'x' }), TypeError)
