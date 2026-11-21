@@ -25,6 +25,7 @@ import { openClipReport } from './components/ClipReport.jsx'
 import { mountRecommendedPlugins } from './components/RecommendedPlugins.jsx'
 import { mockIconSvg } from '../../components/mockIcons.jsx'
 import { notify } from '../../core/Notifications.js'
+import { history } from '../../core/history.js'
 import { mountAddSound, setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
 import { showPresetPill, presetPillState } from '../../toolbar/presetPill.js'
 
@@ -2482,7 +2483,7 @@ export function mount(container) {
         <div class="mx-meta" id="mx-meta"></div>
         <div class="mx-acts">
           <button type="button" class="mx-ib mx-rail-show" id="mx-rail-show" title="Show the library" aria-label="Show the library">${mockIconSvg('chevron-right')}</button>
-          <span class="mx-pair" role="group" aria-label="History"><button type="button" class="mx-ib" disabled title="Undo (not built yet)" aria-label="Undo">${mockIconSvg('undo-2')}</button><button type="button" class="mx-ib" disabled title="Redo (not built yet)" aria-label="Redo">${mockIconSvg('redo-2')}</button></span>
+          <span class="mx-pair" role="group" aria-label="History"><button type="button" class="mx-ib" id="mx-undo" disabled title="Nothing to undo" aria-label="Undo">${mockIconSvg('undo-2')}</button><button type="button" class="mx-ib" id="mx-redo" disabled title="Nothing to redo" aria-label="Redo">${mockIconSvg('redo-2')}</button></span>
           <button id="bulk-select-toggle" class="btn btn-ghost" type="button" title="Select several sounds to apply an effect preset to all of them at once">Select</button>
           <button id="mx-save-new" class="btn btn-icon-text" type="button" title="Save this mix as a new preset">${mockIconSvg('copy')}Save as new</button>
         </div>
@@ -2592,6 +2593,20 @@ export function mount(container) {
     state.mixSort = els.mixSort.value
     render()
   })
+  // Head Undo/Redo follow the app-wide history (core/history.js); keys are in core/keymap.js.
+  const undoBtn = container.querySelector('#mx-undo')
+  const redoBtn = container.querySelector('#mx-redo')
+  const syncHistoryButtons = () => {
+    const labels = history.peekLabels()
+    for (const [btn, can, label, word] of [[undoBtn, history.canUndo(), labels.undo, 'Undo'], [redoBtn, history.canRedo(), labels.redo, 'Redo']]) {
+      btn.disabled = !can
+      btn.title = can ? `${word} ${label}`.trim() : `Nothing to ${word.toLowerCase()}`
+    }
+  }
+  undoBtn.addEventListener('click', () => history.undo())
+  redoBtn.addEventListener('click', () => history.redo())
+  history.onChange(syncHistoryButtons)
+  syncHistoryButtons()
   container.querySelector('#mx-save-new').addEventListener('click', async () => {
     await openPresetsModal()
     openPresetNameRow('save')

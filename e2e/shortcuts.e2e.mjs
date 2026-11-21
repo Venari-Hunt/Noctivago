@@ -39,10 +39,11 @@ describe('keyboard shortcuts', () => {
     await settle()
     assert.equal(await settingsOpen(), true)
     const text = await page.locator('.scol').innerText()
-    for (const title of ['Play or pause', 'Search sounds', 'Save preset changes', 'Open or close Settings', 'Full screen', 'Show shortcuts']) {
+    for (const title of ['Play or pause', 'Search sounds', 'Save preset changes', 'Open or close Settings', 'Undo the last Mixer change', 'Redo (also Ctrl+Y)', 'Full screen', 'Show shortcuts']) {
       assert.ok(text.includes(title), `Help lists "${title}"`)
     }
     assert.equal(await page.locator('.subnav button.cur').innerText(), 'Help')
+    if (process.env.UNDO_HELP_SHOT) await page.locator('.scol').screenshot({ path: process.env.UNDO_HELP_SHOT })
   })
 
   test('Ctrl+F goes to the Mixer and focuses search', async () => {
@@ -57,6 +58,26 @@ describe('keyboard shortcuts', () => {
     await settle()
     assert.equal(await settingsOpen(), false)
     assert.equal(await page.inputValue('#mx-rail-search'), 'a ?b')
+    await page.fill('#mx-rail-search', '')
+  })
+
+  test('head Undo and Redo start disabled; Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y do nothing with empty history', async () => {
+    const state = () => page.evaluate(() => ['#mx-undo', '#mx-redo'].map((s) => { const b = document.querySelector(s); return [b.disabled, b.title] }))
+    assert.deepEqual(await state(), [[true, 'Nothing to undo'], [true, 'Nothing to redo']])
+    if (process.env.UNDO_SHOT) await page.locator('.mx-head').screenshot({ path: process.env.UNDO_SHOT })
+    await page.locator('#tab-content').click({ position: { x: 5, y: 5 } })
+    for (const k of ['Control+z', 'Control+Shift+z', 'Control+y']) await page.keyboard.press(k)
+    await settle()
+    assert.deepEqual(await state(), [[true, 'Nothing to undo'], [true, 'Nothing to redo']])
+    assert.equal(await page.locator('.notify', { hasText: /Undid|Redid/ }).count(), 0)
+  })
+
+  test('Ctrl+Z in the search field stays the field\'s own undo (no history toast)', async () => {
+    await page.focus('#mx-rail-search')
+    await page.keyboard.type('abc')
+    await page.keyboard.press('Control+z')
+    await settle()
+    assert.equal(await page.locator('.notify', { hasText: /Undid|Redid/ }).count(), 0)
     await page.fill('#mx-rail-search', '')
   })
 

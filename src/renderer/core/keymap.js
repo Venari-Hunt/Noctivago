@@ -1,4 +1,6 @@
 import { matchShortcut, isTypingTarget } from './shortcuts.js'
+import { history } from './history.js'
+import { notify } from './Notifications.js'
 
 // Wires the shortcut table (shortcuts.js) to the app. Actions press the same
 // buttons a click would, so each rule stays where it already lives.
@@ -9,7 +11,8 @@ export function installKeymap({ tabHost, toggleSettings, showHelp }) {
     const hit = matchShortcut(event, {
       typing: isTypingTarget(target),
       onControl: !!target?.closest?.('button, a, [role="button"], [role="slider"], [role="switch"]'),
-      modalOpen: !!document.querySelector('.modal:not(.hidden), .context-menu')
+      modalOpen: !!document.querySelector('.modal:not(.hidden), .context-menu'),
+      tab: tabHost.getActiveId()
     })
     if (!hit) return
     const run = () => {
@@ -28,6 +31,12 @@ export function installKeymap({ tabHost, toggleSettings, showHelp }) {
       else if (hit.id === 'tab') document.querySelectorAll('#tab-bar .tab-button')[hit.tab]?.click()
       else if (hit.id === 'fullscreen') window.noctivago.toggleFullscreen()
       else if (hit.id === 'help') showHelp()
+      else if (hit.id === 'undo' || hit.id === 'redo') {
+        const labels = history.peekLabels()
+        const label = hit.id === 'undo' ? labels.undo : labels.redo
+        const done = hit.id === 'undo' ? history.undo() : history.redo()
+        if (done) notify({ message: `${hit.id === 'undo' ? 'Undid' : 'Redid'} ${label}`, key: 'history-step', timeoutMs: 2000 })
+      }
       // 'marker' (Ctrl+M) belongs to the Remix plugin's own key handler; nothing to run here.
     }
     event.preventDefault()
