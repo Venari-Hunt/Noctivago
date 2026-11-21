@@ -284,7 +284,7 @@ function render() {
     els.soundList,
     els.emptyState,
     sections,
-    false,
+    state.mixSort === 'mix' && state.mixArrange === 'all' && !state.selectMode && sections.length > 0 && sections[0].rows.length > 1,
     {
       onToggleIncluded: toggleIncludedFromCenter,
       onVolumeChange: changeVolume,
@@ -295,7 +295,7 @@ function render() {
       onRelink: relinkSound,
       onRename: renameSound,
       onTagsChange: changeTags,
-      onReorderDrop: reorderByDrop,
+      onReorderDrop: reorderMixByDrop,
       onContextMenu: openSoundContextMenu,
       onToggleSelect: toggleSelectSound
     },
@@ -487,32 +487,39 @@ async function changeTags(id, tags, { fromHistory = false } = {}) {
   }
 }
 
-// Drop target is always "insert dragged item immediately before this row" -
-// simpler than checking which half of the target row the cursor is over,
-// and still enough to reach any position with one drag. Computed against
-// the *full* library order (not just the currently visible/filtered rows),
-// so an active search or tag filter never lets a hidden sound's relative
-// position drift as a side effect of reordering the visible ones.
-async function reorderByDrop(draggedId, targetId, { fromHistory = false } = {}) {
-  const fullOrder = sortForDisplay(state.library, 'custom').map((e) => e.id)
-  const withoutDragged = fullOrder.filter((id) => id !== draggedId)
-  const targetIndex = withoutDragged.indexOf(targetId)
-  if (targetIndex === -1) return
-  withoutDragged.splice(targetIndex, 0, draggedId)
-  if (!fromHistory && withoutDragged.every((id, i) => id === fullOrder[i])) return // dropped in place
-  await setLibraryOrder(withoutDragged)
-  if (!fromHistory) {
-    history.push({
-      label: 'order of sounds',
-      undo: () => setLibraryOrder(fullOrder),
-      redo: () => setLibraryOrder(withoutDragged)
-    })
-  }
+// Drag a card in the center to move it in the mix (owner, 2026-11-21: bring
+// drag back). Only in Mix order + All sounds, outside select mode, so the
+// order you see is the order you change. `place` = which side of the target
+// card the cursor was on. The new order autosaves like any mix edit.
+function reorderMixByDrop(draggedId, targetId, place = 'before') {
+  const before = [...state.included]
+  if (!before.includes(draggedId) || !before.includes(targetId)) return
+  const after = before.filter((id) => id !== draggedId)
+  after.splice(after.indexOf(targetId) + (place === 'after' ? 1 : 0), 0, draggedId)
+  if (after.every((id, i) => id === before[i])) return // dropped in place
+  applyMixOrder(after)
+  history.push({
+    label: 'mix order',
+    undo: () => applyMixOrder(before),
+    redo: () => applyMixOrder(after)
+  })
 }
 
-async function setLibraryOrder(order) {
-  await api.library.reorderSounds(order)
-  await refreshList()
+function applyMixOrder(ids) {
+  orderIncluded(ids)
+  autosaveActivePreset()
+  render()
+}
+
+// Mix order is state.included's insertion order, and currentMixSounds() saves
+// the preset's sounds[] in that order. Reorders the Set in place to follow
+// `ids`; sounds not in `ids` keep their relative order after them.
+function orderIncluded(ids) {
+  const listed = ids.filter((id) => state.included.has(id))
+  const listedSet = new Set(listed)
+  const next = [...listed, ...[...state.included].filter((id) => !listedSet.has(id))]
+  state.included.clear()
+  for (const id of next) state.included.add(id)
 }
 
 async function renameSound(id, name, { fromHistory = false } = {}) {
@@ -2390,6 +2397,8 @@ async function loadPresetInner(preset, { play = true } = {}) {
       persistIncluded(item.soundId, true)
     }
   }
+  // Sounds already playing kept their old place; the preset's order wins.
+  orderIncluded(preset.sounds.map((s) => s.soundId))
 
   // Whole-mix processing (Preset Remix plugin). Installed on the shared
   // engine chain here, with the preset's fade-in only on an actual load;
@@ -2623,6 +2632,8 @@ async function restoreLastActivePreset(settings) {
   state.activePresetSounds = preset.sounds ?? []
   state.activePresetRemovedOverrides = preset.removedOverrides ?? {}
   recomputeEffectiveLibrary()
+  // state.included was seeded in library order; the preset holds the mix order.
+  orderIncluded(state.activePresetSounds.map((s) => s.soundId))
   api.settings.setLastActivePresetId(preset.id)
   setActivePresetIndicator(preset.name)
   engine.wholeMix.set(preset.wholeMix ?? null)

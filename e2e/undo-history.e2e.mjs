@@ -153,8 +153,8 @@ describe('Mixer undo history', () => {
   })
 })
 
-// Step 4: rename, tags, Clip fix (the reorder drop has no live UI today: the center
-// list is never draggable, so it is covered by recording only). Starts on "Other preset".
+// Step 4: rename, tags, Clip fix (the mix order drag has its own test,
+// mix-drag-order.e2e.mjs). Starts on "Other preset".
 describe('Mixer undo history: edits', () => {
   const nameOf = () => page.locator('.sound-row .sound-row-name').first().innerText()
   const tagNames = () => page.locator('.sound-row .tag-chip-name').allInnerTexts()
