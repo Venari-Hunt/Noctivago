@@ -13,6 +13,7 @@ export const SHORTCUTS = [
   // never while typing or with a dialog open, and only on the Mixer tab (Remix keeps its own undo).
   { id: 'undo', title: 'Undo the last Mixer change', keys: ['Ctrl', 'Z'] },
   { id: 'redo', title: 'Redo (also Ctrl+Y)', keys: ['Ctrl', 'Shift', 'Z'] },
+  { id: 'delete', title: 'Delete the selected sounds (Mixer, undoable for 6 s)', keys: ['Delete'] },
   { id: 'tab', title: 'Go to tab 1 to 9', keys: ['Ctrl', '1-9'], ctrl: true },
   { id: 'fullscreen', title: 'Full screen', keys: ['F11'], any: true, key: 'F11' },
   { id: 'help', title: 'Show shortcuts', keys: ['?'], plain: true, key: '?' }
@@ -28,11 +29,15 @@ export function isTypingTarget(el) {
 // Returns { id, tab? } or null. `ctx.typing`: focus is in a field;
 // `ctx.onControl`: focus is on a button or link (Space presses it);
 // `ctx.modalOpen`: a dialog is open, so plain keys are left alone;
-// `ctx.tab`: id of the active tab (undo and redo only match on 'mixer').
+// `ctx.tab`: id of the active tab (undo, redo and Delete only match on 'mixer');
+// `ctx.hasSelection`: the Mixer has sounds selected (Delete needs some).
 export function matchShortcut(event, ctx = {}) {
   const ctrl = event.ctrlKey || event.metaKey
   if (event.altKey) return null
   if (event.key === 'F11') return { id: 'fullscreen' }
+  if (event.key === 'Delete' && !ctrl && !event.shiftKey) {
+    return ctx.typing || ctx.modalOpen || ctx.tab !== 'mixer' || !ctx.hasSelection ? null : { id: 'delete' }
+  }
   if (ctrl) {
     const k = event.key.toLowerCase()
     if (k === 'z' || k === 'y') {

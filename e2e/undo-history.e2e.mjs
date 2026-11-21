@@ -224,3 +224,73 @@ describe('Mixer undo history: edits', () => {
     assert.equal(await loudVolume(), lowered)
   })
 })
+
+// Step 5: the Delete key with a selection, and delete as a history entry.
+describe('Mixer undo history: delete', () => {
+  let prevTitle
+  const libraryNames = () => page.evaluate(() => window.noctivago.library.list().then((l) => l.map((e) => e.name)))
+  const volumes = () => page.locator('.sound-row .sound-row-volume').evaluateAll((els) => els.map((el) => el.value))
+  // Focus off any field so the key reaches the keymap (a ticked checkbox is a field).
+  const press = async (combo) => {
+    await page.evaluate(() => document.activeElement?.blur())
+    await page.keyboard.press(combo)
+    await settle()
+  }
+
+  test('select 2 sounds, Delete, Ctrl+Z brings both back with volume and mute', async () => {
+    // Starts on "Loud preset" (Thunder loud in the mix): add Wind tone, give it a volume, mute Thunder.
+    await page.locator('.mx-item', { hasText: 'Wind tone' }).locator('.mx-sw').click()
+    await page.waitForSelector('.sound-row:has-text("Wind tone")')
+    await app.dismissToasts()
+    await page.evaluate(() => {
+      const row = [...document.querySelectorAll('.sound-row')].find((r) => r.textContent.includes('Wind tone'))
+      const el = row.querySelector('.sound-row-volume')
+      el.value = '350'
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await rowOf('Thunder loud').getByRole('button', { name: 'Mute', exact: true }).click()
+    await settle()
+    prevTitle = await undoTitle()
+    const before = await volumes()
+    assert.equal(before.length, 2)
+    await page.click('#bulk-select-toggle')
+    await page.locator('.sound-row-select input').nth(0).check()
+    await page.locator('.sound-row-select input').nth(1).check()
+    await press('Delete')
+    assert.equal(await page.locator('.sound-row').count(), 0)
+    assert.equal(await page.locator('.notify', { hasText: 'Deleted 2 sounds' }).count(), 1)
+    assert.equal(await undoTitle(), 'Undo delete 2 sounds')
+    assert.deepEqual(await libraryNames().then((n) => n.includes('Thunder loud') && n.includes('Wind tone')), true, 'files stay while the toast is open')
+    await press('Control+z')
+    await page.waitForSelector('.sound-row:has-text("Wind tone")')
+    assert.equal(await page.locator('.sound-row').count(), 2)
+    assert.deepEqual(await volumes(), before)
+    assert.equal(await page.locator('.sound-row-muted').count(), 1)
+    assert.equal(await rowOf('Thunder loud').locator('xpath=self::*[contains(@class,"sound-row-muted")]').count(), 1)
+    assert.equal(await undoTitle(), prevTitle)
+    assert.equal(await page.locator('#mx-redo').isDisabled(), false)
+  })
+
+  test('Delete does nothing without a selection or in a field', async () => {
+    await page.click('#bulk-select-toggle') // leaves select mode, clears the selection
+    await press('Delete')
+    assert.equal(await page.locator('.sound-row').count(), 2)
+  })
+
+  test('after the toast closes the entry is gone and the files are deleted', async () => {
+    await page.mouse.move(5, 5) // hovering a toast pauses its timer
+    await page.click('#bulk-select-toggle')
+    await page.locator('.sound-row-select input').nth(0).check()
+    await page.locator('.sound-row-select input').nth(1).check()
+    await press('Delete')
+    assert.equal(await undoTitle(), 'Undo delete 2 sounds')
+    await page.mouse.move(5, 5)
+    await page.locator('.notify', { hasText: 'Deleted 2 sounds' }).waitFor({ state: 'detached', timeout: 12000 })
+    await settle()
+    const names = await libraryNames()
+    assert.ok(!names.includes('Thunder loud') && !names.includes('Wind tone'))
+    assert.equal(await undoTitle(), prevTitle, 'the delete entry left the history')
+    assert.equal(await page.locator('#mx-redo').isDisabled(), true)
+    assert.equal(await page.locator('.sound-row').count(), 0)
+  })
+})

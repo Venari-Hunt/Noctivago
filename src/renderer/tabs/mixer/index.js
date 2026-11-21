@@ -416,6 +416,7 @@ function updateBulkSelectUI() {
   els.bulkSelectBar.classList.toggle('hidden', !state.selectMode)
   const count = state.selectedIds.size
   els.bulkSelectCount.textContent = `${count} selected`
+  els.bulkSelectBar.dataset.count = String(count) // read by the Delete key (core/keymap.js)
   const hasSelection = count > 0
   els.bulkSelectPreset.disabled = !hasSelection
 }
@@ -1608,26 +1609,67 @@ async function testFireOneShot(id) {
 // Desktop 2.0 step 18 (mock screen "undo"): a deleted sound leaves the list
 // at once and a toast offers Undo; the library file goes only when the toast
 // closes without it. Quitting before then keeps the sound.
+// Undo history (plan "Undo history plan", Design 4): one delete action = one
+// history entry ("delete Rain", "delete 3 sounds"), undoable while the files
+// are pending. When the toast commits the files the entry leaves the history.
 const pendingDeletes = new Map()
 
 function removeSound(id) {
-  const entry = state.library.find((e) => e.id === id)
-  if (!entry || pendingDeletes.has(id)) return
-  const wasInMix = state.included.has(id)
-  const snapshot = { wasInMix, volume: state.volumes.get(id), muted: state.mutedSounds.has(id) }
-  pendingDeletes.set(id, snapshot)
-  dropSoundFromMix(id, wasInMix)
+  removeSounds([id])
+}
+
+function removeSounds(ids) {
+  const entries = ids.map((id) => state.library.find((e) => e.id === id)).filter((e) => e && !pendingDeletes.has(e.id))
+  if (!entries.length) return
+  const one = entries.length === 1
+  const batch = {
+    ids: entries.map((e) => e.id),
+    message: one ? `Deleted "${entries[0].name}"` : `Deleted ${entries.length} sounds`,
+    run: 0, // bumped by each (re)start, so an older toast closing never commits a newer delete
+    entry: null
+  }
+  startDelete(batch)
+  batch.entry = history.push({
+    label: one ? `delete ${entries[0].name}` : `delete ${entries.length} sounds`,
+    undo: () => undoDelete(batch),
+    redo: () => startDelete(batch)
+  })
+}
+
+// Takes the batch's sounds out of the list and mix now and opens the toast; files go on close.
+function startDelete(batch) {
+  const run = ++batch.run
+  const ids = batch.ids.filter((id) => state.library.some((e) => e.id === id) && !pendingDeletes.has(id))
+  if (!ids.length) return
+  for (const id of ids) {
+    const wasInMix = state.included.has(id)
+    pendingDeletes.set(id, { wasInMix, volume: state.volumes.get(id), muted: state.mutedSounds.has(id), batch })
+    dropSoundFromMix(id, wasInMix)
+    state.selectedIds.delete(id)
+  }
+  updateBulkSelectUI()
   render()
-  let undone = false
   notify({
-    message: `Deleted "${entry.name}"`,
-    key: `sound-delete-${id}`,
+    message: batch.message,
+    key: `sound-delete-${batch.ids.join(',')}`,
     timeoutMs: 6000,
-    actions: [{ label: 'Undo', icon: 'undo-2', onClick: () => { undone = true; undoRemoveSound(id) } }],
+    actions: [{
+      label: 'Undo',
+      icon: 'undo-2',
+      onClick: () => {
+        if (!batch.ids.some((id) => pendingDeletes.get(id)?.batch === batch)) return // already undone with the keys
+        if (batch.entry && history.latest() === batch.entry) history.undo()
+        else undoDelete(batch)
+      }
+    }],
     onClose: () => {
-      if (!undone) commitRemoveSound(id)
+      if (run === batch.run) commitRemoveSounds(batch)
     }
   })
+}
+
+function undoDelete(batch) {
+  for (const id of batch.ids) undoRemoveSound(id)
 }
 
 function undoRemoveSound(id) {
@@ -1637,14 +1679,22 @@ function undoRemoveSound(id) {
   if (snapshot.volume != null) state.volumes.set(id, snapshot.volume)
   if (snapshot.muted) state.mutedSounds.add(id)
   render()
-  if (snapshot.wasInMix) toggleIncluded(id)
+  if (snapshot.wasInMix) toggleIncluded(id, { fromHistory: true })
 }
 
-async function commitRemoveSound(id) {
-  if (!pendingDeletes.has(id)) return
-  pendingDeletes.delete(id)
-  await api.library.remove(id)
+// The toast closed without Undo: the files really go, so the entry can no longer be undone.
+async function commitRemoveSounds(batch) {
+  // Only this batch's own pending sounds: a newer delete of the same ids (which replaced this toast) owns them now.
+  const ids = batch.ids.filter((id) => pendingDeletes.get(id)?.batch === batch)
+  if (!ids.length) return
+  for (const id of ids) pendingDeletes.delete(id)
+  if (batch.entry) history.remove(batch.entry)
+  for (const id of ids) await api.library.remove(id)
   await refreshList()
+}
+
+function deleteSelectedSounds() {
+  if (state.selectedIds.size) removeSounds([...state.selectedIds])
 }
 
 function dropSoundFromMix(id, wasInMix) {
@@ -2719,6 +2769,7 @@ export function mount(container) {
   redoBtn.addEventListener('click', () => history.redo())
   history.onChange(syncHistoryButtons)
   syncHistoryButtons()
+  document.addEventListener('mixer:delete-selected', deleteSelectedSounds)
   container.querySelector('#mx-save-new').addEventListener('click', async () => {
     await openPresetsModal()
     openPresetNameRow('save')
