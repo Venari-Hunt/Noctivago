@@ -1632,7 +1632,8 @@ function removeSounds(ids) {
     ids: entries.map((e) => e.id),
     message: one ? `Deleted "${entries[0].name}"` : `Deleted ${entries.length} sounds`,
     run: 0, // bumped by each (re)start, so an older toast closing never commits a newer delete
-    entry: null
+    entry: null,
+    toast: null
   }
   startDelete(batch)
   batch.entry = history.push({
@@ -1647,15 +1648,16 @@ function startDelete(batch) {
   const run = ++batch.run
   const ids = batch.ids.filter((id) => state.library.some((e) => e.id === id) && !pendingDeletes.has(id))
   if (!ids.length) return
+  const mixOrder = [...state.included]
   for (const id of ids) {
     const wasInMix = state.included.has(id)
-    pendingDeletes.set(id, { wasInMix, volume: state.volumes.get(id), muted: state.mutedSounds.has(id), batch })
+    pendingDeletes.set(id, { wasInMix, mixIndex: mixOrder.indexOf(id), volume: state.volumes.get(id), muted: state.mutedSounds.has(id), batch })
     dropSoundFromMix(id, wasInMix)
     state.selectedIds.delete(id)
   }
   updateBulkSelectUI()
   render()
-  notify({
+  batch.toast = notify({
     message: batch.message,
     key: `sound-delete-${batch.ids.join(',')}`,
     timeoutMs: 6000,
@@ -1674,18 +1676,25 @@ function startDelete(batch) {
   })
 }
 
-function undoDelete(batch) {
-  for (const id of batch.ids) undoRemoveSound(id)
+// Puts the sounds back one after another in their old mix order: bringing a
+// sound into the mix is async, so starting them all at once raced and could
+// swap the rows (and the selection order picked the order, not the mix).
+async function undoDelete(batch) {
+  const ids = batch.ids
+    .filter((id) => pendingDeletes.has(id))
+    .sort((a, b) => (pendingDeletes.get(a).mixIndex ?? -1) - (pendingDeletes.get(b).mixIndex ?? -1))
+  for (const id of ids) await undoRemoveSound(id)
+  batch.toast?.close() // "Deleted ..." no longer true once the sounds are back
 }
 
-function undoRemoveSound(id) {
+async function undoRemoveSound(id) {
   const snapshot = pendingDeletes.get(id)
   if (!snapshot) return
   pendingDeletes.delete(id)
   if (snapshot.volume != null) state.volumes.set(id, snapshot.volume)
   if (snapshot.muted) state.mutedSounds.add(id)
   render()
-  if (snapshot.wasInMix) toggleIncluded(id, { fromHistory: true })
+  if (snapshot.wasInMix) await toggleIncluded(id, { fromHistory: true })
 }
 
 // The toast closed without Undo: the files really go, so the entry can no longer be undone.
