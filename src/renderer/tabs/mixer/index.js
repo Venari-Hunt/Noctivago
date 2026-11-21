@@ -340,6 +340,9 @@ async function toggleIncludedFromCenter(id) {
       icon: 'undo-2',
       onClick: async () => {
         if (state.included.has(id) === wasIn) return // already switched back
+        // Same step as Ctrl+Z when it is still the latest entry.
+        const label = wasIn ? `remove ${entry.name} from the mix` : `add ${entry.name} to the mix`
+        if (history.peekLabels().undo === label) { await history.undo(); return }
         state.mixLeaving.delete(id)
         await toggleIncluded(id)
       }
@@ -1194,7 +1197,8 @@ function stopPlayback(id) {
 // The per-sound button toggles mix membership. Turning a sound on plays it
 // immediately; turning it off stops it. This stays in sync through a global
 // pause because the button reflects `included`, not `playing`.
-async function toggleIncluded(id) {
+// { fromHistory: true } = this call is an undo/redo, so it records nothing.
+async function toggleIncluded(id, { fromHistory = false } = {}) {
   const entry = state.library.find((s) => s.id === id)
   if (!entry || entry.status === 'missing' || state.loading.has(id)) return
 
@@ -1204,11 +1208,35 @@ async function toggleIncluded(id) {
     autosaveActivePreset()
     stopPlayback(id)
     render()
+    if (!fromHistory) recordIncludedChange(id, entry.name, false)
     return
   }
 
   await engine.resume()
   await startPlayback(id, entry)
+  if (!fromHistory && state.included.has(id)) recordIncludedChange(id, entry.name, true)
+}
+
+// History entry for a sound going in (added) or out of the mix. Undo and redo
+// call toggleIncluded again, so audio, render and preset autosave follow. A
+// card taken out from the center stays dimmed ("leaving"); undo clears that.
+function recordIncludedChange(id, name, added) {
+  const back = async (wantIn) => {
+    if (state.included.has(id) === wantIn) return
+    // Only re-doing a "take out" leaves the dimmed card; undoing an add just removes it.
+    if (!wantIn && !added) state.mixLeaving.add(id)
+    else state.mixLeaving.delete(id)
+    await toggleIncluded(id, { fromHistory: true })
+  }
+  history.push({
+    label: added ? `add ${name} to the mix` : `remove ${name} from the mix`,
+    undo: () => back(!added),
+    redo: () => back(added)
+  })
+}
+
+function soundNameOf(id) {
+  return state.library.find((s) => s.id === id)?.name ?? 'sound'
 }
 
 // BUG FIX: per-sound volume was tracked only in this in-memory Map, never
@@ -1220,7 +1248,22 @@ async function toggleIncluded(id) {
 const volumeSaveTimers = new Map()
 const VOLUME_SAVE_DEBOUNCE_MS = 400
 
-function changeVolume(id, volume) {
+function changeVolume(id, volume, { fromHistory = false } = {}) {
+  if (!fromHistory) {
+    // One drag = one entry (mergeKey); undo goes back to the value and mute
+    // state from before the drag started.
+    const wasMuted = state.mutedSounds.has(id)
+    const before = state.volumes.get(id) ?? DEFAULT_VOLUME
+    history.push({
+      label: `volume of ${soundNameOf(id)}`,
+      mergeKey: `vol:${id}`,
+      undo: () => {
+        changeVolume(id, before, { fromHistory: true })
+        if (wasMuted && !state.mutedSounds.has(id)) toggleMute(id, { fromHistory: true })
+      },
+      redo: () => changeVolume(id, volume, { fromHistory: true })
+    })
+  }
   state.volumes.set(id, volume)
   // Dragging the slider while muted implicitly unmutes - matches the global
   // volume slider's own identical convention. Rare relative to a normal
@@ -1245,6 +1288,8 @@ function changeVolume(id, volume) {
   // A volume tweak on a sound that's part of the loaded preset is a preset
   // edit too - persist it back (only matters when this id is in state.included).
   if (state.included.has(id)) autosaveActivePreset()
+  // An undo/redo moves the slider from here, not from a drag.
+  if (fromHistory) render()
 }
 
 // Sets several sounds' volumes at once without touching mute (unlike
@@ -1312,8 +1357,16 @@ function setGroupGainDb(groupId, nextGainDb) {
   return _groupMembershipQueue
 }
 
-function toggleMute(id) {
-  if (state.mutedSounds.has(id)) state.mutedSounds.delete(id)
+function toggleMute(id, { fromHistory = false } = {}) {
+  const wasMuted = state.mutedSounds.has(id)
+  if (!fromHistory) {
+    history.push({
+      label: `${wasMuted ? 'unmute' : 'mute'} ${soundNameOf(id)}`,
+      undo: () => toggleMute(id, { fromHistory: true }),
+      redo: () => toggleMute(id, { fromHistory: true })
+    })
+  }
+  if (wasMuted) state.mutedSounds.delete(id)
   else state.mutedSounds.add(id)
   state.sources.get(id)?.setVolume(effectiveVolume(id))
   render()
@@ -2160,7 +2213,9 @@ async function loadPreset(preset, { play = true } = {}) {
   } finally {
     presetAutosaveLoading = false
   }
-  // A fresh load matches its saved preset.
+  // A fresh load matches its saved preset. Old undo entries would be wrong now
+  // (this also covers the unsaved-changes pill's Cancel, which reloads).
+  history.clear()
   if (presetDirty) setPresetDirty(false)
 }
 
