@@ -9,6 +9,10 @@ export const SHORTCUTS = [
   { id: 'settings', title: 'Open or close Settings', keys: ['Ctrl', ','], ctrl: true, key: ',' },
   // Remix plugin: it handles the key itself; listed here so Help shows it.
   { id: 'marker', title: 'Add a marker at the playhead (Remix)', keys: ['Ctrl', 'M'], ctrl: true, key: 'm' },
+  // Mixer history (core/history.js). Matched in matchShortcut, not by the generic Ctrl lookup:
+  // never while typing or with a dialog open, and only on the Mixer tab (Remix keeps its own undo).
+  { id: 'undo', title: 'Undo the last Mixer change', keys: ['Ctrl', 'Z'] },
+  { id: 'redo', title: 'Redo (also Ctrl+Y)', keys: ['Ctrl', 'Shift', 'Z'] },
   { id: 'tab', title: 'Go to tab 1 to 9', keys: ['Ctrl', '1-9'], ctrl: true },
   { id: 'fullscreen', title: 'Full screen', keys: ['F11'], any: true, key: 'F11' },
   { id: 'help', title: 'Show shortcuts', keys: ['?'], plain: true, key: '?' }
@@ -23,11 +27,20 @@ export function isTypingTarget(el) {
 
 // Returns { id, tab? } or null. `ctx.typing`: focus is in a field;
 // `ctx.onControl`: focus is on a button or link (Space presses it);
-// `ctx.modalOpen`: a dialog is open, so plain keys are left alone.
+// `ctx.modalOpen`: a dialog is open, so plain keys are left alone;
+// `ctx.tab`: id of the active tab (undo and redo only match on 'mixer').
 export function matchShortcut(event, ctx = {}) {
   const ctrl = event.ctrlKey || event.metaKey
   if (event.altKey) return null
   if (event.key === 'F11') return { id: 'fullscreen' }
+  if (ctrl) {
+    const k = event.key.toLowerCase()
+    if (k === 'z' || k === 'y') {
+      if (ctx.typing || ctx.modalOpen || ctx.tab !== 'mixer') return null
+      if (k === 'z') return { id: event.shiftKey ? 'redo' : 'undo' }
+      return event.shiftKey ? null : { id: 'redo' }
+    }
+  }
   if (ctrl && !event.shiftKey && /^[1-9]$/.test(event.key)) return { id: 'tab', tab: Number(event.key) - 1 }
   if (ctrl && !event.shiftKey) {
     const hit = SHORTCUTS.find((s) => s.ctrl && s.key === event.key.toLowerCase())
