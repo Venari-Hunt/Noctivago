@@ -467,9 +467,22 @@ async function applyBulkFilterPreset(preset) {
   await refreshList()
 }
 
-async function changeTags(id, tags) {
+// { fromHistory: true } = this call is an undo/redo, so it records nothing.
+async function changeTags(id, tags, { fromHistory = false } = {}) {
+  const entry = state.library.find((s) => s.id === id)
+  const before = [...(entry?.tags ?? [])]
   await api.library.updateTags(id, tags)
   await refreshList()
+  if (!fromHistory && entry) {
+    const after = [...(state.library.find((s) => s.id === id)?.tags ?? tags)]
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      history.push({
+        label: `tags of ${entry.name}`,
+        undo: () => changeTags(id, before, { fromHistory: true }),
+        redo: () => changeTags(id, after, { fromHistory: true })
+      })
+    }
+  }
 }
 
 // Drop target is always "insert dragged item immediately before this row" -
@@ -478,19 +491,42 @@ async function changeTags(id, tags) {
 // the *full* library order (not just the currently visible/filtered rows),
 // so an active search or tag filter never lets a hidden sound's relative
 // position drift as a side effect of reordering the visible ones.
-async function reorderByDrop(draggedId, targetId) {
+async function reorderByDrop(draggedId, targetId, { fromHistory = false } = {}) {
   const fullOrder = sortForDisplay(state.library, 'custom').map((e) => e.id)
   const withoutDragged = fullOrder.filter((id) => id !== draggedId)
   const targetIndex = withoutDragged.indexOf(targetId)
   if (targetIndex === -1) return
   withoutDragged.splice(targetIndex, 0, draggedId)
-  await api.library.reorderSounds(withoutDragged)
+  if (!fromHistory && withoutDragged.every((id, i) => id === fullOrder[i])) return // dropped in place
+  await setLibraryOrder(withoutDragged)
+  if (!fromHistory) {
+    history.push({
+      label: 'order of sounds',
+      undo: () => setLibraryOrder(fullOrder),
+      redo: () => setLibraryOrder(withoutDragged)
+    })
+  }
+}
+
+async function setLibraryOrder(order) {
+  await api.library.reorderSounds(order)
   await refreshList()
 }
 
-async function renameSound(id, name) {
+async function renameSound(id, name, { fromHistory = false } = {}) {
+  const before = state.library.find((s) => s.id === id)?.name
   await api.library.rename(id, name)
   await refreshList()
+  if (!fromHistory && before != null) {
+    const after = state.library.find((s) => s.id === id)?.name ?? name
+    if (after !== before) {
+      history.push({
+        label: `rename ${before}`,
+        undo: () => renameSound(id, before, { fromHistory: true }),
+        redo: () => renameSound(id, after, { fromHistory: true })
+      })
+    }
+  }
 }
 
 // Sound Groups (see AudioEngine.js's SoundGroupChain) - a right-click menu
@@ -1321,22 +1357,43 @@ function showClipReport({ kind, id, meter }, anchor) {
   openClipReport(anchor, { report, onFix: (fix) => applyClipFix(fix, reset), onReset: reset })
 }
 
-// Applies a Clip report fix and returns its undo.
+// Applies a Clip report fix, records it as one history entry ("Clip fix") and
+// returns its undo. The report's own Undo button steps the history back when
+// the fix is still the latest entry, so the two never fall out of step.
 async function applyClipFix(fix, resetLight) {
+  let rawUndo
+  let redo
   if (fix.kind === 'group') {
     let before = null
+    let after = null
     await setGroupGainDb(fix.id, (gainDb) => {
       before = gainDb
-      return lowerGroupGainDb(gainDb, fix.lowerDb).gainDb
+      after = lowerGroupGainDb(gainDb, fix.lowerDb).gainDb
+      return after
     })
     resetLight()
-    return () => setGroupGainDb(fix.id, () => before)
+    rawUndo = () => setGroupGainDb(fix.id, () => before)
+    redo = () => setGroupGainDb(fix.id, () => after)
+  } else {
+    const ids = fix.kind === 'sound' ? [fix.id] : [...state.included]
+    const before = new Map(ids.map((id) => [id, state.volumes.get(id) ?? DEFAULT_VOLUME]))
+    const after = new Map([...before].map(([id, v]) => [id, lowerGain(v, fix.lowerDb)]))
+    setSoundVolumes(after)
+    resetLight()
+    rawUndo = () => setSoundVolumes(before)
+    redo = () => setSoundVolumes(after)
   }
-  const ids = fix.kind === 'sound' ? [fix.id] : [...state.included]
-  const before = new Map(ids.map((id) => [id, state.volumes.get(id) ?? DEFAULT_VOLUME]))
-  setSoundVolumes(new Map([...before].map(([id, v]) => [id, lowerGain(v, fix.lowerDb)])))
-  resetLight()
-  return () => setSoundVolumes(before)
+  const label = 'Clip fix'
+  let pending = null
+  history.push({ label, undo: () => (pending = rawUndo()), redo })
+  return async () => {
+    if (history.peekLabels().undo === label) {
+      history.undo()
+      await pending
+    } else {
+      await rawUndo()
+    }
+  }
 }
 
 // Same queue as membership edits, so a fix can't race another group write.
