@@ -80,27 +80,56 @@ function RowCorners({ entry, callbacks }) {
   )
 }
 
+// Mix order drag: grab a card's empty spot (never a knob, button or field: those
+// keep their own drag) and drop it on another card; the cursor's side of that
+// card (left half = before, right half = after) shows as an accent bar.
+const DRAG_TYPE = 'application/x-noctivago-mix-card'
+
+function dropSideOf(evt) {
+  const box = evt.currentTarget.getBoundingClientRect()
+  return evt.clientX < box.left + box.width / 2 ? 'before' : 'after'
+}
+
 function useRowDrag(entry, draggable, callbacks) {
   const [dragging, setDragging] = useState(false)
-  if (!draggable) return { props: {}, dragging: false }
+  const [dropSide, setDropSide] = useState(null)
+  const fromControl = useRef(false)
+  if (!draggable) return { props: {}, dragging: false, dropSide: null }
+  const ours = (evt) => evt.dataTransfer.types.includes(DRAG_TYPE)
   return {
     dragging,
+    dropSide,
     props: {
       draggable: true,
+      onPointerDown: (evt) => {
+        fromControl.current = Boolean(evt.target.closest?.(OWN_CLICK))
+      },
       onDragStart: (evt) => {
-        evt.dataTransfer.setData('text/plain', entry.id)
+        if (fromControl.current) {
+          evt.preventDefault()
+          return
+        }
+        evt.dataTransfer.setData(DRAG_TYPE, entry.id)
         evt.dataTransfer.effectAllowed = 'move'
         setDragging(true)
       },
       onDragEnd: () => setDragging(false),
       onDragOver: (evt) => {
+        if (!ours(evt) || dragging) return
         evt.preventDefault()
         evt.dataTransfer.dropEffect = 'move'
+        const side = dropSideOf(evt)
+        if (side !== dropSide) setDropSide(side)
+      },
+      onDragLeave: (evt) => {
+        if (!evt.currentTarget.contains(evt.relatedTarget)) setDropSide(null)
       },
       onDrop: (evt) => {
+        if (!ours(evt)) return
         evt.preventDefault()
-        const draggedId = evt.dataTransfer.getData('text/plain')
-        if (draggedId && draggedId !== entry.id) callbacks.onReorderDrop(draggedId, entry.id)
+        setDropSide(null)
+        const draggedId = evt.dataTransfer.getData(DRAG_TYPE)
+        if (draggedId && draggedId !== entry.id) callbacks.onReorderDrop(draggedId, entry.id, dropSideOf(evt))
       }
     }
   }
@@ -121,7 +150,8 @@ export function SoundRow({ entry, state, draggable, callbacks, allTags, editRequ
     state.selected && 'sound-row-selected',
     state.leaving && 'sound-row-leaving',
     draggable && 'sound-row-draggable',
-    drag.dragging && 'dragging'
+    drag.dragging && 'dragging',
+    drag.dropSide && `sound-row-drop-${drag.dropSide}`
   ]
     .filter(Boolean)
     .join(' ')

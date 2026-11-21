@@ -1178,6 +1178,21 @@ button.mx-sw:disabled { cursor: default; }
   opacity: 0.4;
 }
 
+/* Mix order drag: a 3 px amber bar in the gap on the side the card will land. */
+.sound-row-drop-before::after,
+.sound-row-drop-after::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.sound-row-drop-before::after { left: calc(-1 * var(--space-3) / 2 - 1.5px); }
+.sound-row-drop-after::after { right: calc(-1 * var(--space-3) / 2 - 1.5px); }
+
 /* Desktop 2.0 step 18, mock .tile.lost: the card reads as a problem with a fix. */
 .sound-row-missing {
   box-shadow: inset 0 0 0 2px var(--warn-edge);
