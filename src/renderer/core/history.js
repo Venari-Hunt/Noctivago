@@ -18,8 +18,9 @@ export function createHistory({ cap = CAP, mergeMs = MERGE_MS, now = () => Date.
 
   const notify = () => { for (const fn of [...listeners]) fn() }
 
+  // Returns the entry (so a caller can later remove() it), or undefined while an undo/redo runs.
   function push({ label, undo, redo, mergeKey } = {}) {
-    if (running) return
+    if (running) return undefined
     if (typeof undo !== 'function' || typeof redo !== 'function') {
       throw new TypeError('history.push needs undo and redo functions')
     }
@@ -33,7 +34,7 @@ export function createHistory({ cap = CAP, mergeMs = MERGE_MS, now = () => Date.
       lastPushAt = t
       if (redoStack.length) redoStack = []
       notify()
-      return
+      return lastPushed
     }
     const entry = { label: label ?? '', undo, redo, mergeKey }
     undoStack.push(entry)
@@ -42,6 +43,7 @@ export function createHistory({ cap = CAP, mergeMs = MERGE_MS, now = () => Date.
     lastPushed = entry
     lastPushAt = t
     notify()
+    return entry
   }
 
   function step(from, to, run) {
@@ -73,6 +75,21 @@ export function createHistory({ cap = CAP, mergeMs = MERGE_MS, now = () => Date.
       undo: undoStack.length ? undoStack[undoStack.length - 1].label : null,
       redo: redoStack.length ? redoStack[redoStack.length - 1].label : null,
     }),
+    // The entry the next undo would run, or null.
+    latest: () => undoStack[undoStack.length - 1] ?? null,
+    // Drops one entry from either stack (an action that can no longer be undone
+    // or redone, e.g. a delete whose files are gone). Returns whether it was there.
+    remove(entry) {
+      let found = false
+      for (const stack of [undoStack, redoStack]) {
+        const i = stack.indexOf(entry)
+        if (i !== -1) { stack.splice(i, 1); found = true }
+      }
+      if (!found) return false
+      if (lastPushed === entry) lastPushed = null
+      notify()
+      return true
+    },
     clear() {
       if (!undoStack.length && !redoStack.length) { lastPushed = null; return }
       undoStack = []

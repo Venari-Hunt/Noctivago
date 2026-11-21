@@ -35,6 +35,16 @@ describe('matchShortcut', () => {
       assert.equal(matchShortcut(ev('y', { ctrlKey: true }), ctx), null)
     }
   })
+  test('Delete removes the selected sounds, only on the Mixer with a selection', () => {
+    const ok = { tab: 'mixer', hasSelection: true }
+    assert.deepEqual(matchShortcut(ev('Delete'), ok), { id: 'delete' })
+    for (const o of [{ typing: true }, { modalOpen: true }, { tab: 'remix' }, { hasSelection: false }]) {
+      assert.equal(matchShortcut(ev('Delete'), { ...ok, ...o }), null)
+    }
+    assert.equal(matchShortcut(ev('Delete'), { tab: 'mixer' }), null)
+    assert.equal(matchShortcut(ev('Delete', { ctrlKey: true }), ok), null)
+    assert.ok(SHORTCUTS.some((s) => s.id === 'delete'))
+  })
   test('other Ctrl shortcuts still match while typing', () => {
     assert.deepEqual(matchShortcut(ev('f', { ctrlKey: true }), { typing: true, tab: 'remix' }), { id: 'search' })
     assert.deepEqual(matchShortcut(ev('s', { ctrlKey: true }), { modalOpen: true }), { id: 'save' })

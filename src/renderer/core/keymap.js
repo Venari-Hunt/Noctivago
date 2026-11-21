@@ -12,7 +12,8 @@ export function installKeymap({ tabHost, toggleSettings, showHelp }) {
       typing: isTypingTarget(target),
       onControl: !!target?.closest?.('button, a, [role="button"], [role="slider"], [role="switch"]'),
       modalOpen: !!document.querySelector('.modal:not(.hidden), .context-menu'),
-      tab: tabHost.getActiveId()
+      tab: tabHost.getActiveId(),
+      hasSelection: Number(document.getElementById('bulk-select-bar')?.dataset.count) > 0
     })
     if (!hit) return
     const run = () => {
@@ -31,6 +32,7 @@ export function installKeymap({ tabHost, toggleSettings, showHelp }) {
       else if (hit.id === 'tab') document.querySelectorAll('#tab-bar .tab-button')[hit.tab]?.click()
       else if (hit.id === 'fullscreen') window.noctivago.toggleFullscreen()
       else if (hit.id === 'help') showHelp()
+      else if (hit.id === 'delete') document.dispatchEvent(new CustomEvent('mixer:delete-selected'))
       else if (hit.id === 'undo' || hit.id === 'redo') {
         const labels = history.peekLabels()
         const label = hit.id === 'undo' ? labels.undo : labels.redo

@@ -145,6 +145,35 @@ test('an undo that throws keeps the entry on the stack', () => {
   assert.equal(h.undo(), true) // later pushes still work (not stuck running)
 })
 
+test('push returns the entry; latest() is the next undo; remove() drops it from either stack', () => {
+  const { h, entry } = setup()
+  assert.equal(h.latest(), null)
+  const a = h.push(entry('a'))
+  const b = h.push(entry('b'))
+  assert.equal(h.latest(), b)
+  assert.equal(h.remove(a), true)
+  assert.equal(h.remove(a), false)
+  assert.deepEqual(h.peekLabels(), { undo: 'b', redo: null })
+  h.undo()
+  assert.equal(h.latest(), null)
+  assert.equal(h.remove(b), true) // it was on the redo stack
+  assert.ok(!h.canUndo() && !h.canRedo())
+})
+
+test('remove() notifies once and stops a merge into the removed entry', () => {
+  const { h, entry } = setup()
+  let calls = 0
+  h.onChange(() => calls++)
+  const a = h.push({ ...entry('a'), mergeKey: 'k' })
+  assert.equal(calls, 1)
+  h.remove(a)
+  assert.equal(calls, 2)
+  h.push({ ...entry('b'), mergeKey: 'k' })
+  assert.deepEqual(h.peekLabels(), { undo: 'b', redo: null })
+  h.undo()
+  assert.ok(!h.canUndo()) // b stood alone, it did not merge into the removed a
+})
+
 test('push without undo and redo functions throws', () => {
   const { h } = setup()
   assert.throws(() => h.push({ label: 'x' }), TypeError)
