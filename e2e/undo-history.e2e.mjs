@@ -10,6 +10,7 @@ import { launchApp } from './launch.mjs'
 let app
 let page
 let wavPath
+let loudPath
 const settle = (ms = 400) => page.waitForTimeout(ms)
 const pill = () => page.locator('.preset-pill')
 const rowOf = (name) => page.locator('.sound-row', { hasText: name })
@@ -17,7 +18,7 @@ const undoTitle = () => page.locator('#mx-undo').getAttribute('title')
 const savedVolume = () => page.evaluate(() => window.noctivago.presets.list().then((l) => l.find((p) => p.name === 'E2E preset').sounds.find((s) => s.volume != null).volume))
 const savedIds = () => page.evaluate(() => window.noctivago.presets.list().then((l) => l.find((p) => p.name === 'E2E preset').sounds.length))
 
-function writeTone(file) {
+function writeTone(file, { loud = false } = {}) {
   const rate = 22050
   const n = rate * 2
   const buf = Buffer.alloc(44 + n * 2)
@@ -25,7 +26,8 @@ function writeTone(file) {
   buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22)
   buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34)
   buf.write('data', 36); buf.writeUInt32LE(n * 2, 40)
-  for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.sin(i / 20) * 3000), 44 + i * 2)
+  // loud = a full-scale square wave, so the sound's clip light turns red.
+  for (let i = 0; i < n; i++) buf.writeInt16LE(loud ? (Math.floor(i / 20) % 2 ? 32767 : -32768) : Math.round(Math.sin(i / 20) * 3000), 44 + i * 2)
   fs.writeFileSync(file, buf)
 }
 
@@ -57,14 +59,18 @@ async function loadPresetFromPill() {
 before(async () => {
   wavPath = path.join(os.tmpdir(), `noctivago-e2e-undo-${process.pid}.wav`)
   writeTone(wavPath)
+  loudPath = path.join(os.tmpdir(), `noctivago-e2e-undo-loud-${process.pid}.wav`)
+  writeTone(loudPath, { loud: true })
   app = await launchApp()
   page = app.page
-  await page.evaluate(async (p) => {
+  await page.evaluate(async ({ p, loud }) => {
     const a = await window.noctivago.library.addSound({ path: p, name: 'Rain tone', keepCopy: true })
     await window.noctivago.library.addSound({ path: p, name: 'Wind tone', keepCopy: true })
+    const l = await window.noctivago.library.addSound({ path: loud, name: 'Thunder loud', keepCopy: true })
     await window.noctivago.presets.save({ name: 'E2E preset', sounds: [{ soundId: a.id, volume: 0.5 }] })
     await window.noctivago.presets.save({ name: 'Other preset', sounds: [{ soundId: a.id, volume: 0.4 }] })
-  }, wavPath)
+    await window.noctivago.presets.save({ name: 'Loud preset', sounds: [{ soundId: l.id, volume: 1 }] })
+  }, { p: wavPath, loud: loudPath })
   await page.reload()
   await page.waitForSelector('.mx-item')
   await app.dismissToasts()
@@ -73,6 +79,7 @@ before(async () => {
 after(async () => {
   await app?.close()
   fs.rmSync(wavPath, { force: true })
+  fs.rmSync(loudPath, { force: true })
 })
 
 describe('Mixer undo history', () => {
@@ -143,5 +150,77 @@ describe('Mixer undo history', () => {
     await settle(1500)
     assert.equal(await page.locator('#mx-undo').isDisabled(), true)
     assert.equal(await page.locator('#mx-redo').isDisabled(), true)
+  })
+})
+
+// Step 4: rename, tags, Clip fix (the reorder drop has no live UI today: the center
+// list is never draggable, so it is covered by recording only). Starts on "Other preset".
+describe('Mixer undo history: edits', () => {
+  const nameOf = () => page.locator('.sound-row .sound-row-name').first().innerText()
+  const tagNames = () => page.locator('.sound-row .tag-chip-name').allInnerTexts()
+
+  test('rename is undone and redone', async () => {
+    // A double-click would also toggle the card in and out of the mix; the right-click menu is clean.
+    await page.locator('.sound-row').first().click({ button: 'right' })
+    await page.getByText('Rename…', { exact: true }).click()
+    await page.locator('.sound-row-name-input').fill('Heavy rain')
+    await page.keyboard.press('Enter')
+    await settle()
+    assert.equal(await nameOf(), 'Heavy rain')
+    assert.equal(await undoTitle(), 'Undo rename Rain tone')
+    await key('Control+z')
+    assert.equal(await nameOf(), 'Rain tone')
+    await key('Control+Shift+z')
+    assert.equal(await nameOf(), 'Heavy rain')
+    await key('Control+z')
+    assert.equal(await nameOf(), 'Rain tone')
+  })
+
+  test('tags are undone and redone', async () => {
+    assert.deepEqual(await tagNames(), [])
+    await page.locator('.sound-row').first().click({ button: 'right' })
+    await page.getByText('Edit tags…', { exact: true }).click()
+    await page.locator('.tag-input').fill('storm')
+    await page.keyboard.press('Enter')
+    await settle()
+    assert.deepEqual(await tagNames(), ['storm'])
+    assert.equal(await undoTitle(), 'Undo tags of Rain tone')
+    await key('Control+z')
+    assert.deepEqual(await tagNames(), [])
+    await key('Control+Shift+z')
+    assert.deepEqual(await tagNames(), ['storm'])
+    await key('Control+z')
+    assert.deepEqual(await tagNames(), [])
+  })
+
+  test('a Clip report fix is one entry: Ctrl+Z restores the volume, Ctrl+Shift+Z lowers it again', async () => {
+    await pill().click()
+    await settle()
+    await page.locator('.pcard-name', { hasText: 'Loud preset' }).locator('visible=true').first().click()
+    await settle(1500)
+    const loudVolume = () => page.evaluate(() => window.noctivago.presets.list().then((l) => l.find((p) => p.name === 'Loud preset').sounds[0].volume))
+    assert.equal(await loudVolume(), 1)
+    await page.waitForSelector('.sound-row [data-meter-sound].clipped', { timeout: 15000 })
+    await page.locator('.sound-row [data-meter-sound].clipped').first().click()
+    await page.locator('.clip-report .btn-primary').click()
+    await settle()
+    assert.equal(await undoTitle(), 'Undo Clip fix')
+    const lowered = await (async () => {
+      const deadline = Date.now() + 8000
+      while (Date.now() < deadline) {
+        const v = await loudVolume()
+        if (v < 1) return v
+        await page.waitForTimeout(150)
+      }
+      throw new Error('fix never saved a lower volume')
+    })()
+    await key('Control+z')
+    const deadline = Date.now() + 8000
+    while (Date.now() < deadline && (await loudVolume()) !== 1) await page.waitForTimeout(150)
+    assert.equal(await loudVolume(), 1)
+    await key('Control+Shift+z')
+    const deadline2 = Date.now() + 8000
+    while (Date.now() < deadline2 && (await loudVolume()) !== lowered) await page.waitForTimeout(150)
+    assert.equal(await loudVolume(), lowered)
   })
 })
