@@ -103,10 +103,12 @@ const boxes = (rowLoc, sels) => rowLoc.evaluate((r, sels) => {
 }, sels)
 
 test('member row sits on the mock grid', async () => {
-  const [pv, lp, nm] = await boxes(row('Shot B'), ['.rx-mpv', '.rx-mlp', '.rx-mnm'])
+  // Owner, 2026-11-17: Loop moved from under Play to the end of line 2, under the arrow (under Play looked cramped).
+  const [pv, lp, nm, so, fd] = await boxes(row('Shot B'), ['.rx-mpv', '.rx-mlp', '.rx-mnm', '.rx-mso', '.rx-fader'])
   assert.deepEqual(pv, [0, 4, 32, 32], 'Play')
-  assert.deepEqual(lp, [0, 36, 32, 32], 'Loop under Play')
+  assert.deepEqual(lp, [so[0] + 40, 36, 32, 32], 'Loop under the arrow, on line 2')
   assert.equal(nm[0], 40, 'name at 40')
+  assert.equal(fd[0], 40, 'fader under the name')
 })
 
 test('a natural loop keeps playing until Stop', async () => {
@@ -159,7 +161,7 @@ test('Preset mode: group rows get Play; sounds outside groups get Play and Loop'
   assert.equal(await drow('Duo').locator('.rx-mlp').count(), 0)
   assert.equal(await drow('Outside C').locator('.rx-mpv').count(), 1)
   const [pv, lp, open] = await boxes(drow('Outside C'), ['.rx-mpv', '.rx-mlp', '.rx-grow'])
-  assert.deepEqual([pv[0], lp[0], open[0]], [0, 36, 72], 'Play 0, Loop 36, row 72')
+  assert.deepEqual([pv[0], lp[0], open[0]], [0, 40, 80], 'Play 0, Loop 40, row 80 (8 px gaps, owner 2026-11-17)')
   assert.equal(await drow('Outside C').locator('.rx-mlp').isDisabled(), true, 'natural loop')
   await drow('Outside C').locator('.rx-mpv').click()
   await page.waitForTimeout(800)
