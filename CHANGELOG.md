@@ -12,6 +12,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- **Changed: the Remix "Spectrum" view is now "Repair", and Noise reduction moves into it.** The new Noise sample tool drags a band across the spectrogram to mark the stretch that is only noise; its handles resize it, and the From and To fields still take exact times. "Use shape N as noise sample" takes a repair shape's whole time range. The Noise gate stays in Cleanup.
 - **Changed: Remix in small windows (under 860 px wide).** The waveform fills the space, the player sits in its own row under it, and Settings is a button that slides the settings in from the right.
 - **New: a "Needle" time field in Remix, next to Start, End and Length.** It follows playback, and typing a time moves the needle.
 - **Fixed: the Spectral repair needle could not be dragged in short, narrow windows.** The player no longer covers the bottom of the spectrum.

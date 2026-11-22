@@ -214,10 +214,42 @@ test('Noise reduction: the noise floor drops by about the same dB live and saved
 
   const since = Date.now()
   // Strength stays at its default (12 dB); the noise-only stretch is the first 2.5 s.
-  await page.locator('#editor-mode-panel-sound .rx-acch', { hasText: 'Cleanup' }).click()
-  await page.locator('.rx-nr-row input[type=checkbox]').check()
-  await page.locator('input[aria-label="Noise from"]').fill('0.3')
-  await page.locator('input[aria-label="Noise to"]').fill('2')
+  // Repair tab: Noise reduction is its own card there (not under Cleanup), and the
+  // sample is a band dragged across the spectrogram with the Noise sample tool.
+  await page.locator('#editor-mode-panel-sound [data-rx-view="spec"]').click()
+  await page.waitForTimeout(1500)
+  assert.equal(await page.locator('#editor-mode-panel-sound .rx-acc[data-acc="noise"] .rx-nr-row').count(), 1, 'Noise reduction sits in its own card')
+  assert.equal(await page.locator('#editor-mode-panel-sound .rx-acc[data-acc="clean"] .rx-nr-row').count(), 0, 'Noise reduction left Cleanup')
+  assert.equal(await page.locator('.rx-nr-row input[type=checkbox]').isChecked(), false)
+  await page.locator('#editor-spectral-shape [data-shape="noise"]').click()
+  assert.equal(await page.locator('#editor-noise-mark').getAttribute('aria-pressed'), 'true', 'Mark on spectrum lights with the tool')
+  const canvas = page.locator('#editor-spectral-canvas')
+  await canvas.scrollIntoViewIfNeeded()
+  const box = await canvas.boundingBox()
+  const xFor = (sec) => box.x + (box.width * sec) / SECONDS
+  // Drag across all frequencies: the band takes the time range only (0.3 s to 2 s).
+  await page.mouse.move(xFor(0.3), box.y + box.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(xFor(1.2), box.y + box.height * 0.6, { steps: 6 })
+  await page.mouse.move(xFor(2), box.y + box.height * 0.8, { steps: 6 })
+  await page.mouse.up()
+  const from = Number(await page.locator('input[aria-label="Sample from"]').inputValue())
+  const to = Number(await page.locator('input[aria-label="Sample to"]').inputValue())
+  assert.ok(Math.abs(from - 0.3) <= 0.15 && Math.abs(to - 2) <= 0.15, `the band set the fields: ${from} to ${to}`)
+  assert.equal(await page.locator('.rx-nr-row input[type=checkbox]').isChecked(), true, 'marking a sample turns Noise reduction on')
+  const legend = await page.locator('#editor-spectral-legend-noise').innerText()
+  assert.match(legend, /Noise sample \d\.\d.\d\.\d s \(learned\)/)
+  // Resize by the right handle: the To field follows (handle sits at mid-height).
+  await page.mouse.move(xFor(to), box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(xFor(to + 0.4), box.y + box.height / 2, { steps: 4 })
+  await page.mouse.up()
+  const to2 = Number(await page.locator('input[aria-label="Sample to"]').inputValue())
+  assert.ok(to2 > to + 0.2, `the right handle resized the band: ${to} -> ${to2}`)
+  // Typing the fields moves the band back (live = typed = drawn); keep the exact values the check uses.
+  await page.locator('input[aria-label="Sample from"]').fill('0.3')
+  await page.locator('input[aria-label="Sample to"]').fill('2')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'repair-noise-sample.png') })
 
   const after = await playFor(4000)
   const liveTone = toneDb(after.samples, after.sr, 440) - liveTone0
@@ -232,4 +264,27 @@ test('Noise reduction: the noise floor drops by about the same dB live and saved
   assert.ok(Math.abs(savedTone) <= 1.5, `saved tone moved ${savedTone.toFixed(1)} dB`)
   t.diagnostic(`noise floor: live ${liveDrop.toFixed(1)} dB, saved ${savedDrop.toFixed(1)} dB; tone: live ${liveTone.toFixed(1)} dB, saved ${savedTone.toFixed(1)} dB`)
   assert.ok(Math.abs(savedDrop - liveDrop) <= 3, `noise floor: live ${liveDrop.toFixed(1)} dB vs saved ${savedDrop.toFixed(1)} dB`)
+})
+
+test('Use shape N as noise sample takes the shape\'s whole time range, any frequencies', async () => {
+  await page.locator('#editor-mode-panel-sound [data-rx-view="spec"]').click()
+  await page.locator('#editor-spectral-shape [data-shape="box"]').click()
+  assert.equal(await page.locator('#editor-noise-mark').getAttribute('aria-pressed'), 'false')
+  assert.equal(await page.locator('#editor-spectral-use-noise').isDisabled(), true, 'needs a selected shape')
+  const canvas = page.locator('#editor-spectral-canvas')
+  const box = await canvas.boundingBox()
+  const xFor = (sec) => box.x + (box.width * sec) / SECONDS
+  const yFor = (hz) => box.y + box.height * (1 - Math.log(hz / 30) / Math.log(20000 / 30))
+  await page.mouse.move(xFor(5), yFor(8000))
+  await page.mouse.down()
+  await page.mouse.move(xFor(6), yFor(4000), { steps: 6 })
+  await page.mouse.move(xFor(7), yFor(2500), { steps: 6 })
+  await page.mouse.up()
+  await page.waitForFunction(() => /–/.test(document.querySelector('#editor-spectral-selection')?.textContent ?? ''))
+  const button = page.locator('#editor-spectral-use-noise')
+  assert.match(await button.innerText(), /Use shape 1 as noise sample/)
+  await button.click()
+  const from = Number(await page.locator('input[aria-label="Sample from"]').inputValue())
+  const to = Number(await page.locator('input[aria-label="Sample to"]').inputValue())
+  assert.ok(Math.abs(from - 5) <= 0.15 && Math.abs(to - 7) <= 0.15, `the shape's time range became the sample: ${from} to ${to}`)
 })

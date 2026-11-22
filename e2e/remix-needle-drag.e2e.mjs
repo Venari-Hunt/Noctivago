@@ -1,4 +1,4 @@
-// End-to-end: the Spectrum view's playback needle can be grabbed and dragged (paused and
+// End-to-end: the Repair view's playback needle can be grabbed and dragged (paused and
 // playing) at 480x720, 480x620 and 1500x950. Below 760 high the preview module used to be
 // pinned over the bottom of the canvas, so the pointer never reached it (Board: "Spectral
 // repair needle not draggable"). Needs the Remix build in ../noctivago-plugin-repos/noctivago-remix.
@@ -54,7 +54,7 @@ for (const [w, h] of [[1500, 950], [480, 720], [480, 620]]) {
     const panel = page.locator('.tab-panel:not(.hidden)')
     await panel.locator('#rx-lib-list').getByText('Needle sound').first().click()
     await page.waitForTimeout(1500)
-    await panel.getByRole('button', { name: 'Spectrum', exact: true }).first().click()
+    await panel.getByRole('button', { name: 'Repair', exact: true }).first().click()
     await page.waitForTimeout(2000)
 
     // Start playing, then pause: the needle shows in both states.
