@@ -177,6 +177,8 @@ test('Spectral repair: a box over the second tone takes it 20+ dB down, live and
     return { n, height: c.height }
   })
   assert.ok(bright.n <= 30, `spectrogram looks blurry: ${bright.n} of ${bright.height} rows are bright for two thin tones`)
+  assert.equal(await page.locator('#editor-spectral-shape [data-shape="brush"]').getAttribute('aria-pressed'), 'true', 'the Repair tab opens on the Brush')
+  await page.locator('#editor-spectral-shape [data-shape="box"]').click()
   await canvas.scrollIntoViewIfNeeded()
   const box = await canvas.boundingBox()
   const yFor = (hz) => box.y + box.height * (1 - Math.log(hz / 30) / Math.log(20000 / 30))
