@@ -202,6 +202,11 @@ test('Brush: a second stroke that touches the first merges into one shape; Ctrl+
   // Tool keys.
   await page.locator('#editor-spectral-canvas').press('v')
   assert.equal(await page.locator('#editor-spectral-shape [data-shape="select"]').getAttribute('aria-pressed'), 'true')
+  // Select: a click on the shape picks it, and a double-click on its outline adds a handle.
+  await page.mouse.click(box.x + 120, yFor(1500))
+  await page.waitForTimeout(200)
+  assert.match(await page.locator('#editor-spectral-selection').innerText(), /–/, 'Select picks the shape')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'repair-brush-select.png') })
   await page.locator('#editor-spectral-canvas').press('b')
   assert.equal(await page.locator('#editor-spectral-shape [data-shape="brush"]').getAttribute('aria-pressed'), 'true')
 })
