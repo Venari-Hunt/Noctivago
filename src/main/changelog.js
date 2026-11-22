@@ -27,9 +27,13 @@ export function parseChangelog(text = changelogText) {
   }))
 }
 
+// A Nightly build is "2.0.0-nightly.<date>.<run>": its notes live under the
+// plain "v2.0.0" entry, so the pre-release part is dropped before comparing.
+const baseVersion = (v) => String(v ?? '').split('-')[0]
+
 function compareVersions(a, b) {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
+  const pa = baseVersion(a).split('.').map(Number)
+  const pb = baseVersion(b).split('.').map(Number)
   for (let i = 0; i < 3; i++) {
     if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0)
   }
@@ -50,7 +54,7 @@ export function changelogEntriesBetween(fromVersion, toVersion) {
   if (inRange.length > 0) {
     return inRange.sort((a, b) => compareVersions(b.version, a.version))
   }
-  const exact = entries.find((e) => e.version === toVersion)
+  const exact = entries.find((e) => e.version === baseVersion(toVersion))
   return exact ? [exact] : []
 }
 
