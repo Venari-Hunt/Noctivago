@@ -2,7 +2,8 @@
 // three panes stay as the mock; below 1180 the library slides over the editor (starts
 // hidden, opens on the chevron with the search focused, closes on Esc and after a sound is
 // picked) and the preview module sits under the canvas; below 860 everything stacks and the
-// preview stays pinned while the settings scroll. No sideways overflow at any width.
+// preview stays pinned while the settings scroll (below 760 high it scrolls in its own row
+// instead, so it never covers the canvas). No sideways overflow at any width.
 // Needs the Remix build in ../noctivago-plugin-repos/noctivago-remix.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -60,7 +61,7 @@ test('1280: three panes, library shown, no show-library button', async () => {
   assert.ok(await page.locator('#rx-lib-show').isHidden())
 })
 
-for (const [w, h, pick] of [[1100, 720, 'Fire crackle'], [859, 720, 'Rain on tin'], [560, 560, 'Fire crackle']]) {
+for (const [w, h, pick] of [[1100, 720, 'Fire crackle'], [859, 800, 'Rain on tin'], [859, 720, 'Rain on tin'], [560, 560, 'Fire crackle']]) {
   test(`${w}x${h}: library slides over, preview stays in reach`, async () => {
     await size(w, h)
     const st = await page.evaluate(() => {
@@ -70,7 +71,7 @@ for (const [w, h, pick] of [[1100, 720, 'Fire crackle'], [859, 720, 'Rain on tin
     assert.equal(await libState(), 'off', 'library starts hidden')
     assert.ok(st.sw <= st.cw, `no sideways overflow (${st.sw} > ${st.cw})`)
     assert.ok(st.title >= 120, `title keeps room (${st.title})`)
-    assert.ok(st.play <= h - BAR, `preview Play above the bottom bar (${st.play})`)
+    if (!(w < 860 && h < 760)) assert.ok(st.play <= h - BAR, `preview Play above the bottom bar (${st.play})`)
 
     await page.click('#rx-lib-show')
     await page.waitForTimeout(300)
@@ -90,11 +91,27 @@ for (const [w, h, pick] of [[1100, 720, 'Fire crackle'], [859, 720, 'Rain on tin
     assert.equal(await libState(), 'off', 'picking a sound closes')
     assert.equal(await page.locator('#rx-title').textContent(), pick)
 
-    if (w < 860) {
+    if (w < 860 && h >= 760) {
       await page.evaluate(() => { const m = document.querySelector('main'); m.scrollTop = m.scrollHeight })
       await page.waitForTimeout(300)
       const play = await page.evaluate(() => document.querySelector('.rx-pplay').getBoundingClientRect())
       assert.ok(play.top >= 0 && play.bottom <= h - BAR, `Play pinned after scrolling (${play.top}..${play.bottom})`)
+      await page.evaluate(() => { document.querySelector('main').scrollTop = 0 })
+    }
+    if (w < 860 && h < 760) {
+      // Short window: the preview scrolls in its own row and never covers the canvas.
+      const st2 = await page.evaluate(() => {
+        const pos = getComputedStyle(document.querySelector('.rx-prev')).position
+        const c = document.querySelector('.rx-canvas').getBoundingClientRect()
+        const p = document.querySelector('.rx-prev').getBoundingClientRect()
+        document.querySelector('.rx-pplay').scrollIntoView({ block: 'center' })
+        return { pos, canvasBottom: c.bottom, prevTop: p.top }
+      })
+      assert.equal(st2.pos, 'static', 'preview not pinned below 760 high')
+      assert.ok(st2.prevTop >= st2.canvasBottom, `preview below the canvas (${st2.prevTop} < ${st2.canvasBottom})`)
+      await page.waitForTimeout(300)
+      const play = await page.evaluate(() => document.querySelector('.rx-pplay').getBoundingClientRect())
+      assert.ok(play.top >= 0 && play.bottom <= h - BAR, `Play reachable by scrolling (${play.top}..${play.bottom})`)
       await page.evaluate(() => { document.querySelector('main').scrollTop = 0 })
     }
   })
