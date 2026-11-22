@@ -41,6 +41,20 @@ function cleanPoints(points) {
   return out
 }
 
+// A Brush or Lasso shape's handles: 3 to MAX_HANDLES [sec, hz] pairs, or null.
+const MAX_HANDLES = 32
+function cleanHandles(handles) {
+  if (!Array.isArray(handles) || handles.length < 3 || handles.length > MAX_HANDLES) return null
+  const out = []
+  for (const p of handles) {
+    const sec = finite(p?.[0], NaN)
+    const hz = finite(p?.[1], NaN)
+    if (!Number.isFinite(sec) || !Number.isFinite(hz)) return null
+    out.push([Math.max(0, sec), Math.min(Math.max(hz, MIN_HZ), MAX_HZ)])
+  }
+  return out
+}
+
 // Cleans one stored region into { startSec, endSec, lowHz, highHz,
 // reductionDb } with its bounds ordered and clamped, or null if it has no
 // area (zero length or zero bandwidth) or turns nothing down.
@@ -57,6 +71,19 @@ export function normalizeSpectralRepair(region) {
   const lowHz = Math.min(lo, hi)
   const highHz = Math.max(lo, hi)
   if (endSec - startSec < 0.005 || highHz - lowHz < 1 || reductionDb <= 0) return null
+  // Brush and Lasso shapes keep their handles (the curve is made from them in
+  // the shared DSP); the box is then their own bounds, whatever was stored.
+  const handles = cleanHandles(region.handles)
+  if (handles) {
+    const secs = handles.map((p) => p[0])
+    const hzs = handles.map((p) => p[1])
+    const hStart = Math.min(...secs)
+    const hEnd = Math.max(...secs)
+    const hLow = Math.min(...hzs)
+    const hHigh = Math.max(...hzs)
+    if (hEnd - hStart < 0.005 || hHigh - hLow < 1 || reductionDb <= 0) return null
+    return { startSec: hStart, endSec: hEnd, lowHz: hLow, highHz: hHigh, reductionDb, handles }
+  }
   const points = cleanPoints(region.points)
   return points ? { startSec, endSec, lowHz, highHz, reductionDb, points } : { startSec, endSec, lowHz, highHz, reductionDb }
 }
@@ -78,7 +105,13 @@ export function spectralRepairRegionsForClip(regions, loopStart, loopEnd) {
     const t0 = Math.max(region.startSec, loopStart) - loopStart
     const t1 = Math.min(region.endSec, loopEnd) - loopStart
     if (t1 - t0 < 0.005) continue
-    out.push({ ...region, startSec: t0, endSec: t1, ...(region.points ? { points: region.points.map(([sec, hz]) => [sec - loopStart, hz]) } : {}) })
+    out.push({
+      ...region,
+      startSec: t0,
+      endSec: t1,
+      ...(region.points ? { points: region.points.map(([sec, hz]) => [sec - loopStart, hz]) } : {}),
+      ...(region.handles ? { handles: region.handles.map(([sec, hz]) => [sec - loopStart, hz]) } : {})
+    })
   }
   return out
 }

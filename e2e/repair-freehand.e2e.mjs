@@ -1,4 +1,4 @@
-// End-to-end: a FREEHAND Spectral repair shape (drawn with the lasso) is one engine live and saved.
+// End-to-end: a Lasso Spectral repair shape (was Freehand; now a few handles joined by a smooth curve) is one engine live and saved.
 // Copy of the Spectral test in repair.e2e.mjs with the box drawn as a freehand loop. Original header follows.
 // End-to-end: one engine for Spectral repair and Noise reduction. Same shape as
 // pitch.e2e.mjs: tee the app output into an analyser, measure the auto-saved
@@ -156,7 +156,7 @@ after(async () => {
   for (const f of files) fs.rmSync(f, { force: true })
 })
 
-test('Freehand spectral repair: a loop over the second tone takes it 20+ dB down, live and saved, the first tone stays', async (t) => {
+test('Lasso spectral repair: a loop over the second tone takes it 20+ dB down, live and saved, the first tone stays', async (t) => {
   await pickSound('Spectral two tones')
   const src = sources['Spectral two tones']
   const srcA = toneDb(src.slice(3 * RATE, 3 * RATE + FFT), RATE, 440)
@@ -183,7 +183,7 @@ test('Freehand spectral repair: a loop over the second tone takes it 20+ dB down
   let box = await canvas.boundingBox()
   const yFor = (hz) => box.y + box.height * (1 - Math.log(hz / 30) / Math.log(20000 / 30))
   const since = Date.now()
-  await page.locator('#editor-spectral-shape [data-shape="free"]').click()
+  await page.locator('#editor-spectral-shape [data-shape="lasso"]').click()
   await page.waitForTimeout(300)
   box = await canvas.boundingBox() // the toggle can shift the layout
   const x0 = box.x + 3, x1 = box.x + box.width - 3

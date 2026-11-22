@@ -165,3 +165,17 @@ test('a freehand shape keeps its points, clamped, and shifts with the trimmed cl
   const [clip] = spectralRepairRegionsForClip([region], 3, 10)
   assert.deepEqual(clip.points, [[1, 1000], [3, 1000], [2, 3000]])
 })
+
+test('a brush shape keeps its handles (3 to 32), takes its box from them, and shifts with the trimmed clip', () => {
+  const handles = [[4, 1000], [6, 1000], [5, 3000]]
+  const region = { startSec: 0, endSec: 99, lowHz: 30, highHz: 20000, reductionDb: 30, handles }
+  const n = normalizeSpectralRepair(region)
+  assert.deepEqual(n.handles, handles)
+  assert.deepEqual([n.startSec, n.endSec, n.lowHz, n.highHz], [4, 6, 1000, 3000], 'the box is the handles\' bounds')
+  assert.equal(n.points, undefined)
+  assert.equal(normalizeSpectralRepair({ ...region, handles: [[4, 1000], [6, 1000]] }).handles, undefined, 'too few handles: a plain box')
+  assert.equal(normalizeSpectralRepair({ ...region, handles: [[4, 1000], [6, 1000], [5, 'x']] }).handles, undefined)
+  assert.equal(normalizeSpectralRepair({ ...region, handles: Array.from({ length: 33 }, (_, i) => [i, 1000 + i]) }).handles, undefined)
+  const [clip] = spectralRepairRegionsForClip([{ ...region, startSec: 4, endSec: 6, lowHz: 1000, highHz: 3000 }], 3, 10)
+  assert.deepEqual(clip.handles, [[1, 1000], [3, 1000], [2, 3000]])
+})
