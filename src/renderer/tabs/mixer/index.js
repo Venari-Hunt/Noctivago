@@ -1667,7 +1667,8 @@ function startDelete(batch) {
   batch.toast = notify({
     message: batch.message,
     key: `sound-delete-${batch.ids.join(',')}`,
-    timeoutMs: 6000,
+    timeoutMs: 15000,
+    countdown: true,
     actions: [{
       label: 'Undo',
       icon: 'undo-2',
