@@ -12,6 +12,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- **New: Noise reduction shows what it learned.** Under the Sample from / to fields, a small curve draws the noise profile (how loud the noise is at each pitch, low to high) and redraws when you move the sample. Raise Strength past 24 dB and a note warns the sound can turn watery. The reduction itself is unchanged.
 - **New: Shift adds and Alt cuts with Box and Lasso, and Repair opens on the Brush.** With a shape picked, hold Shift while dragging a box or loop to join it into that shape (it keeps its number and level), or Alt to cut the region out of it (a cut through the middle gives two shapes; cutting it all away removes it). With nothing picked, Shift draws as usual and Alt does nothing. The hint line under the canvas says so for each tool.
 
 - **New: the Repair brush.** In the Remix Repair tab, paint over a sound to turn it down: a stroke merges into every shape it touches, Alt cuts, and `[` `]` change the brush size. Shapes are a few handles joined by one smooth curve, kept inside the view, and never have sharp edges. Lasso (was Freehand) uses the same smoothing, so a loop no longer leaves hundreds of dots. The new Select tool drags a shape or its handles, double-click the outline adds a handle, Delete removes it, and Ctrl+Z / Ctrl+Y undo. Tool keys: V Select, R Box, L Lasso, B Brush, N Noise sample. What you hear while editing is what gets saved.
