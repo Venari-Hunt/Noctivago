@@ -17,6 +17,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 - **Fixed: the Spectral repair needle could not be dragged in short, narrow windows.** The player no longer covers the bottom of the spectrum.
 - **New: the Community Share form shows the License row.** Each sound keeps its own credit (CC0, CC BY, or license unknown).
 - **Changed: the Undo toast after deleting stays 15 seconds, with a bar that shows the time left.** Hovering it pauses the timer.
+- **Changed: the Undo toast after switching the mix also stays 15 seconds with the time-left bar.**
 - **New: Undo and Redo everywhere in the Mixer.** Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, and the head buttons, undo volume, mute, in/out of the mix, rename, tags, reorder and delete. The Delete key removes the selected sounds.
 - **Changed: drag Mixer cards to change the mix order.**
 - **Changed: a sound put back in the mix keeps its preset settings.**

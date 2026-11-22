@@ -99,6 +99,9 @@ describe('Mixer', () => {
     await settle()
     assert.equal(await page.locator('.sound-row-leaving', { hasText: 'E2E tone' }).count(), 1)
     const toast = page.locator('.notify', { hasText: 'Took "E2E tone" out of the mix' })
+    // Same 15 s countdown bar as the delete toast.
+    assert.equal(await toast.locator('.notify-drain').count(), 1)
+    assert.match(await toast.locator('.notify-countdown').innerText(), /^([1-9]|1[0-5]) s$/)
     await toast.getByRole('button', { name: 'Undo' }).click()
     await settle(800)
     assert.equal(await page.locator('.sound-row-leaving').count(), 0)
