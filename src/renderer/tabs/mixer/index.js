@@ -334,7 +334,8 @@ async function toggleIncludedFromCenter(id) {
   notify({
     message: wasIn ? `Took "${entry.name}" out of the mix` : `Added "${entry.name}"`,
     key: 'mix-switch',
-    timeoutMs: 5000,
+    timeoutMs: 15000,
+    countdown: true,
     actions: [{
       label: 'Undo',
       icon: 'undo-2',
