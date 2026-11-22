@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { reduceNoise, resolveNoiseWindow, computeNoiseProfile, NoiseReductionChannel, NOISE_FRAME } from '../src/shared/noiseReductionDsp.js'
+import { reduceNoise, resolveNoiseWindow, computeNoiseProfile, noiseProfileCurve, NoiseReductionChannel, NOISE_FRAME } from '../src/shared/noiseReductionDsp.js'
 
 const SR = 44100
 
@@ -87,4 +87,17 @@ test('resolveNoiseWindow clamps to the loop and falls back to the first third', 
   assert.deepEqual(resolveNoiseWindow(0, 0, 0, 3), { start: 0, end: 1 })
   assert.deepEqual(resolveNoiseWindow(NaN, NaN, 0, 30), { start: 0, end: 1.5 })
   assert.equal(resolveNoiseWindow(0, 1, 0, 0.1), null)
+})
+
+test('noise profile curve: white noise is flat, low-pass noise falls toward high Hz', () => {
+  const white = noise(SR * 2, 0.1)
+  const flat = noiseProfileCurve(computeNoiseProfile([white], SR, 0, 2), SR, 64)
+  assert.equal(flat.length, 64)
+  assert.ok(Math.max(...flat) - Math.min(...flat) < 6, 'white noise spread ' + (Math.max(...flat) - Math.min(...flat)))
+  // Brown-ish noise: a heavy one-pole low-pass of white noise.
+  const low = new Float32Array(white.length)
+  for (let i = 1; i < low.length; i++) low[i] = low[i - 1] * 0.97 + white[i] * 0.03
+  const falling = noiseProfileCurve(computeNoiseProfile([low], SR, 0, 2), SR, 64)
+  const avg = (a, from, to) => a.slice(from, to).reduce((s, v) => s + v, 0) / (to - from)
+  assert.ok(avg(falling, 0, 8) - avg(falling, 56, 64) > 20, 'low minus high dB')
 })
