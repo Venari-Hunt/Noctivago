@@ -1,9 +1,9 @@
 // End-to-end: Remix down to the 560x560 window minimum (responsive step 2). At 1280 the
 // three panes stay as the mock; below 1180 the library slides over the editor (starts
 // hidden, opens on the chevron with the search focused, closes on Esc and after a sound is
-// picked) and the preview module sits under the canvas; below 860 everything stacks and the
-// preview stays pinned while the settings scroll (below 760 high it scrolls in its own row
-// instead, so it never covers the canvas). No sideways overflow at any width.
+// picked) and the preview module sits under the canvas; below 860 the canvas fills, the
+// preview has its own row under it (never over it) and the settings slide in from the
+// right on a Settings button (owner, 2026-11-21). No sideways overflow at any width.
 // Needs the Remix build in ../noctivago-plugin-repos/noctivago-remix.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -71,7 +71,7 @@ for (const [w, h, pick] of [[1100, 720, 'Fire crackle'], [859, 800, 'Rain on tin
     assert.equal(await libState(), 'off', 'library starts hidden')
     assert.ok(st.sw <= st.cw, `no sideways overflow (${st.sw} > ${st.cw})`)
     assert.ok(st.title >= 120, `title keeps room (${st.title})`)
-    if (!(w < 860 && h < 760)) assert.ok(st.play <= h - BAR, `preview Play above the bottom bar (${st.play})`)
+    if (h >= 720) assert.ok(st.play <= h - BAR, `preview Play above the bottom bar (${st.play})`)
 
     await page.click('#rx-lib-show')
     await page.waitForTimeout(300)
@@ -91,27 +91,46 @@ for (const [w, h, pick] of [[1100, 720, 'Fire crackle'], [859, 800, 'Rain on tin
     assert.equal(await libState(), 'off', 'picking a sound closes')
     assert.equal(await page.locator('#rx-title').textContent(), pick)
 
-    if (w < 860 && h >= 760) {
-      await page.evaluate(() => { const m = document.querySelector('main'); m.scrollTop = m.scrollHeight })
-      await page.waitForTimeout(300)
-      const play = await page.evaluate(() => document.querySelector('.rx-pplay').getBoundingClientRect())
-      assert.ok(play.top >= 0 && play.bottom <= h - BAR, `Play pinned after scrolling (${play.top}..${play.bottom})`)
-      await page.evaluate(() => { document.querySelector('main').scrollTop = 0 })
-    }
-    if (w < 860 && h < 760) {
-      // Short window: the preview scrolls in its own row and never covers the canvas.
+    if (w >= 860) assert.ok(await page.locator('#rx-side-show').isHidden(), 'no Settings button at 860+')
+    if (w < 860) {
+      // The canvas fills, the preview has its own row under it (never over it),
+      // and the settings are a drawer from the right.
       const st2 = await page.evaluate(() => {
         const pos = getComputedStyle(document.querySelector('.rx-prev')).position
-        const c = document.querySelector('.rx-canvas').getBoundingClientRect()
+        // The sound and group editors each have a canvas; measure the one on screen.
+        const c = [...document.querySelectorAll('.rx-canvas')].map((n) => n.getBoundingClientRect()).sort((a, b) => b.height - a.height)[0]
         const p = document.querySelector('.rx-prev').getBoundingClientRect()
-        document.querySelector('.rx-pplay').scrollIntoView({ block: 'center' })
-        return { pos, canvasBottom: c.bottom, prevTop: p.top }
+        const side = [...document.querySelectorAll('.rx-side')].find((n) => n.closest('.hidden') === null) ?? document.querySelector('.rx-side')
+        return { pos, canvasBottom: c.bottom, canvasH: c.height, prevTop: p.top, sideShown: getComputedStyle(side).display !== 'none' }
       })
-      assert.equal(st2.pos, 'static', 'preview not pinned below 760 high')
+      assert.equal(st2.pos, 'static', 'preview not pinned')
       assert.ok(st2.prevTop >= st2.canvasBottom, `preview below the canvas (${st2.prevTop} < ${st2.canvasBottom})`)
+      assert.ok(st2.canvasH >= 280, `canvas keeps its height (${st2.canvasH})`)
+      assert.equal(st2.sideShown, false, 'settings hidden until asked')
+      if (h >= 720) assert.ok(st2.prevTop + 40 <= h - BAR, 'preview in view without scrolling')
+
+      await page.click('#rx-side-show')
+      await page.waitForTimeout(300)
+      const s = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('.rx-side')].map((n) => n.getBoundingClientRect()).sort((x, y) => y.width - x.width)[0]
+        return { right: b.right, w: b.width, bottom: b.bottom, focus: document.activeElement?.className ?? '' }
+      })
+      assert.ok(s.right <= w && s.w > 200 && s.bottom <= h - BAR, `settings drawer in view (${JSON.stringify(s)})`)
+      assert.match(s.focus, /rx-side-hide/)
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(200)
+      assert.equal(await page.evaluate(() => document.querySelector('.editor-tab.rx').dataset.rxSide), 'off', 'Esc closes settings')
+      await page.click('#rx-side-show')
+      await page.waitForTimeout(200)
+      await page.click('#rx-lib-show')
+      await page.waitForTimeout(200)
+      assert.equal(await page.evaluate(() => document.querySelector('.editor-tab.rx').dataset.rxSide), 'off', 'library closes settings')
+      await page.keyboard.press('Escape')
+
+      await page.evaluate(() => document.querySelector('.rx-pplay').scrollIntoView({ block: 'center' }))
       await page.waitForTimeout(300)
       const play = await page.evaluate(() => document.querySelector('.rx-pplay').getBoundingClientRect())
-      assert.ok(play.top >= 0 && play.bottom <= h - BAR, `Play reachable by scrolling (${play.top}..${play.bottom})`)
+      assert.ok(play.top >= 0 && play.bottom <= h - BAR, `Play reachable (${play.top}..${play.bottom})`)
       await page.evaluate(() => { document.querySelector('main').scrollTop = 0 })
     }
   })
