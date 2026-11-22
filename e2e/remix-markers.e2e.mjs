@@ -129,6 +129,7 @@ test('on Spectrum a repair box edge snaps to a marker, and Ctrl draws free', asy
   await page.locator('#editor-mode-panel-sound [data-rx-view="spec"]').click()
   await page.waitForTimeout(2500)
   const canvas = page.locator('#editor-spectral-canvas')
+  await page.locator('#editor-spectral-shape [data-shape="box"]').click() // the Repair tab opens on the Brush
   await canvas.scrollIntoViewIfNeeded()
   const box = await canvas.boundingBox()
   const markerX = box.width * 0.4

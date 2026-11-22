@@ -142,7 +142,7 @@ test('Brush: a stroke over the second tone takes it 20+ dB down, live and saved,
   await page.waitForTimeout(1500)
   await canvas.scrollIntoViewIfNeeded()
   const since = Date.now()
-  await page.locator('#editor-spectral-shape [data-shape="brush"]').click()
+  assert.equal(await page.locator('#editor-spectral-shape [data-shape="brush"]').getAttribute('aria-pressed'), 'true', 'the Repair tab opens on the Brush')
   await page.waitForTimeout(300)
   assert.match(await page.locator('#editor-spectral-hint').innerText(), /merge into any shape/i, 'the hint line names the brush')
   const box = await canvas.boundingBox() // the tool bar can shift the layout
@@ -209,4 +209,73 @@ test('Brush: a second stroke that touches the first merges into one shape; Ctrl+
   await page.screenshot({ path: path.join(os.tmpdir(), 'repair-brush-select.png') })
   await page.locator('#editor-spectral-canvas').press('b')
   assert.equal(await page.locator('#editor-spectral-shape [data-shape="brush"]').getAttribute('aria-pressed'), 'true')
+})
+
+test('Box: Shift adds to the selected shape (one shape, both tones down, live = saved); Alt cuts it away again', async (t) => {
+  const canvas = page.locator('#editor-spectral-canvas')
+  await page.locator('#editor-spectral-clear').click()
+  await page.waitForTimeout(300)
+  await canvas.scrollIntoViewIfNeeded()
+  await page.locator('#editor-spectral-shape [data-shape="box"]').click()
+  assert.match(await page.locator('#editor-spectral-hint').innerText(), /Shift.*adds to the selected shape.*Alt.*cuts from it/s, 'the Box hint names Shift and Alt')
+  const src = sources['Spectral two tones']
+  const srcA = toneDb(src.slice(3 * RATE, 3 * RATE + FFT), RATE, 440)
+  const srcB = toneDb(src.slice(3 * RATE, 3 * RATE + FFT), RATE, 1500)
+  const clean = await playFor(3000)
+  const liveA0 = toneDb(clean.samples, clean.sr, 440)
+  const liveB0 = toneDb(clean.samples, clean.sr, 1500)
+
+  const box = await canvas.boundingBox()
+  const yFor = (hz) => box.y + box.height * (1 - Math.log(hz / 30) / Math.log(20000 / 30))
+  const x0 = box.x + 3
+  const x1 = box.x + box.width - 3
+  const drag = async (hz0, hz1, key) => {
+    if (key) await page.keyboard.down(key)
+    await page.mouse.move(x0, yFor(hz0))
+    await page.mouse.down()
+    await page.mouse.move(x1, yFor(hz1), { steps: 8 })
+    await page.mouse.up()
+    if (key) await page.keyboard.up(key)
+    await page.waitForTimeout(300)
+  }
+  const count = async () => {
+    await canvas.focus()
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(200)
+    return (await page.locator('#editor-spectral-selection').innerText()).trim()
+  }
+  const since = Date.now()
+  await drag(2000, 1000) // plain: a box round the 1500 Hz tone, selected
+  await drag(1200, 300, 'Shift') // Shift: a box round the 440 Hz tone that overlaps the first
+  assert.match(await count(), /^1 box\./, 'Shift joined the new box into the selected shape: still one shape')
+
+  const heard = await playFor(3500)
+  const liveA = toneDb(heard.samples, heard.sr, 440) - liveA0
+  const liveB = toneDb(heard.samples, heard.sr, 1500) - liveB0
+  assert.ok(liveA <= -20 && liveB <= -20, `live tones moved ${liveA.toFixed(1)} / ${liveB.toFixed(1)} dB, want 20+ down`)
+  const saved = await savedClip(since)
+  const savedA = toneDb(saved, RATE, 440) - srcA
+  const savedB = toneDb(saved, RATE, 1500) - srcB
+  assert.ok(savedA <= -20 && savedB <= -20, `saved tones moved ${savedA.toFixed(1)} / ${savedB.toFixed(1)} dB, want 20+ down`)
+  t.diagnostic(`Shift: 440 Hz live ${liveA.toFixed(1)} / saved ${savedA.toFixed(1)} dB; 1500 Hz live ${liveB.toFixed(1)} / saved ${savedB.toFixed(1)} dB`)
+  await page.screenshot({ path: path.join(os.tmpdir(), 'repair-box-shift.png') })
+
+  // Alt: select the shape, cut a box through it. Over everything: the shape is gone, both tones are back.
+  await page.locator('#editor-spectral-shape [data-shape="select"]').click()
+  await page.mouse.click((x0 + x1) / 2, yFor(1100))
+  await page.waitForTimeout(200)
+  assert.match(await page.locator('#editor-spectral-selection').innerText(), /–/, 'the shape is picked')
+  await page.locator('#editor-spectral-shape [data-shape="box"]').click()
+  await drag(2400, 250, 'Alt')
+  assert.match(await page.locator('#editor-spectral-selection').innerText(), /No box selected/, 'Alt over the whole shape removed it')
+  const since2 = Date.now()
+  const back = await playFor(3500)
+  const backA = toneDb(back.samples, back.sr, 440) - liveA0
+  const backB = toneDb(back.samples, back.sr, 1500) - liveB0
+  assert.ok(Math.abs(backA) <= 1.5 && Math.abs(backB) <= 1.5, `live tones are back: ${backA.toFixed(1)} / ${backB.toFixed(1)} dB`)
+  const saved2 = await savedClip(since2)
+  const s2A = toneDb(saved2, RATE, 440) - srcA
+  const s2B = toneDb(saved2, RATE, 1500) - srcB
+  assert.ok(Math.abs(s2A) <= 1.5 && Math.abs(s2B) <= 1.5, `saved tones are back: ${s2A.toFixed(1)} / ${s2B.toFixed(1)} dB`)
+  t.diagnostic(`Alt: live ${backA.toFixed(1)} / ${backB.toFixed(1)} dB, saved ${s2A.toFixed(1)} / ${s2B.toFixed(1)} dB`)
 })
