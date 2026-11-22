@@ -34,6 +34,6 @@ octivago-audit-old` / `-new`; timers, updates and the Community key left out). `
 - `docs/watch-folders.md` — watched-folder import.
 - `docs/mobile.md` — phone player plan (React Native + react-native-audio-api, desktop bakes clips).
 - `docs/releasing.md` — releases, auto-update, Stable and Nightly channels, data that survives a downgrade, itch.io.
-- `CHANGELOG.md` — dated release history (what exists). Old version numbers in docs are provenance, not things to re-verify.
+- `CHANGELOG.md` — dated release history (what exists). Old version numbers in docs are provenance, not things to re-verify. On `ui-redesign`, every user-facing PR adds one bullet to the top `## v2.0.0` entry: Nightly builds (`2.0.0-nightly…`) show that entry on "What's new" (owner, 2026-11-21: it was empty).
 
 **Doc site:** `Venari-Hunt/noctivago-docs` (plain HTML, push to `main`). Update it whenever possible: any user-facing change updates its page, and each release updates What's new (`node tools/build-changelog.mjs <this repo>/CHANGELOG.md`) before the tag. Batch only if it's truly expensive, and never past the next major release.

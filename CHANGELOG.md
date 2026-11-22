@@ -6,6 +6,26 @@ released version; keep it short and about what changed for the person using
 the app, not implementation detail (that lives in `CLAUDE.md`). Write each
 bullet on a single line — the in-app screen wraps them itself.
 
+Nightly builds (`2.0.0-nightly…`) show the `v2.0.0` entry below: every change
+merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
+"What's new" is never empty. It becomes the 2.0 release notes.
+
+## v2.0.0 — Desktop 2.0 (Nightly, in progress)
+
+- **Changed: Remix in small windows (under 860 px wide).** The waveform fills the space, the player sits in its own row under it, and Settings is a button that slides the settings in from the right.
+- **New: a "Needle" time field in Remix, next to Start, End and Length.** It follows playback, and typing a time moves the needle.
+- **Fixed: the Spectral repair needle could not be dragged in short, narrow windows.** The player no longer covers the bottom of the spectrum.
+- **New: the Community Share form shows the License row.** Each sound keeps its own credit (CC0, CC BY, or license unknown).
+- **Changed: the Undo toast after deleting stays 15 seconds, with a bar that shows the time left.** Hovering it pauses the timer.
+- **New: Undo and Redo everywhere in the Mixer.** Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, and the head buttons, undo volume, mute, in/out of the mix, rename, tags, reorder and delete. The Delete key removes the selected sounds.
+- **Changed: drag Mixer cards to change the mix order.**
+- **Changed: a sound put back in the mix keeps its preset settings.**
+- **Changed: knobs: click one to select it, then the mouse wheel turns it.**
+- **Changed: the window buttons match the title bar.**
+- **New: the window can shrink to 560 × 560.** The Mixer, Remix and Settings rearrange themselves to fit.
+- **New: Mixer preview has its own volume slider and mute.** In the Mixer library a click selects a sound and + adds it to the mix.
+- **Changed: the whole app has the new Desktop 2.0 look**, with one set of colors, spacing and corner sizes everywhere.
+
 ## v0.1.277 — What you hear in Remix is what gets saved
 
 - **Changed: Pitch, Doppler, Spectral repair and Noise reduction are now heard live in Remix, and saved with the same code.** Before, Remix could not play them while you edited, and the save used a different tool, so the saved sound could differ from what you had in mind. Now the preview and the save run one engine each, so they match.
