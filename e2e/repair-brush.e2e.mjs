@@ -174,6 +174,7 @@ test('Brush: a second stroke that touches the first merges into one shape; Ctrl+
   const box = await canvas.boundingBox()
   const yFor = (hz) => box.y + box.height * (1 - Math.log(hz / 30) / Math.log(20000 / 30))
   const count = async () => {
+    await canvas.focus()
     await page.keyboard.press('Escape') // nothing selected: the line counts the shapes
     await page.waitForTimeout(200)
     return (await page.locator('#editor-spectral-selection').innerText()).trim()
