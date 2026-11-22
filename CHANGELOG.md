@@ -12,6 +12,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- **New: the Repair brush.** In the Remix Repair tab, paint over a sound to turn it down: a stroke merges into every shape it touches, Alt cuts, and `[` `]` change the brush size. Shapes are a few handles joined by one smooth curve, kept inside the view, and never have sharp edges. Lasso (was Freehand) uses the same smoothing, so a loop no longer leaves hundreds of dots. The new Select tool drags a shape or its handles, double-click the outline adds a handle, Delete removes it, and Ctrl+Z / Ctrl+Y undo. Tool keys: V Select, R Box, L Lasso, B Brush, N Noise sample. What you hear while editing is what gets saved.
 - **Changed: the Remix "Spectrum" view is now "Repair", and Noise reduction moves into it.** The new Noise sample tool drags a band across the spectrogram to mark the stretch that is only noise; its handles resize it, and the From and To fields still take exact times. "Use shape N as noise sample" takes a repair shape's whole time range. The Noise gate stays in Cleanup.
 - **Changed: Remix in small windows (under 860 px wide).** The waveform fills the space, the player sits in its own row under it, and Settings is a button that slides the settings in from the right.
 - **New: a "Needle" time field in Remix, next to Start, End and Length.** It follows playback, and typing a time moves the needle.

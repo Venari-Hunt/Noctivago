@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { repairChannels, SpectralRepairChannel, LATENCY } from '../src/shared/spectralRepairDsp.js'
+import { repairChannels, SpectralRepairChannel, LATENCY, flattenHandles, CURVE_STEPS } from '../src/shared/spectralRepairDsp.js'
 
 const SR = 44100
 function tone(freq, seconds, amp = 0.5) {
@@ -95,4 +95,33 @@ test('a freehand triangle leaves the frequencies outside its slope alone', () =>
   const from = Math.round(SR * 1.45)
   const to = Math.round(SR * 1.55)
   assert.ok(Math.abs(db(rms(y, from, to)) - db(rms(hi, 0, 4000))) < 0.6, `kept ${db(rms(y, from, to))}`)
+})
+
+test('handles are joined by a smooth closed curve that stays inside the handles\' bounds', () => {
+  const handles = [[1, 300], [1.6, 2500], [2.4, 3000], [3, 400], [2, 150]]
+  const poly = flattenHandles(handles)
+  assert.equal(poly.length, handles.length * CURVE_STEPS)
+  const hzs = handles.map((p) => p[1])
+  const secs = handles.map((p) => p[0])
+  for (const [sec, hz] of poly) {
+    assert.ok(sec >= Math.min(...secs) - 1e-9 && sec <= Math.max(...secs) + 1e-9, `sec ${sec}`)
+    assert.ok(hz >= Math.min(...hzs) * (1 - 1e-9) && hz <= Math.max(...hzs) * (1 + 1e-9), `hz ${hz}`)
+  }
+  // The curve passes through every handle.
+  handles.forEach((h, i) => {
+    assert.ok(Math.abs(poly[i * CURVE_STEPS][0] - h[0]) < 1e-9 && Math.abs(poly[i * CURVE_STEPS][1] - h[1]) < 1e-6)
+  })
+})
+
+test('a handles shape turns down only what is inside its curve, and handles bunched on one spot do not break it', () => {
+  const a = tone(3000, 3)
+  const b = tone(8000, 3)
+  const mix = new Float32Array(a.length)
+  for (let i = 0; i < mix.length; i++) mix[i] = a[i] + b[i]
+  const handles = [[0.8, 1800], [1.5, 1700], [2.2, 1800], [2.3, 5200], [2.3, 5200.5], [1.5, 5400], [0.8, 5200]]
+  const region = { startSec: 0.8, endSec: 2.3, lowHz: 1700, highHz: 5400, reductionDb: 40, handles }
+  const [y] = repairChannels([mix], SR, [region])
+  const from = Math.round(SR * 1.4)
+  const to = Math.round(SR * 1.6)
+  assert.ok(Math.abs(db(rms(y, from, to)) - db(rms(b, 0, 4000))) < 0.7, `3 kHz inside, 8 kHz kept: ${db(rms(y, from, to))}`)
 })
