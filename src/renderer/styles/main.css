@@ -3460,6 +3460,29 @@ a.btn {
   pointer-events: auto;
 }
 
+/* Undo toasts: a bar drains along the bottom edge (a 15 s timer), the label
+   says the seconds left. Reduced motion: no bar, the label alone. */
+.notify-timed {
+  position: relative;
+  overflow: hidden;
+}
+
+.notify-drain {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--accent);
+  transform-origin: left center;
+}
+
+.notify-countdown {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  align-self: center;
+}
+
 .notify-body {
   display: flex;
   align-items: center;

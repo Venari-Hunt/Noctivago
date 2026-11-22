@@ -10,6 +10,8 @@
 //   timeoutMs: auto-close after this long; hovering pauses it. Omitted = it
 //        stays until closed, for things that may happen while nobody's
 //        looking (the app often runs all night).
+//   countdown: with timeoutMs, shows the time left (a draining bar plus "12 s";
+//        only the label under reduced motion). Used by toasts that offer Undo.
 //   actions: [{ label, onClick, icon? }] buttons; clicking one also closes it.
 //        icon: a mock icon name drawn before the label (Undo uses 'undo-2').
 //   onClose: called once however it closes (timeout, Dismiss, an action,
@@ -35,7 +37,7 @@ function ensureStack() {
   return stack
 }
 
-export function notify({ message, title, tone = 'info', key, timeoutMs, actions = [], onClose }) {
+export function notify({ message, title, tone = 'info', key, timeoutMs, countdown = false, actions = [], onClose }) {
   const host = ensureStack()
   const card = document.createElement('div')
   card.className = `notify notify-${tone}`
@@ -83,16 +85,62 @@ export function notify({ message, title, tone = 'info', key, timeoutMs, actions 
 
   card.append(body, closeButton)
 
+  // countdown: a bar along the card's bottom edge drains over timeoutMs and a
+  // "12 s" label says how long is left. With reduced motion only the label
+  // stays (it ticks once a second, no animation). Hovering pauses all of it.
   let timer = null
-  const arm = () => {
-    if (timeoutMs > 0) timer = setTimeout(close, timeoutMs)
+  let remaining = timeoutMs
+  let startedAt = 0
+  let drain = null
+  let tick = null
+  let label = null
+  const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (countdown && timeoutMs > 0) {
+    label = document.createElement('span')
+    label.className = 'notify-countdown'
+    card.classList.add('notify-timed')
+    body.querySelector('.notify-actions')?.appendChild(label) ?? body.appendChild(label)
+    if (!reduceMotion) {
+      const bar = document.createElement('div')
+      bar.className = 'notify-drain'
+      bar.setAttribute('aria-hidden', 'true')
+      card.appendChild(bar)
+      drain = bar.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: timeoutMs, easing: 'linear', fill: 'forwards' })
+      drain.pause()
+    }
   }
-  card.addEventListener('mouseenter', () => clearTimeout(timer))
+  const paintLabel = () => {
+    if (label) label.textContent = `${Math.max(1, Math.ceil(remaining / 1000))} s`
+  }
+  const arm = () => {
+    if (!(remaining > 0)) return
+    startedAt = Date.now()
+    timer = setTimeout(close, remaining)
+    drain?.play()
+    if (label) {
+      paintLabel()
+      tick = setInterval(() => {
+        remaining -= Date.now() - startedAt
+        startedAt = Date.now()
+        paintLabel()
+      }, 1000)
+    }
+  }
+  const hold = () => {
+    clearTimeout(timer)
+    clearInterval(tick)
+    if (startedAt) remaining -= Date.now() - startedAt
+    startedAt = 0
+    drain?.pause()
+    paintLabel()
+  }
+  card.addEventListener('mouseenter', hold)
   card.addEventListener('mouseleave', arm)
 
   let closed = false
   function close() {
     clearTimeout(timer)
+    clearInterval(tick)
     card.remove()
     if (key && byKey.get(key)?.card === card) byKey.delete(key)
     if (closed) return
@@ -116,7 +164,7 @@ export function notify({ message, title, tone = 'info', key, timeoutMs, actions 
       else oldest.remove()
     }
   }
-  if (key) byKey.set(key, { card, cancel: () => clearTimeout(timer) })
+  if (key) byKey.set(key, { card, cancel: () => { clearTimeout(timer); clearInterval(tick) } })
   arm()
   return { close }
 }
