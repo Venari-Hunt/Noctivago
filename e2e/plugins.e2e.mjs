@@ -91,7 +91,7 @@ describe('Remix', () => {
     await panel().getByText('E2E sound').first().click()
     await settle(2000)
     const text = await panel().innerText()
-    for (const word of ['Trim', 'Loop seam', 'EQ', 'Repair', 'Save as copy', 'Playback', 'Speed and pitch', 'Tone', 'Parametric EQ', 'Cleanup', 'Noise reduction', 'Space', 'Volume drift', 'Pitch drift', 'Pan drift']) {
+    for (const word of ['Trim', 'Loop seam', 'EQ', 'Spectral repair', 'Save as copy', 'Playback', 'Speed and pitch', 'Tone', 'Parametric EQ', 'Cleanup', 'Noise reduction', 'Space', 'Volume drift', 'Pitch drift', 'Pan drift']) {
       assert.ok(text.includes(word), word)
     }
     assert.match(text, /0:03/) // the 3 s test sound's length
@@ -119,7 +119,7 @@ describe('Remix', () => {
   })
 
   test('the Repair view offers the tools, Reduce by, box controls and the noise sample', async () => {
-    await panel().getByRole('button', { name: 'Repair', exact: true }).first().click()
+    await panel().getByRole('button', { name: 'Spectral repair', exact: true }).first().click()
     await settle()
     const text = await panel().innerText()
     for (const word of ['No box selected', 'Reduce by', 'Delete box', 'Clear all boxes', 'Noise sample', 'Use shape as noise sample', 'Reduce steady noise', 'Mark on spectrum', 'Use loop start', '0.5 s or more works best']) assert.ok(text.includes(word), word)

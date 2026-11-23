@@ -54,7 +54,7 @@ for (const [w, h] of [[1500, 950], [480, 720], [480, 620]]) {
     const panel = page.locator('.tab-panel:not(.hidden)')
     await panel.locator('#rx-lib-list').getByText('Needle sound').first().click()
     await page.waitForTimeout(1500)
-    await panel.getByRole('button', { name: 'Repair', exact: true }).first().click()
+    await panel.getByRole('button', { name: 'Spectral repair', exact: true }).first().click()
     await page.waitForTimeout(2000)
 
     // Start playing, then pause: the needle shows in both states.
