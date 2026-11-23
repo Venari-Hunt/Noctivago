@@ -12,6 +12,8 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- **Fixed: a sound taken out of a preset's mix shows and keeps its preset settings in Remix.** Remix used to show it with its default settings while the Mixer played the preset's own, and saving changed the defaults, which were lost when the sound came back. Now Remix shows the preset's settings, and saving changes only that preset's copy.
+
 - **Changed: each feature has its own name.** The Remix view is "Spectral repair", the EQ graph modes are "Analyzer", "Both" and "Heatmap" (with "Analyzer reads: Before / After / Both"), and the Export video style is "Spectrogram".
 
 - **New: Noise reduction shows what it learned.** Under the Sample from / to fields, a small curve draws the noise profile (how loud the noise is at each pitch, low to high) and redraws when you move the sample. Raise Strength past 24 dB and a note warns the sound can turn watery. The reduction itself is unchanged.

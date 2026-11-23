@@ -347,12 +347,26 @@ export function updatePresetSounds(id, sounds) {
 // the sound isn't found - there's nothing to attach an override to (a sound
 // not already a member of this preset's own `sounds[]` has no override slot;
 // the caller is expected to fall back to writing baseline in that case).
+// Owner, 2026-11-21: a sound that left the mix but still has a parked slot
+// (removedOverrides, see parkRemovedOverrides) is edited there, never in the
+// shared defaults, so the edit is still there when it comes back. `null`
+// drops the parked slot.
 export function updatePresetSoundOverride(presetId, soundId, overridePatch) {
   const presets = store.get('presets')
   const idx = presets.findIndex((p) => p.id === presetId)
   if (idx === -1) return null
   const soundIdx = presets[idx].sounds.findIndex((s) => s.soundId === soundId)
-  if (soundIdx === -1) return null
+  if (soundIdx === -1) {
+    const parked = presets[idx].removedOverrides ?? {}
+    if (!Object.hasOwn(parked, soundId)) return null
+    const removedOverrides = { ...parked }
+    const normalized = normalizeSoundOverride(overridePatch)
+    if (normalized) removedOverrides[soundId] = normalized
+    else delete removedOverrides[soundId]
+    presets[idx] = { ...presets[idx], removedOverrides }
+    store.set('presets', presets)
+    return presets[idx]
+  }
   const sounds = [...presets[idx].sounds]
   sounds[soundIdx] = { ...sounds[soundIdx], overrides: normalizeSoundOverride(overridePatch) }
   presets[idx] = { ...presets[idx], sounds }
@@ -369,7 +383,8 @@ export function updatePresetSoundOverride(presetId, soundId, overridePatch) {
 export function getSoundOverride(presetId, soundId) {
   if (!presetId) return null
   const preset = store.get('presets').find((p) => p.id === presetId)
-  return preset?.sounds.find((s) => s.soundId === soundId)?.overrides ?? null
+  // A sound out of the mix still plays with its parked overrides in the Mixer.
+  return preset?.sounds.find((s) => s.soundId === soundId)?.overrides ?? preset?.removedOverrides?.[soundId] ?? null
 }
 
 // "Always a preset loaded" (planned 2026-09-12): a no-op if any preset

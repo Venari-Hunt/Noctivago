@@ -2943,6 +2943,18 @@ document.addEventListener('library:linked', refreshList)
       if (overrideBaseline) state.baselineById.set(soundId, { ...overrideBaseline, ...loopClipPatchFields(loopClip) })
     }
     if (presetId !== state.activePresetId) return
+    // Remix edited a sound that is out of the mix: only its parked copy
+    // changes (presets.js updatePresetSoundOverride), it stays out.
+    if (e.detail.parked) {
+      const parked = { ...state.activePresetRemovedOverrides }
+      if (overrides) parked[soundId] = overrides
+      else delete parked[soundId]
+      state.activePresetRemovedOverrides = parked
+      recomputeEffectiveLibrary()
+      const parkedEntry = state.library.find((s) => s.id === soundId)
+      if (parkedEntry) reconcileSource(parkedEntry)
+      return
+    }
     // Remix only writes an override for a sound the stored preset contains,
     // so a missing entry just means this copy is behind - add it rather than
     // drop the edit.
