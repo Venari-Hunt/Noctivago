@@ -111,4 +111,15 @@ describe('Settings pages', () => {
     const text = await page.locator('.scol').innerText()
     for (const word of ['Freesound', 'YouTube', 'Community', 'updates']) assert.ok(text.includes(word), word)
   })
+
+  test('About > Licenses opens a dialog listing the third-party software', async () => {
+    await page.locator('.subnav button', { hasText: 'About' }).click()
+    await page.locator('.settings-item', { hasText: 'Licenses' }).getByRole('button', { name: 'Open' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Licenses' })
+    await dialog.waitFor()
+    const text = await dialog.innerText()
+    for (const name of ['FFmpeg', 'yt-dlp', 'Signalsmith Stretch']) assert.ok(text.includes(name), name)
+    await dialog.getByRole('button', { name: 'Close' }).click()
+    await dialog.waitFor({ state: 'detached' })
+  })
 })
