@@ -225,7 +225,7 @@ test('Noise reduction: the noise floor drops by about the same dB live and saved
   assert.equal(await page.locator('.rx-nr-row input[type=checkbox]').isChecked(), false)
   assert.equal(await page.locator('div#editor-noise-profile').count(), 1, 'no sample yet: the profile box shows its hint')
   await page.locator('#editor-spectral-shape [data-shape="noise"]').click()
-  assert.equal(await page.locator('#editor-noise-mark').getAttribute('aria-pressed'), 'true', 'Mark on spectrum lights with the tool')
+  assert.equal(await page.locator('#editor-noise-mark').getAttribute('aria-pressed'), 'true', 'Mark noise sample lights with the tool')
   const canvas = page.locator('#editor-spectral-canvas')
   await canvas.scrollIntoViewIfNeeded()
   const box = await canvas.boundingBox()

@@ -122,7 +122,7 @@ describe('Remix', () => {
     await panel().getByRole('button', { name: 'Spectral repair', exact: true }).first().click()
     await settle()
     const text = await panel().innerText()
-    for (const word of ['No box selected', 'Reduce by', 'Delete box', 'Clear all boxes', 'Noise sample', 'Use shape as noise sample', 'Reduce steady noise', 'Mark on spectrum', 'Use loop start', '0.5 s or more works best']) assert.ok(text.includes(word), word)
+    for (const word of ['No box selected', 'Reduce by', 'Delete box', 'Clear all boxes', 'Noise sample', 'Use shape as noise sample', 'Reduce steady noise', 'Mark noise sample', 'Use loop start', '0.5 s or more works best']) assert.ok(text.includes(word), word)
     assert.equal(await panel().getByRole('button', { name: 'Spectrum', exact: true }).count(), 0, 'the view is no longer called Spectrum')
   })
 
