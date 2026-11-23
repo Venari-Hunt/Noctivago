@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { listPresets, normalizeWholeMix, normalizeGroupFilters, normalizeGroups, updatePresetGroups, savePreset, updatePresetSounds, deletePreset, renamePreset, duplicatePreset, duplicatePresetName } from '../src/main/presets.js'
+import { listPresets, normalizeWholeMix, normalizeGroupFilters, normalizeGroups, updatePresetGroups, savePreset, updatePresetSounds, deletePreset, renamePreset, duplicatePreset, duplicatePresetName, updatePresetSoundOverride, getSoundOverride } from '../src/main/presets.js'
 
 describe('normalizeWholeMix', () => {
   test('null/undefined/non-object input is null', () => {
@@ -285,6 +285,32 @@ describe('a sound that leaves the mix keeps its preset settings (owner, 2026-11-
       updatePresetSounds(preset.id, [])
       const back = updatePresetGroups(preset.id, [{ name: 'outside', soundIds: ['raven'], filters: null }])
       assert.deepEqual(back.sounds.find((s) => s.soundId === 'raven').overrides, scheduled)
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('Remix editing an out-of-mix sound writes its parked copy, and re-add keeps the edit (owner, 2026-11-21)', () => {
+    const edited = { playMode: 'scheduled', schedule: { kind: 'hourly' }, filters: { pan: 0.5 } }
+    const preset = savePreset({ name: 'probe', sounds: [{ soundId: 'raven', volume: 0.5, overrides: scheduled }], wholeMix: null, groups: [] })
+    try {
+      updatePresetSounds(preset.id, [])
+      const out = updatePresetSoundOverride(preset.id, 'raven', edited)
+      assert.equal(out.sounds.some((s) => s.soundId === 'raven'), false)
+      const saved = out.removedOverrides.raven
+      assert.equal(saved.filters.pan, 0.5)
+      assert.deepEqual(getSoundOverride(preset.id, 'raven'), saved)
+      const back = updatePresetSounds(preset.id, [{ soundId: 'raven', volume: 0.5, overrides: null }])
+      assert.deepEqual(back.sounds.find((s) => s.soundId === 'raven').overrides, saved)
+    } finally {
+      deletePreset(preset.id)
+    }
+  })
+
+  test('a sound never in the preset still has no override slot', () => {
+    const preset = savePreset({ name: 'probe', sounds: [], wholeMix: null, groups: [] })
+    try {
+      assert.equal(updatePresetSoundOverride(preset.id, 'frog', scheduled), null)
     } finally {
       deletePreset(preset.id)
     }
