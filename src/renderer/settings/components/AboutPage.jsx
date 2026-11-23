@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MockIcon } from '../../components/mockIcons.jsx'
 import { openWhatsNewModal } from '../../core/UpdateModal.js'
+import { LicensesDialog } from './LicensesDialog.jsx'
 import { Group } from './Group.jsx'
 import { SettingItem } from './SettingItem.jsx'
 
@@ -9,6 +10,7 @@ const SOURCE_URL = 'https://github.com/Venari-Hunt/Noctivago'
 
 export function AboutPage({ autoUpdate }) {
   const [version, setVersion] = useState('')
+  const [licensesOpen, setLicensesOpen] = useState(false)
   useEffect(() => {
     autoUpdate.getState().then((s) => setVersion(s.currentVersion))
   }, [autoUpdate])
@@ -30,7 +32,11 @@ export function AboutPage({ autoUpdate }) {
         <SettingItem name="Source code" description="GitHub">
           <a className="btn" href={SOURCE_URL} target="_blank" rel="noreferrer">Open</a>
         </SettingItem>
+        <SettingItem name="Licenses" description="Third-party software Noctívago includes">
+          <button className="btn" type="button" onClick={() => setLicensesOpen(true)}>Open</button>
+        </SettingItem>
       </Group>
+      {licensesOpen && <LicensesDialog onClose={() => setLicensesOpen(false)} />}
     </>
   )
 }
