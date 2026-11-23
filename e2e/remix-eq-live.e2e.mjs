@@ -67,7 +67,7 @@ after(async () => {
 
 test('the EQ live spectrum keeps moving after switching views and back', async () => {
   assert.ok(await isMoving(), 'spectrum is static on first show')
-  for (const other of ['Repair', 'Trim']) {
+  for (const other of ['Spectral repair', 'Trim']) {
     await view(other)
     await page.waitForTimeout(1200)
     await view('EQ')
