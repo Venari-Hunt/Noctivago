@@ -1,8 +1,9 @@
 // End-to-end: the Composite tab's editing, as it behaves today (guard tests for the
 // rework, so a later change shows up here). Drag a clip, trim both edges, type in each
 // field, the layer fader, Add / Remove layer, and Edit existing -> Make sound (rebake).
-// Known quirk, tested as-is: typing In changes only In (Start stays), while dragging
-// the In handle also shifts Start. The rework plan (step 3) makes them agree.
+// Plan step 3 (clear fields): typing Trim start behaves like dragging the In handle (Start
+// shifts with it), bad input stays in the field with an inline error, and Clip volume is a
+// slider like Layer volume (0..150%).
 // Layout: the approved v2 mock (React rewrite, plan step 2). A layer's sound, volume and
 // Remove live in the Layer card of the inspector; click a layer header to select it.
 import { describe, test, before, after } from 'node:test'
@@ -119,7 +120,7 @@ describe('Composite: moving a clip', () => {
     assert.equal(await field('start').inputValue(), '0.00 s')
     assert.equal(await field('in').inputValue(), '0.00 s')
     near(await num('out'), SOUND_SEC, 0.02, 'Out')
-    assert.equal(await field('volume').inputValue(), '100%')
+    assert.equal(await panel().locator('#csel-volume-val').innerText(), '100%')
   })
 
   test('dragging the clip snaps Start to 50 ms', async () => {
@@ -200,9 +201,14 @@ describe('Composite: typed fields', () => {
     assert.equal(await panel().locator('.composite-clip').first().evaluate((el) => el.style.left !== '0px'), true)
   })
 
-  test('Start with bad input goes back to the old value', async () => {
+  test('Start with bad input keeps the typed text and shows the error; the clip does not move', async () => {
     await setField('start', 'abc')
+    assert.equal(await field('start').inputValue(), 'abc')
+    assert.equal(await field('start').getAttribute('aria-invalid'), 'true')
+    assert.equal(await panel().locator('#csel-msg').innerText(), 'Starts at: use seconds, like 0.05')
+    await field('start').press('Escape') // puts the old value back and clears the error
     assert.equal(await field('start').inputValue(), '0.50 s')
+    assert.equal(await panel().locator('#csel-msg').count(), 0)
   })
 
   test('Start never goes below 0', async () => {
@@ -210,22 +216,61 @@ describe('Composite: typed fields', () => {
     assert.equal(await field('start').inputValue(), '0.00 s')
   })
 
-  test('In commits and changes only In (the drag path also moves Start; the typed path does not)', async () => {
+  test('Trim start commits like dragging the In handle: In moves and Starts at shifts with it', async () => {
     await setField('start', '0.5')
     await setField('in', '1.2')
     assert.equal(await field('in').inputValue(), '1.20 s')
-    assert.equal(await field('start').inputValue(), '0.50 s')
+    assert.equal(await field('start').inputValue(), '1.70 s')
     near(await num('out'), SOUND_SEC, 0.02, 'Out')
+    near(await num('start') - await num('in'), 0.5, 0.01, 'the audio stays where it was')
+    near(parseFloat(await panel().locator('#csel-length').innerText()), SOUND_SEC - 1.2, 0.02, 'Clip length')
   })
 
-  test('In with bad input reverts', async () => {
-    await setField('in', 'nope')
+  test('Trim start with bad input (the mock\'s "0,05s.") keeps the text and shows the mock\'s message', async () => {
+    await setField('in', '0,05s.')
+    assert.equal(await field('in').inputValue(), '0,05s.')
+    assert.equal(await field('in').getAttribute('aria-invalid'), 'true')
+    assert.equal(await field('in').getAttribute('aria-describedby'), 'csel-msg')
+    const msg = panel().locator('#csel-msg')
+    assert.equal(await msg.innerText(), 'Trim start: use seconds, like 0.05')
+    assert.equal(await msg.getAttribute('role'), 'alert')
+    assert.equal(await field('start').inputValue(), '1.70 s', 'nothing else changed')
+  })
+
+  test('fixing the text clears the error and commits', async () => {
+    await setField('in', '1.2')
+    assert.equal(await field('in').getAttribute('aria-invalid'), 'false')
+    assert.equal(await panel().locator('#csel-msg').count(), 0)
     assert.equal(await field('in').inputValue(), '1.20 s')
+    assert.equal(await field('start').inputValue(), '1.70 s', 'same value, nothing shifts')
   })
 
-  test('In cannot pass Out minus 0.05 s', async () => {
+  test('selecting another clip clears a pending error', async () => {
+    await setField('in', 'nope')
+    assert.equal(await panel().locator('#csel-msg').count(), 1)
+    await clip(1).click({ position: { x: 40, y: 30 } })
+    await settle(300)
+    assert.equal(await panel().locator('#csel-msg').count(), 0)
+    await clip(0).click({ position: { x: 40, y: 30 } })
+    await settle(300)
+    assert.equal(await field('in').inputValue(), '1.20 s')
+    assert.equal(await field('in').getAttribute('aria-invalid'), 'false')
+  })
+
+  test('Trim start cannot pass Out minus 0.05 s', async () => {
     await setField('in', '99')
     near(await num('in'), (await num('out')) - 0.05, 0.015, 'In')
+  })
+
+  test('Trim start back to 0 pulls Starts at back by the same amount, never below 0', async () => {
+    const before = (await num('start')) - (await num('in'))
+    await setField('in', '0')
+    assert.equal(await field('in').inputValue(), '0.00 s')
+    near(await num('start'), before, 0.01, 'Starts at returns to where the audio began')
+    await setField('in', '1')
+    await setField('start', '0.2')
+    await setField('in', '0') // would put Starts at at -0.8 s
+    assert.equal(await field('start').inputValue(), '0.00 s')
   })
 
   test('Out commits, stays above In + 0.05 s and below the file length', async () => {
@@ -238,40 +283,67 @@ describe('Composite: typed fields', () => {
     near(await num('out'), 0.05, 0.015, 'Out min')
   })
 
-  test('Out with bad input reverts', async () => {
+  test('Trim end with bad input keeps the text and shows the error naming it', async () => {
     await resetClip0()
     await setField('out', '2')
     await setField('out', '??')
+    assert.equal(await field('out').inputValue(), '??')
+    assert.equal(await field('out').getAttribute('aria-invalid'), 'true')
+    assert.equal(await panel().locator('#csel-msg').innerText(), 'Trim end: use seconds, like 0.05')
+    await field('out').press('Escape')
     assert.equal(await field('out').inputValue(), '2.00 s')
   })
 
-  test('Volume commits ("150" -> 150%), syncs the layer fader and caps at 200%', async () => {
-    await setField('volume', '150')
-    assert.equal(await field('volume').inputValue(), '150%')
-    assert.equal(await panel().locator('#layer-volume-val').innerText(), '150%')
-    near(Number(await panel().locator('#layer-volume').inputValue()), 1.5, 0.001, 'fader')
-    await setField('volume', '500')
-    assert.equal(await field('volume').inputValue(), '200%')
-  })
-
-  test('Volume with bad input reverts', async () => {
-    await setField('volume', '75')
-    await setField('volume', 'loud')
-    assert.equal(await field('volume').inputValue(), '75%')
+  test('the Clip card is labelled like the mock', async () => {
+    const card = panel().locator('#composite-selected')
+    for (const label of ['Starts at', 'Trim start', 'Trim end']) {
+      assert.equal(await card.getByLabel(label, { exact: true }).count(), 1, label)
+    }
+    const text = await card.innerText()
+    assert.ok(text.includes('Clip length') && text.includes('Clip volume'))
+    assert.equal(await card.locator('input[type="text"]').count(), 3, 'volume is a slider, not a field')
+    assert.equal(await panel().locator('#composite-total').count(), 1, 'Total length readout')
   })
 })
 
-describe('Composite: layer volume fader', () => {
-  test('moving the layer fader updates its label and the Clip volume', async () => {
+// React owns a slider's value: go through the native setter so it sees the input event.
+const setSlider = (sel, v) =>
+  panel().locator(sel).evaluate((el, val) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, val)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }, String(v))
+
+describe('Composite: volume sliders', () => {
+  test('Clip volume is a 0..150% slider that shares its value with Layer volume', async () => {
     await head(0).click()
-    await panel().locator('#layer-volume').evaluate((el) => {
-      // React owns the value: go through the native setter so it sees the input event.
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '0.4')
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-    })
+    const vol = panel().locator('#csel-volume')
+    assert.equal(await vol.getAttribute('type'), 'range')
+    assert.equal(await vol.getAttribute('max'), '1.5')
+    await setSlider('#csel-volume', 1.5)
+    await settle(200)
+    assert.equal(await panel().locator('#csel-volume-val').innerText(), '150%')
+    assert.equal(await panel().locator('#layer-volume-val').innerText(), '150%')
+    near(Number(await panel().locator('#layer-volume').inputValue()), 1.5, 0.001, 'layer slider')
+  })
+
+  test('the slider cannot go past 150%', async () => {
+    await setSlider('#csel-volume', 3)
+    await settle(200)
+    assert.equal(await panel().locator('#csel-volume-val').innerText(), '150%')
+  })
+
+  test('double-click resets Clip volume to 100%', async () => {
+    await panel().locator('#csel-volume').dblclick()
+    await settle(200)
+    assert.equal(await panel().locator('#csel-volume-val').innerText(), '100%')
+  })
+
+  test('moving the layer slider updates its label and the Clip volume', async () => {
+    await head(0).click()
+    await setSlider('#layer-volume', 0.4)
     await settle(200)
     assert.equal(await panel().locator('#layer-volume-val').innerText(), '40%')
-    assert.equal(await field('volume').inputValue(), '40%')
+    assert.equal(await panel().locator('#csel-volume-val').innerText(), '40%')
   })
 })
 

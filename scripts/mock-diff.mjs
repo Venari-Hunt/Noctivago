@@ -3,6 +3,7 @@
 // or different. Run it before calling any redesign step done.
 //
 //   node scripts/mock-diff.mjs [--screen mixer] [--width 1280] [--only nav,player]
+//   node scripts/mock-diff.mjs --screen composite   (the Composite v2 mock)
 //
 // Needs the dev app running with --remoteDebuggingPort 9222 (see CLAUDE.md) and
 // Edge (the mock is opened in a throwaway headless Edge on port 9333).
@@ -19,7 +20,9 @@ const arg = (name, fallback) => {
 const screen = arg('screen', 'mixer')
 const width = Number(arg('width', 1280))
 const only = arg('only', '')?.split(',').filter(Boolean)
-const MOCK = 'C:/Users/jluca/Projects/Global Management/design-system/dist/tool/mock-noctivago-desktop.html'
+// The Composite rework has its own approved mock (v2), separate from the desktop one.
+const MOCK_NAME = screen === 'composite' ? 'mock-noctivago-composite' : 'mock-noctivago-desktop'
+const MOCK = `C:/Users/jluca/Projects/Global Management/design-system/dist/tool/${MOCK_NAME}.html`
 const EDGE = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'].find(existsSync)
 
 // [name, mock selector, app selector]. Add a row when a step adds a region.
@@ -41,12 +44,17 @@ const REGIONS = [
   ['browse empty', '.empty', '.bs-empty:not(.hidden)'],
   ['browse card', '.tile.rcard', '.bs-tile'],
   ['browse preview', '.pvbar', '.bs-pvbar'],
-  // Composite (step 15). Open the Composite tab with two clips placed and
-  // one selected first (screen composite).
-  ['composite name', '.tools:has(.fl)', '.cp-tools:has(.cp-fl)'],
-  ['composite timeline', '.tl', '.cp-tl'],
-  ['composite clip', '.clipedit', '.cp-clipedit'],
-  ['composite actions', '.tools:has(.pri)', '.cp-tools:has(.cp-pri)'],
+  // Composite (v2 mock, React rewrite). Open the Composite tab with two clips
+  // placed and one selected first (screen composite, state Editing). Controls
+  // for later rework steps (Undo, Snap, M/S, Layer name, Duplicate) show as
+  // "missing" until their step lands.
+  ['composite head', '.pane.editor .head', '.cp-editor .cp-head'],
+  ['composite tools', '.pane.editor .tools', '.cp-editor .cp-tools'],
+  ['composite timeline', '.pane.editor .tl', '.cp-editor .cp-tl'],
+  ['composite nav', '.pane.editor .nav', '.cp-editor .cp-nav'],
+  ['composite clip card', '#clipCard', '#composite-selected'],
+  ['composite layer card', '.side .card:has(use[href="#i-stack"])', '#composite-layer'],
+  ['composite card', '.side .card:has(use[href="#i-sparkles"])', '.cp-side .cp-card:has(#composite-name)'],
   // Export (step 16). Open the Export tab in the matching state first
   // (export = Audio only, export-video = Video only + Visualization,
   // export-phone, export-run, export-done).
@@ -122,7 +130,7 @@ async function main() {
   const url = pathToFileURL(MOCK).href + `?screen=${screen}&width=${width}`
   const edge = spawn(EDGE, ['--headless=new', '--remote-debugging-port=9333', `--window-size=${width + 40},900`, '--user-data-dir=' + process.env.TEMP + '/mock-diff-edge', '--no-first-run', url], { stdio: 'ignore' })
   try {
-    const mock = await cdp(9333, (t) => t.url.includes('mock-noctivago-desktop'))
+    const mock = await cdp(9333, (t) => t.url.includes(MOCK_NAME))
     await new Promise((r) => setTimeout(r, 800))
     const app = await cdp(9222, () => true)
     await app.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false })
