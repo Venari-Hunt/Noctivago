@@ -17,6 +17,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 - **Changed: each feature has its own name.** The Remix view is "Spectral repair", the EQ graph modes are "Analyzer", "Both" and "Heatmap" (with "Analyzer reads: Before / After / Both"), and the Export video style is "Spectrogram".
 
+- **New: the noise sample shows on the Remix waveform.** The stretch Noise reduction learns from is drawn as a shaded band on the Trim waveform. Drag it to a new spot and the sample moves there (it keeps its length, and Noise reduction turns on). "Show sample on waveform" in the Noise reduction card hides or shows it.
 - **New: Noise reduction shows what it learned.** Under the Sample from / to fields, a small curve draws the noise profile (how loud the noise is at each pitch, low to high) and redraws when you move the sample. Raise Strength past 24 dB and a note warns the sound can turn watery. The reduction itself is unchanged.
 - **New: Shift adds and Alt cuts with Box and Lasso, and Repair opens on the Brush.** With a shape picked, hold Shift while dragging a box or loop to join it into that shape (it keeps its number and level), or Alt to cut the region out of it (a cut through the middle gives two shapes; cutting it all away removes it). With nothing picked, Shift draws as usual and Alt does nothing. The hint line under the canvas says so for each tool.
 
