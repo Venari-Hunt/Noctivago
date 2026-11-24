@@ -86,6 +86,31 @@ test('Before / After / Both click and change the graph', async () => {
   }
 })
 
+// Cold (Before) heat pixels in the top strip of the graph: teal/aqua, blue and green above red.
+const coldTopPixels = () => page.evaluate(() => {
+  const c = document.querySelector('#editor-eq-canvas')
+  const y = Math.round(c.height * 0.1)
+  const d = c.getContext('2d').getImageData(0, y, c.width, 1).data
+  let n = 0
+  for (let i = 0; i < d.length; i += 4) if (d[i + 2] > d[i] + 25 && d[i + 1] > d[i] + 25) n++
+  return n
+})
+
+test('Heatmap + Both draws both layers: the cold Before strip shows only in Before and Both', async () => {
+  await panel.locator('[data-spec="heat"]:visible').first().click()
+  await page.waitForTimeout(2500) // the heat eases toward the signal at about 1 s
+  const seen = {}
+  for (const mode of ['after', 'before', 'both']) {
+    await panel.locator(`[data-tap="${mode}"]:visible`).first().click()
+    await page.waitForTimeout(600)
+    seen[mode] = await coldTopPixels()
+  }
+  assert.ok(seen.after < 20, `After should have no cold strip, saw ${seen.after}`)
+  assert.ok(seen.before > 100, `Before should be cold, saw ${seen.before}`)
+  assert.ok(seen.both > 100, `Both should draw the cold Before layer over After, saw ${seen.both}`)
+  await panel.locator('[data-spec="both"]:visible').first().click()
+})
+
 test('in Saved audio, clicking Before goes back to Live edit', async () => {
   const toggle = panel.locator('.editor-preview-mode-toggle:visible').first()
   await toggle.click()
