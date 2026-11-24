@@ -365,7 +365,7 @@ describe('Composite: mute and solo', () => {
     await mute(0).click()
   })
 
-  test('Make sound leaves out a muted layer and says so; solo does not change it', async () => {
+  test('Make sound leaves out a muted layer but saves it muted, and says so; solo does not change it; it reopens muted', async () => {
     await twoLayers()
     await clipOf(0).click({ position: { x: 40, y: 30 } })
     await panel().locator('#layer-duplicate').click() // layer 2 = copy of Tone A
@@ -377,10 +377,21 @@ describe('Composite: mute and solo', () => {
     await waitForComposite('E2E layers muted')
     await settle(500)
     const src = await compositeNamed('E2E layers muted')
-    assert.equal(src.members.length, 2, 'Tone A and Tone B; the muted copy is not baked')
-    assert.match(await panel().locator('#composite-status').innerText(), /A muted layer was left out/)
+    assert.equal(src.members.length, 3, 'all three layers are saved, the muted copy included')
+    assert.deepEqual(src.members.map((m) => !!m.muted), [false, true, false])
+    assert.equal('muted' in src.members[0], false, 'an unmuted layer saves no muted field')
+    assert.match(await panel().locator('#composite-status').innerText(), /A muted layer is left out of the sound but kept in the layers/)
     await solo(2).click()
     await mute(1).click()
+    // Opening it again brings the mute back (solo is never saved).
+    await newComposite()
+    await panel().locator('#composite-existing').selectOption({ label: 'E2E layers muted' })
+    await settle(900)
+    assert.deepEqual(
+      await Promise.all([0, 1, 2].map((i) => mute(i).getAttribute('aria-pressed'))),
+      ['false', 'true', 'false']
+    )
+    assert.equal(await solo(2).getAttribute('aria-pressed'), 'false')
   })
 
   test('Make sound needs two layers that are not muted', async () => {
