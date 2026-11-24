@@ -12,6 +12,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- **Fixed: Composite keeps muted layers when you reopen a sound.** Make sound used to drop a muted layer from the saved layers, so it was gone when you opened the composite again. The app now saves it (still left out of the sound itself), so it comes back muted. Needs the matching Composite update.
 - **Changed: each feature has its own name.** The Remix view is "Spectral repair", the EQ graph modes are "Analyzer", "Both" and "Heatmap" (with "Analyzer reads: Before / After / Both"), and the Export video style is "Spectrogram".
 
 - **New: Noise reduction shows what it learned.** Under the Sample from / to fields, a small curve draws the noise profile (how loud the noise is at each pitch, low to high) and redraws when you move the sample. Raise Strength past 24 dB and a note warns the sound can turn watery. The reduction itself is unchanged.
