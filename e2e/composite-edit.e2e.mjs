@@ -1,8 +1,10 @@
 // End-to-end: the Composite tab's editing, as it behaves today (guard tests for the
 // rework, so a later change shows up here). Drag a clip, trim both edges, type in each
-// field, the lane fader, Add / Remove lane, and Edit existing -> Make sound (rebake).
+// field, the layer fader, Add / Remove layer, and Edit existing -> Make sound (rebake).
 // Known quirk, tested as-is: typing In changes only In (Start stays), while dragging
 // the In handle also shifts Start. The rework plan (step 3) makes them agree.
+// Layout: the approved v2 mock (React rewrite, plan step 2). A layer's sound, volume and
+// Remove live in the Layer card of the inspector; click a layer header to select it.
 import { describe, test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -32,6 +34,13 @@ function writeTone(file, divisor) {
 
 const clip = (i) => panel().locator(`.composite-lane[data-index="${i}"] .composite-clip`)
 const field = (id) => panel().locator(`#csel-${id}`)
+const head = (i) => panel().locator(`.composite-side[data-index="${i}"]`)
+
+// Picks a layer's sound: select the layer, then use the Layer card.
+async function pickSound(i, label) {
+  await head(i).click()
+  await panel().locator('#layer-sound').selectOption({ label })
+}
 const num = async (id) => parseFloat(await field(id).inputValue())
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg}: got ${a}, want ${b} +-${tol}`)
 
@@ -62,7 +71,7 @@ async function clipGeometry(i) {
 
 async function resetClip0() {
   // Back to a clean full-length clip at 0 (re-picking the sound clears In/Out).
-  await panel().locator('.composite-side[data-index="0"] select').selectOption({ label: 'Tone A' })
+  await pickSound(0, 'Tone A')
   await settle(600)
   await clip(0).click({ position: { x: 40, y: 30 } })
   await settle(300)
@@ -93,10 +102,9 @@ before(async () => {
   await page.locator('#tab-bar .tab-button', { hasText: 'Composite' }).click()
   await settle(1200)
   await app.dismissToasts()
-  const selects = panel().locator('.composite-side select')
-  await selects.nth(0).selectOption({ label: 'Tone A' })
+  await pickSound(0, 'Tone A')
   await settle(800)
-  await selects.nth(1).selectOption({ label: 'Tone B' })
+  await pickSound(1, 'Tone B')
   await settle(800)
   await clip(0).click({ position: { x: 40, y: 30 } })
   await settle(300)
@@ -237,12 +245,11 @@ describe('Composite: typed fields', () => {
     assert.equal(await field('out').inputValue(), '2.00 s')
   })
 
-  test('Volume commits ("150" -> 150%), syncs the lane fader and caps at 200%', async () => {
+  test('Volume commits ("150" -> 150%), syncs the layer fader and caps at 200%', async () => {
     await setField('volume', '150')
     assert.equal(await field('volume').inputValue(), '150%')
-    const lane = panel().locator('.composite-side[data-index="0"]')
-    assert.equal(await lane.locator('.composite-side-vol-val').innerText(), '150%')
-    near(Number(await lane.locator('.composite-side-volume').inputValue()), 1.5, 0.001, 'fader')
+    assert.equal(await panel().locator('#layer-volume-val').innerText(), '150%')
+    near(Number(await panel().locator('#layer-volume').inputValue()), 1.5, 0.001, 'fader')
     await setField('volume', '500')
     assert.equal(await field('volume').inputValue(), '200%')
   })
@@ -254,35 +261,37 @@ describe('Composite: typed fields', () => {
   })
 })
 
-describe('Composite: lane volume fader', () => {
-  test('moving the lane fader updates its label and the Selected clip Volume', async () => {
-    const lane = panel().locator('.composite-side[data-index="0"]')
-    await lane.locator('.composite-side-volume').evaluate((el) => {
-      el.value = '0.4'
+describe('Composite: layer volume fader', () => {
+  test('moving the layer fader updates its label and the Clip volume', async () => {
+    await head(0).click()
+    await panel().locator('#layer-volume').evaluate((el) => {
+      // React owns the value: go through the native setter so it sees the input event.
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '0.4')
       el.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await settle(200)
-    assert.equal(await lane.locator('.composite-side-vol-val').innerText(), '40%')
+    assert.equal(await panel().locator('#layer-volume-val').innerText(), '40%')
     assert.equal(await field('volume').inputValue(), '40%')
   })
 })
 
-describe('Composite: Add lane / Remove lane', () => {
-  test('Add lane appends an empty lane and selects it; Remove lane takes one away', async () => {
+describe('Composite: Add layer / Remove layer', () => {
+  test('Add layer appends an empty layer and selects it; Remove layer takes one away', async () => {
     assert.equal(await panel().locator('.composite-side').count(), 2)
-    await panel().getByRole('button', { name: 'Add lane' }).click()
+    await panel().getByRole('button', { name: 'Add layer' }).click()
     await settle(300)
     assert.equal(await panel().locator('.composite-side').count(), 3)
-    assert.ok(await panel().locator('.composite-side[data-index="2"].selected').isVisible())
+    assert.equal(await head(2).getAttribute('aria-selected'), 'true')
     assert.ok((await panel().locator('.composite-lane[data-index="2"]').innerText()).includes('Pick a sound'))
-    assert.ok(await panel().locator('#composite-selected').isHidden(), 'an empty lane has no Selected clip card')
-    await panel().locator('.composite-side[data-index="2"] .composite-side-remove').click()
+    assert.ok(await panel().locator('#composite-selected').isHidden(), 'an empty layer has no Clip card')
+    await panel().locator('#layer-remove').click()
     await settle(300)
     assert.equal(await panel().locator('.composite-side').count(), 2)
   })
 
-  test('Remove lane on a filled lane removes its clip', async () => {
-    await panel().locator('.composite-side[data-index="0"] .composite-side-remove').click()
+  test('Remove layer on a filled layer removes its clip', async () => {
+    await head(0).click()
+    await panel().locator('#layer-remove').click()
     await settle(300)
     assert.equal(await panel().locator('.composite-side').count(), 1)
     assert.equal(await panel().locator('.composite-clip').count(), 1) // Tone B's
@@ -295,9 +304,9 @@ describe('Composite: Edit existing then Make sound', () => {
   const composites = () => page.evaluate(() => window.noctivago.library.list().then((l) => l.filter((e) => e.compositeSource).map((e) => ({ id: e.id, name: e.name, members: e.compositeSource.members }))))
 
   test('Make sound welds two lanes into a library entry', async () => {
-    await panel().getByRole('button', { name: 'Add lane' }).click()
+    await panel().getByRole('button', { name: 'Add layer' }).click()
     await settle(300)
-    await panel().locator('.composite-side[data-index="1"] select').selectOption({ label: 'Tone A' })
+    await pickSound(1, 'Tone A')
     await settle(800)
     await panel().locator('#composite-name').fill('E2E weld')
     await panel().getByRole('button', { name: 'Make sound' }).click()
@@ -327,6 +336,88 @@ describe('Composite: Edit existing then Make sound', () => {
     assert.equal(list[0].name, 'E2E weld v2')
     assert.equal(list[0].members[1].delayMs, 1250)
     assert.equal(await panel().locator('#composite-existing').inputValue(), entryId)
+  })
+})
+
+describe('Composite: zoom and navigation', () => {
+  const lanes = () => panel().locator('.cp-lanes')
+  const clipW = async () => (await clip(0).boundingBox()).width
+  const scrolled = () => lanes().evaluate((el) => el.scrollLeft)
+  // The slider is React-controlled: set it through the native setter.
+  const setSlider = (v) =>
+    panel().locator('#composite-zoom').evaluate((el, val) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, String(val))
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }, v)
+  const fit = async () => {
+    await panel().locator('#composite-fit').click()
+    await settle(250)
+  }
+  // Seconds under the pointer, from the clip's drawn width (its file is SOUND_SEC long).
+  const secAt = async (x) => {
+    const lb = await lanes().boundingBox()
+    return ((await scrolled()) + x - lb.x) / ((await clipW()) / SOUND_SEC)
+  }
+
+  test('Fit shows the whole composite without a sideways scroll', async () => {
+    await fit()
+    assert.ok(await lanes().evaluate((el) => el.scrollWidth <= el.clientWidth + 1), 'nothing to scroll at Fit')
+  })
+
+  test('the zoom buttons and slider rescale the clips (about 4 to 800 px per second)', async () => {
+    await fit()
+    const w0 = await clipW()
+    await panel().getByRole('button', { name: 'Zoom in' }).click()
+    await settle(250)
+    near(await clipW(), w0 * 1.25, 4, 'one Zoom in step is 25%')
+    await panel().getByRole('button', { name: 'Zoom out' }).click()
+    await settle(250)
+    near(await clipW(), w0, 4, 'Zoom out undoes it')
+    await setSlider(100)
+    await settle(300)
+    near(await clipW(), SOUND_SEC * 800, 6, 'slider at 100 is 800 px/s')
+    await setSlider(0)
+    await settle(300)
+    near(await clipW(), SOUND_SEC * 4, 3, 'slider at 0 is 4 px/s')
+    assert.match(await panel().locator('.cp-zoom-val').innerText(), /shown$/)
+  })
+
+  test('Ctrl+wheel zooms around the pointer; the plain wheel scrolls sideways', async () => {
+    await fit()
+    const lb = await lanes().boundingBox()
+    const x = lb.x + 300
+    const y = lb.y + 20
+    const w0 = await clipW()
+    const t0 = await secAt(x)
+    await page.mouse.move(x, y)
+    await page.keyboard.down('Control')
+    for (let i = 0; i < 4; i++) await page.mouse.wheel(0, -100)
+    await page.keyboard.up('Control')
+    await settle(400)
+    assert.ok((await clipW()) > w0 * 1.5, 'zoomed in')
+    near(await secAt(x), t0, 0.08, 'the time under the pointer stays put')
+    const before = await scrolled()
+    await page.mouse.wheel(0, 200)
+    await settle(250)
+    assert.ok((await scrolled()) > before, 'the plain wheel scrolled the timeline sideways')
+  })
+
+  test('clicking the ruler moves the playhead; Preview moves it on', async () => {
+    await fit()
+    const rb = await panel().locator('.cp-ruler').boundingBox()
+    const lb = await lanes().boundingBox()
+    await page.mouse.click(rb.x + 200, rb.y + 16)
+    await settle(250)
+    const at = async () => (await panel().locator('.cp-playhead').boundingBox()).x - lb.x
+    near(await at(), 200, 3, 'playhead at the click')
+    await panel().locator('#composite-preview').click()
+    await settle(700)
+    assert.ok((await at()) > 220, 'the playhead moved while Preview plays')
+    await panel().locator('#composite-preview').click() // Stop
+    await settle(250)
+    const rest = await at()
+    await settle(300)
+    near(await at(), rest, 1, 'it stays where Stop left it')
   })
 })
 
