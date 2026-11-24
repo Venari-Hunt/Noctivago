@@ -155,8 +155,12 @@ describe('Composite', () => {
   test('welds a sound into a new one that appears in the Mixer', async () => {
     await openTab('Composite')
     await panel().locator('#composite-name').fill('E2E weld')
-    // Two lanes start empty; a weld needs a sound in each.
-    for (const lane of await panel().locator('.cp-tl select').all()) await lane.selectOption({ label: 'E2E sound' })
+    // Two layers start empty; a weld needs a sound in each. A layer's sound is
+    // picked in the Layer card: select the layer header, then the Sound list.
+    for (const i of [0, 1]) {
+      await panel().locator(`.composite-side[data-index="${i}"]`).click()
+      await panel().locator('#layer-sound').selectOption({ label: 'E2E sound' })
+    }
     await settle(800)
     await panel().getByRole('button', { name: 'Make sound' }).click()
     await page.waitForFunction(() => window.noctivago.library.list().then((l) => l.some((e) => e.name === 'E2E weld')), null, { timeout: 30000 })

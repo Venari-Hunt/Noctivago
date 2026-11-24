@@ -12,6 +12,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- **Changed: Composite is laid out in four rows with an inspector, and the timeline zooms.** Pick or start a composite and Make sound across the top; Preview, the time and zoom under it; layers and their clips in the middle; Add layer and an overview strip at the bottom. A layer's sound and volume, a clip's timing and the composite's name sit in a panel on the right. Zoom with the slider, the plus and minus buttons or Ctrl and the mouse wheel (around the pointer), press Fit to see it all, scroll sideways with the wheel or by dragging the overview box, click the ruler to move the playhead, and watch the playhead move during Preview.
 - **New: About has a Licenses entry, and the Privacy page is more exact.** Licenses lists the third-party software Noctívago includes and each license. Privacy now also covers link imports, Community keys and names, and what Copy logs and Report a bug do.
 - **Fixed: a sound taken out of a preset's mix shows and keeps its preset settings in Remix.** Remix used to show it with its default settings while the Mixer played the preset's own, and saving changed the defaults, which were lost when the sound came back. Now Remix shows the preset's settings, and saving changes only that preset's copy.
 
