@@ -23,6 +23,7 @@ import { exportForPhone } from './phone/phoneBundle.js'
 import { beginExport, endExport, isExportInProgress, requestExportCancel, clearExportCancel, isExportCancelRequested } from './exportState.js'
 import { killRunningFfmpeg } from './ffmpeg/runFfmpeg.js'
 import { renderComposite } from './ffmpeg/composite.js'
+import { bakedMembers } from './ffmpeg/compositeRecipe.js'
 import { copyLogs, reportBug } from './troubleshooting.js'
 import { getLoadablePlugins, describePlugins } from './plugins/registry.js'
 import { invokePlugin } from './plugins/invoke.js'
@@ -610,7 +611,8 @@ export function registerIpcHandlers() {
     }
   })
 
-  // members: [{soundId, delayMs, inSec, outSec, volume}] - resolves each to
+  // members: [{soundId, delayMs, inSec, outSec, volume, muted?}] - muted layers
+  // stay in the saved recipe but are not baked (compositeRecipe.js). Resolves each to
   // the real, current data the Composite bake needs, mirroring export:run's
   // own id -> path/data resolution boundary. The trim (inSec/outSec) is the
   // Composite timeline's own, independent of the sound's Remix loop points;
@@ -618,7 +620,7 @@ export function registerIpcHandlers() {
   // saved before the timeline (only {soundId, delayMs}) fall back to the
   // sound's Remix trim, then its full duration.
   function resolveCompositeMembers(members) {
-    return members
+    return bakedMembers(members)
       .map((m) => {
         const entry = library.listSounds().find((s) => s.id === m.soundId)
         const inputPath = library.getPlaybackPathForId(m.soundId)
