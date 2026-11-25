@@ -29,7 +29,7 @@ function rowHtml(state, text, percent) {
 
 export function morphButton(btn) {
   btn.classList.add('morph')
-  const restHtml = btn.innerHTML
+  let restHtml = btn.innerHTML
   btn.innerHTML = ''
   let state = null
   let timers = []
@@ -38,6 +38,19 @@ export function morphButton(btn) {
     timers = []
   }
   const later = (fn, ms) => timers.push(setTimeout(fn, ms))
+  // Rows are absolutely placed, so the button cannot size itself: a button built while hidden
+  // measures 0 and is sized here the first time it is laid out.
+  let unsized = false
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => {
+      if (!unsized) return
+      const row = btn.querySelector(':scope > .morph-row:not(.out)')
+      const w = row ? Math.ceil(row.offsetWidth) : 0
+      if (!w) return
+      unsized = false
+      btn.style.width = w + 'px'
+    }).observe(btn)
+  }
 
   function draw(next, text = '', percent = 0) {
     state = next
@@ -50,8 +63,14 @@ export function morphButton(btn) {
     row.innerHTML = rowHtml(next, next === 'rest' ? restHtml : text, percent)
     btn.appendChild(row)
     const to = Math.ceil(row.offsetWidth)
-    if (btn.style.width) void btn.offsetWidth // let the old width paint so the change animates
-    btn.style.width = to + 'px'
+    if (!to) {
+      // Not on screen yet (a hidden tab or panel): size it once it shows (the observer below).
+      btn.style.width = ''
+      unsized = true
+    } else {
+      if (btn.style.width) void btn.offsetWidth // let the old width paint so the change animates
+      btn.style.width = to + 'px'
+    }
     requestAnimationFrame(() => row.classList.remove('in'))
     for (const o of old) {
       o.classList.add('out')
@@ -78,6 +97,11 @@ export function morphButton(btn) {
     rest() {
       clear()
       draw('rest')
+    },
+    // New rest markup (e.g. a label that switches between Share and Update); redrawn now if at rest.
+    setRest(html) {
+      restHtml = html
+      if (state === 'rest') draw('rest')
     },
     working(text) {
       clear()

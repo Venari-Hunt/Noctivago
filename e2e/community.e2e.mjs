@@ -109,7 +109,10 @@ describe('Community', () => {
     assert.equal(fake.state.uploads.length, 0, 'nothing is sent without the rights box')
     await page.locator('#community-share-rights').check()
     await panel().getByRole('button', { name: 'Share', exact: true }).last().click()
-    await page.waitForFunction(() => true)
+    // The button works in place (micro-interactions): it ends on a drawn check with Shared.
+    await page.locator('#community-share-submit.done', { hasText: 'Shared' }).waitFor({ timeout: 20000 })
+    if (process.env.SHARE_SHOT) await settle(400)
+    if (process.env.SHARE_SHOT) await page.locator('#community-share-submit').screenshot({ path: process.env.SHARE_SHOT })
     for (let i = 0; i < 30 && fake.state.uploads.length === 0; i++) await settle(500)
     assert.equal(fake.state.uploads.length, 1)
     assert.equal(fake.state.uploads[0].name, 'Shared by e2e')

@@ -4155,13 +4155,14 @@ a.btn {
   letter-spacing: 0.04em;
 }
 
-/* Micro-interactions (ui/morphButton.js, approved mock mock-noctivago-micro.html): a button that
+/* Micro-interactions (ui/morphButton.js, any button or chip, plugin buttons included; approved mock mock-noctivago-micro.html): a button that
    morphs in place through working, progress, done, failed and canceled. Same rows, timing and
    colors as the preset pill: width eases, each state centered, the old one fades out under it. */
-.btn.morph {
+:is(button, span).morph {
   position: relative;
   overflow: hidden;
   padding: 0;
+  min-width: var(--space-6);
   transition: width 280ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 200ms, color 200ms;
 }
 
@@ -4189,23 +4190,23 @@ a.btn {
   transition-duration: 160ms;
 }
 
-.btn.morph.busy,
-.btn.morph.undone {
+:is(button, span).morph.busy,
+:is(button, span).morph.undone {
   background: var(--surface-alt);
   color: var(--text-dim);
   cursor: default;
 }
 
-.btn.morph.busy {
+:is(button, span).morph.busy {
   color: var(--text);
 }
 
-.btn.morph.done {
+:is(button, span).morph.done {
   background: var(--done-bg);
   color: var(--done-ink);
 }
 
-.btn.morph.fail {
+:is(button, span).morph.fail {
   background: var(--fail-bg);
   color: var(--fail-ink);
 }
@@ -4235,7 +4236,7 @@ a.btn {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn.morph,
+  :is(button, span).morph,
   .morph-row,
   .morph-bar i {
     transition-duration: 1ms;
