@@ -118,7 +118,10 @@ test('the schedule is saved with the sound and comes back after reload', async (
   await page.locator('#editor-schedule-type-interval').check()
   await fill('#editor-schedule-interval', '15')
   await page.locator('#editor-save').click()
-  await page.waitForTimeout(6000)
+  // Save works in place (micro-interactions, the preset pill's states): it ends on a drawn check.
+  await page.locator('#editor-save.done', { hasText: /Changes saved|Auto-saved/ }).waitFor({ timeout: 20000 })
+  if (process.env.SAVE_SHOT) { await page.waitForTimeout(400); await page.locator('#editor-save').screenshot({ path: process.env.SAVE_SHOT }) }
+  await page.waitForTimeout(2000)
   const saved = await page.evaluate(async () => (await window.noctivago.library.list()).find((s) => s.name === 'Edit Alpha'))
   assert.equal(saved.playMode, 'scheduled', `play mode saved as ${saved.playMode}`)
   assert.equal(saved.schedule?.type, 'interval')
