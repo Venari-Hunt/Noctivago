@@ -5,12 +5,14 @@ import { Toggle } from './Toggle.jsx'
 import { PluginRow } from './PluginRow.jsx'
 import { BrowseModal } from './BrowseModal.jsx'
 import { Group } from './Group.jsx'
+import { useMorphOps } from '../../components/MorphChip.jsx'
+import { pluginOpWords } from '../domain/pluginOps.js'
 
 export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, autoUpdate, pluginsApi, store, optionPageIds, onOpenOptions }) {
   const [confirmingUnrestrict, setConfirmingUnrestrict] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [updates, setUpdates] = useState({})
-  const [busy, setBusy] = useState({})
+  const [ops, runOp] = useMorphOps()
   const [checkStatus, setCheckStatus] = useState('')
 
   function onRestrictedChange(on) {
@@ -38,27 +40,29 @@ export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, auto
   }
 
   // Returns whether the action worked, so Update all can count failures.
-  async function run(id, label, action) {
-    setBusy((b) => ({ ...b, [id]: label }))
-    try {
-      await action()
-      setUpdates((u) => ({ ...u, [id]: undefined }))
-      await pluginsApi.applyChanges()
-      return true
-    } catch (err) {
-      setCheckStatus(errorText(err))
-      return false
-    } finally {
-      setBusy((b) => ({ ...b, [id]: null }))
-      pluginsApi.reload()
-    }
+  // The row's control works in place (micro-interactions mock): Updating, then Updated, then the row comes back.
+  async function run(id, words, action) {
+    if (ops[id]) return false
+    const res = await runOp(id, words, async () => {
+      try {
+        await action()
+        setUpdates((u) => ({ ...u, [id]: undefined }))
+        await pluginsApi.applyChanges()
+      } catch (err) {
+        setCheckStatus(errorText(err))
+        throw err
+      } finally {
+        pluginsApi.reload()
+      }
+    })
+    return res.ok
   }
 
   // One at a time: each install swaps a folder and reloads the plugin list.
   async function updateAll() {
     const ids = Object.keys(updates).filter((id) => updates[id])
     let failed = 0
-    for (const id of ids) if (!(await run(id, 'Updating', () => store.install(id)))) failed++
+    for (const id of ids) if (!(await run(id, pluginOpWords('update', updates[id]), () => store.install(id)))) failed++
     setCheckStatus(failed ? `${failed} of ${ids.length} updates failed.` : `Updated ${ids.length} plugin${ids.length === 1 ? '' : 's'}.`)
   }
 
@@ -108,12 +112,12 @@ export function CommunityPluginsPage({ plugins, allPlugins, restrictedMode, auto
               <PluginRow
                 key={p.id}
                 plugin={p}
-                busy={busy[p.id]}
+                op={ops[p.id]}
                 hasOptions={p.loaded && optionPageIds.has(p.id)}
                 onOpenOptions={() => onOpenOptions(p.id)}
                 onToggle={(on) => pluginsApi.setEnabled(p.id, on)}
-                onUninstall={() => run(p.id, 'Removing', () => store.uninstall(p.id))}
-                update={updates[p.id] && { version: updates[p.id], onClick: () => run(p.id, 'Updating', () => store.install(p.id)) }}
+                onUninstall={() => run(p.id, pluginOpWords('remove'), () => store.uninstall(p.id))}
+                update={updates[p.id] && { version: updates[p.id], onClick: () => run(p.id, pluginOpWords('update', updates[p.id]), () => store.install(p.id)) }}
               />
             ))}
           </ul>

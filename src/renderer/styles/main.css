@@ -4241,3 +4241,15 @@ a.btn {
     transition-duration: 1ms;
   }
 }
+
+/* A fieldset that only groups controls so they can be disabled together (MorphChip's first 400 ms). */
+fieldset.morph-wait.contents {
+  display: contents;
+}
+
+fieldset.morph-wait {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}

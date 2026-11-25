@@ -1,3 +1,4 @@
+import { MorphChip } from '../../components/MorphChip.jsx'
 import { useEffect, useState } from 'react'
 import { errorText } from '../domain/errorText.js'
 import { downloadsLabel } from '../domain/storeBrowse.js'
@@ -7,7 +8,7 @@ import { Toggle } from './Toggle.jsx'
 // The Browse window's right-hand pane: one plugin's details, actions and
 // README. Installs are refused (by main too) for third-party plugins while
 // Restricted mode is on.
-export function PluginDetail({ plugin, latest, busy, restrictedMode, loadState, hasOptions, store, onInstall, onUninstall, onToggle, onOpenOptions, onBack }) {
+export function PluginDetail({ plugin, latest, op, restrictedMode, loadState, hasOptions, store, onInstall, onUninstall, onToggle, onOpenOptions, onBack }) {
   const [confirming, setConfirming] = useState(false)
   const [readme, setReadme] = useState(null)
   const { installed } = plugin
@@ -55,9 +56,10 @@ export function PluginDetail({ plugin, latest, busy, restrictedMode, loadState, 
       </a>
       {plugin.description && <p className="plugin-store-desc">{plugin.description}</p>}
 
-      <div className="store-detail-actions">
-        {busy ? (
-          <span className="plugin-store-dim">{busy}…</span>
+      {/* The first 400 ms of a job keep the buttons, disabled, so quick jobs never flash the spinner. */}
+      <fieldset className="store-detail-actions morph-wait" disabled={op === 'pending'}>
+        {op && op !== 'pending' ? (
+          <MorphChip state={op.state} text={op.text} />
         ) : installed ? (
           <>
             {!builtIn && latest?.updateAvailable && (
@@ -81,7 +83,7 @@ export function PluginDetail({ plugin, latest, busy, restrictedMode, loadState, 
             </button>
           )
         )}
-      </div>
+      </fieldset>
       {loadState === 'restricted' && <p className="settings-plugin-warning">Blocked by Restricted mode.</p>}
       {latest?.error && <p className="plugin-store-error">{latest.error}</p>}
       {confirming && (
