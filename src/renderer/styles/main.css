@@ -4355,3 +4355,15 @@ fieldset.morph-wait {
     animation: none;
   }
 }
+
+/* A tab's job percent (TabHost.setProgress): only while another tab is in front. */
+.tab-progress {
+  display: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.tab-button.has-progress:not(.tab-button-active) .tab-progress {
+  display: inline;
+}

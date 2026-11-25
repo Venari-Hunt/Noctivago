@@ -170,11 +170,34 @@ export function createTabHost(tabBarEl, contentEl, stickyBarEl) {
     slots.delete(id)
   }
 
+  // A long job's percent on the tab button (micro-interactions mock, row "Export"): shown only while
+  // another tab is in front, so the tab says how far along it is when you look elsewhere. null clears it.
+  function setProgress(id, percent) {
+    const tab = tabs.get(id)
+    if (!tab) return
+    let badge = tab.button.querySelector('.tab-progress')
+    if (percent == null || !Number.isFinite(percent)) {
+      badge?.remove()
+      tab.button.classList.remove('has-progress')
+      return
+    }
+    if (!badge) {
+      badge = document.createElement('span')
+      badge.className = 'tab-progress'
+      tab.button.appendChild(badge)
+    }
+    const p = Math.max(0, Math.min(100, Math.round(percent)))
+    badge.textContent = p + '%'
+    badge.style.setProperty('--v', p + '%')
+    tab.button.classList.add('has-progress')
+  }
+
   return {
     register,
     unregister,
     dropSlot,
     activate,
+    setProgress,
     has: (id) => tabs.has(id),
     getActiveId: () => activeId,
     onActivate(listener) {
