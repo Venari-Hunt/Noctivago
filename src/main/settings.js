@@ -297,7 +297,9 @@ export function setSleepTimerAutoStartEnabled(enabled) {
 // re-arm it (see sleepTimer.js). Pass null to clear.
 export function setSleepTimerRunState(state) {
   if (state && Number.isFinite(state.firesAt) && ['stop', 'displays', 'sleep', 'shutdown'].includes(state.action)) {
-    store.set('sleepTimerRunState', { firesAt: state.firesAt, action: state.action })
+    const run = { firesAt: state.firesAt, action: state.action }
+    if (Number.isFinite(state.startedAt)) run.startedAt = state.startedAt // additive: older builds ignore it
+    store.set('sleepTimerRunState', run)
   } else {
     store.set('sleepTimerRunState', null)
   }

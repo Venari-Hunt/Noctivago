@@ -11,7 +11,9 @@ export const INITIAL_TOOLBAR_STATE = {
   volumeGain: 1,
   muted: false,
   sleepActive: false,
-  sleepRemaining: ''
+  sleepRemaining: '',
+  // Share of the timer still to run, 0-100: the amber ring round the moon.
+  sleepPercent: 0
 }
 
 // Order is the "+" menu's order. `id` is what onAddSound receives.
@@ -44,6 +46,17 @@ export function muteButtonTitle(muted) {
   return muted ? 'Unmute all' : 'Mute all'
 }
 
-export function sleepButtonTitle(active) {
-  return active ? 'Sleep timer (running)' : 'Sleep timer'
+export function sleepButtonTitle(active, remaining = '') {
+  if (!active) return 'Sleep timer'
+  return remaining ? `Sleep timer: ${remaining} left` : 'Sleep timer (running)'
+}
+
+// The running timer's ring (owner, 2026-11-21): its length is the share of the
+// whole timer still to run, so it closes as the time runs out. Rounded to a
+// tenth of a percent so a second's tick on a long timer still moves it.
+export function sleepRingPercent(firesAt, startedAt, now = Date.now()) {
+  const total = firesAt - startedAt
+  if (!Number.isFinite(total) || total <= 0) return 0
+  const left = Math.min(total, Math.max(0, firesAt - now))
+  return Math.round((left / total) * 1000) / 10
 }

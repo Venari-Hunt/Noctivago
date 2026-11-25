@@ -1,6 +1,7 @@
 import { formatDuration } from '../util/time.js'
 import { targetFromTimeOfDay, durationInWords } from '../../shared/sleepTimerTime.js'
 import { setToolbarHandlers, updateToolbar } from '../toolbar/index.jsx'
+import { sleepRingPercent } from '../toolbar/domain/toolbar.js'
 import { mockIconSvg } from '../components/mockIcons.jsx'
 import { clampMinutes, splitMinutes, roll, minutesFromFields, endClock, ACTION_THEN } from '../../shared/sleepWheel.js'
 import { installWheel } from './ridgedWheel.js'
@@ -18,6 +19,7 @@ let displayInterval = null
 let warningInterval = null
 let noticeInterval = null
 let firesAt = null
+let startedAt = null
 // What the ruler shows while setting: minutes, how they were set ('in' =
 // ruler/scroll, 'at' = typed end time), the typed time, and the action.
 let setup = { minutes: 30, mode: 'in', timeOfDay: '', action: 'stop' }
@@ -44,7 +46,7 @@ function refreshDisplay() {
   if (firesAt == null) return
   const text = formatDuration(Math.max(0, Math.ceil((firesAt - Date.now()) / 1000)))
   els.countdownValue.textContent = text
-  updateToolbar({ sleepRemaining: text })
+  updateToolbar({ sleepRemaining: text, sleepPercent: sleepRingPercent(firesAt, startedAt) })
 }
 
 function renderSetup(force = false) {
@@ -71,6 +73,8 @@ function setAutoStartSwitch(on) {
 function applyState(state) {
   const active = Boolean(state && state.active)
   firesAt = active ? state.firesAt : null
+  // Older main processes send no startedAt: the ring then counts from the first time it is seen.
+  startedAt = active ? (state.startedAt ?? startedAt ?? Date.now()) : null
 
   updateToolbar({ sleepActive: active })
   els.pop.classList.toggle('running', active)
