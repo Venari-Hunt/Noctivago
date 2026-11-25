@@ -1,3 +1,4 @@
+import { morphButton } from '../ui/morphButton.js'
 import { addPluginSettingsPage } from '../settings/domain/pluginSettingsPages.js'
 import { notify } from './Notifications.js'
 import { planPluginSync } from '../../shared/pluginSync.js'
@@ -105,8 +106,16 @@ async function load(id, manifest) {
         // Brings one of this plugin's own tabs to the front (e.g. Remix
         // answering the Mixer's "Edit in Remix"). Resolves once the switch is
         // done, or vetoed by the current tab's onBeforeHide.
-        show: (tabId) => (record.tabIds.has(tabId) ? tabHost.activate(tabId) : Promise.resolve())
+        show: (tabId) => (record.tabIds.has(tabId) ? tabHost.activate(tabId) : Promise.resolve()),
+        // A long job's percent on one of this plugin's tab buttons (null clears it). Plugins that
+        // also run on older apps call it as app.tabs.setProgress?.(…).
+        setProgress: (tabId, percent) => {
+          if (record.tabIds.has(tabId)) tabHost.setProgress(tabId, percent)
+        }
       },
+      // The app's micro-interaction states for a plugin's own buttons (ui/morphButton.js):
+      // const m = app.ui.morphButton(btn); m.working('Making sound'); m.done('Saved'); m.fail('Reason').
+      ui: { morphButton },
       settings: {
         addPage: (page) => {
           const remove = addPluginSettingsPage(id, page)
