@@ -11,9 +11,20 @@ export function Transport({ state, handlers }) {
       </button>
       <div className="toolbar-group toolbar-actions">
         {state.sleepActive ? (
-          <button id="sleep-timer-button" className={'btn btn-ghost sleep-timer-remaining' + (state.sleepOpen ? ' sleep-open' : '')} type="button" title={sleepButtonTitle(true)} onClick={handlers.onOpenSleepTimer}>
-            <MockIcon name="moon" />
-            {state.sleepRemaining}
+          // Running: the moon turns amber and an amber ring round it closes as the time runs out
+          // (owner, 2026-11-21: the ring is the only sign of time left; the tooltip has the number).
+          <button
+            id="sleep-timer-button"
+            className={'btn btn-ghost btn-svg-icon sleep-running' + (state.sleepOpen ? ' sleep-open' : '')}
+            type="button"
+            title={sleepButtonTitle(true, state.sleepRemaining)}
+            aria-label={sleepButtonTitle(true, state.sleepRemaining)}
+            onClick={handlers.onOpenSleepTimer}
+          >
+            <MockIcon name="moon" size={20} />
+            <svg className="sleep-ring" viewBox="0 0 40 40" aria-hidden="true">
+              <circle className="v" cx="20" cy="20" r="18" pathLength="100" style={{ strokeDashoffset: 100 - state.sleepPercent }} />
+            </svg>
           </button>
         ) : (
           <button id="sleep-timer-button" className={'btn btn-ghost btn-svg-icon' + (state.sleepOpen ? ' sleep-open' : '')} type="button" title={sleepButtonTitle(false)} onClick={handlers.onOpenSleepTimer}>
