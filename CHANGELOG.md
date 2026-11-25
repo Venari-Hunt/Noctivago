@@ -12,6 +12,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- Installing, updating or removing a plugin now happens on its own button: Installing, then a green check with Installed, or a short reason in soft red if it fails.
 - Presets > Import now works in place: the button shows Importing, then Imported to Presets, or the reason in soft red when a file is not a preset.
 - The running sleep timer is now an amber ring round the moon that closes as the time runs out; hover the moon for the exact time left.
 - **New: About has a Licenses entry, and the Privacy page is more exact.** Licenses lists the third-party software Noctívago includes and each license. Privacy now also covers link imports, Community keys and names, and what Copy logs and Report a bug do.

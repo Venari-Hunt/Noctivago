@@ -1,8 +1,9 @@
 import { Toggle } from './Toggle.jsx'
+import { MorphChip } from '../../components/MorphChip.jsx'
 
 // One installed plugin: toggle, and for community plugins an optional
 // update button and uninstall. The gear opens the plugin's own settings page.
-export function PluginRow({ plugin, hasOptions, onToggle, onOpenOptions, onUninstall, update, busy }) {
+export function PluginRow({ plugin, hasOptions, onToggle, onOpenOptions, onUninstall, update, op }) {
   const { manifest, state } = plugin
   const restricted = state === 'restricted'
 
@@ -19,10 +20,10 @@ export function PluginRow({ plugin, hasOptions, onToggle, onOpenOptions, onUnins
         {restricted && <div className="settings-item-desc settings-plugin-warning">Blocked by Restricted mode.</div>}
       </div>
       <div className="settings-item-control">
-        {busy ? (
-          <span className="plugin-store-dim">{busy}…</span>
+        {op && op !== 'pending' ? (
+          <MorphChip state={op.state} text={op.text} />
         ) : (
-          <>
+          <fieldset className="morph-wait contents" disabled={op === 'pending'}>
             {update && (
               <button className="btn btn-small btn-primary" type="button" onClick={update.onClick}>Update to v{update.version}</button>
             )}
@@ -33,7 +34,7 @@ export function PluginRow({ plugin, hasOptions, onToggle, onOpenOptions, onUnins
               <button className="btn btn-small btn-danger" type="button" onClick={onUninstall}>Uninstall</button>
             )}
             <Toggle checked={state === 'enabled'} disabled={restricted} label={`Enable ${manifest.name}`} onChange={onToggle} />
-          </>
+          </fieldset>
         )}
       </div>
     </li>

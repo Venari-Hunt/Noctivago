@@ -3,6 +3,8 @@ import { errorText } from '../domain/errorText.js'
 import { SORTS, browsePlugins } from '../domain/storeBrowse.js'
 import { StoreListItem } from './StoreListItem.jsx'
 import { PluginDetail } from './PluginDetail.jsx'
+import { useMorphOps } from '../../components/MorphChip.jsx'
+import { pluginOpWords } from '../domain/pluginOps.js'
 
 const LIST_REPO_URL = 'https://github.com/Venari-Hunt/noctivago-plugins'
 
@@ -14,7 +16,7 @@ export function BrowseModal({ store, restrictedMode, described, optionPageIds, o
   const [plugins, setPlugins] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [latest, setLatest] = useState({})
-  const [busy, setBusy] = useState({})
+  const [ops, runOp] = useMorphOps()
   const [query, setQuery] = useState('')
   const [onlyInstalled, setOnlyInstalled] = useState(false)
   const [sort, setSort] = useState('downloads')
@@ -44,19 +46,21 @@ export function BrowseModal({ store, restrictedMode, described, optionPageIds, o
     load()
   }, [load])
 
-  async function run(id, label, action) {
-    setBusy((b) => ({ ...b, [id]: label }))
-    try {
-      await action()
+  // The row's button works in place (micro-interactions mock): Installing, then Installed, then the switch.
+  function run(id, words, action) {
+    if (ops[id]) return
+    return runOp(id, words, async () => {
+      try {
+        await action()
+      } catch (err) {
+        setLatest((l) => ({ ...l, [id]: { ...l[id], error: errorText(err) } }))
+        throw err
+      }
       onChanged()
       const { plugins } = await store.list()
       setPlugins(plugins)
       await checkLatest(id)
-    } catch (err) {
-      setLatest((l) => ({ ...l, [id]: { ...l[id], error: errorText(err) } }))
-    } finally {
-      setBusy((b) => ({ ...b, [id]: null }))
-    }
+    })
   }
 
   const shown = useMemo(() => browsePlugins(plugins ?? [], { query, onlyInstalled, sort }), [plugins, query, onlyInstalled, sort])
@@ -110,13 +114,13 @@ export function BrowseModal({ store, restrictedMode, described, optionPageIds, o
               <PluginDetail
                 plugin={selected}
                 latest={latest[selected.id]}
-                busy={busy[selected.id]}
+                op={ops[selected.id]}
                 restrictedMode={restrictedMode}
                 loadState={described.find((d) => d.id === selected.id)?.state}
                 hasOptions={optionPageIds.has(selected.id)}
                 store={store}
-                onInstall={() => run(selected.id, selected.installed ? 'Updating' : 'Installing', () => store.install(selected.id))}
-                onUninstall={() => run(selected.id, 'Removing', () => store.uninstall(selected.id))}
+                onInstall={() => run(selected.id, selected.installed ? pluginOpWords('update', latest[selected.id]?.version) : pluginOpWords('install'), () => store.install(selected.id))}
+                onUninstall={() => run(selected.id, pluginOpWords('remove'), () => store.uninstall(selected.id))}
                 onToggle={(on) => onToggle(selected.id, on)}
                 onOpenOptions={() => onOpenOptions(selected.id)}
                 onBack={() => setSelectedId(null)}
