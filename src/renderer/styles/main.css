@@ -4276,3 +4276,82 @@ fieldset.morph-wait {
     transition: none;
   }
 }
+
+/* Add a sound (micro-interactions mock): the placeholder row in the library rail, and any new row
+   arriving (fade + scale from .95 in 240 ms, ease-out). */
+.mx-item.arrive {
+  animation: mx-arrive 240ms ease-out;
+}
+
+@keyframes mx-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.mx-pending {
+  cursor: default;
+}
+
+.mx-pending .mx-txt b {
+  color: var(--text);
+}
+
+.mx-pending.fail {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.mx-pending.fail .mx-txt small {
+  color: var(--danger-ink);
+  white-space: normal;
+}
+
+/* The failure's buttons sit on their own line under the reason, lined up with the text. */
+.mx-pending.fail .mx-pending-acts {
+  flex-basis: 100%;
+  padding-left: calc(var(--space-6) + var(--space-3)); /* thumb (40) + gap */
+}
+
+.mx-pending.done .mx-thumb {
+  background: var(--done-bg);
+}
+
+.mx-pending .mx-sw {
+  opacity: 1;
+}
+
+.mx-pending-acts {
+  display: flex;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.mx-ring {
+  width: 28px;
+  height: 28px;
+  transform: rotate(-90deg);
+}
+
+.mx-ring circle {
+  fill: none;
+  stroke-width: 4;
+}
+
+.mx-ring .t {
+  stroke: var(--surface-hover);
+}
+
+.mx-ring .v {
+  stroke: var(--accent);
+  stroke-dasharray: 100;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 200ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mx-item.arrive {
+    animation: none;
+  }
+}
