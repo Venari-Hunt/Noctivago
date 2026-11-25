@@ -4311,7 +4311,7 @@ fieldset.morph-wait {
 /* The failure's buttons sit on their own line under the reason, lined up with the text. */
 .mx-pending.fail .mx-pending-acts {
   flex-basis: 100%;
-  padding-left: calc(40px + var(--space-3));
+  padding-left: calc(var(--space-6) + var(--space-3)); /* thumb (40) + gap */
 }
 
 .mx-pending.done .mx-thumb {
