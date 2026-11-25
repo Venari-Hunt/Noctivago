@@ -41,7 +41,7 @@ const RESTORE_GRACE_MS = 5 * 60 * 1000
 const AUTO_START_NOTICE_MS = 20 * 1000
 
 let timeout = null
-let current = null // { firesAt, action }
+let current = null // { firesAt, action, startedAt }
 let pendingAutoStart = null // { startsAt, seconds, action, timeout }
 let mainWindow = null
 
@@ -95,7 +95,7 @@ export function skipAutoStart() {
 }
 
 export function getSleepTimer() {
-  if (current) return { active: true, firesAt: current.firesAt, action: current.action }
+  if (current) return { active: true, firesAt: current.firesAt, startedAt: current.startedAt, action: current.action }
   if (pendingAutoStart) {
     const { startsAt, seconds, action } = pendingAutoStart
     return { active: false, pendingAutoStart: { startsAt, seconds, action } }
@@ -144,7 +144,7 @@ export function startSleepTimer(durationSeconds, action) {
   clearPendingAutoStart() // a manual start replaces a pending auto-start
   cancelSleepTimer()
   const ms = Math.max(1, Math.round(durationSeconds * 1000))
-  current = { firesAt: Date.now() + ms, action }
+  current = { firesAt: Date.now() + ms, action, startedAt: Date.now() }
   setSleepTimerRunState(current)
   armFor(ms)
   return getSleepTimer()
@@ -165,7 +165,8 @@ export function restoreSleepTimer() {
   if (!saved) return false
   const remaining = saved.firesAt - Date.now()
   if (remaining > 0) {
-    current = { firesAt: saved.firesAt, action: saved.action }
+    // startedAt is missing in run states saved before it existed: the ring then counts from now.
+    current = { firesAt: saved.firesAt, action: saved.action, startedAt: saved.startedAt ?? Date.now() }
     armFor(remaining)
     log.info(`Sleep timer restored, ${Math.round(remaining / 1000)}s left, action: ${saved.action}`)
     return true
