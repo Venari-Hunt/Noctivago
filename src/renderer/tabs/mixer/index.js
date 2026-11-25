@@ -28,6 +28,8 @@ import { notify } from '../../core/Notifications.js'
 import { history } from '../../core/history.js'
 import { mountAddSound, setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
 import { showPresetPill, presetPillState } from '../../toolbar/presetPill.js'
+import { morphButton } from '../../ui/morphButton.js'
+import { importResultLabel } from '../../ui/domain/morphStates.js'
 
 const api = window.noctivago
 const engine = new AudioEngine()
@@ -2496,12 +2498,15 @@ function openImportDialog(analysis) {
   showModal(els.presetImportDialog)
 }
 
+// Import works in place (micro-interactions mock, row "Import a preset"): a bad file shows the reason on the button.
+const importMorph = morphButton(els.importPresetBtn)
+
 els.importPresetBtn.addEventListener('click', async () => {
+  if (importMorph.state !== 'rest') return
   const result = await api.presets.pickImport()
   if (result.canceled) return
   if (!result.ok) {
-    els.presetSaveHint.classList.remove('ok')
-    els.presetSaveHint.textContent = result.error ?? 'Could not read that preset file.'
+    importMorph.fail(result.error ?? 'Not a Noctívago preset')
     return
   }
   openImportDialog(result)
@@ -2544,6 +2549,7 @@ els.presetImportConfirm.addEventListener('click', async () => {
   if (!anyResolvable) return
   els.presetImportConfirm.disabled = true
   els.presetImportStatus.textContent = 'Adding sounds…'
+  importMorph.working('Importing')
   const result = await api.presets.finalizeImport({
     importSessionId: importAnalysis.importSessionId ?? null,
     name: importAnalysis.name,
@@ -2555,10 +2561,8 @@ els.presetImportConfirm.addEventListener('click', async () => {
   hideModal(els.presetImportDialog)
   await refreshList()
   await refreshPresetList()
-  els.presetSaveHint.classList.toggle('ok', Boolean(result.ok))
-  els.presetSaveHint.textContent = result.ok
-    ? `Preset imported — ${result.soundCount} sound${result.soundCount === 1 ? '' : 's'}${result.failedCount ? ` (${result.failedCount} couldn't be added)` : ''}.`
-    : result.error ?? 'Import failed.'
+  const outcome = importResultLabel(result)
+  importMorph[outcome.state](outcome.text)
   window.dispatchEvent(new CustomEvent('noctivago:preset-import-finished', { detail: { result } }))
 })
 
