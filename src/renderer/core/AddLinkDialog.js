@@ -1,3 +1,5 @@
+import { isAdding, startPendingAdd } from './pendingAdd.js'
+
 // Owns the "add from link" dialog - hands a plain http(s) URL to
 // library:addSoundFromUrl over IPC. Main-process side (library.js) tries the
 // bundled ffmpeg's own http/https client first (fast, works for a direct
@@ -7,13 +9,13 @@
 //
 // v0.1.169: a "Max length to download" cap (default 10 min - "so you don't
 // download a 10h file since you can loop and crossfade it on the app",
-// owner's own words, flagged "takes precedence over anything"), plus a live
-// progress bar + verbose log fed by the library:addSoundFromUrlProgress IPC
-// channel ("would like a working progress bar + verbose of what's going on").
+// owner's own words, flagged "takes precedence over anything").
 //
-// Same install-once / open-on-demand shape as RecordDialog.js/
-// WatchFolderDialog.js, and only one entry point (the toolbar "+" menu) so
-// no reshow-behind logic is needed.
+// Desktop 2.0 micro-interactions (owner, 2026-11-21, mock row "Add a sound"):
+// Add closes the dialog at once and the download fills a placeholder row in
+// the library rail (core/pendingAdd.js), which becomes the real row, or keeps
+// the failure with Retry and Remove. The row shows the live percent, or each
+// step line while there is no percent; the old in-dialog bar and log are gone.
 let els = null
 
 const DEFAULT_MAX_MINUTES = 10
@@ -25,70 +27,25 @@ function resetState() {
   els.status.textContent = ''
   els.confirm.disabled = false
   els.progress.classList.add('hidden')
-  els.progressFill.classList.remove('indeterminate')
-  els.progressFill.style.width = '0%'
   els.log.textContent = ''
 }
 
-function appendLog(line) {
-  els.log.textContent += (els.log.textContent ? '\n' : '') + line
-  els.log.scrollTop = els.log.scrollHeight
-}
-
-function handleProgress(update) {
-  if (!update) return
-  if (update.type === 'progress') {
-    els.progressFill.classList.remove('indeterminate')
-    els.progressFill.style.width = `${Math.max(0, Math.min(100, update.percent))}%`
-    return
-  }
-  // step / status - a line for the verbose log
-  if (update.message) appendLog(update.message)
-  if (update.type === 'step') els.status.textContent = update.message
-}
-
-// Whether a download is in flight, so Cancel can really stop it rather than
-// just hiding the dialog over a job that keeps running.
-let downloading = false
-
-async function confirmAdd() {
+function confirmAdd() {
   const url = els.url.value.trim()
   if (!url) return
+  // Main downloads one link at a time (one cancel for "the" download).
+  if (isAdding()) {
+    els.status.textContent = 'One download at a time: wait for the one in the library list.'
+    return
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    els.status.textContent = 'Only http:// and https:// links are supported.'
+    return
+  }
   const minutes = Math.max(0, Math.floor(Number(els.maxlen.value) || 0))
   const maxSeconds = minutes > 0 ? minutes * 60 : 0
-
-  els.confirm.disabled = true
-  downloading = true
-  els.status.textContent = 'Starting…'
-  els.log.textContent = ''
-  els.progress.classList.remove('hidden')
-  els.progressFill.style.width = '0%'
-  // Indeterminate until the first real percent arrives (a direct download
-  // with no length cap, or yt-dlp's own webpage/format-extraction phase,
-  // reports no percentage).
-  els.progressFill.classList.add('indeterminate')
-
-  const unsubscribe = window.noctivago.library.onAddSoundFromUrlProgress(handleProgress)
-  const name = els.name.value.trim()
-  try {
-    await window.noctivago.library.addSoundFromUrl({ url, name, maxSeconds })
-    els.dialog.classList.add('hidden')
-    document.dispatchEvent(new CustomEvent('library:linked'))
-  } catch (err) {
-    els.progressFill.classList.remove('indeterminate')
-    // Strip Electron's own IPC wrapping ("Error invoking remote method
-    // '...': Error: ...") and show the message as-is: library.js now returns
-    // one finished sentence per failure. It used to be cut at the first "("
-    // or ".", which threw away the actual reason - a live stream, a removed
-    // video and a sign-in wall all came out reading the same.
-    const clean = (err.message || 'Download failed').replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, '')
-    els.status.textContent = clean
-    appendLog(`ERROR: ${clean}`)
-    els.confirm.disabled = false
-  } finally {
-    downloading = false
-    unsubscribe()
-  }
+  els.dialog.classList.add('hidden')
+  startPendingAdd({ url, name: els.name.value.trim(), maxSeconds })
 }
 
 export function installAddLinkDialog() {
@@ -99,19 +56,18 @@ export function installAddLinkDialog() {
     maxlen: document.getElementById('add-link-maxlen'),
     status: document.getElementById('add-link-status'),
     progress: document.getElementById('add-link-progress'),
-    progressFill: document.getElementById('add-link-progress-fill'),
     log: document.getElementById('add-link-log'),
     cancel: document.getElementById('add-link-cancel'),
     confirm: document.getElementById('add-link-confirm')
   }
 
   els.confirm.addEventListener('click', confirmAdd)
-  els.cancel.addEventListener('click', () => {
-    // Closing used to leave the download running invisibly; a YouTube import
-    // can take minutes, so Cancel has to actually stop it.
-    if (downloading) window.noctivago.library.cancelAddSoundFromUrl()
-    els.dialog.classList.add('hidden')
+  els.url.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmAdd()
   })
+  // Nothing runs inside the dialog any more, so Cancel only closes it; a running
+  // download is stopped with Remove on its row.
+  els.cancel.addEventListener('click', () => els.dialog.classList.add('hidden'))
 }
 
 export function openAddLinkDialog() {

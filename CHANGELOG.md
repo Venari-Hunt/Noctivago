@@ -12,6 +12,7 @@ merged into `ui-redesign` adds a bullet there, newest first, so the Nightly
 
 ## v2.0.0 — Desktop 2.0 (Nightly, in progress)
 
+- Add from link no longer holds the dialog open: the download fills a placeholder row in the library list that turns into the sound, or keeps the reason with Retry and Remove if it fails. New sounds fade into the list.
 - Putting a sound in or out of the mix now eases its knob ring on and off instead of snapping.
 - Installing, updating or removing a plugin now happens on its own button: Installing, then a green check with Installed, or a short reason in soft red if it fails.
 - Presets > Import now works in place: the button shows Importing, then Imported to Presets, or the reason in soft red when a file is not a preset.

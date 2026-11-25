@@ -29,6 +29,7 @@ import { history } from '../../core/history.js'
 import { mountAddSound, setToolbarHandlers, updateToolbar } from '../../toolbar/index.jsx'
 import { showPresetPill, presetPillState } from '../../toolbar/presetPill.js'
 import { morphButton } from '../../ui/morphButton.js'
+import { pendingAdd, onPendingAdd, retryPendingAdd, removePendingAdd } from '../../core/pendingAdd.js'
 import { importResultLabel } from '../../ui/domain/morphStates.js'
 
 const api = window.noctivago
@@ -377,7 +378,7 @@ function renderRail() {
   if (state.railTag && !library.some((e) => e.tags?.includes(state.railTag))) state.railTag = null
   els.railTagChip.classList.toggle('hidden', !state.railTag || state.railScope === 'Tags')
   els.railTagChip.querySelector('span').textContent = state.railTag ? `Tag: ${state.railTag}` : ''
-  renderRailList(els.railList, rows, { emptyText, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix, onPickTag: pickRailTag, selectedKey: state.railSelected, onSelect: selectRailRow })
+  renderRailList(els.railList, rows, { emptyText, pending: pendingAdd(), onRetry: retryPendingAdd, onRemove: removePendingAdd, onToggle: toggleIncludedFromCenter, onToggleGroup: toggleGroupInMix, onPickTag: pickRailTag, selectedKey: state.railSelected, onSelect: selectRailRow })
 }
 
 // Clicking a rail row only selects it: the preview loads it (and keeps
@@ -2858,6 +2859,8 @@ export function mount(container) {
   // already established.
   document.addEventListener('library:recorded', refreshList)
 document.addEventListener('library:linked', refreshList)
+// A sound being added from a link shows as a placeholder row in the rail (core/pendingAdd.js).
+onPendingAdd(() => renderRail())
   // See applySolo's own comment for why this is a window event rather than a
   // direct call - Remix's Solo button dispatches { soundId, active }.
   window.addEventListener('noctivago:solo', (e) => {
