@@ -4253,3 +4253,26 @@ fieldset.morph-wait {
   border: 0;
   min-width: 0;
 }
+
+/* Sound in or out of the mix (micro-interactions mock, row "Sound in or out of the mix"): the
+   knob ring lights in 220 ms and goes dark a little faster, 170 ms. Only color moves: it happens
+   many times a night. The ring's length (dasharray) never animates, so dragging stays direct. */
+.knob-value,
+.knob-mid,
+.sound-row-name {
+  transition: stroke 170ms ease-out, color 170ms ease-out;
+}
+
+.sound-row-on .knob-value,
+.sound-row-on .knob-mid,
+.sound-row-on .sound-row-name {
+  transition-duration: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knob-value,
+  .knob-mid,
+  .sound-row-name {
+    transition: none;
+  }
+}
