@@ -49,6 +49,8 @@
   --radius-pill: 999px;
   --done-bg: #1f2a1e;
   --done-ink: #b9e3b4;
+  --fail-bg: #2c1d1a;
+  --fail-ink: #f0b4a6;
   --danger-ink: #f0907a;
   --danger-meter: #f28b82;
   --gold-ink: #d8c58b;
@@ -4123,4 +4125,91 @@ a.btn {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Micro-interactions (ui/morphButton.js, approved mock mock-noctivago-micro.html): a button that
+   morphs in place through working, progress, done, failed and canceled. Same rows, timing and
+   colors as the preset pill: width eases, each state centered, the old one fades out under it. */
+.btn.morph {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  transition: width 280ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 200ms, color 200ms;
+}
+
+.morph-row {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 200ms ease-out;
+}
+
+.morph-row.in {
+  opacity: 0;
+}
+
+.morph-row.out {
+  opacity: 0;
+  transition-duration: 160ms;
+}
+
+.btn.morph.busy,
+.btn.morph.undone {
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.btn.morph.busy {
+  color: var(--text);
+}
+
+.btn.morph.done {
+  background: var(--done-bg);
+  color: var(--done-ink);
+}
+
+.btn.morph.fail {
+  background: var(--fail-bg);
+  color: var(--fail-ink);
+}
+
+.morph-bad {
+  display: inline-flex;
+  color: var(--danger-ink);
+}
+
+.morph-bar {
+  position: relative;
+  width: 64px;
+  height: 4px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--surface-hover);
+  overflow: hidden;
+}
+
+.morph-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--v, 0%);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width 200ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn.morph,
+  .morph-row,
+  .morph-bar i {
+    transition-duration: 1ms;
+  }
 }
