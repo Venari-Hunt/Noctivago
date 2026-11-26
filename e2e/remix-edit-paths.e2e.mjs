@@ -115,6 +115,7 @@ test('Scheduled mode shows its fields: fixed times or a recurring interval', asy
 })
 
 test('the schedule is saved with the sound and comes back after reload', async () => {
+  await page.locator('#editor-playmode-scheduled').check()
   await page.locator('#editor-schedule-type-interval').check()
   await fill('#editor-schedule-interval', '15')
   await page.locator('#editor-save').click()
