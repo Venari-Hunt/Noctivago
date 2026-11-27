@@ -452,7 +452,7 @@ main {
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid var(--bg);
-  box-shadow: 0 0 0 1px var(--accent);
+  outline: 1px solid var(--accent); /* halo outside the gap: an outline, not a shadow ring */
   transition: transform 0.1s;
 }
 
@@ -1552,7 +1552,7 @@ main {
 
 .level-meter.clipped {
   border-color: var(--danger);
-  box-shadow: 0 0 0 1px var(--danger);
+  outline: 1px solid var(--danger); /* thicker red edge without changing size */
 }
 
 .level-meter.clipped .level-meter-fill {
@@ -1564,7 +1564,7 @@ main {
 }
 
 .sound-row-group-badge.clipped {
-  box-shadow: 0 0 0 2px var(--danger);
+  outline: 2px solid var(--danger);
 }
 
 /* Settings > Community plugins > Browse (was the Plugins tab, plugins/plugin-store). */
