@@ -526,7 +526,7 @@ main {
   border-radius: 50%;
   background: var(--accent);
   border: 2px solid var(--bg);
-  box-shadow: 0 0 0 1px var(--accent);
+  outline: 1px solid var(--accent); /* halo outside the gap: an outline, not a shadow ring */
   transition: transform 0.1s;
 }
 
@@ -703,7 +703,7 @@ button.mx-sw:disabled { cursor: default; }
 .mx-pair { display: inline-flex; border-radius: var(--radius); background: var(--surface); }
 .mx-pair .mx-ib { border-radius: 0; }
 .mx-pair .mx-ib:first-child { border-radius: var(--radius) 0 0 var(--radius); }
-.mx-pair .mx-ib:last-child { border-radius: 0 var(--radius) var(--radius) 0; box-shadow: inset 1px 0 0 var(--border); }
+.mx-pair .mx-ib:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-left: 1px solid var(--border); }
 .mx-pair .mx-ib:hover:not(:disabled) { background: var(--surface-alt); }
 .mx-ib:disabled { cursor: default; opacity: .45; }
 .mx-ib:disabled:hover { background: none; color: var(--text-dim); }
@@ -1197,7 +1197,8 @@ button.mx-sw:disabled { cursor: default; }
 
 /* Desktop 2.0 step 18, mock .tile.lost: the card reads as a problem with a fix. */
 .sound-row-missing {
-  box-shadow: inset 0 0 0 2px var(--warn-edge);
+  outline: 2px solid var(--warn-edge); /* inside edge without moving the content */
+  outline-offset: -2px;
   justify-content: center;
   min-height: 188px;
   cursor: default;
@@ -2621,7 +2622,7 @@ button.mx-sw:disabled { cursor: default; }
 
 .level-meter.clipped {
   border-color: var(--danger);
-  box-shadow: 0 0 0 1px var(--danger);
+  outline: 1px solid var(--danger); /* thicker red edge without changing size */
 }
 
 .level-meter.clipped .level-meter-fill {
@@ -2630,7 +2631,7 @@ button.mx-sw:disabled { cursor: default; }
 
 .sound-row-group-line.clipped i {
   background: var(--danger);
-  box-shadow: 0 0 0 3px rgb(255 107 107 / 0.35);
+  outline: 3px solid rgb(255 107 107 / 0.35); /* glow ring around the dot */
 }
 
 .sound-row-group-line.clipped b {
@@ -3701,7 +3702,8 @@ a.btn {
   right: 0;
   bottom: 0;
   border-radius: var(--radius) var(--radius) 0 0;
-  box-shadow: 0 0 0 1px var(--border), 0 24px 64px rgb(0 0 0 / 0.5);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.5);
   animation: presets-rise 180ms ease-out;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
@@ -3819,7 +3821,8 @@ a.btn {
 }
 
 .pcard.cur {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  outline: 2px solid var(--accent); /* inside edge without moving the content */
+  outline-offset: -2px;
 }
 
 .pcard-corner {
